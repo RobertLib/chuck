@@ -22,7 +22,9 @@ function gamestate.init()
     invulnerable = false,
     invulnerabilityTimer = 0,
     globalTime = 0, -- For animations and shader
-    backgroundShader = nil
+    backgroundShader = nil,
+    timeLeft = 0,
+    levelTimeLimit = 0
   }
 end
 
@@ -38,6 +40,8 @@ function gamestate.reset(state)
   state.lives = 3
   state.invulnerable = false
   state.invulnerabilityTimer = 0
+  state.timeLeft = 0
+  state.levelTimeLimit = 0
 end
 
 -- Reset player position
@@ -53,6 +57,12 @@ function gamestate.resetPlayerPosition(state)
   state.player.facing = 1
   state.invulnerable = true
   state.invulnerabilityTimer = constants.INVULNERABILITY_DURATION
+end
+
+-- Reset level timer
+function gamestate.resetLevelTimer(state, timeLimit)
+  state.timeLeft = timeLimit
+  state.levelTimeLimit = timeLimit
 end
 
 return gamestate

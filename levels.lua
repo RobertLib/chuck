@@ -93,6 +93,9 @@ function levels.loadLevels()
         end
       end
 
+      -- Store time limit
+      config.timeLimit = level.timeLimit or 60 -- Default 60 seconds if not specified
+
       levelConfigs[i] = config
     end
   end
@@ -183,6 +186,10 @@ function levels.createLevel(gameState)
       height = constants.SPIKE_HEIGHT
     })
   end
+
+  -- Set time limit for the level
+  gameState.timeLeft = config.timeLimit
+  gameState.levelTimeLimit = config.timeLimit
 end
 
 function levels.getLevelCount()

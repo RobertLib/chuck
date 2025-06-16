@@ -101,9 +101,9 @@ function love.update(dt)
       gameState.player.animTime = 0
       gameState.player.facing = 1
       gameState.showingLevelComplete = false
-      levels.createLevel(gameState)
+      levels.createLevel(gameState) -- This will set the new time limit
     end
-    return -- Don't update game while showing level complete message
+    return                          -- Don't update game while showing level complete message
   end
 
   if gameState.won then
@@ -112,6 +112,31 @@ function love.update(dt)
 
   -- Update global time for animations and shaders
   gameState.globalTime = gameState.globalTime + dt
+
+  -- Update level timer
+  if gameState.timeLeft > 0 then
+    gameState.timeLeft = gameState.timeLeft - dt
+    if gameState.timeLeft <= 0 then
+      gameState.timeLeft = 0
+      -- Time's up - game over
+      gameState.lives = gameState.lives - 1
+      if gameState.lives <= 0 then
+        gameState.gameOver = true
+      else
+        -- Reset level with full time
+        gameState.player.x = 50
+        gameState.player.y = 500
+        gameState.player.velocityX = 0
+        gameState.player.velocityY = 0
+        gameState.player.animState = "idle"
+        gameState.player.animTime = 0
+        gameState.player.facing = 1
+        levels.createLevel(gameState)
+        gameState.invulnerable = true
+        gameState.invulnerabilityTimer = 2.0
+      end
+    end
+  end
 
   player.updatePlayer(dt, gameState)
   player.updatePlayerAnimation(dt, gameState)

@@ -24,21 +24,36 @@ function rendering.drawTopStatusBar(gameState)
   love.graphics.setColor(0.6, 0.9, 1) -- Brighter light blue for level
   love.graphics.print("Level: " .. gameState.level, constants.STATUS_BAR_PADDING + 120, 10)
 
+  -- Center - Time remaining
+  local timeText = "Time: " .. math.ceil(math.max(0, gameState.timeLeft))
+  local font = love.graphics.getFont()
+  local timeWidth = font:getWidth(timeText)
+  local timeX = (constants.SCREEN_WIDTH - timeWidth) / 2
+
+  -- Color time based on remaining time
+  if gameState.timeLeft <= 10 then
+    love.graphics.setColor(1, 0.2, 0.2) -- Red when time is low
+  elseif gameState.timeLeft <= 20 then
+    love.graphics.setColor(1, 0.8, 0.2) -- Orange when time is medium
+  else
+    love.graphics.setColor(0.8, 1, 0.8) -- Light green when time is good
+  end
+  love.graphics.print(timeText, timeX, 10)
+
   -- Right side - Lives
   love.graphics.setColor(0.4, 1, 0.6) -- Green for lives (positive, healthy)
   local livesText = "Lives: " .. gameState.lives .. "/3"
 
   -- Calculate position to align right
-  local font = love.graphics.getFont()
   local textWidth = font:getWidth(livesText)
   love.graphics.print(livesText, constants.SCREEN_WIDTH - textWidth - constants.STATUS_BAR_PADDING, 10)
 
-  -- Add invulnerability indicator if active (center)
+  -- Add invulnerability indicator if active (below the main status bar)
   if gameState.invulnerable then
     love.graphics.setColor(1, 1, 0, 0.7 + 0.3 * math.sin(gameState.globalTime * 8)) -- Flashing yellow
     local invulText = "* INVULNERABLE *"
     local invulWidth = font:getWidth(invulText)
-    love.graphics.print(invulText, (constants.SCREEN_WIDTH - invulWidth) / 2, 10)
+    love.graphics.print(invulText, (constants.SCREEN_WIDTH - invulWidth) / 2, constants.STATUS_BAR_HEIGHT + 5)
   end
 end
 
