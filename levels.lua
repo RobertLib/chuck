@@ -14,13 +14,16 @@ function levels.loadLevels()
     return
   end
 
-  local file = love.filesystem.read("levels.json")
+  local file = io.open("levels.json", "r")
   if not file then
     print("Warning: Could not read levels.json, using default levels")
     return
   end
 
-  local success, data = pcall(json.decode, file)
+  local content = file:read("*all")
+  file:close()
+
+  local success, data = pcall(json.decode, content)
   if not success then
     print("Error: Failed to parse levels.json - " .. tostring(data))
     return

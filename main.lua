@@ -8,6 +8,7 @@ local collectibles = require("collectibles")
 local gamecollisions = require("gamecollisions")
 local rendering = require("rendering")
 local input = require("input")
+local levelEditor = require("leveleditor")
 
 -- Game state
 local gameState
@@ -21,6 +22,9 @@ function love.load()
 
   -- Load levels from external file
   levels.loadLevels()
+
+  -- Initialize level editor
+  levelEditor.init()
 
   -- Initialize player
   gameState.player = player.initializePlayer()
@@ -83,6 +87,11 @@ function love.load()
 end
 
 function love.update(dt)
+  -- Skip game update if level editor is active
+  if levelEditor.isActive() then
+    return
+  end
+
   if gameState.gameOver then
     return
   end
@@ -157,6 +166,12 @@ function love.update(dt)
 end
 
 function love.draw()
+  -- If level editor is active, draw editor instead of game
+  if levelEditor.isActive() then
+    levelEditor.draw()
+    return
+  end
+
   -- Draw animated background
   rendering.drawBackground(gameState)
 
@@ -181,5 +196,35 @@ function love.draw()
 end
 
 function love.keypressed(key)
+  -- Handle level editor key presses first
+  if key == "f1" then
+    levelEditor.toggle()
+    return
+  end
+
+  if levelEditor.isActive() then
+    levelEditor.keypressed(key)
+    return
+  end
+
   input.handleKeyPressed(key, gameState, levels, gamestate)
+end
+
+-- Add mouse handling for level editor
+function love.mousepressed(x, y, button)
+  if levelEditor.isActive() then
+    levelEditor.mousepressed(x, y, button)
+  end
+end
+
+function love.mousereleased(x, y, button)
+  if levelEditor.isActive() then
+    levelEditor.mousereleased(x, y, button)
+  end
+end
+
+function love.mousemoved(x, y, dx, dy)
+  if levelEditor.isActive() then
+    levelEditor.mousemoved(x, y, dx, dy)
+  end
 end
