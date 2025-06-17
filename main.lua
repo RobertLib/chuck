@@ -152,6 +152,10 @@ function love.update(dt)
   crates.updateCrates(dt, gameState)
   collectibles.updateCollectibles(dt, gameState)
 
+  -- Update crumbling platforms
+  local crumbling_platforms = require("crumbling_platforms")
+  crumbling_platforms.update(gameState, dt)
+
   gamecollisions.checkCollisions(gameState)
   gamecollisions.checkWinCondition(gameState, levels.getLevelCount())
 
@@ -184,6 +188,7 @@ function love.draw()
 
   -- Draw game objects
   rendering.drawPlatforms(gameState)
+  rendering.drawCrumblingPlatforms(gameState)
   rendering.drawLadders(gameState)
   rendering.drawCollectibles(gameState)
   rendering.drawCrates(gameState)

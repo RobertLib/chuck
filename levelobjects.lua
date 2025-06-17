@@ -1,4 +1,5 @@
 local colors = require("colors")
+local crumbling_platforms = require("crumbling_platforms")
 
 local levelobjects = {}
 
@@ -113,6 +114,86 @@ function levelobjects.drawSpikes(gameState)
     -- Add some metallic shine effect
     love.graphics.setColor(1, 1, 1, 0.5)                                 -- Semi-transparent white highlight
     love.graphics.rectangle("fill", x + 2, y + height - 3, width - 4, 1) -- Base highlight
+  end
+end
+
+function levelobjects.drawCrumblingPlatforms(gameState)
+  -- Draw crumbling platforms
+  for _, platform in ipairs(gameState.crumbling_platforms) do
+    local states = crumbling_platforms.getStates()
+
+    if platform.state ~= states.DESTROYED then
+      -- Calculate shake effect
+      local shakeX = 0
+      local shakeY = 0
+      if platform.state == states.SHAKING then
+        shakeX = platform.shakeOffset * (math.random() - 0.5)
+        shakeY = platform.shakeOffset * 0.3 * (math.random() - 0.5)
+      end
+
+      -- Calculate opacity based on state
+      local alpha = 1.0
+      if platform.state == states.CRUMBLING then
+        alpha = 1.0 - (platform.timer / 0.5) -- Fade out during crumbling
+      end
+
+      -- Main platform body (slightly different color to distinguish from normal platforms)
+      love.graphics.setColor(0.8, 0.6, 0.4, alpha) -- Slightly more brown/weathered
+      love.graphics.rectangle("fill", platform.x + shakeX, platform.y + shakeY, platform.width, platform.height)
+
+      -- Top surface (lighter color for 3D effect)
+      love.graphics.setColor(0.85, 0.65, 0.45, alpha)
+      love.graphics.rectangle("fill", platform.x + shakeX, platform.y + shakeY, platform.width, 3)
+
+      -- Side edges for 3D effect (darker)
+      love.graphics.setColor(0.5, 0.3, 0.1, alpha)
+      love.graphics.rectangle("fill", platform.x + shakeX, platform.y + shakeY + 3, 2, platform.height - 3)                      -- Left edge
+      love.graphics.rectangle("fill", platform.x + platform.width - 2 + shakeX, platform.y + shakeY + 3, 2,
+        platform.height - 3)                                                                                                     -- Right edge
+
+      -- Bottom edge
+      love.graphics.rectangle("fill", platform.x + shakeX, platform.y + platform.height - 2 + shakeY, platform.width, 2)
+
+      -- Add cracks texture if shaking or crumbling
+      if platform.state == states.SHAKING or platform.state == states.CRUMBLING then
+        love.graphics.setColor(0.3, 0.2, 0.1, alpha)
+        -- Draw crack lines
+        for i = 0, platform.width, 8 do
+          if math.random() > 0.7 then -- Random cracks
+            love.graphics.rectangle("fill", platform.x + i + shakeX, platform.y + 2 + shakeY, 1, platform.height - 4)
+          end
+        end
+
+        -- Draw horizontal cracks
+        if platform.width > 16 then
+          love.graphics.rectangle("fill", platform.x + 4 + shakeX, platform.y + platform.height / 2 + shakeY,
+            platform.width - 8, 1)
+        end
+      else
+        -- Normal wood texture for stable platforms
+        love.graphics.setColor(0.6, 0.4, 0.2, alpha)
+        for i = 0, platform.width - 8, 16 do
+          if platform.x + i + 8 < platform.x + platform.width - 1 then
+            love.graphics.rectangle("fill", platform.x + i + 8 + shakeX, platform.y + 1 + shakeY, 1, platform.height - 2)
+          end
+        end
+      end
+
+      -- Add warning color effect when shaking
+      if platform.state == states.SHAKING then
+        local warningAlpha = math.sin(platform.timer * 15) * 0.3 + 0.3
+        love.graphics.setColor(1, 0.3, 0.3, warningAlpha * alpha) -- Red warning tint
+        love.graphics.rectangle("fill", platform.x + shakeX, platform.y + shakeY, platform.width, platform.height)
+      end
+    end
+
+    -- Draw particles
+    for _, particle in ipairs(platform.particles) do
+      local particleAlpha = particle.life / particle.maxLife
+      love.graphics.setColor(0.7, 0.5, 0.3, particleAlpha)
+      love.graphics.rectangle("fill", particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size,
+        particle.size)
+    end
   end
 end
 

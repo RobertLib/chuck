@@ -12,6 +12,7 @@ function gamestate.init()
     enemies = {},
     crates = {},
     spikes = {},
+    crumbling_platforms = {},
     score = 0,
     level = 1,
     lives = 3,

@@ -31,6 +31,7 @@ local editorState = {
 -- Tool colors for visual feedback
 local toolColors = {
   platform = { 0.8, 0.8, 0.8 },
+  crumbling_platform = { 0.7, 0.5, 0.3 },
   ladder = { 0.6, 0.4, 0.2 },
   egg = { 1, 1, 0 },
   enemy = { 1, 0.2, 0.2 },
@@ -98,7 +99,7 @@ end
 
 -- Find object at position
 function levelEditor.findObjectAt(x, y)
-  local objectTypes = { "platforms", "ladders", "eggs", "enemies", "crates", "spikes" }
+  local objectTypes = { "platforms", "ladders", "eggs", "enemies", "crates", "spikes", "crumbling_platforms" }
 
   for _, objType in ipairs(objectTypes) do
     local objects = editorState.currentLevel[objType]
@@ -168,8 +169,8 @@ function levelEditor.mousepressed(x, y, button)
         editorState.dragStart = { x = mx - obj.x, y = my - obj.y }
       end
     else
-      -- Check if dragging to create platforms/ladders
-      if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" then
+      -- Check if dragging to create platforms/ladders/crumbling platforms
+      if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" then
         editorState.dragStart = { x = mx, y = my }
       else
         levelEditor.addObject(mx, my, editorState.selectedTool)
@@ -185,7 +186,7 @@ function levelEditor.mousereleased(x, y, button)
   local mx, my = levelEditor.getGridSnappedMouse()
 
   if button == 1 and editorState.dragStart then
-    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" then
+    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" then
       local width = math.abs(mx - editorState.dragStart.x)
       local height = math.abs(my - editorState.dragStart.y)
 
@@ -199,8 +200,13 @@ function levelEditor.mousereleased(x, y, button)
 
         if editorState.selectedTool == "platform" then
           table.insert(editorState.currentLevel.platforms, newObj)
-        else
+        elseif editorState.selectedTool == "ladder" then
           table.insert(editorState.currentLevel.ladders, newObj)
+        elseif editorState.selectedTool == "crumbling_platform" then
+          if not editorState.currentLevel.crumbling_platforms then
+            editorState.currentLevel.crumbling_platforms = {}
+          end
+          table.insert(editorState.currentLevel.crumbling_platforms, newObj)
         end
       end
     end
@@ -239,6 +245,8 @@ function levelEditor.keypressed(key)
     editorState.selectedTool = "crate"
   elseif key == "6" then
     editorState.selectedTool = "spike"
+  elseif key == "7" then
+    editorState.selectedTool = "crumbling_platform"
   elseif key == "x" then
     editorState.selectedTool = "delete"
   elseif key == "m" then
@@ -262,6 +270,7 @@ function levelEditor.keypressed(key)
       enemies = {},
       crates = {},
       spikes = {},
+      crumbling_platforms = {},
       timeLimit = 60
     }
 
@@ -314,10 +323,21 @@ function levelEditor.drawObject(obj, objType)
   local color = toolColors[objType] or { 1, 1, 1 }
   love.graphics.setColor(color[1], color[2], color[3], 0.8)
 
-  if objType == "platforms" or objType == "ladders" then
+  if objType == "platforms" or objType == "ladders" or objType == "crumbling_platforms" then
     love.graphics.rectangle("fill", obj.x, obj.y, obj.width, obj.height)
     love.graphics.setColor(1, 1, 1)
     love.graphics.rectangle("line", obj.x, obj.y, obj.width, obj.height)
+
+    -- Add visual indicator for crumbling platforms
+    if objType == "crumbling_platforms" then
+      love.graphics.setColor(1, 0.3, 0.3, 0.7) -- Red overlay to distinguish from normal platforms
+      love.graphics.rectangle("fill", obj.x + 2, obj.y + 2, obj.width - 4, obj.height - 4)
+      -- Add crack pattern
+      love.graphics.setColor(0.3, 0.2, 0.1)
+      for i = 4, obj.width - 4, 8 do
+        love.graphics.rectangle("fill", obj.x + i, obj.y + 2, 1, obj.height - 4)
+      end
+    end
   else
     local size = 20
     love.graphics.rectangle("fill", obj.x, obj.y, size, size)
@@ -335,7 +355,7 @@ function levelEditor.drawDragPreview()
 
   love.graphics.setColor(color[1], color[2], color[3], 0.5)
 
-  if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" then
+  if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" then
     local x1, y1 = editorState.dragStart.x, editorState.dragStart.y
     local x2, y2 = mx, my
     local x = math.min(x1, x2)
@@ -397,6 +417,7 @@ TOOLS:
 4 - Enemy tool (click to place enemies)
 5 - Crate tool (click to place crates)
 6 - Spike tool (click to place spikes)
+7 - Crumbling platform tool (drag to create crumbling platforms)
 X - Delete tool (click on object to delete)
 M - Move tool (drag to move objects)
 

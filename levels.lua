@@ -45,7 +45,8 @@ function levels.loadLevels()
         collectibles = {},
         enemies = {},
         crates = {},
-        spikes = {}
+        spikes = {},
+        crumbling_platforms = {}
       }
 
       -- Convert platforms
@@ -96,6 +97,15 @@ function levels.loadLevels()
         end
       end
 
+      -- Convert crumbling platforms
+      if level.crumbling_platforms then
+        for _, platform in ipairs(level.crumbling_platforms) do
+          if platform.x and platform.y and platform.width and platform.height then
+            table.insert(config.crumbling_platforms, { platform.x, platform.y, platform.width, platform.height })
+          end
+        end
+      end
+
       -- Store time limit
       config.timeLimit = level.timeLimit or 60 -- Default 60 seconds if not specified
 
@@ -113,6 +123,7 @@ function levels.createLevel(gameState)
   gameState.enemies = {}
   gameState.crates = {}
   gameState.spikes = {}
+  gameState.crumbling_platforms = {}
 
   -- Check if we have any levels loaded
   if #levelConfigs == 0 then
@@ -188,6 +199,17 @@ function levels.createLevel(gameState)
       width = constants.SPIKE_WIDTH,
       height = constants.SPIKE_HEIGHT
     })
+  end
+
+  -- Create crumbling platforms
+  local crumbling_platforms = require("crumbling_platforms")
+  for _, platform in ipairs(config.crumbling_platforms) do
+    table.insert(gameState.crumbling_platforms, crumbling_platforms.create(
+      platform[1], -- x
+      platform[2], -- y
+      platform[3], -- width
+      platform[4]  -- height
+    ))
   end
 
   -- Set time limit for the level

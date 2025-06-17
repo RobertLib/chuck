@@ -1,6 +1,7 @@
 local constants = require("constants")
 local collision = require("collision")
 local crates = require("crates")
+local crumbling_platforms = require("crumbling_platforms")
 
 local player = {}
 
@@ -171,6 +172,30 @@ function player.updatePlayer(dt, gameState)
         else
           -- Player is not moving horizontally or not on ground/ladder, just block movement
           p.x = oldX
+        end
+      end
+    end
+  end
+
+  -- Check crumbling platforms
+  for _, platform in ipairs(gameState.crumbling_platforms) do
+    local states = crumbling_platforms.getStates()
+
+    -- Only process collision if platform can still support player
+    if platform.state == states.STABLE or platform.state == states.SHAKING then
+      if crumbling_platforms.checkPlayerCollision(platform, p) then
+        -- Player is standing on crumbling platform
+        if p.onLadder and p.velocityY < 0 then
+          -- Ignore platform collision when climbing up ladder
+        elseif p.velocityY > 0 and oldY + p.height <= platform.y then
+          -- Falling from above
+          p.y = platform.y - p.height
+          p.velocityY = 0
+          p.onGround = true
+        elseif p.velocityY < 0 and oldY >= platform.y + platform.height and not p.onLadder then
+          -- Hit from below (only when not on ladder)
+          p.y = platform.y + platform.height
+          p.velocityY = 0
         end
       end
     end
