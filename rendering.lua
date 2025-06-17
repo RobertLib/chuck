@@ -88,6 +88,9 @@ function rendering.drawCollectibles(gameState)
   for _, collectible in ipairs(gameState.collectibles) do
     if not collectible.collected then
       collectibles.drawCollectibleItem(collectible)
+    elseif collectible.isPickingUp then
+      -- Draw pickup animation for collected items
+      collectibles.drawPickupAnimation(collectible)
     end
   end
 end

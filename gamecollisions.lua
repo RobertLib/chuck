@@ -10,6 +10,9 @@ function gamecollisions.checkCollisions(gameState)
   for _, collectible in ipairs(gameState.collectibles) do
     if not collectible.collected and collision.checkCollision(player, collectible) then
       collectible.collected = true
+      -- Start pickup animation
+      collectible.pickupTime = 0
+      collectible.isPickingUp = true
       gameState.score = gameState.score + 100
     end
   end

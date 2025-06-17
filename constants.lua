@@ -52,4 +52,9 @@ constants.GLOW_RADIUS = 12
 constants.SPARKLE_COUNT = 3
 constants.SPARKLE_DISTANCE = 15
 
+-- Pickup animation constants
+constants.PICKUP_ANIMATION_DURATION = 1.5
+constants.PICKUP_SCALE_MAX = 3.5
+constants.PICKUP_FADE_SPEED = 2.0
+
 return constants
