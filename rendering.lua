@@ -115,21 +115,122 @@ function rendering.drawBackground(gameState)
 end
 
 function rendering.drawGameMessages(gameState, levelCount)
-  -- Game state messages
+  -- Game state messages with exact status bar style
   if gameState.gameOver then
-    love.graphics.setColor(1, 0, 0)
-    love.graphics.printf("GAME OVER! Press R to restart", 0, constants.SCREEN_HEIGHT / 2, constants.SCREEN_WIDTH,
-      "center")
+    -- Game Over message
+    local font = love.graphics.getFont()
+    local message = "GAME OVER!"
+    local subtitle = "Press R to restart"
+
+    local messageWidth = font:getWidth(message)
+    local subtitleWidth = font:getWidth(subtitle)
+    local maxWidth = math.max(messageWidth, subtitleWidth)
+    local boxWidth = maxWidth + 60
+    local boxHeight = 80
+    local boxX = (constants.SCREEN_WIDTH - boxWidth) / 2
+    local boxY = (constants.SCREEN_HEIGHT - boxHeight) / 2
+
+    -- Main background (exact same as status bar)
+    love.graphics.setColor(0.12, 0.12, 0.25, 0.85)
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, boxHeight)
+
+    -- Subtle gradient effect (exact same as status bar)
+    love.graphics.setColor(0.16, 0.16, 0.32, 0.35)
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, boxHeight / 2)
+
+    -- Border around panel (same color as status bar border)
+    love.graphics.setColor(colors.platform[1], colors.platform[2], colors.platform[3], 0.6)
+    love.graphics.rectangle("fill", boxX, boxY + boxHeight - 2, boxWidth, 2) -- Bottom border
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, 2)                 -- Top border
+    love.graphics.rectangle("fill", boxX, boxY, 2, boxHeight)                -- Left border
+    love.graphics.rectangle("fill", boxX + boxWidth - 2, boxY, 2, boxHeight) -- Right border
+
+    -- Main message text
+    love.graphics.setColor(1, 0.7, 0.7) -- Light red
+    love.graphics.printf(message, boxX, boxY + 15, boxWidth, "center")
+
+    -- Subtitle text
+    love.graphics.setColor(0.9, 0.9, 0.9) -- Light gray
+    love.graphics.printf(subtitle, boxX, boxY + 45, boxWidth, "center")
   elseif gameState.showingLevelComplete then
-    love.graphics.setColor(0, 1, 0)
-    love.graphics.printf("LEVEL COMPLETE! Moving to next level...", 0, constants.SCREEN_HEIGHT / 2,
-      constants.SCREEN_WIDTH, "center")
+    -- Level Complete message
+    local font = love.graphics.getFont()
+    local message = "LEVEL COMPLETE!"
+    local subtitle = "Moving to next level..."
+
+    local messageWidth = font:getWidth(message)
+    local subtitleWidth = font:getWidth(subtitle)
+    local maxWidth = math.max(messageWidth, subtitleWidth)
+    local boxWidth = maxWidth + 60
+    local boxHeight = 80
+    local boxX = (constants.SCREEN_WIDTH - boxWidth) / 2
+    local boxY = (constants.SCREEN_HEIGHT - boxHeight) / 2
+
+    -- Main background (exact same as status bar)
+    love.graphics.setColor(0.12, 0.12, 0.25, 0.85)
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, boxHeight)
+
+    -- Subtle gradient effect (exact same as status bar)
+    love.graphics.setColor(0.16, 0.16, 0.32, 0.35)
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, boxHeight / 2)
+
+    -- Border around panel (same color as status bar border)
+    love.graphics.setColor(colors.platform[1], colors.platform[2], colors.platform[3], 0.6)
+    love.graphics.rectangle("fill", boxX, boxY + boxHeight - 2, boxWidth, 2) -- Bottom border
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, 2)                 -- Top border
+    love.graphics.rectangle("fill", boxX, boxY, 2, boxHeight)                -- Left border
+    love.graphics.rectangle("fill", boxX + boxWidth - 2, boxY, 2, boxHeight) -- Right border
+
+    -- Main message text
+    love.graphics.setColor(0.7, 1, 0.7) -- Light green
+    love.graphics.printf(message, boxX, boxY + 15, boxWidth, "center")
+
+    -- Subtitle text
+    love.graphics.setColor(0.9, 0.9, 0.9) -- Light gray
+    love.graphics.printf(subtitle, boxX, boxY + 45, boxWidth, "center")
   elseif gameState.won then
-    love.graphics.setColor(0, 1, 0)
     if gameState.level >= levelCount then
-      love.graphics.printf("CONGRATULATIONS! YOU WON THE GAME! Press R to restart", 0, constants.SCREEN_HEIGHT / 2,
-        constants.SCREEN_WIDTH,
-        "center")
+      -- Victory message
+      local font = love.graphics.getFont()
+      local message = "CONGRATULATIONS!"
+      local subtitle1 = "YOU WON THE GAME!"
+      local subtitle2 = "Press R to restart"
+
+      local messageWidth = font:getWidth(message)
+      local subtitle1Width = font:getWidth(subtitle1)
+      local subtitle2Width = font:getWidth(subtitle2)
+      local maxWidth = math.max(messageWidth, subtitle1Width, subtitle2Width)
+      local boxWidth = maxWidth + 60
+      local boxHeight = 120
+      local boxX = (constants.SCREEN_WIDTH - boxWidth) / 2
+      local boxY = (constants.SCREEN_HEIGHT - boxHeight) / 2
+
+      -- Main background (exact same as status bar)
+      love.graphics.setColor(0.12, 0.12, 0.25, 0.85)
+      love.graphics.rectangle("fill", boxX, boxY, boxWidth, boxHeight)
+
+      -- Subtle gradient effect (exact same as status bar)
+      love.graphics.setColor(0.16, 0.16, 0.32, 0.35)
+      love.graphics.rectangle("fill", boxX, boxY, boxWidth, boxHeight / 2)
+
+      -- Border around panel (same color as status bar border)
+      love.graphics.setColor(colors.platform[1], colors.platform[2], colors.platform[3], 0.6)
+      love.graphics.rectangle("fill", boxX, boxY + boxHeight - 2, boxWidth, 2) -- Bottom border
+      love.graphics.rectangle("fill", boxX, boxY, boxWidth, 2)                 -- Top border
+      love.graphics.rectangle("fill", boxX, boxY, 2, boxHeight)                -- Left border
+      love.graphics.rectangle("fill", boxX + boxWidth - 2, boxY, 2, boxHeight) -- Right border
+
+      -- Main message text
+      love.graphics.setColor(1, 1, 0.7) -- Light golden
+      love.graphics.printf(message, boxX, boxY + 15, boxWidth, "center")
+
+      -- First subtitle text
+      love.graphics.setColor(1, 0.9, 0.6) -- Golden
+      love.graphics.printf(subtitle1, boxX, boxY + 45, boxWidth, "center")
+
+      -- Second subtitle text
+      love.graphics.setColor(0.9, 0.9, 0.9) -- Light gray
+      love.graphics.printf(subtitle2, boxX, boxY + 85, boxWidth, "center")
     end
   end
 end
