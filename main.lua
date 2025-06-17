@@ -9,6 +9,7 @@ local gamecollisions = require("gamecollisions")
 local rendering = require("rendering")
 local input = require("input")
 local levelEditor = require("leveleditor")
+local transition = require("transition")
 
 -- Game state
 local gameState
@@ -96,23 +97,21 @@ function love.update(dt)
     return
   end
 
+  -- Handle level transition
+  if transition.isActive() then
+    transition.updateTransition(dt, gameState)
+    return -- Don't update game while transition is active
+  end
+
   -- Handle level complete timer
   if gameState.showingLevelComplete then
     gameState.levelCompleteTimer = gameState.levelCompleteTimer - dt
     if gameState.levelCompleteTimer <= 0 then
-      -- Move to next level
-      gameState.level = gameState.level + 1
-      gameState.player.x = 50
-      gameState.player.y = 500
-      gameState.player.velocityX = 0
-      gameState.player.velocityY = 0
-      gameState.player.animState = "idle"
-      gameState.player.animTime = 0
-      gameState.player.facing = 1
-      gameState.showingLevelComplete = false
-      levels.createLevel(gameState) -- This will set the new time limit
+      -- Start transition to next level instead of immediate switch
+      local nextLevel = gameState.level + 1
+      transition.startTransition(gameState, nextLevel)
     end
-    return                          -- Don't update game while showing level complete message
+    return -- Don't update game while showing level complete message
   end
 
   if gameState.won then
@@ -172,6 +171,14 @@ function love.draw()
     return
   end
 
+  -- If transition is active, draw transition instead of normal game
+  if transition.isActive() then
+    transition.drawTransition(gameState)
+    -- Still draw UI on top of transition
+    rendering.drawTopStatusBar(gameState)
+    return
+  end
+
   -- Draw animated background
   rendering.drawBackground(gameState)
 
@@ -204,6 +211,14 @@ function love.keypressed(key)
 
   if levelEditor.isActive() then
     levelEditor.keypressed(key)
+    return
+  end
+
+  -- Handle transition skip
+  if transition.isActive() then
+    if key == "space" or key == "return" or key == "escape" then
+      transition.skipTransition(gameState)
+    end
     return
   end
 
