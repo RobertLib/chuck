@@ -2,6 +2,8 @@ local constants = require("constants")
 local collision = require("collision")
 local crates = require("crates")
 local crumbling_platforms = require("crumbling_platforms")
+local particles = require("particles")
+local gamestate = require("gamestate")
 
 local player = {}
 
@@ -18,12 +20,27 @@ function player.initializePlayer()
     -- Animation state
     animState = "idle",
     animTime = 0,
-    facing = 1 -- 1 for right, -1 for left
+    facing = 1, -- 1 for right, -1 for left
+    -- Death respawn delay
+    isWaitingToRespawn = false,
+    respawnTimer = 0
   }
 end
 
 function player.updatePlayer(dt, gameState)
   local p = gameState.player
+
+  -- Handle respawn delay after death
+  if p.isWaitingToRespawn then
+    p.respawnTimer = p.respawnTimer - dt
+    if p.respawnTimer <= 0 then
+      -- Respawn now - only reset player position, NOT the level
+      p.isWaitingToRespawn = false
+      p.respawnTimer = 0
+      gamestate.resetPlayerPosition(gameState)
+    end
+    return -- Don't update physics while waiting to respawn
+  end
 
   -- Horizontal movement
   p.velocityX = 0
@@ -72,6 +89,9 @@ function player.updatePlayer(dt, gameState)
   end
 
   if p.y > constants.SCREEN_HEIGHT then
+    -- Create both blood particles and death particles for visual effect
+    particles.createBloodParticles(p.x + p.width / 2, constants.SCREEN_HEIGHT - 20)
+    particles.createPlayerDeathParticles(p.x + p.width / 2, p.y + p.height / 2)
     gameState.gameOver = true
   end
 
@@ -243,6 +263,11 @@ end
 -- Function to draw a 8-bit style pixelated player character
 function player.drawPlayer(gameState)
   local p = gameState.player
+
+  -- Don't draw player during respawn waiting period
+  if p.isWaitingToRespawn then
+    return
+  end
 
   local x = p.x
   local y = p.y
@@ -577,6 +602,19 @@ function player.drawPlayer(gameState)
     love.graphics.rectangle("fill", baseX + 5 + legOffsetX, legY + legHeight, legWidth + 1, 3) -- Left shoe
     love.graphics.rectangle("fill", baseX + 9 - legOffsetX, legY + legHeight, legWidth + 1, 3) -- Right shoe
   end
+end
+
+-- Function to start delayed respawn after death
+function player.startDelayedRespawn(gameState)
+  local p = gameState.player
+
+  -- Hide player and start respawn timer
+  p.isWaitingToRespawn = true
+  p.respawnTimer = constants.PLAYER_DEATH_PARTICLES_DURATION
+
+  -- Stop all movement
+  p.velocityX = 0
+  p.velocityY = 0
 end
 
 return player

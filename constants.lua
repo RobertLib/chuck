@@ -57,4 +57,7 @@ constants.PICKUP_ANIMATION_DURATION = 1.5
 constants.PICKUP_SCALE_MAX = 3.5
 constants.PICKUP_FADE_SPEED = 2.0
 
+-- Player death animation constants
+constants.PLAYER_DEATH_PARTICLES_DURATION = 2
+
 return constants

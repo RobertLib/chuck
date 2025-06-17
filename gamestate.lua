@@ -56,6 +56,9 @@ function gamestate.resetPlayerPosition(state)
   state.player.animState = "idle"
   state.player.animTime = 0
   state.player.facing = 1
+  -- Reset respawn delay state
+  state.player.isWaitingToRespawn = false
+  state.player.respawnTimer = 0
   state.invulnerable = true
   state.invulnerabilityTimer = constants.INVULNERABILITY_DURATION
 end

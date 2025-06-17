@@ -10,6 +10,7 @@ local rendering = require("rendering")
 local input = require("input")
 local levelEditor = require("leveleditor")
 local transition = require("transition")
+local particles = require("particles")
 
 -- Game state
 local gameState
@@ -126,22 +127,21 @@ function love.update(dt)
     gameState.timeLeft = gameState.timeLeft - dt
     if gameState.timeLeft <= 0 then
       gameState.timeLeft = 0
-      -- Time's up - game over
-      gameState.lives = gameState.lives - 1
-      if gameState.lives <= 0 then
-        gameState.gameOver = true
-      else
-        -- Reset level with full time
-        gameState.player.x = 50
-        gameState.player.y = 500
-        gameState.player.velocityX = 0
-        gameState.player.velocityY = 0
-        gameState.player.animState = "idle"
-        gameState.player.animTime = 0
-        gameState.player.facing = 1
-        levels.createLevel(gameState)
-        gameState.invulnerable = true
-        gameState.invulnerabilityTimer = 2.0
+      -- Time's up - create particles and start delayed respawn
+      if not gameState.player.isWaitingToRespawn then
+        -- Create both blood particles and death particles for visual effect
+        particles.createBloodParticles(gameState.player.x + gameState.player.width / 2,
+          gameState.player.y + gameState.player.height / 2)
+        particles.createPlayerDeathParticles(gameState.player.x + gameState.player.width / 2,
+          gameState.player.y + gameState.player.height / 2)
+
+        gameState.lives = gameState.lives - 1
+        if gameState.lives <= 0 then
+          gameState.gameOver = true
+        else
+          -- Start delayed respawn with level reset
+          player.startDelayedRespawn(gameState)
+        end
       end
     end
   end
@@ -155,6 +155,9 @@ function love.update(dt)
   -- Update crumbling platforms
   local crumbling_platforms = require("crumbling_platforms")
   crumbling_platforms.update(gameState, dt)
+
+  -- Update particles
+  particles.update(dt)
 
   gamecollisions.checkCollisions(gameState)
   gamecollisions.checkWinCondition(gameState, levels.getLevelCount())
@@ -199,6 +202,9 @@ function love.draw()
   if not gameState.invulnerable or math.floor(gameState.invulnerabilityTimer * 10) % 2 == 0 then
     player.drawPlayer(gameState)
   end
+
+  -- Draw particles (after player and objects but before UI)
+  particles.draw()
 
   -- UI - Top status bar
   rendering.drawTopStatusBar(gameState)

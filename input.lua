@@ -1,10 +1,12 @@
 local input = {}
+local particles = require("particles")
 
 function input.handleKeyPressed(key, gameState, levels, gamestate)
   if key == "escape" then
     love.event.quit()
   elseif key == "r" and (gameState.gameOver or gameState.won) then
     -- Restart game
+    particles.clear() -- Clear all particles when restarting
     gamestate.reset(gameState)
     gameState.player.x = 50
     gameState.player.y = 500

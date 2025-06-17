@@ -83,7 +83,7 @@ function collectibles.drawPickupAnimation(item)
   -- Animation values
   local scale = 1 + (constants.PICKUP_SCALE_MAX - 1) * progress -- Grow to max scale
   local alpha = 1 - progress * constants.PICKUP_FADE_SPEED      -- Fade out
-  local yOffset = -progress * 50                                -- Float upwards (zvětšeno z 30 na 50)
+  local yOffset = -progress * 50                                -- Float upwards (increased from 30 to 50)
 
   -- Clamp alpha to be non-negative
   alpha = math.max(0, alpha)

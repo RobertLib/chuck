@@ -1,6 +1,7 @@
 local constants = require("constants")
 local rendering = require("rendering")
 local levels = require("levels")
+local particles = require("particles")
 
 local transition = {}
 
@@ -19,6 +20,9 @@ local transitionState = {
 -- Start level transition
 function transition.startTransition(gameState, targetLevel)
   if transitionState.active then return false end
+
+  -- Clear any existing particles when starting transition
+  particles.clear()
 
   -- Store current level state for rendering during transition
   transitionState.currentLevel = {
