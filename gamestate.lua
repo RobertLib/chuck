@@ -28,7 +28,8 @@ function gamestate.init()
     globalTime = 0, -- For animations and shader
     backgroundShader = nil,
     timeLeft = 0,
-    levelTimeLimit = 0
+    levelTimeLimit = 0,
+    paused = false
   }
 end
 
@@ -46,6 +47,7 @@ function gamestate.reset(state)
   state.invulnerabilityTimer = 0
   state.timeLeft = 0
   state.levelTimeLimit = 0
+  state.paused = false
 end
 
 -- Reset player position
@@ -76,6 +78,11 @@ end
 function gamestate.resetLevelTimer(state, timeLimit)
   state.timeLeft = timeLimit
   state.levelTimeLimit = timeLimit
+end
+
+-- Toggle pause state
+function gamestate.togglePause(state)
+  state.paused = not state.paused
 end
 
 return gamestate

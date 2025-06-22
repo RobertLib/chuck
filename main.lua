@@ -96,6 +96,11 @@ function love.update(dt)
     return
   end
 
+  -- Skip game update if paused
+  if gameState.paused then
+    return
+  end
+
   if gameState.gameOver then
     return
   end
@@ -253,6 +258,17 @@ function love.keypressed(key)
 
   if levelEditor.isActive() then
     levelEditor.keypressed(key)
+    return
+  end
+
+  -- Handle pause key press (works in any game state except game over/won)
+  if key == "p" and not gameState.gameOver and not gameState.won then
+    gamestate.togglePause(gameState)
+    return
+  end
+
+  -- Skip other inputs if paused
+  if gameState.paused then
     return
   end
 

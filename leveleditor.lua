@@ -37,12 +37,12 @@ local editorState = {
 -- Tool colors for visual feedback
 local toolColors = {
   platform = { 0.8, 0.8, 0.8 },
-  crumbling_platform = { 0.7, 0.5, 0.3 },
   ladder = { 0.6, 0.4, 0.2 },
   egg = { 1, 1, 0 },
   enemy = { 1, 0.2, 0.2 },
   crate = { 0.6, 0.3, 0 },
   spike = { 1, 0, 1 },
+  crumbling_platform = { 0.7, 0.5, 0.3 },
   decoration = { 0.5, 0.8, 0.5 },
   water = { 0.2, 0.5, 0.9 },
   delete = { 1, 0, 0 },
