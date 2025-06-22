@@ -196,6 +196,62 @@ function particles.createPlayerDeathParticles(x, y)
   end
 end
 
+-- Create water splash particle system
+function particles.createWaterSplash(x, y)
+  -- Create water droplet texture
+  local dropletTexture = love.graphics.newCanvas(2, 2)
+  love.graphics.setCanvas(dropletTexture)
+  love.graphics.setColor(0.3, 0.6, 1.0, 1) -- Water blue
+  love.graphics.rectangle("fill", 0, 0, 2, 2)
+  love.graphics.setCanvas()
+
+  -- Create particle system for water splash
+  local psystem = love.graphics.newParticleSystem(dropletTexture, 30)
+
+  -- Configure water splash particles
+  psystem:setParticleLifetime(0.3, 0.8)    -- Medium lifetime
+  psystem:setEmissionRate(50)              -- Rate doesn't matter since we emit once
+  psystem:setEmissionArea("uniform", 8, 4) -- Splash area
+
+  -- Initial velocity - particles fly upward and outward like a splash
+  psystem:setSpeed(50, 150)        -- Medium speed for realistic splash
+  psystem:setDirection(-math.pi / 2) -- Base direction (upward)
+  psystem:setSpread(math.pi / 3)   -- 60 degree spread
+
+  -- Gravity and physics
+  psystem:setLinearAcceleration(0, 300, 0, 500) -- Gravity effect
+  psystem:setLinearDamping(1, 3)                -- Air resistance
+
+  -- Size and scaling
+  psystem:setSizes(0.8, 1.2, 0.1) -- Start medium, then shrink
+  psystem:setSizeVariation(0.5)   -- Size variation
+
+  -- Color and fading - water effect
+  psystem:setColors(
+    0.4, 0.7, 1.0, 1.0, -- Light blue at start
+    0.3, 0.6, 0.9, 0.8, -- Medium blue in middle
+    0.2, 0.4, 0.7, 0.0  -- Dark blue and transparent at end
+  )
+
+  -- Rotation
+  psystem:setRotation(0, math.pi) -- Some rotation
+  psystem:setSpin(-2, 2)          -- Gentle spinning
+
+  -- Position the particle system
+  psystem:setPosition(x, y)
+
+  -- Emit single burst of particles
+  psystem:emit(25)
+
+  -- Add to our particle systems list
+  table.insert(particleSystems, {
+    system = psystem,
+    timer = 0,
+    maxTime = 2.0, -- Enough time for water particles to settle
+    active = true
+  })
+end
+
 -- Update all particle systems
 function particles.update(dt)
   for i = #particleSystems, 1, -1 do

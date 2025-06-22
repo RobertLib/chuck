@@ -47,7 +47,8 @@ function levels.loadLevels()
         crates = {},
         spikes = {},
         crumbling_platforms = {},
-        decorations = {}
+        decorations = {},
+        water = {}
       }
 
       -- Convert platforms
@@ -116,6 +117,15 @@ function levels.loadLevels()
         end
       end
 
+      -- Convert water areas
+      if level.water then
+        for _, waterArea in ipairs(level.water) do
+          if waterArea.x and waterArea.y and waterArea.width and waterArea.height then
+            table.insert(config.water, { waterArea.x, waterArea.y, waterArea.width, waterArea.height })
+          end
+        end
+      end
+
       -- Store time limit
       config.timeLimit = level.timeLimit or 60 -- Default 60 seconds if not specified
 
@@ -135,6 +145,7 @@ function levels.createLevel(gameState)
   gameState.spikes = {}
   gameState.crumbling_platforms = {}
   gameState.decorations = {}
+  gameState.water = {}
   gameState.bats = {}
   gameState.batSpawnTimer = 0
 
@@ -232,6 +243,16 @@ function levels.createLevel(gameState)
       y = decoration[2],
       type = decoration[3],
       animTime = math.random() * 2 * math.pi -- Random starting animation phase
+    })
+  end
+
+  -- Create water areas
+  for _, waterArea in ipairs(config.water) do
+    table.insert(gameState.water, {
+      x = waterArea[1],
+      y = waterArea[2],
+      width = waterArea[3],
+      height = waterArea[4]
     })
   end
 

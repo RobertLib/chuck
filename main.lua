@@ -12,6 +12,7 @@ local input = require("input")
 local levelEditor = require("leveleditor")
 local transition = require("transition")
 local particles = require("particles")
+local water = require("water")
 
 -- Game state
 local gameState
@@ -158,6 +159,28 @@ function love.update(dt)
   local crumbling_platforms = require("crumbling_platforms")
   crumbling_platforms.update(gameState, dt)
 
+  -- Update water system
+  water.update(dt, gameState)
+
+  -- Check water collision - player dies if touching water
+  if water.checkCollision(gameState) then
+    if not gameState.player.isWaitingToRespawn then
+      -- Create death particles
+      particles.createBloodParticles(gameState.player.x + gameState.player.width / 2,
+        gameState.player.y + gameState.player.height / 2)
+      particles.createPlayerDeathParticles(gameState.player.x + gameState.player.width / 2,
+        gameState.player.y + gameState.player.height / 2)
+
+      gameState.lives = gameState.lives - 1
+      if gameState.lives <= 0 then
+        gameState.gameOver = true
+      else
+        -- Start delayed respawn
+        player.startDelayedRespawn(gameState)
+      end
+    end
+  end
+
   -- Update particles
   particles.update(dt)
 
@@ -199,6 +222,10 @@ function love.draw()
   rendering.drawCollectibles(gameState)
   rendering.drawCrates(gameState)
   rendering.drawSpikes(gameState)
+
+  -- Draw water (before enemies and player so they appear on top)
+  water.draw(gameState, gameState.globalTime)
+
   rendering.drawEnemies(gameState)
   rendering.drawBats(gameState)
 

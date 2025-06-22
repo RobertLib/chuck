@@ -17,9 +17,10 @@ local editorState = {
     spikes = {},
     crumbling_platforms = {},
     decorations = {},
+    water = {},
     timeLimit = 60
   },
-  selectedTool = "platform",  -- platform, ladder, egg, enemy, crate, spike, crumbling_platform, decoration, delete, move
+  selectedTool = "platform",  -- platform, ladder, egg, enemy, crate, spike, crumbling_platform, decoration, water, delete, move
   selectedDecorationType = 1, -- 1=moss, 2=torch, 3=crystal_cluster
   dragStart = nil,
   selectedObject = nil,
@@ -43,6 +44,7 @@ local toolColors = {
   crate = { 0.6, 0.3, 0 },
   spike = { 1, 0, 1 },
   decoration = { 0.5, 0.8, 0.5 },
+  water = { 0.2, 0.5, 0.9 },
   delete = { 1, 0, 0 },
   move = { 0, 1, 0 }
 }
@@ -51,12 +53,13 @@ local toolColors = {
 local availableTools = {
   { id = "platform",           name = "Platform",           key = "1", draggable = true },
   { id = "ladder",             name = "Ladder",             key = "2", draggable = true },
-  { id = "crumbling_platform", name = "Crumbling Platform", key = "7", draggable = true },
   { id = "egg",                name = "Egg",                key = "3", draggable = false },
   { id = "enemy",              name = "Enemy",              key = "4", draggable = false },
   { id = "crate",              name = "Crate",              key = "5", draggable = false },
   { id = "spike",              name = "Spike",              key = "6", draggable = false },
+  { id = "crumbling_platform", name = "Crumbling Platform", key = "7", draggable = true },
   { id = "decoration",         name = "Decoration",         key = "8", draggable = false },
+  { id = "water",              name = "Water",              key = "9", draggable = true },
   { id = "move",               name = "Move",               key = "M", draggable = false },
   { id = "delete",             name = "Delete",             key = "X", draggable = false }
 }
@@ -179,6 +182,13 @@ function levelEditor.addObject(x, y, tool)
       editorState.currentLevel.decorations = {}
     end
     table.insert(editorState.currentLevel.decorations, newObj)
+  elseif tool == "water" then
+    newObj.width = 120
+    newObj.height = 40
+    if not editorState.currentLevel.water then
+      editorState.currentLevel.water = {}
+    end
+    table.insert(editorState.currentLevel.water, newObj)
   end
 end
 
@@ -217,7 +227,7 @@ function levelEditor.mousepressed(x, y, button)
       end
     else
       -- Check if dragging to create platforms/ladders/crumbling platforms
-      if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" then
+      if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
         editorState.dragStart = { x = mx, y = my }
       else
         levelEditor.addObject(mx, my, editorState.selectedTool)
@@ -233,7 +243,7 @@ function levelEditor.mousereleased(x, y, button)
   local mx, my = levelEditor.getGridSnappedMouse()
 
   if button == 1 and editorState.dragStart then
-    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" then
+    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
       local width = math.abs(mx - editorState.dragStart.x)
       local height = math.abs(my - editorState.dragStart.y)
 
@@ -254,6 +264,11 @@ function levelEditor.mousereleased(x, y, button)
             editorState.currentLevel.crumbling_platforms = {}
           end
           table.insert(editorState.currentLevel.crumbling_platforms, newObj)
+        elseif editorState.selectedTool == "water" then
+          if not editorState.currentLevel.water then
+            editorState.currentLevel.water = {}
+          end
+          table.insert(editorState.currentLevel.water, newObj)
         end
       end
     end
@@ -296,6 +311,8 @@ function levelEditor.keypressed(key)
     editorState.selectedTool = "crumbling_platform"
   elseif key == "8" then
     editorState.selectedTool = "decoration"
+  elseif key == "9" then
+    editorState.selectedTool = "water"
   elseif key == "x" then
     editorState.selectedTool = "delete"
   elseif key == "m" then
@@ -532,7 +549,7 @@ function levelEditor.drawObject(obj, objType)
   local color = toolColors[objType] or { 1, 1, 1 }
   love.graphics.setColor(color[1], color[2], color[3], 0.8)
 
-  if objType == "platforms" or objType == "ladders" or objType == "crumbling_platforms" then
+  if objType == "platforms" or objType == "ladders" or objType == "crumbling_platforms" or objType == "water" then
     love.graphics.rectangle("fill", obj.x, obj.y, obj.width, obj.height)
     love.graphics.setColor(1, 1, 1)
     love.graphics.rectangle("line", obj.x, obj.y, obj.width, obj.height)
@@ -545,6 +562,16 @@ function levelEditor.drawObject(obj, objType)
       love.graphics.setColor(0.3, 0.2, 0.1)
       for i = 4, obj.width - 4, 8 do
         love.graphics.rectangle("fill", obj.x + i, obj.y + 2, 1, obj.height - 4)
+      end
+      -- Add visual effect for water
+    elseif objType == "water" then
+      love.graphics.setColor(0.3, 0.6, 1.0, 0.4) -- Semi-transparent blue overlay
+      love.graphics.rectangle("fill", obj.x + 2, obj.y + 2, obj.width - 4, obj.height - 4)
+      -- Add wavy lines to indicate water
+      love.graphics.setColor(0.4, 0.7, 1.0)
+      for i = 1, 3 do
+        local waveY = obj.y + (i * obj.height / 4)
+        love.graphics.line(obj.x + 4, waveY, obj.x + obj.width - 4, waveY)
       end
     end
   elseif objType == "decorations" then
@@ -577,7 +604,7 @@ function levelEditor.drawDragPreview()
 
   love.graphics.setColor(color[1], color[2], color[3], 0.5)
 
-  if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" then
+  if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
     local x1, y1 = editorState.dragStart.x, editorState.dragStart.y
     local x2, y2 = mx, my
     local x = math.min(x1, x2)
@@ -609,7 +636,7 @@ function levelEditor.drawUI()
   love.graphics.print(toolText, 10, 40)
 
   -- Tool selection - simplified
-  local toolText = "Keys: 1-8:Tools X:Delete M:Move"
+  local toolText = "Keys: 1-9:Tools X:Delete M:Move"
   love.graphics.print(toolText, 10, 55)
 
   if editorState.selectedTool == "decoration" then
@@ -631,7 +658,7 @@ function levelEditor.drawUI()
   love.graphics.setColor(color[1], color[2], color[3], 0.5)
 
   if editorState.selectedTool ~= "delete" and editorState.selectedTool ~= "move" then
-    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" then
+    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
       if not editorState.dragStart then
         love.graphics.rectangle("fill", mx, my, 100, 20)
       end
@@ -658,6 +685,7 @@ TOOLS:
 6 - Spike tool (click to place spikes)
 7 - Crumbling platform tool (drag to create crumbling platforms)
 8 - Decoration tool (click to place decorations)
+9 - Water tool (drag to create water areas)
 X - Delete tool (click on object to delete)
 M - Move tool (drag to move objects)
 
