@@ -11,6 +11,10 @@ constants.JUMP_SPEED = -300
 constants.PLAYER_SPEED = 150
 constants.ENEMY_SPEED = 50
 
+-- Fall damage constants
+constants.FALL_DAMAGE_THRESHOLD = 300  -- Minimum fall speed to cause damage
+constants.MAX_SAFE_FALL_DISTANCE = 180 -- Maximum safe fall distance in pixels
+
 -- Collision detection constants
 constants.COLLISION_TOLERANCE = 2
 constants.LADDER_EXPAND_TOLERANCE = -1

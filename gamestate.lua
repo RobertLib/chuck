@@ -61,8 +61,14 @@ function gamestate.resetPlayerPosition(state)
   -- Reset respawn delay state
   state.player.isWaitingToRespawn = false
   state.player.respawnTimer = 0
+  -- Reset fall damage tracking
+  state.player.fallStartY = 0
+  state.player.isFalling = false
+  state.player.maxFallSpeed = 0
   state.invulnerable = true
   state.invulnerabilityTimer = constants.INVULNERABILITY_DURATION
+  -- Reset level timer to original time limit
+  state.timeLeft = state.levelTimeLimit
 end
 
 -- Reset level timer

@@ -23,7 +23,11 @@ function player.initializePlayer()
     facing = 1, -- 1 for right, -1 for left
     -- Death respawn delay
     isWaitingToRespawn = false,
-    respawnTimer = 0
+    respawnTimer = 0,
+    -- Fall damage tracking
+    fallStartY = 0,
+    isFalling = false,
+    maxFallSpeed = 0
   }
 end
 
@@ -220,6 +224,9 @@ function player.updatePlayer(dt, gameState)
       end
     end
   end
+
+  -- Check for fall damage
+  player.checkFallDamage(gameState)
 end
 
 -- Player animation system
@@ -601,6 +608,50 @@ function player.drawPlayer(gameState)
     -- Normal shoe positioning for other states
     love.graphics.rectangle("fill", baseX + 5 + legOffsetX, legY + legHeight, legWidth + 1, 3) -- Left shoe
     love.graphics.rectangle("fill", baseX + 9 - legOffsetX, legY + legHeight, legWidth + 1, 3) -- Right shoe
+  end
+end
+
+-- Function to check for fall damage
+function player.checkFallDamage(gameState)
+  local p = gameState.player
+
+  -- Track when player starts falling
+  if p.velocityY > 0 and not p.isFalling and not p.onGround and not p.onLadder then
+    p.isFalling = true
+    p.fallStartY = p.y
+  end
+
+  -- Track fall speed while falling (before it gets reset by collision)
+  if p.isFalling and p.velocityY > 0 then
+    p.maxFallSpeed = math.max(p.maxFallSpeed or 0, p.velocityY)
+  end
+
+  -- Check for landing after fall
+  if p.isFalling and (p.onGround or p.onLadder) then
+    local fallDistance = p.y - p.fallStartY
+    local fallSpeed = p.maxFallSpeed or 0
+
+    -- Check if fall was dangerous
+    if fallDistance > constants.MAX_SAFE_FALL_DISTANCE and fallSpeed > constants.FALL_DAMAGE_THRESHOLD then
+      -- Player took fall damage - same logic as enemy collision
+      if not gameState.invulnerable and not p.isWaitingToRespawn then
+        -- Create both blood particles and death particles for visual effect
+        particles.createBloodParticles(p.x + p.width / 2, p.y + p.height / 2)
+        particles.createPlayerDeathParticles(p.x + p.width / 2, p.y + p.height / 2)
+
+        gameState.lives = gameState.lives - 1
+        if gameState.lives <= 0 then
+          gameState.gameOver = true
+        else
+          player.startDelayedRespawn(gameState)
+        end
+      end
+    end
+
+    -- Reset fall tracking
+    p.isFalling = false
+    p.fallStartY = 0
+    p.maxFallSpeed = 0
   end
 end
 

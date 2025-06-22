@@ -46,7 +46,8 @@ function levels.loadLevels()
         enemies = {},
         crates = {},
         spikes = {},
-        crumbling_platforms = {}
+        crumbling_platforms = {},
+        decorations = {}
       }
 
       -- Convert platforms
@@ -106,6 +107,15 @@ function levels.loadLevels()
         end
       end
 
+      -- Convert decorations
+      if level.decorations then
+        for _, decoration in ipairs(level.decorations) do
+          if decoration.x and decoration.y and decoration.type then
+            table.insert(config.decorations, { decoration.x, decoration.y, decoration.type })
+          end
+        end
+      end
+
       -- Store time limit
       config.timeLimit = level.timeLimit or 60 -- Default 60 seconds if not specified
 
@@ -124,6 +134,7 @@ function levels.createLevel(gameState)
   gameState.crates = {}
   gameState.spikes = {}
   gameState.crumbling_platforms = {}
+  gameState.decorations = {}
   gameState.bats = {}
   gameState.batSpawnTimer = 0
 
@@ -212,6 +223,16 @@ function levels.createLevel(gameState)
       platform[3], -- width
       platform[4]  -- height
     ))
+  end
+
+  -- Create decorations
+  for _, decoration in ipairs(config.decorations) do
+    table.insert(gameState.decorations, {
+      x = decoration[1],
+      y = decoration[2],
+      type = decoration[3],
+      animTime = math.random() * 2 * math.pi -- Random starting animation phase
+    })
   end
 
   -- Set time limit for the level
