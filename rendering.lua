@@ -67,6 +67,11 @@ function rendering.drawCrumblingPlatforms(gameState)
   levelobjects.drawCrumblingPlatforms(gameState)
 end
 
+function rendering.drawMovingPlatforms(gameState)
+  local levelobjects = require("levelobjects")
+  levelobjects.drawMovingPlatforms(gameState)
+end
+
 function rendering.drawLadders(gameState)
   local levelobjects = require("levelobjects")
   levelobjects.drawLadders(gameState)

@@ -4,6 +4,7 @@ local crates = require("crates")
 local crumbling_platforms = require("crumbling_platforms")
 local particles = require("particles")
 local gamestate = require("gamestate")
+local moving_platforms = require("moving_platforms")
 
 local player = {}
 
@@ -136,6 +137,9 @@ function player.updatePlayer(dt, gameState)
       end
     end
   end
+
+  -- Check moving platforms
+  moving_platforms.checkPlayerCollision(p, gameState.moving_platforms, dt)
 
   -- Check crates for vertical collision first (standing on top)
   for _, crate in ipairs(gameState.crates) do

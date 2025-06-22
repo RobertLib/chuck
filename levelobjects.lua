@@ -1,5 +1,6 @@
 local colors = require("colors")
 local crumbling_platforms = require("crumbling_platforms")
+local moving_platforms = require("moving_platforms")
 
 local levelobjects = {}
 
@@ -147,9 +148,9 @@ function levelobjects.drawCrumblingPlatforms(gameState)
 
       -- Side edges for 3D effect (darker)
       love.graphics.setColor(0.5, 0.3, 0.1, alpha)
-      love.graphics.rectangle("fill", platform.x + shakeX, platform.y + shakeY + 3, 2, platform.height - 3)                      -- Left edge
+      love.graphics.rectangle("fill", platform.x + shakeX, platform.y + shakeY + 3, 2, platform.height - 3) -- Left edge
       love.graphics.rectangle("fill", platform.x + platform.width - 2 + shakeX, platform.y + shakeY + 3, 2,
-        platform.height - 3)                                                                                                     -- Right edge
+        platform.height - 3)                                                                                -- Right edge
 
       -- Bottom edge
       love.graphics.rectangle("fill", platform.x + shakeX, platform.y + platform.height - 2 + shakeY, platform.width, 2)
@@ -195,6 +196,10 @@ function levelobjects.drawCrumblingPlatforms(gameState)
         particle.size)
     end
   end
+end
+
+function levelobjects.drawMovingPlatforms(gameState)
+  moving_platforms.draw(gameState.moving_platforms)
 end
 
 return levelobjects

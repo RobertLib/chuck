@@ -16,12 +16,14 @@ local editorState = {
     crates = {},
     spikes = {},
     crumbling_platforms = {},
+    moving_platforms = {},
     decorations = {},
     water = {},
     timeLimit = 60
   },
-  selectedTool = "platform",  -- platform, ladder, egg, enemy, crate, spike, crumbling_platform, decoration, water, delete, move
-  selectedDecorationType = 1, -- 1=moss, 2=torch, 3=crystal_cluster
+  selectedTool = "platform",                 -- platform, ladder, egg, enemy, crate, spike, crumbling_platform, moving_platform, decoration, water, delete, move
+  selectedDecorationType = 1,                -- 1=moss, 2=torch, 3=crystal_cluster
+  selectedMovingPlatformType = "horizontal", -- horizontal, vertical
   dragStart = nil,
   selectedObject = nil,
   selectedObjectType = nil,
@@ -43,6 +45,7 @@ local toolColors = {
   crate = { 0.6, 0.3, 0 },
   spike = { 1, 0, 1 },
   crumbling_platform = { 0.7, 0.5, 0.3 },
+  moving_platform = { 0.6, 0.8, 0.6 },
   decoration = { 0.5, 0.8, 0.5 },
   water = { 0.2, 0.5, 0.9 },
   delete = { 1, 0, 0 },
@@ -58,8 +61,9 @@ local availableTools = {
   { id = "crate",              name = "Crate",              key = "5", draggable = false },
   { id = "spike",              name = "Spike",              key = "6", draggable = false },
   { id = "crumbling_platform", name = "Crumbling Platform", key = "7", draggable = true },
-  { id = "decoration",         name = "Decoration",         key = "8", draggable = false },
-  { id = "water",              name = "Water",              key = "9", draggable = true },
+  { id = "moving_platform",    name = "Moving Platform",    key = "8", draggable = true },
+  { id = "decoration",         name = "Decoration",         key = "9", draggable = false },
+  { id = "water",              name = "Water",              key = "0", draggable = true },
   { id = "move",               name = "Move",               key = "M", draggable = false },
   { id = "delete",             name = "Delete",             key = "X", draggable = false }
 }
@@ -69,6 +73,12 @@ local decorationTypes = {
   { id = 1, name = "Moss" },
   { id = 2, name = "Torch" },
   { id = 3, name = "Crystal Cluster" }
+}
+
+-- Moving platform types
+local movingPlatformTypes = {
+  { id = "horizontal", name = "Horizontal" },
+  { id = "vertical",   name = "Vertical" }
 }
 
 -- Initialize editor
@@ -154,7 +164,7 @@ end
 -- Find object at position
 function levelEditor.findObjectAt(x, y)
   local objectTypes = { "platforms", "ladders", "eggs", "enemies", "crates", "spikes", "crumbling_platforms",
-    "decorations", "water" }
+    "moving_platforms", "decorations", "water" }
 
   for _, objType in ipairs(objectTypes) do
     local objects = editorState.currentLevel[objType]
@@ -200,6 +210,16 @@ function levelEditor.addObject(x, y, tool)
       editorState.currentLevel.crumbling_platforms = {}
     end
     table.insert(editorState.currentLevel.crumbling_platforms, newObj)
+  elseif tool == "moving_platform" then
+    newObj.width = 100
+    newObj.height = 20
+    newObj.speed = 50
+    newObj.range = 100
+    newObj.movementType = editorState.selectedMovingPlatformType
+    if not editorState.currentLevel.moving_platforms then
+      editorState.currentLevel.moving_platforms = {}
+    end
+    table.insert(editorState.currentLevel.moving_platforms, newObj)
   elseif tool == "decoration" then
     newObj.type = editorState.selectedDecorationType
     if not editorState.currentLevel.decorations then
@@ -335,8 +355,10 @@ function levelEditor.keypressed(key)
   elseif key == "7" then
     editorState.selectedTool = "crumbling_platform"
   elseif key == "8" then
-    editorState.selectedTool = "decoration"
+    editorState.selectedTool = "moving_platform"
   elseif key == "9" then
+    editorState.selectedTool = "decoration"
+  elseif key == "0" then
     editorState.selectedTool = "water"
   elseif key == "x" then
     editorState.selectedTool = "delete"
@@ -350,6 +372,12 @@ function levelEditor.keypressed(key)
     editorState.selectedDecorationType = 2 -- torch
   elseif key == "e" and editorState.selectedTool == "decoration" then
     editorState.selectedDecorationType = 3 -- crystal cluster
+
+    -- Moving platform type selection (when moving platform tool is active)
+  elseif key == "q" and editorState.selectedTool == "moving_platform" then
+    editorState.selectedMovingPlatformType = "horizontal"
+  elseif key == "w" and editorState.selectedTool == "moving_platform" then
+    editorState.selectedMovingPlatformType = "vertical"
 
     -- Toggle tool panel
   elseif key == "t" then
@@ -401,6 +429,7 @@ function levelEditor.keypressed(key)
     editorState.currentLevel.crates = {}
     editorState.currentLevel.spikes = {}
     editorState.currentLevel.crumbling_platforms = {}
+    editorState.currentLevel.moving_platforms = {}
     editorState.currentLevel.decorations = {}
     editorState.currentLevel.water = {}
 
@@ -575,7 +604,7 @@ function levelEditor.drawObject(obj, objType)
   local color = toolColors[objType] or { 1, 1, 1 }
   love.graphics.setColor(color[1], color[2], color[3], 0.8)
 
-  if objType == "platforms" or objType == "ladders" or objType == "crumbling_platforms" or objType == "water" then
+  if objType == "platforms" or objType == "ladders" or objType == "crumbling_platforms" or objType == "moving_platforms" or objType == "water" then
     love.graphics.rectangle("fill", obj.x, obj.y, obj.width, obj.height)
     love.graphics.setColor(1, 1, 1)
     love.graphics.rectangle("line", obj.x, obj.y, obj.width, obj.height)
@@ -588,6 +617,23 @@ function levelEditor.drawObject(obj, objType)
       love.graphics.setColor(0.3, 0.2, 0.1)
       for i = 4, obj.width - 4, 8 do
         love.graphics.rectangle("fill", obj.x + i, obj.y + 2, 1, obj.height - 4)
+      end
+      -- Add visual indicator for moving platforms
+    elseif objType == "moving_platforms" then
+      love.graphics.setColor(0.6, 0.8, 0.6, 0.7) -- Green overlay
+      love.graphics.rectangle("fill", obj.x + 2, obj.y + 2, obj.width - 4, obj.height - 4)
+      -- Add movement indicators
+      love.graphics.setColor(0.2, 0.4, 0.2)
+      if obj.movementType == "horizontal" then
+        -- Draw horizontal arrows
+        for i = 8, obj.width - 8, 16 do
+          love.graphics.rectangle("fill", obj.x + i, obj.y + obj.height / 2 - 1, 8, 2)
+        end
+      else
+        -- Draw vertical arrows
+        for i = 4, obj.height - 4, 12 do
+          love.graphics.rectangle("fill", obj.x + obj.width / 2 - 1, obj.y + i, 2, 8)
+        end
       end
       -- Add visual effect for water
     elseif objType == "water" then
@@ -630,7 +676,7 @@ function levelEditor.drawDragPreview()
 
   love.graphics.setColor(color[1], color[2], color[3], 0.5)
 
-  if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
+  if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "moving_platform" or editorState.selectedTool == "water" then
     local x1, y1 = editorState.dragStart.x, editorState.dragStart.y
     local x2, y2 = mx, my
     local x = math.min(x1, x2)
@@ -658,6 +704,8 @@ function levelEditor.drawUI()
     local decorTypeName = decorationTypes[editorState.selectedDecorationType] and
         decorationTypes[editorState.selectedDecorationType].name or "Unknown"
     toolText = toolText .. " (" .. decorTypeName .. ")"
+  elseif editorState.selectedTool == "moving_platform" then
+    toolText = toolText .. " (" .. editorState.selectedMovingPlatformType .. ")"
   end
   love.graphics.print(toolText, 10, 40)
 
@@ -668,14 +716,20 @@ function levelEditor.drawUI()
   if editorState.selectedTool == "decoration" then
     love.graphics.print("Decoration: Q:Moss W:Torch E:Crystal", 10, 70)
   end
+  if editorState.selectedTool == "moving_platform" then
+    love.graphics.print("Platform Type: Q:Horizontal W:Vertical", 10, 70)
+  end
 
   local controlText = "S:Save N:New C:Clear G:Grid H:Help ←→:Switch Level"
-  love.graphics.print(controlText, 10, editorState.selectedTool == "decoration" and 85 or 70)
+  love.graphics.print(controlText, 10,
+    (editorState.selectedTool == "decoration" or editorState.selectedTool == "moving_platform") and 85 or 70)
 
   if editorState.showToolPanel then
-    love.graphics.print("Tool Panel: ON (T to toggle)", 10, editorState.selectedTool == "decoration" and 100 or 85)
+    love.graphics.print("Tool Panel: ON (T to toggle)", 10,
+      (editorState.selectedTool == "decoration" or editorState.selectedTool == "moving_platform") and 100 or 85)
   else
-    love.graphics.print("Tool Panel: OFF (T to toggle)", 10, editorState.selectedTool == "decoration" and 100 or 85)
+    love.graphics.print("Tool Panel: OFF (T to toggle)", 10,
+      (editorState.selectedTool == "decoration" or editorState.selectedTool == "moving_platform") and 100 or 85)
   end
 
   -- Current tool highlight
@@ -684,7 +738,7 @@ function levelEditor.drawUI()
   love.graphics.setColor(color[1], color[2], color[3], 0.5)
 
   if editorState.selectedTool ~= "delete" and editorState.selectedTool ~= "move" then
-    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
+    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "moving_platform" or editorState.selectedTool == "water" then
       if not editorState.dragStart then
         love.graphics.rectangle("fill", mx, my, 100, 20)
       end
@@ -710,8 +764,9 @@ TOOLS:
 5 - Crate tool (click to place crates)
 6 - Spike tool (click to place spikes)
 7 - Crumbling platform tool (drag to create crumbling platforms)
-8 - Decoration tool (click to place decorations)
-9 - Water tool (drag to create water areas)
+8 - Moving platform tool (drag to create moving platforms)
+9 - Decoration tool (click to place decorations)
+0 - Water tool (drag to create water areas)
 X - Delete tool (click on object to delete)
 M - Move tool (drag to move objects)
 
@@ -719,6 +774,10 @@ DECORATION TYPES (when decoration tool is selected):
 Q - Moss
 W - Torch
 E - Crystal Cluster
+
+MOVING PLATFORM TYPES (when moving platform tool is selected):
+Q - Horizontal
+W - Vertical
 
 CONTROLS:
 T - Toggle tool panel (mouse interface)

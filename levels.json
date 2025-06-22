@@ -40,6 +40,26 @@
       { "x": 650, "y": 170, "type": 2 },
       { "x": 450, "y": 300, "type": 3 }
     ],
+    "moving_platforms": [
+      {
+        "x": 200,
+        "y": 400,
+        "width": 100,
+        "height": 20,
+        "speed": 60,
+        "range": 150,
+        "movementType": "horizontal"
+      },
+      {
+        "x": 600,
+        "y": 350,
+        "width": 80,
+        "height": 20,
+        "speed": 40,
+        "range": 80,
+        "movementType": "vertical"
+      }
+    ],
     "water": [{ "x": 320, "y": 520, "width": 160, "height": 60 }],
     "timeLimit": 45
   },
@@ -82,6 +102,17 @@
       { "x": 50, "y": 555, "type": 1 },
       { "x": 420, "y": 60, "type": 3 },
       { "x": 180, "y": 160, "type": 2 }
+    ],
+    "moving_platforms": [
+      {
+        "x": 280,
+        "y": 450,
+        "width": 120,
+        "height": 20,
+        "speed": 50,
+        "range": 120,
+        "movementType": "horizontal"
+      }
     ],
     "timeLimit": 50
   },
@@ -143,6 +174,26 @@
       { "x": 25, "y": 200, "type": 3 },
       { "x": 775, "y": 200, "type": 3 }
     ],
+    "moving_platforms": [
+      {
+        "x": 200,
+        "y": 400,
+        "width": 100,
+        "height": 20,
+        "speed": 70,
+        "range": 200,
+        "movementType": "horizontal"
+      },
+      {
+        "x": 500,
+        "y": 280,
+        "width": 80,
+        "height": 20,
+        "speed": 50,
+        "range": 100,
+        "movementType": "vertical"
+      }
+    ],
     "timeLimit": 75
   },
   {
@@ -188,6 +239,26 @@
       { "x": 570, "y": 30, "type": 2 },
       { "x": 300, "y": 555, "type": 3 },
       { "x": 500, "y": 555, "type": 3 }
+    ],
+    "moving_platforms": [
+      {
+        "x": 250,
+        "y": 350,
+        "width": 120,
+        "height": 20,
+        "speed": 80,
+        "range": 180,
+        "movementType": "horizontal"
+      },
+      {
+        "x": 550,
+        "y": 150,
+        "width": 60,
+        "height": 20,
+        "speed": 60,
+        "range": 120,
+        "movementType": "vertical"
+      }
     ],
     "timeLimit": 65
   },

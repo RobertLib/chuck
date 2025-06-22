@@ -49,6 +49,7 @@ function levels.loadLevels()
         crates = {},
         spikes = {},
         crumbling_platforms = {},
+        moving_platforms = {},
         decorations = {},
         water = {}
       }
@@ -110,6 +111,22 @@ function levels.loadLevels()
         end
       end
 
+      -- Convert moving platforms
+      if level.moving_platforms then
+        for _, platform in ipairs(level.moving_platforms) do
+          if platform.x and platform.y and platform.width and platform.height then
+            -- Default values if not specified
+            local speed = platform.speed or 50
+            local range = platform.range or 100
+            local movementType = platform.movementType or "horizontal"
+            table.insert(config.moving_platforms, {
+              platform.x, platform.y, platform.width, platform.height,
+              speed, range, movementType
+            })
+          end
+        end
+      end
+
       -- Convert decorations
       if level.decorations then
         for _, decoration in ipairs(level.decorations) do
@@ -146,6 +163,7 @@ function levels.createLevel(gameState)
   gameState.crates = {}
   gameState.spikes = {}
   gameState.crumbling_platforms = {}
+  gameState.moving_platforms = {}
   gameState.decorations = {}
   gameState.water = {}
   gameState.bats = {}
@@ -239,6 +257,32 @@ function levels.createLevel(gameState)
     ))
   end
 
+  -- Create moving platforms
+  local moving_platforms = require("moving_platforms")
+  for _, platform in ipairs(config.moving_platforms) do
+    local movePlatform
+    if platform[7] == "vertical" then
+      movePlatform = moving_platforms.createVertical(
+        platform[1], -- x
+        platform[2], -- y
+        platform[3], -- width
+        platform[4], -- height
+        platform[5], -- speed
+        platform[6]  -- range
+      )
+    else
+      movePlatform = moving_platforms.createHorizontal(
+        platform[1], -- x
+        platform[2], -- y
+        platform[3], -- width
+        platform[4], -- height
+        platform[5], -- speed
+        platform[6]  -- range
+      )
+    end
+    table.insert(gameState.moving_platforms, movePlatform)
+  end
+
   -- Create decorations
   for _, decoration in ipairs(config.decorations) do
     table.insert(gameState.decorations, {
@@ -284,6 +328,7 @@ function levels.applyEditorChanges(editorLevels)
         crates = {},
         spikes = {},
         crumbling_platforms = {},
+        moving_platforms = {},
         decorations = {},
         water = {}
       }
@@ -347,6 +392,22 @@ function levels.applyEditorChanges(editorLevels)
         for _, platform in ipairs(level.crumbling_platforms) do
           if platform.x and platform.y and platform.width and platform.height then
             table.insert(config.crumbling_platforms, { platform.x, platform.y, platform.width, platform.height })
+          end
+        end
+      end
+
+      -- Convert moving platforms
+      if level.moving_platforms then
+        for _, platform in ipairs(level.moving_platforms) do
+          if platform.x and platform.y and platform.width and platform.height then
+            -- Default values if not specified
+            local speed = platform.speed or 50
+            local range = platform.range or 100
+            local movementType = platform.movementType or "horizontal"
+            table.insert(config.moving_platforms, {
+              platform.x, platform.y, platform.width, platform.height,
+              speed, range, movementType
+            })
           end
         end
       end

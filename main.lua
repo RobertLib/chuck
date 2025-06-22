@@ -13,6 +13,7 @@ local levelEditor = require("leveleditor")
 local transition = require("transition")
 local particles = require("particles")
 local water = require("water")
+local moving_platforms = require("moving_platforms")
 
 -- Game state
 local gameState
@@ -163,6 +164,9 @@ function love.update(dt)
   crates.updateCrates(dt, gameState)
   collectibles.updateCollectibles(dt, gameState)
 
+  -- Update moving platforms
+  moving_platforms.update(gameState.moving_platforms, dt)
+
   -- Update crumbling platforms
   local crumbling_platforms = require("crumbling_platforms")
   crumbling_platforms.update(gameState, dt)
@@ -225,6 +229,7 @@ function love.draw()
   -- Draw game objects
   rendering.drawPlatforms(gameState)
   rendering.drawCrumblingPlatforms(gameState)
+  rendering.drawMovingPlatforms(gameState)
   rendering.drawLadders(gameState)
   rendering.drawDecorations(gameState)
   rendering.drawCollectibles(gameState)
