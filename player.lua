@@ -64,6 +64,9 @@ function player.updatePlayer(dt, gameState)
   end
 
   -- Vertical movement on ladder (only when not jumping)
+  local canClimbDown = false
+  local isStartingClimbDown = false
+
   if p.onLadder and not isJumping then
     p.velocityY = 0
     if love.keyboard.isDown("up", "w") then
@@ -71,10 +74,19 @@ function player.updatePlayer(dt, gameState)
     elseif love.keyboard.isDown("down", "s") then
       p.velocityY = constants.PLAYER_SPEED
     end
+  elseif not isJumping and p.onGround and love.keyboard.isDown("down", "s") then
+    -- Check if there's a ladder below the player to allow climbing down from platform
+    canClimbDown = player.checkLadderBelow(p, gameState.ladders)
+    if canClimbDown then
+      p.velocityY = constants.PLAYER_SPEED
+      p.onGround = false -- Allow falling onto the ladder
+      isStartingClimbDown = true
+    end
   end
 
   -- Apply gravity (simplified - no duplication)
-  if not (p.onLadder and not isJumping and p.velocityY == 0) then
+  -- Don't apply gravity if player is on ladder, not jumping, or starting to climb down
+  if not (p.onLadder and not isJumping and p.velocityY == 0) and not (canClimbDown or isStartingClimbDown) then
     p.velocityY = p.velocityY + constants.GRAVITY * dt
   end
 
@@ -119,12 +131,14 @@ function player.updatePlayer(dt, gameState)
     end
   end
 
-  -- Check platforms (but not when player is on ladder and going up)
+  -- Check platforms (but not when player is on ladder and going up, or starting to climb down)
   for _, platform in ipairs(gameState.platforms) do
     if collision.checkCollision(p, platform) then
       -- If player is on ladder and moving up, don't block with platform
       if p.onLadder and p.velocityY < 0 then
         -- Ignore platform collision when climbing up ladder
+      elseif isStartingClimbDown then
+        -- Ignore platform collision when starting to climb down from platform
       elseif p.velocityY > 0 and oldY + p.height <= platform.y then
         -- Falling from above - check old position to prevent teleporting through platform
         p.y = platform.y - p.height
@@ -670,6 +684,26 @@ function player.startDelayedRespawn(gameState)
   -- Stop all movement
   p.velocityX = 0
   p.velocityY = 0
+end
+
+-- Function to check if there's a ladder below the player
+function player.checkLadderBelow(p, ladders)
+  -- Create a detection area slightly below the player
+  local checkArea = {
+    x = p.x - 5,          -- Slightly wider than player for easier detection
+    y = p.y + p.height,   -- Start from bottom of player
+    width = p.width + 10, -- Slightly wider than player
+    height = 15           -- Increased detection zone below player
+  }
+
+  -- Check if any ladder intersects with the detection area
+  for i, ladder in ipairs(ladders) do
+    if collision.checkCollision(checkArea, ladder) then
+      return true
+    end
+  end
+
+  return false
 end
 
 return player
