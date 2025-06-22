@@ -73,6 +73,34 @@ function gamecollisions.checkCollisions(gameState)
       break -- Only lose one life per frame
     end
   end
+
+  -- Collision with fireballs
+  for i = #gameState.fireballs, 1, -1 do
+    local fireball = gameState.fireballs[i]
+    if collision.checkCollision(player, fireball) and not gameState.invulnerable and not player.isWaitingToRespawn then
+      -- Create both blood particles and death particles for visual effect
+      particles.createBloodParticles(player.x + player.width / 2, player.y + player.height / 2)
+      particles.createPlayerDeathParticles(player.x + player.width / 2, player.y + player.height / 2)
+
+      -- Create explosion particles at fireball location
+      particles.createImpactParticles(
+        fireball.x + fireball.width / 2,
+        fireball.y + fireball.height / 2,
+        { 1.0, 0.5, 0.1, 1.0 } -- Orange explosion color
+      )
+
+      gameState.lives = gameState.lives - 1
+      if gameState.lives <= 0 then
+        gameState.gameOver = true
+      else
+        playerModule.startDelayedRespawn(gameState)
+      end
+
+      -- Remove the fireball after hit
+      table.remove(gameState.fireballs, i)
+      break -- Only lose one life per frame
+    end
+  end
 end
 
 function gamecollisions.checkWinCondition(gameState, levelCount)

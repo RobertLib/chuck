@@ -14,6 +14,7 @@ local transition = require("transition")
 local particles = require("particles")
 local water = require("water")
 local moving_platforms = require("moving_platforms")
+local fireballs = require("fireballs")
 
 -- Game state
 local gameState
@@ -160,6 +161,7 @@ function love.update(dt)
   player.updatePlayer(dt, gameState)
   player.updatePlayerAnimation(dt, gameState)
   enemies.updateEnemies(dt, gameState)
+  fireballs.updateFireballs(dt, gameState)
   bats.updateBats(dt, gameState)
   crates.updateCrates(dt, gameState)
   collectibles.updateCollectibles(dt, gameState)
@@ -241,6 +243,11 @@ function love.draw()
 
   rendering.drawEnemies(gameState)
   rendering.drawBats(gameState)
+
+  -- Draw fireballs
+  for _, fireball in ipairs(gameState.fireballs) do
+    fireballs.drawFireball(fireball)
+  end
 
   -- Draw player (with blinking effect when invulnerable)
   if not gameState.invulnerable or math.floor(gameState.invulnerabilityTimer * 10) % 2 == 0 then

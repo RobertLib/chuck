@@ -72,4 +72,21 @@ constants.PICKUP_FADE_SPEED = 2.0
 -- Player death animation constants
 constants.PLAYER_DEATH_PARTICLES_DURATION = 2
 
+-- Fireball constants
+constants.FIREBALL_WIDTH = 8
+constants.FIREBALL_HEIGHT = 8
+constants.FIREBALL_SPEED = 180
+constants.FIREBALL_BOUNCE_SPEED = 150
+constants.FIREBALL_BOUNCE_DAMPING = 0.7
+constants.FIREBALL_LIFETIME = 6.0
+constants.FIREBALL_ANIM_SPEED = 8
+constants.ENEMY_FIREBALL_CHANCE = 0.25        -- Chance per second to throw fireball when seeing player
+constants.ENEMY_FIREBALL_COOLDOWN = 3.0       -- Minimum time between fireballs
+constants.ENEMY_SIGHT_RANGE = 200             -- How far enemy can see player
+constants.ENEMY_SIGHT_VERTICAL_TOLERANCE = 50 -- Vertical tolerance for line of sight
+
+-- Enemy sight range constants
+constants.ENEMY_SIGHT_RANGE = 200             -- How far enemy can see player
+constants.ENEMY_SIGHT_VERTICAL_TOLERANCE = 50 -- Vertical tolerance for line of sight
+
 return constants

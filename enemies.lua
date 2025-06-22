@@ -1,7 +1,75 @@
 local constants = require("constants")
 local collision = require("collision")
+local fireballs = require("fireballs")
 
 local enemies = {}
+
+-- Function to check if enemy can see the player
+function enemies.canSeePlayer(enemy, player, gameState)
+  local enemyCenterX = enemy.x + enemy.width / 2
+  local enemyCenterY = enemy.y + enemy.height / 2
+  local playerCenterX = player.x + player.width / 2
+  local playerCenterY = player.y + player.height / 2
+
+  -- Check distance - enemy can only see player within a certain range
+  local distance = math.sqrt((enemyCenterX - playerCenterX) ^ 2 + (enemyCenterY - playerCenterY) ^ 2)
+  if distance > constants.ENEMY_SIGHT_RANGE then
+    return false
+  end
+
+  -- Check if player is roughly on the same level (within sight tolerance)
+  local verticalDistance = math.abs(enemyCenterY - playerCenterY)
+  if verticalDistance > constants.ENEMY_SIGHT_VERTICAL_TOLERANCE then
+    return false
+  end
+
+  -- Check if there are obstacles between enemy and player
+  local dx = playerCenterX - enemyCenterX
+  local dy = playerCenterY - enemyCenterY
+  local steps = math.floor(distance / 5) -- Check every 5 pixels
+
+  for i = 1, steps do
+    local checkX = enemyCenterX + (dx * i / steps)
+    local checkY = enemyCenterY + (dy * i / steps)
+
+    -- Create a small check rectangle
+    local checkRect = { x = checkX - 2, y = checkY - 2, width = 4, height = 4 }
+
+    -- Check collision with platforms
+    for _, platform in ipairs(gameState.platforms) do
+      if collision.checkCollision(checkRect, platform) then
+        return false
+      end
+    end
+
+    -- Check collision with crates
+    for _, crate in ipairs(gameState.crates) do
+      if collision.checkCollision(checkRect, crate) then
+        return false
+      end
+    end
+  end
+
+  return true
+end
+
+-- Function to calculate direction to player
+function enemies.getDirectionToPlayer(enemy, player)
+  local enemyCenterX = enemy.x + enemy.width / 2
+  local enemyCenterY = enemy.y + enemy.height / 2
+  local playerCenterX = player.x + player.width / 2
+  local playerCenterY = player.y + player.height / 2
+
+  local dx = playerCenterX - enemyCenterX
+  local dy = playerCenterY - enemyCenterY
+  local length = math.sqrt(dx ^ 2 + dy ^ 2)
+
+  if length > 0 then
+    return dx / length, dy / length
+  else
+    return 0, 0
+  end
+end
 
 function enemies.updateEnemies(dt, gameState)
   for _, enemy in ipairs(gameState.enemies) do
@@ -13,13 +81,49 @@ function enemies.updateEnemies(dt, gameState)
       enemy.animTime = 0
     end
 
+    -- Initialize fireball timer if not present
+    if not enemy.fireballTimer then
+      enemy.fireballTimer = 0
+    end
+
     enemy.animTime = enemy.animTime + dt * constants.ANIM_SPEED
+    enemy.fireballTimer = enemy.fireballTimer + dt
 
     -- Update facing direction based on velocity
     if enemy.velocityX > 0 then
       enemy.facing = 1
     elseif enemy.velocityX < 0 then
       enemy.facing = -1
+    end
+
+    -- If enemy can see player, face towards player
+    if enemies.canSeePlayer(enemy, gameState.player, gameState) then
+      local playerCenterX = gameState.player.x + gameState.player.width / 2
+      local enemyCenterX = enemy.x + enemy.width / 2
+      if playerCenterX > enemyCenterX then
+        enemy.facing = 1
+      else
+        enemy.facing = -1
+      end
+    end
+
+    -- Check if enemy should throw a fireball (only if can see player)
+    if enemy.fireballTimer >= constants.ENEMY_FIREBALL_COOLDOWN then
+      if enemies.canSeePlayer(enemy, gameState.player, gameState) then
+        if math.random() < constants.ENEMY_FIREBALL_CHANCE * dt then
+          -- Calculate direction to player
+          local dirX, dirY = enemies.getDirectionToPlayer(enemy, gameState.player)
+
+          -- Create fireball slightly in front of enemy towards the player
+          local fireballX = enemy.x + enemy.width / 2 - constants.FIREBALL_WIDTH / 2
+          local fireballY = enemy.y + enemy.height / 2 - constants.FIREBALL_HEIGHT / 2
+
+          local fireball = fireballs.createFireball(fireballX, fireballY, dirX, dirY)
+          table.insert(gameState.fireballs, fireball)
+
+          enemy.fireballTimer = 0 -- Reset timer
+        end
+      end
     end
 
     -- Move enemy

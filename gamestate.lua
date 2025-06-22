@@ -16,6 +16,7 @@ function gamestate.init()
     moving_platforms = {},
     water = {},
     bats = {},
+    fireballs = {},
     batSpawnTimer = 0,
     score = 0,
     level = 1,
