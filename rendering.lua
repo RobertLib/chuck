@@ -103,6 +103,11 @@ function rendering.drawEnemies(gameState)
   end
 end
 
+function rendering.drawBats(gameState)
+  local bats = require("bats")
+  bats.drawBats(gameState)
+end
+
 function rendering.drawBackground(gameState)
   -- Draw animated background using shader
   if gameState.backgroundShader then

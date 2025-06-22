@@ -124,6 +124,8 @@ function levels.createLevel(gameState)
   gameState.crates = {}
   gameState.spikes = {}
   gameState.crumbling_platforms = {}
+  gameState.bats = {}
+  gameState.batSpawnTimer = 0
 
   -- Check if we have any levels loaded
   if #levelConfigs == 0 then

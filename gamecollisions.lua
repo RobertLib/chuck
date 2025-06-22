@@ -56,6 +56,23 @@ function gamecollisions.checkCollisions(gameState)
       break -- Only lose one life per frame
     end
   end
+
+  -- Collision with bats
+  for _, bat in ipairs(gameState.bats) do
+    if collision.checkCollision(player, bat) and not gameState.invulnerable and not player.isWaitingToRespawn then
+      -- Create both blood particles and death particles for visual effect
+      particles.createBloodParticles(player.x + player.width / 2, player.y + player.height / 2)
+      particles.createPlayerDeathParticles(player.x + player.width / 2, player.y + player.height / 2)
+
+      gameState.lives = gameState.lives - 1
+      if gameState.lives <= 0 then
+        gameState.gameOver = true
+      else
+        playerModule.startDelayedRespawn(gameState)
+      end
+      break -- Only lose one life per frame
+    end
+  end
 end
 
 function gamecollisions.checkWinCondition(gameState, levelCount)

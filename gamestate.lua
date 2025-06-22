@@ -13,6 +13,8 @@ function gamestate.init()
     crates = {},
     spikes = {},
     crumbling_platforms = {},
+    bats = {},
+    batSpawnTimer = 0,
     score = 0,
     level = 1,
     lives = 3,

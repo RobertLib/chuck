@@ -36,6 +36,14 @@ constants.CRATE_SIZE = 25
 constants.SPIKE_WIDTH = 30
 constants.SPIKE_HEIGHT = 15
 
+-- Bat constants
+constants.BAT_WIDTH = 16
+constants.BAT_HEIGHT = 12
+constants.BAT_SPEED = 120
+constants.BAT_SPAWN_INTERVAL = 6.0
+constants.BAT_SPAWN_HEIGHT_MIN = 50
+constants.BAT_SPAWN_HEIGHT_MAX = 400
+
 -- Animation timing constants
 constants.WALK_CYCLE_SPEED = 5
 constants.CLIMB_CYCLE_SPEED = 3
