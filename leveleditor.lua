@@ -1,5 +1,6 @@
 local json = require("json")
 local constants = require("constants")
+local decorations = require("decorations")
 
 local levelEditor = {}
 
@@ -14,9 +15,12 @@ local editorState = {
     enemies = {},
     crates = {},
     spikes = {},
+    crumbling_platforms = {},
+    decorations = {},
     timeLimit = 60
   },
-  selectedTool = "platform", -- platform, ladder, egg, enemy, crate, spike, delete, move
+  selectedTool = "platform",  -- platform, ladder, egg, enemy, crate, spike, crumbling_platform, decoration, delete, move
+  selectedDecorationType = 1, -- 1=moss, 2=torch, 3=crystal_cluster
   dragStart = nil,
   selectedObject = nil,
   selectedObjectType = nil,
@@ -25,7 +29,8 @@ local editorState = {
   camera = { x = 0, y = 0 },
   levelIndex = 1,
   allLevels = {},
-  showHelp = false
+  showHelp = false,
+  showToolPanel = false
 }
 
 -- Tool colors for visual feedback
@@ -37,8 +42,30 @@ local toolColors = {
   enemy = { 1, 0.2, 0.2 },
   crate = { 0.6, 0.3, 0 },
   spike = { 1, 0, 1 },
+  decoration = { 0.5, 0.8, 0.5 },
   delete = { 1, 0, 0 },
   move = { 0, 1, 0 }
+}
+
+-- Available tools with their properties
+local availableTools = {
+  { id = "platform",           name = "Platform",           key = "1", draggable = true },
+  { id = "ladder",             name = "Ladder",             key = "2", draggable = true },
+  { id = "crumbling_platform", name = "Crumbling Platform", key = "7", draggable = true },
+  { id = "egg",                name = "Egg",                key = "3", draggable = false },
+  { id = "enemy",              name = "Enemy",              key = "4", draggable = false },
+  { id = "crate",              name = "Crate",              key = "5", draggable = false },
+  { id = "spike",              name = "Spike",              key = "6", draggable = false },
+  { id = "decoration",         name = "Decoration",         key = "8", draggable = false },
+  { id = "move",               name = "Move",               key = "M", draggable = false },
+  { id = "delete",             name = "Delete",             key = "X", draggable = false }
+}
+
+-- Decoration types
+local decorationTypes = {
+  { id = 1, name = "Moss" },
+  { id = 2, name = "Torch" },
+  { id = 3, name = "Crystal Cluster" }
 }
 
 -- Initialize editor
@@ -99,7 +126,8 @@ end
 
 -- Find object at position
 function levelEditor.findObjectAt(x, y)
-  local objectTypes = { "platforms", "ladders", "eggs", "enemies", "crates", "spikes", "crumbling_platforms" }
+  local objectTypes = { "platforms", "ladders", "eggs", "enemies", "crates", "spikes", "crumbling_platforms",
+    "decorations" }
 
   for _, objType in ipairs(objectTypes) do
     local objects = editorState.currentLevel[objType]
@@ -138,6 +166,19 @@ function levelEditor.addObject(x, y, tool)
     table.insert(editorState.currentLevel.crates, newObj)
   elseif tool == "spike" then
     table.insert(editorState.currentLevel.spikes, newObj)
+  elseif tool == "crumbling_platform" then
+    newObj.width = 100
+    newObj.height = 20
+    if not editorState.currentLevel.crumbling_platforms then
+      editorState.currentLevel.crumbling_platforms = {}
+    end
+    table.insert(editorState.currentLevel.crumbling_platforms, newObj)
+  elseif tool == "decoration" then
+    newObj.type = editorState.selectedDecorationType
+    if not editorState.currentLevel.decorations then
+      editorState.currentLevel.decorations = {}
+    end
+    table.insert(editorState.currentLevel.decorations, newObj)
   end
 end
 
@@ -153,6 +194,12 @@ end
 function levelEditor.mousepressed(x, y, button)
   if not editorState.isActive then return end
 
+  -- Check if clicked on tool panel (use exact mouse coordinates)
+  if editorState.showToolPanel and levelEditor.handleToolPanelClick(x, y, button) then
+    return
+  end
+
+  -- For game objects, use grid-snapped coordinates
   local mx, my = levelEditor.getGridSnappedMouse()
 
   if button == 1 then -- Left click
@@ -247,10 +294,24 @@ function levelEditor.keypressed(key)
     editorState.selectedTool = "spike"
   elseif key == "7" then
     editorState.selectedTool = "crumbling_platform"
+  elseif key == "8" then
+    editorState.selectedTool = "decoration"
   elseif key == "x" then
     editorState.selectedTool = "delete"
   elseif key == "m" then
     editorState.selectedTool = "move"
+
+    -- Decoration type selection (when decoration tool is active)
+  elseif key == "q" and editorState.selectedTool == "decoration" then
+    editorState.selectedDecorationType = 1 -- moss
+  elseif key == "w" and editorState.selectedTool == "decoration" then
+    editorState.selectedDecorationType = 2 -- torch
+  elseif key == "e" and editorState.selectedTool == "decoration" then
+    editorState.selectedDecorationType = 3 -- crystal cluster
+
+    -- Toggle tool panel
+  elseif key == "t" then
+    editorState.showToolPanel = not editorState.showToolPanel
 
     -- Grid toggle
   elseif key == "g" then
@@ -271,6 +332,7 @@ function levelEditor.keypressed(key)
       crates = {},
       spikes = {},
       crumbling_platforms = {},
+      decorations = {},
       timeLimit = 60
     }
 
@@ -296,10 +358,157 @@ function levelEditor.keypressed(key)
     editorState.currentLevel.enemies = {}
     editorState.currentLevel.crates = {}
     editorState.currentLevel.spikes = {}
+    editorState.currentLevel.crumbling_platforms = {}
+    editorState.currentLevel.decorations = {}
 
     -- Help
   elseif key == "h" then
     editorState.showHelp = not editorState.showHelp
+  end
+end
+
+-- Handle tool panel click
+function levelEditor.handleToolPanelClick(x, y, button)
+  if not editorState.showToolPanel then return false end
+
+  local panelX = constants.SCREEN_WIDTH - 220
+  local panelY = 120
+  local panelW = 200
+  local buttonH = 30
+
+  -- Check main tool panel
+  if x >= panelX and x <= panelX + panelW and y >= panelY then
+    -- Check tool buttons (add +25 offset for the title, same as in draw function)
+    for i, tool in ipairs(availableTools) do
+      local buttonY = panelY + (i - 1) * (buttonH + 5) + 25 -- Added +25 offset
+      if y >= buttonY and y <= buttonY + buttonH then
+        editorState.selectedTool = tool.id
+        return true
+      end
+    end
+  end
+
+  -- Check decoration type panel (if decoration tool is selected and panel is visible)
+  if editorState.selectedTool == "decoration" then
+    local decorPanelX = panelX - 220 -- Position to the left of main panel
+    local decorPanelY = panelY
+    local decorPanelW = 200
+
+    if x >= decorPanelX and x <= decorPanelX + decorPanelW and y >= decorPanelY then
+      for i, decorType in ipairs(decorationTypes) do
+        local buttonY = decorPanelY + (i - 1) * (buttonH + 5) + 25 -- Same offset as main panel
+        if y >= buttonY and y <= buttonY + buttonH then
+          editorState.selectedDecorationType = decorType.id
+          return true
+        end
+      end
+    end
+  end
+
+  return false
+end
+
+-- Draw tool panel
+function levelEditor.drawToolPanel()
+  if not editorState.showToolPanel then return end
+
+  local panelX = constants.SCREEN_WIDTH - 220
+  local panelY = 120
+  local panelW = 200
+  local buttonH = 30
+  local panelH = #availableTools * (buttonH + 5) + 20
+
+  -- Get current mouse position for hover effects
+  local mouseX, mouseY = love.mouse.getPosition()
+
+  -- Panel background
+  love.graphics.setColor(0, 0, 0, 0.8)
+  love.graphics.rectangle("fill", panelX, panelY, panelW, panelH)
+
+  love.graphics.setColor(1, 1, 1, 0.3)
+  love.graphics.rectangle("line", panelX, panelY, panelW, panelH)
+
+  -- Panel title
+  love.graphics.setColor(1, 1, 1)
+  love.graphics.print("Tools", panelX + 10, panelY + 5)
+
+  -- Tool buttons
+  for i, tool in ipairs(availableTools) do
+    local buttonY = panelY + (i - 1) * (buttonH + 5) + 25
+    local isSelected = (editorState.selectedTool == tool.id)
+    local isHovered = (mouseX >= panelX + 5 and mouseX <= panelX + panelW - 5 and
+      mouseY >= buttonY and mouseY <= buttonY + buttonH)
+
+    -- Button background
+    if isSelected then
+      local color = toolColors[tool.id] or { 0.5, 0.5, 0.5 }
+      love.graphics.setColor(color[1], color[2], color[3], 0.7)
+    elseif isHovered then
+      love.graphics.setColor(0.3, 0.3, 0.3, 0.9) -- Lighter on hover
+    else
+      love.graphics.setColor(0.2, 0.2, 0.2, 0.8)
+    end
+    love.graphics.rectangle("fill", panelX + 5, buttonY, panelW - 10, buttonH)
+
+    -- Button border
+    if isHovered then
+      love.graphics.setColor(1, 1, 1, 0.8) -- Brighter border on hover
+    else
+      love.graphics.setColor(1, 1, 1, 0.5)
+    end
+    love.graphics.rectangle("line", panelX + 5, buttonY, panelW - 10, buttonH)
+
+    -- Button text
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.print(tool.name .. " (" .. tool.key .. ")", panelX + 10, buttonY + 8)
+  end
+
+  -- Decoration type panel (if decoration tool is selected) - draw to the left
+  if editorState.selectedTool == "decoration" then
+    local decorPanelX = panelX - 220 -- Position to the left of main panel
+    local decorPanelY = panelY
+    local decorPanelW = 200
+    local decorPanelH = #decorationTypes * (buttonH + 5) + 40
+
+    -- Decoration panel background
+    love.graphics.setColor(0, 0, 0, 0.8)
+    love.graphics.rectangle("fill", decorPanelX, decorPanelY, decorPanelW, decorPanelH)
+
+    love.graphics.setColor(1, 1, 1, 0.3)
+    love.graphics.rectangle("line", decorPanelX, decorPanelY, decorPanelW, decorPanelH)
+
+    -- Decoration panel title
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.print("Decoration Type", decorPanelX + 10, decorPanelY + 5)
+
+    for i, decorType in ipairs(decorationTypes) do
+      local buttonY = decorPanelY + (i - 1) * (buttonH + 5) + 25
+      local isSelected = (editorState.selectedDecorationType == decorType.id)
+      local isHovered = (mouseX >= decorPanelX + 5 and mouseX <= decorPanelX + decorPanelW - 5 and
+        mouseY >= buttonY and mouseY <= buttonY + buttonH)
+
+      -- Button background
+      if isSelected then
+        love.graphics.setColor(0.5, 0.8, 0.5, 0.7)
+      elseif isHovered then
+        love.graphics.setColor(0.3, 0.5, 0.3, 0.9) -- Lighter green on hover
+      else
+        love.graphics.setColor(0.2, 0.2, 0.2, 0.8)
+      end
+      love.graphics.rectangle("fill", decorPanelX + 5, buttonY, decorPanelW - 10, buttonH)
+
+      -- Button border
+      if isHovered then
+        love.graphics.setColor(1, 1, 1, 0.8) -- Brighter border on hover
+      else
+        love.graphics.setColor(1, 1, 1, 0.5)
+      end
+      love.graphics.rectangle("line", decorPanelX + 5, buttonY, decorPanelW - 10, buttonH)
+
+      -- Button text
+      love.graphics.setColor(1, 1, 1)
+      love.graphics.print(decorType.name, decorPanelX + 10, buttonY + 8)
+    end
   end
 end
 
@@ -338,6 +547,19 @@ function levelEditor.drawObject(obj, objType)
         love.graphics.rectangle("fill", obj.x + i, obj.y + 2, 1, obj.height - 4)
       end
     end
+  elseif objType == "decorations" then
+    -- Draw actual decoration using the decorations module
+    local tempDecoration = {
+      x = obj.x,
+      y = obj.y,
+      type = obj.type or 1,
+      animTime = love.timer.getTime() -- Use current time for animation
+    }
+    decorations.drawDecoration(tempDecoration)
+
+    -- Draw selection box for decorations
+    love.graphics.setColor(1, 1, 1, 0.3)
+    love.graphics.rectangle("line", obj.x, obj.y, 20, 20)
   else
     local size = 20
     love.graphics.rectangle("fill", obj.x, obj.y, size, size)
@@ -372,19 +594,36 @@ end
 -- Draw UI
 function levelEditor.drawUI()
   love.graphics.setColor(0, 0, 0, 0.7)
-  love.graphics.rectangle("fill", 0, 0, constants.SCREEN_WIDTH, 100)
+  love.graphics.rectangle("fill", 0, 0, constants.SCREEN_WIDTH, 120)
 
   love.graphics.setColor(1, 1, 1)
   love.graphics.print("Level Editor - " .. editorState.currentLevel.name, 10, 10)
   love.graphics.print("Level: " .. editorState.levelIndex .. "/" .. #editorState.allLevels, 10, 25)
-  love.graphics.print("Tool: " .. editorState.selectedTool, 10, 40)
 
-  -- Tool selection
-  local toolText = "1:Platform 2:Ladder 3:Egg 4:Enemy 5:Crate 6:Spike X:Delete M:Move"
+  local toolText = "Tool: " .. editorState.selectedTool
+  if editorState.selectedTool == "decoration" then
+    local decorTypeName = decorationTypes[editorState.selectedDecorationType] and
+        decorationTypes[editorState.selectedDecorationType].name or "Unknown"
+    toolText = toolText .. " (" .. decorTypeName .. ")"
+  end
+  love.graphics.print(toolText, 10, 40)
+
+  -- Tool selection - simplified
+  local toolText = "Keys: 1-8:Tools X:Delete M:Move"
   love.graphics.print(toolText, 10, 55)
 
+  if editorState.selectedTool == "decoration" then
+    love.graphics.print("Decoration: Q:Moss W:Torch E:Crystal", 10, 70)
+  end
+
   local controlText = "S:Save N:New C:Clear G:Grid H:Help ←→:Switch Level"
-  love.graphics.print(controlText, 10, 70)
+  love.graphics.print(controlText, 10, editorState.selectedTool == "decoration" and 85 or 70)
+
+  if editorState.showToolPanel then
+    love.graphics.print("Tool Panel: ON (T to toggle)", 10, editorState.selectedTool == "decoration" and 100 or 85)
+  else
+    love.graphics.print("Tool Panel: OFF (T to toggle)", 10, editorState.selectedTool == "decoration" and 100 or 85)
+  end
 
   -- Current tool highlight
   local mx, my = levelEditor.getGridSnappedMouse()
@@ -392,7 +631,7 @@ function levelEditor.drawUI()
   love.graphics.setColor(color[1], color[2], color[3], 0.5)
 
   if editorState.selectedTool ~= "delete" and editorState.selectedTool ~= "move" then
-    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" then
+    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" then
       if not editorState.dragStart then
         love.graphics.rectangle("fill", mx, my, 100, 20)
       end
@@ -404,7 +643,7 @@ function levelEditor.drawUI()
   -- Help overlay
   if editorState.showHelp then
     love.graphics.setColor(0, 0, 0, 0.9)
-    love.graphics.rectangle("fill", 100, 120, 600, 350)
+    love.graphics.rectangle("fill", 100, 130, 600, 450)
 
     love.graphics.setColor(1, 1, 1)
     local helpText = [[
@@ -418,10 +657,17 @@ TOOLS:
 5 - Crate tool (click to place crates)
 6 - Spike tool (click to place spikes)
 7 - Crumbling platform tool (drag to create crumbling platforms)
+8 - Decoration tool (click to place decorations)
 X - Delete tool (click on object to delete)
 M - Move tool (drag to move objects)
 
+DECORATION TYPES (when decoration tool is selected):
+Q - Moss
+W - Torch
+E - Crystal Cluster
+
 CONTROLS:
+T - Toggle tool panel (mouse interface)
 S - Save levels to file
 N - Create new level
 C - Clear current level
@@ -431,12 +677,13 @@ H - Toggle this help
 ESC - Exit editor
 
 USAGE:
-- For platforms/ladders: Click and drag to set size
+- For platforms/ladders/crumbling platforms: Click and drag to set size
 - For other objects: Click to place
 - Use move tool to reposition objects
 - Use delete tool to remove objects
+- Use T to open tool panel for mouse-based selection
 ]]
-    love.graphics.print(helpText, 120, 140)
+    love.graphics.print(helpText, 120, 150)
   end
 end
 
@@ -465,6 +712,9 @@ function levelEditor.draw()
 
   -- Draw UI
   levelEditor.drawUI()
+
+  -- Draw tool panel
+  levelEditor.drawToolPanel()
 
   love.graphics.setColor(1, 1, 1)
 end
