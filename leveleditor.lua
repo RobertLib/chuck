@@ -78,10 +78,34 @@ function levelEditor.init()
 end
 
 -- Toggle editor mode
-function levelEditor.toggle()
+function levelEditor.toggle(gameState)
+  local wasActive = editorState.isActive
   editorState.isActive = not editorState.isActive
+
   if editorState.isActive then
     love.mouse.setVisible(true)
+    -- Synchronize editor to current game level
+    if gameState and gameState.level then
+      editorState.levelIndex = gameState.level
+      if editorState.allLevels[editorState.levelIndex] then
+        editorState.currentLevel = editorState.allLevels[editorState.levelIndex]
+      end
+    end
+  else
+    -- Editor was closed, apply changes to game
+    if wasActive then
+      local levels = require("levels")
+      levels.applyEditorChanges(editorState.allLevels)
+
+      -- Switch to the level that was being edited
+      if gameState and not gameState.gameOver and not gameState.won then
+        gameState.level = editorState.levelIndex
+        levels.createLevel(gameState)
+        -- Reset player position to avoid being stuck in objects
+        local gamestate = require("gamestate")
+        gamestate.resetPlayerPosition(gameState)
+      end
+    end
   end
 end
 
@@ -130,7 +154,7 @@ end
 -- Find object at position
 function levelEditor.findObjectAt(x, y)
   local objectTypes = { "platforms", "ladders", "eggs", "enemies", "crates", "spikes", "crumbling_platforms",
-    "decorations" }
+    "decorations", "water" }
 
   for _, objType in ipairs(objectTypes) do
     local objects = editorState.currentLevel[objType]
@@ -209,23 +233,24 @@ function levelEditor.mousepressed(x, y, button)
     return
   end
 
-  -- For game objects, use grid-snapped coordinates
-  local mx, my = levelEditor.getGridSnappedMouse()
-
   if button == 1 then -- Left click
     if editorState.selectedTool == "delete" then
-      local obj, objType, index = levelEditor.findObjectAt(mx, my)
+      -- For delete tool, use exact mouse coordinates to find objects
+      local obj, objType, index = levelEditor.findObjectAt(x, y)
       if obj then
         levelEditor.deleteObject(obj, objType, index)
       end
     elseif editorState.selectedTool == "move" then
-      local obj, objType, index = levelEditor.findObjectAt(mx, my)
+      -- For move tool, use exact mouse coordinates to find objects
+      local obj, objType, index = levelEditor.findObjectAt(x, y)
       if obj then
         editorState.selectedObject = obj
         editorState.selectedObjectType = objType
-        editorState.dragStart = { x = mx - obj.x, y = my - obj.y }
+        editorState.dragStart = { x = x - obj.x, y = y - obj.y }
       end
     else
+      -- For placing objects, use grid-snapped coordinates
+      local mx, my = levelEditor.getGridSnappedMouse()
       -- Check if dragging to create platforms/ladders/crumbling platforms
       if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
         editorState.dragStart = { x = mx, y = my }
@@ -244,10 +269,10 @@ function levelEditor.mousereleased(x, y, button)
 
   if button == 1 and editorState.dragStart then
     if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
-      local width = math.abs(mx - editorState.dragStart.x)
-      local height = math.abs(my - editorState.dragStart.y)
+      local width = math.abs(mx - editorState.dragStart.x) + editorState.gridSize
+      local height = math.abs(my - editorState.dragStart.y) + editorState.gridSize
 
-      if width > 0 and height > 0 then
+      if width >= editorState.gridSize and height >= editorState.gridSize then
         local newObj = {
           x = math.min(mx, editorState.dragStart.x),
           y = math.min(my, editorState.dragStart.y),
@@ -377,6 +402,7 @@ function levelEditor.keypressed(key)
     editorState.currentLevel.spikes = {}
     editorState.currentLevel.crumbling_platforms = {}
     editorState.currentLevel.decorations = {}
+    editorState.currentLevel.water = {}
 
     -- Help
   elseif key == "h" then
@@ -609,8 +635,8 @@ function levelEditor.drawDragPreview()
     local x2, y2 = mx, my
     local x = math.min(x1, x2)
     local y = math.min(y1, y2)
-    local w = math.abs(x2 - x1)
-    local h = math.abs(y2 - y1)
+    local w = math.abs(x2 - x1) + editorState.gridSize
+    local h = math.abs(y2 - y1) + editorState.gridSize
 
     love.graphics.rectangle("fill", x, y, w, h)
     love.graphics.setColor(1, 1, 1)
@@ -750,6 +776,16 @@ end
 -- Check if editor is active
 function levelEditor.isActive()
   return editorState.isActive
+end
+
+-- Get all levels for applying to game
+function levelEditor.getAllLevels()
+  return editorState.allLevels
+end
+
+-- Get current editor level index
+function levelEditor.getCurrentLevelIndex()
+  return editorState.levelIndex
 end
 
 return levelEditor

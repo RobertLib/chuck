@@ -27,6 +27,9 @@ function love.load()
   -- Load levels from external file
   levels.loadLevels()
 
+  -- Clear any temporary level changes from previous session
+  levels.clearTemporaryLevels()
+
   -- Initialize level editor
   levelEditor.init()
 
@@ -252,7 +255,7 @@ end
 function love.keypressed(key)
   -- Handle level editor key presses first
   if key == "f1" then
-    levelEditor.toggle()
+    levelEditor.toggle(gameState)
     return
   end
 

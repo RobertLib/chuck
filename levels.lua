@@ -5,6 +5,8 @@ local levels = {}
 
 -- Level configurations
 local levelConfigs = {}
+-- Temporary level configs modified by editor (runtime only)
+local tempLevelConfigs = {}
 
 -- Function to load levels from JSON file with error handling
 function levels.loadLevels()
@@ -150,13 +152,14 @@ function levels.createLevel(gameState)
   gameState.batSpawnTimer = 0
 
   -- Check if we have any levels loaded
-  if #levelConfigs == 0 then
+  local configsToUse = #tempLevelConfigs > 0 and tempLevelConfigs or levelConfigs
+  if #configsToUse == 0 then
     print("Error: No levels loaded, cannot create level")
     gameState.won = true
     return
   end
 
-  local config = levelConfigs[gameState.level]
+  local config = configsToUse[gameState.level]
   if not config then
     gameState.won = true
     return
@@ -262,7 +265,124 @@ function levels.createLevel(gameState)
 end
 
 function levels.getLevelCount()
-  return #levelConfigs
+  local configsToUse = #tempLevelConfigs > 0 and tempLevelConfigs or levelConfigs
+  return #configsToUse
+end
+
+-- Apply editor changes to temporary runtime levels
+function levels.applyEditorChanges(editorLevels)
+  tempLevelConfigs = {}
+
+  -- Convert editor level format to our internal format
+  for i, level in ipairs(editorLevels) do
+    if level then
+      local config = {
+        platforms = {},
+        ladders = {},
+        collectibles = {},
+        enemies = {},
+        crates = {},
+        spikes = {},
+        crumbling_platforms = {},
+        decorations = {},
+        water = {}
+      }
+
+      -- Convert platforms
+      if level.platforms then
+        for _, platform in ipairs(level.platforms) do
+          if platform.x and platform.y and platform.width and platform.height then
+            table.insert(config.platforms, { platform.x, platform.y, platform.width, platform.height })
+          end
+        end
+      end
+
+      -- Convert ladders
+      if level.ladders then
+        for _, ladder in ipairs(level.ladders) do
+          if ladder.x and ladder.y and ladder.width and ladder.height then
+            table.insert(config.ladders, { ladder.x, ladder.y, ladder.width, ladder.height })
+          end
+        end
+      end
+
+      -- Convert collectibles (eggs in editor)
+      if level.eggs then
+        for _, egg in ipairs(level.eggs) do
+          if egg.x and egg.y then
+            table.insert(config.collectibles, { egg.x, egg.y })
+          end
+        end
+      end
+
+      -- Convert enemies
+      if level.enemies then
+        for _, enemy in ipairs(level.enemies) do
+          if enemy.x and enemy.y then
+            table.insert(config.enemies, { enemy.x, enemy.y })
+          end
+        end
+      end
+
+      -- Convert crates
+      if level.crates then
+        for _, crate in ipairs(level.crates) do
+          if crate.x and crate.y then
+            table.insert(config.crates, { crate.x, crate.y })
+          end
+        end
+      end
+
+      -- Convert spikes
+      if level.spikes then
+        for _, spike in ipairs(level.spikes) do
+          if spike.x and spike.y then
+            table.insert(config.spikes, { spike.x, spike.y })
+          end
+        end
+      end
+
+      -- Convert crumbling platforms
+      if level.crumbling_platforms then
+        for _, platform in ipairs(level.crumbling_platforms) do
+          if platform.x and platform.y and platform.width and platform.height then
+            table.insert(config.crumbling_platforms, { platform.x, platform.y, platform.width, platform.height })
+          end
+        end
+      end
+
+      -- Convert decorations
+      if level.decorations then
+        for _, decoration in ipairs(level.decorations) do
+          if decoration.x and decoration.y and decoration.type then
+            table.insert(config.decorations, { decoration.x, decoration.y, decoration.type })
+          end
+        end
+      end
+
+      -- Convert water areas
+      if level.water then
+        for _, waterArea in ipairs(level.water) do
+          if waterArea.x and waterArea.y and waterArea.width and waterArea.height then
+            table.insert(config.water, { waterArea.x, waterArea.y, waterArea.width, waterArea.height })
+          end
+        end
+      end
+
+      -- Store time limit
+      config.timeLimit = level.timeLimit or 60 -- Default 60 seconds if not specified
+
+      tempLevelConfigs[i] = config
+    end
+  end
+
+  print("Applied editor changes to " .. #tempLevelConfigs .. " temporary levels")
+end
+
+-- Clear temporary levels (used on game restart)
+function levels.clearTemporaryLevels()
+  tempLevelConfigs = {}
+  print("Cleared temporary levels, will use original configuration")
 end
 
 return levels
