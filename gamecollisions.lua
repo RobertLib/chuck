@@ -1,11 +1,11 @@
 local collision = require("collision")
 local particles = require("particles")
+local playerDeath = require("player_death")
 
 local gamecollisions = {}
 
 function gamecollisions.checkCollisions(gameState)
   local player = gameState.player
-  local playerModule = require("player")
 
   -- Collision with collectibles
   for _, collectible in ipairs(gameState.collectibles) do
@@ -23,82 +23,51 @@ function gamecollisions.checkCollisions(gameState)
       collectible.isPickingUp = true
       gameState.score = gameState.score + 100
     end
-  end -- Collision with spikes (deadly trap)
-  for _, spike in ipairs(gameState.spikes) do
-    if collision.checkCollision(player, spike) and not gameState.invulnerable and not player.isWaitingToRespawn then
-      -- Create both blood particles and death particles for visual effect
-      particles.createBloodParticles(player.x + player.width / 2, player.y + player.height / 2)
-      particles.createPlayerDeathParticles(player.x + player.width / 2, player.y + player.height / 2)
+  end
 
-      gameState.lives = gameState.lives - 1
-      if gameState.lives <= 0 then
-        gameState.gameOver = true
-      else
-        playerModule.startDelayedRespawn(gameState)
+  -- Collision with spikes (deadly trap)
+  for _, spike in ipairs(gameState.spikes) do
+    if collision.checkCollision(player, spike) then
+      if playerDeath.killPlayerAtCenter(gameState, "spike") then
+        break -- Only lose one life per frame
       end
-      break -- Only lose one life per frame
     end
   end
 
   -- Collision with enemies
   for _, enemy in ipairs(gameState.enemies) do
-    if collision.checkCollision(player, enemy) and not gameState.invulnerable and not player.isWaitingToRespawn then
-      -- Create both blood particles and death particles for visual effect
-      particles.createBloodParticles(player.x + player.width / 2, player.y + player.height / 2)
-      particles.createPlayerDeathParticles(player.x + player.width / 2, player.y + player.height / 2)
-
-      gameState.lives = gameState.lives - 1
-      if gameState.lives <= 0 then
-        gameState.gameOver = true
-      else
-        playerModule.startDelayedRespawn(gameState)
+    if collision.checkCollision(player, enemy) then
+      if playerDeath.killPlayerAtCenter(gameState, "enemy") then
+        break -- Only lose one life per frame
       end
-      break -- Only lose one life per frame
     end
   end
 
   -- Collision with bats
   for _, bat in ipairs(gameState.bats) do
-    if collision.checkCollision(player, bat) and not gameState.invulnerable and not player.isWaitingToRespawn then
-      -- Create both blood particles and death particles for visual effect
-      particles.createBloodParticles(player.x + player.width / 2, player.y + player.height / 2)
-      particles.createPlayerDeathParticles(player.x + player.width / 2, player.y + player.height / 2)
-
-      gameState.lives = gameState.lives - 1
-      if gameState.lives <= 0 then
-        gameState.gameOver = true
-      else
-        playerModule.startDelayedRespawn(gameState)
+    if collision.checkCollision(player, bat) then
+      if playerDeath.killPlayerAtCenter(gameState, "bat") then
+        break -- Only lose one life per frame
       end
-      break -- Only lose one life per frame
     end
   end
 
   -- Collision with fireballs
   for i = #gameState.fireballs, 1, -1 do
     local fireball = gameState.fireballs[i]
-    if collision.checkCollision(player, fireball) and not gameState.invulnerable and not player.isWaitingToRespawn then
-      -- Create both blood particles and death particles for visual effect
-      particles.createBloodParticles(player.x + player.width / 2, player.y + player.height / 2)
-      particles.createPlayerDeathParticles(player.x + player.width / 2, player.y + player.height / 2)
+    if collision.checkCollision(player, fireball) then
+      if playerDeath.killPlayerAtCenter(gameState, "fireball") then
+        -- Create explosion particles at fireball location
+        particles.createImpactParticles(
+          fireball.x + fireball.width / 2,
+          fireball.y + fireball.height / 2,
+          { 1.0, 0.5, 0.1, 1.0 } -- Orange explosion color
+        )
 
-      -- Create explosion particles at fireball location
-      particles.createImpactParticles(
-        fireball.x + fireball.width / 2,
-        fireball.y + fireball.height / 2,
-        { 1.0, 0.5, 0.1, 1.0 } -- Orange explosion color
-      )
-
-      gameState.lives = gameState.lives - 1
-      if gameState.lives <= 0 then
-        gameState.gameOver = true
-      else
-        playerModule.startDelayedRespawn(gameState)
+        -- Remove the fireball after hit
+        table.remove(gameState.fireballs, i)
+        break -- Only lose one life per frame
       end
-
-      -- Remove the fireball after hit
-      table.remove(gameState.fireballs, i)
-      break -- Only lose one life per frame
     end
   end
 end

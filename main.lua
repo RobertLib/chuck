@@ -15,6 +15,7 @@ local particles = require("particles")
 local water = require("water")
 local moving_platforms = require("moving_platforms")
 local fireballs = require("fireballs")
+local playerDeath = require("player_death")
 
 -- Game state
 local gameState
@@ -139,21 +140,9 @@ function love.update(dt)
     gameState.timeLeft = gameState.timeLeft - dt
     if gameState.timeLeft <= 0 then
       gameState.timeLeft = 0
-      -- Time's up - create particles and start delayed respawn
+      -- Time's up - use centralized death handling
       if not gameState.player.isWaitingToRespawn then
-        -- Create both blood particles and death particles for visual effect
-        particles.createBloodParticles(gameState.player.x + gameState.player.width / 2,
-          gameState.player.y + gameState.player.height / 2)
-        particles.createPlayerDeathParticles(gameState.player.x + gameState.player.width / 2,
-          gameState.player.y + gameState.player.height / 2)
-
-        gameState.lives = gameState.lives - 1
-        if gameState.lives <= 0 then
-          gameState.gameOver = true
-        else
-          -- Start delayed respawn with level reset
-          player.startDelayedRespawn(gameState)
-        end
+        playerDeath.killPlayerAtCenter(gameState, "timeout")
       end
     end
   end
@@ -179,19 +168,7 @@ function love.update(dt)
   -- Check water collision - player dies if touching water
   if water.checkCollision(gameState) then
     if not gameState.player.isWaitingToRespawn then
-      -- Create death particles
-      particles.createBloodParticles(gameState.player.x + gameState.player.width / 2,
-        gameState.player.y + gameState.player.height / 2)
-      particles.createPlayerDeathParticles(gameState.player.x + gameState.player.width / 2,
-        gameState.player.y + gameState.player.height / 2)
-
-      gameState.lives = gameState.lives - 1
-      if gameState.lives <= 0 then
-        gameState.gameOver = true
-      else
-        -- Start delayed respawn
-        player.startDelayedRespawn(gameState)
-      end
+      playerDeath.killPlayerAtCenter(gameState, "water")
     end
   end
 

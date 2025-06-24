@@ -89,4 +89,12 @@ constants.ENEMY_SIGHT_VERTICAL_TOLERANCE = 50 -- Vertical tolerance for line of 
 constants.ENEMY_SIGHT_RANGE = 200             -- How far enemy can see player
 constants.ENEMY_SIGHT_VERTICAL_TOLERANCE = 50 -- Vertical tolerance for line of sight
 
+-- Enemy ladder behavior constants
+constants.ENEMY_LADDER_CHANCE = 0.3            -- 30% chance to climb ladder when encountered
+constants.ENEMY_CLIMB_SPEED = 30               -- Speed when climbing ladders
+constants.ENEMY_LADDER_CHECK_INTERVAL = 1.0    -- How often to check for ladders (seconds)
+constants.ENEMY_LADDER_CENTER_SPEED = 80       -- Speed of centering on ladder horizontally
+constants.ENEMY_PLATFORM_TRANSITION_SPEED = 60 -- Speed of transitioning onto platform
+constants.ENEMY_CLIMB_DOWN_CHANCE = 0.4        -- 40% chance to climb down when on ladder
+
 return constants

@@ -4,12 +4,84 @@ local fireballs = require("fireballs")
 
 local enemies = {}
 
+-- Helper function to calculate enemy and ladder bounds
+local function getEnemyBounds(enemy)
+  return {
+    left = enemy.x,
+    right = enemy.x + enemy.width,
+    top = enemy.y,
+    bottom = enemy.y + enemy.height
+  }
+end
+
+local function getLadderBounds(ladder)
+  return {
+    left = ladder.x,
+    right = ladder.x + ladder.width,
+    top = ladder.y,
+    bottom = ladder.y + ladder.height
+  }
+end
+
+-- Unified function to check ladder interactions
+function enemies.checkLadderInteraction(enemy, gameState, interactionType)
+  for _, ladder in ipairs(gameState.ladders) do
+    local enemyBounds = getEnemyBounds(enemy)
+    local ladderBounds = getLadderBounds(ladder)
+
+    -- Check horizontal overlap
+    local horizontalOverlap = (enemyBounds.right > ladderBounds.left and enemyBounds.left < ladderBounds.right)
+
+    if not horizontalOverlap then
+      goto continue
+    end
+
+    if interactionType == "collision" then
+      -- Direct collision check
+      if collision.checkCollision(enemy, ladder) then
+        return ladder
+      end
+    elseif interactionType == "below" then
+      -- Check if ladder is below enemy (within reasonable distance)
+      local verticalDistance = ladderBounds.top - enemyBounds.bottom
+      if verticalDistance > 0 and verticalDistance <= 20 then
+        return ladder
+      end
+    elseif interactionType == "fromPlatform" then
+      -- Check if enemy is on top of ladder or very close
+      local verticalDistance = math.abs(enemyBounds.bottom - ladderBounds.top)
+      if verticalDistance <= 10 then
+        return ladder
+      end
+    end
+
+    ::continue::
+  end
+  return nil
+end
+
+-- Simplified wrapper functions for backward compatibility
+function enemies.checkLadderCollision(enemy, gameState)
+  return enemies.checkLadderInteraction(enemy, gameState, "collision")
+end
+
+function enemies.checkLadderBelow(enemy, gameState)
+  return enemies.checkLadderInteraction(enemy, gameState, "below")
+end
+
+function enemies.checkLadderFromPlatform(enemy, gameState)
+  return enemies.checkLadderInteraction(enemy, gameState, "fromPlatform")
+end
+
+-- Helper function to get center coordinates
+local function getCenterCoordinates(entity)
+  return entity.x + entity.width / 2, entity.y + entity.height / 2
+end
+
 -- Function to check if enemy can see the player
 function enemies.canSeePlayer(enemy, player, gameState)
-  local enemyCenterX = enemy.x + enemy.width / 2
-  local enemyCenterY = enemy.y + enemy.height / 2
-  local playerCenterX = player.x + player.width / 2
-  local playerCenterY = player.y + player.height / 2
+  local enemyCenterX, enemyCenterY = getCenterCoordinates(enemy)
+  local playerCenterX, playerCenterY = getCenterCoordinates(player)
 
   -- Check distance - enemy can only see player within a certain range
   local distance = math.sqrt((enemyCenterX - playerCenterX) ^ 2 + (enemyCenterY - playerCenterY) ^ 2)
@@ -23,14 +95,19 @@ function enemies.canSeePlayer(enemy, player, gameState)
     return false
   end
 
-  -- Check if there are obstacles between enemy and player
-  local dx = playerCenterX - enemyCenterX
-  local dy = playerCenterY - enemyCenterY
+  -- Check line of sight for obstacles
+  return enemies.checkLineOfSight(enemyCenterX, enemyCenterY, playerCenterX, playerCenterY, distance, gameState)
+end
+
+-- Separate function for line of sight checking
+function enemies.checkLineOfSight(startX, startY, endX, endY, distance, gameState)
+  local dx = endX - startX
+  local dy = endY - startY
   local steps = math.floor(distance / 5) -- Check every 5 pixels
 
   for i = 1, steps do
-    local checkX = enemyCenterX + (dx * i / steps)
-    local checkY = enemyCenterY + (dy * i / steps)
+    local checkX = startX + (dx * i / steps)
+    local checkY = startY + (dy * i / steps)
 
     -- Create a small check rectangle
     local checkRect = { x = checkX - 2, y = checkY - 2, width = 4, height = 4 }
@@ -55,10 +132,8 @@ end
 
 -- Function to calculate direction to player
 function enemies.getDirectionToPlayer(enemy, player)
-  local enemyCenterX = enemy.x + enemy.width / 2
-  local enemyCenterY = enemy.y + enemy.height / 2
-  local playerCenterX = player.x + player.width / 2
-  local playerCenterY = player.y + player.height / 2
+  local enemyCenterX, enemyCenterY = getCenterCoordinates(enemy)
+  local playerCenterX, playerCenterY = getCenterCoordinates(player)
 
   local dx = playerCenterX - enemyCenterX
   local dy = playerCenterY - enemyCenterY
@@ -86,8 +161,29 @@ function enemies.updateEnemies(dt, gameState)
       enemy.fireballTimer = 0
     end
 
+    -- Initialize ladder properties if not present
+    if not enemy.ladderTimer then
+      enemy.ladderTimer = 0
+    end
+    if enemy.onLadder == nil then
+      enemy.onLadder = false
+    end
+    if enemy.climbingUp == nil then
+      enemy.climbingUp = false
+    end
+    if enemy.climbingDown == nil then
+      enemy.climbingDown = false
+    end
+    if enemy.transitioningToPlatform == nil then
+      enemy.transitioningToPlatform = false
+    end
+    if enemy.movingToLadder == nil then
+      enemy.movingToLadder = false
+    end
+
     enemy.animTime = enemy.animTime + dt * constants.ANIM_SPEED
     enemy.fireballTimer = enemy.fireballTimer + dt
+    enemy.ladderTimer = enemy.ladderTimer + dt
 
     -- Update facing direction based on velocity
     if enemy.velocityX > 0 then
@@ -126,50 +222,318 @@ function enemies.updateEnemies(dt, gameState)
       end
     end
 
-    -- Move enemy
-    enemy.x = enemy.x + enemy.velocityX * dt
+    -- Check for ladder interaction
+    local nearLadder = enemies.checkLadderCollision(enemy, gameState)
+    local ladderBelow = enemies.checkLadderBelow(enemy, gameState)
+    local ladderFromPlatform = enemies.checkLadderFromPlatform(enemy, gameState)
 
-    -- Check if enemy would fall off a platform or hit screen boundaries or crates
-    local wouldFall = true
-    local hitBoundary = false
-    local hitCrate = false
+    if not enemy.onLadder and enemy.ladderTimer >= constants.ENEMY_LADDER_CHECK_INTERVAL then
+      local targetLadder = nearLadder or ladderBelow or ladderFromPlatform
 
-    -- Check screen boundaries
-    if enemy.x <= 0 or enemy.x + enemy.width >= constants.SCREEN_WIDTH then
-      hitBoundary = true
-    end
+      if targetLadder then
+        -- Random chance to climb the ladder
+        if math.random() < constants.ENEMY_LADDER_CHANCE then
+          enemy.onLadder = true
+          enemy.velocityY = 0   -- Reset vertical velocity
+          enemy.ladderTimer = 0 -- Reset timer
 
-    -- Check collision with crates
-    for _, crate in ipairs(gameState.crates) do
-      if collision.checkCollision(enemy, crate) then
-        hitCrate = true
-        break
-      end
-    end
+          -- Decide direction based on which type of ladder interaction
+          if ladderFromPlatform and not nearLadder and not ladderBelow then
+            -- Climbing down from platform
+            enemy.climbingUp = false
+            enemy.climbingDown = true
+            enemy.targetLadder = ladderFromPlatform -- Set target ladder for climbing down
+          else
+            -- Climbing up (normal behavior)
+            enemy.climbingUp = true
+            enemy.climbingDown = false
+          end
 
-    -- Check if enemy is still on a platform
-    local enemyBottom = enemy.y + enemy.height
-    for _, platform in ipairs(gameState.platforms) do
-      -- Check if enemy is on this platform (with some tolerance)
-      if math.abs(enemyBottom - platform.y) < 5 then
-        -- Check if enemy would still be on the platform after moving
-        local enemyLeft = enemy.x
-        local enemyRight = enemy.x + enemy.width
-        local platformLeft = platform.x
-        local platformRight = platform.x + platform.width
-
-        -- Enemy needs to be completely on the platform
-        if enemyLeft >= platformLeft and enemyRight <= platformRight then
-          wouldFall = false
-          break
+          -- If using ladder below, move enemy to the ladder position
+          if ladderBelow and not nearLadder and not ladderFromPlatform then
+            enemy.movingToLadder = true
+            enemy.targetLadder = ladderBelow
+          end
+        else
+          enemy.ladderTimer = 0 -- Reset timer even if not climbing
         end
       end
     end
 
-    -- If enemy would fall off, hit boundary, or hit crate, reverse direction and restore position
-    if wouldFall or hitBoundary or hitCrate then
-      enemy.x = oldX
-      enemy.velocityX = -enemy.velocityX
+    -- Handle ladder climbing behavior
+    if enemy.onLadder then
+      -- Re-check ladder from platform for climbing down (in case enemy moved)
+      local currentLadderFromPlatform = enemies.checkLadderFromPlatform(enemy, gameState)
+
+      -- Get current ladder (check all possible sources)
+      local currentLadder = nearLadder or enemy.targetLadder or currentLadderFromPlatform
+
+      if enemy.movingToLadder and enemy.targetLadder then
+        -- Move to ladder position first
+        local ladderCenterX = enemy.targetLadder.x + enemy.targetLadder.width / 2
+        local targetX = ladderCenterX - enemy.width / 2
+        local ladderTop = enemy.targetLadder.y
+
+        -- Move horizontally to ladder center
+        if math.abs(enemy.x - targetX) > 1 then
+          local direction = (targetX > enemy.x) and 1 or -1
+          enemy.velocityX = direction * constants.ENEMY_LADDER_CENTER_SPEED
+          enemy.velocityY = 0 -- Don't fall while moving to ladder
+        else
+          -- Reached horizontal position, now move to ladder top
+          enemy.x = targetX
+          enemy.velocityX = 0
+
+          if math.abs(enemy.y + enemy.height - ladderTop) > 1 then
+            enemy.velocityY = -constants.ENEMY_PLATFORM_TRANSITION_SPEED
+          else
+            -- Reached ladder, start normal climbing
+            enemy.y = ladderTop - enemy.height
+            enemy.movingToLadder = false
+            enemy.velocityY = 0
+          end
+        end
+      elseif currentLadder then
+        -- Normal ladder climbing behavior
+        -- Gradually center enemy on ladder during climbing
+        local ladderCenterX = currentLadder.x + currentLadder.width / 2
+        local targetX = ladderCenterX - enemy.width / 2
+
+        -- Smoothly move toward center of ladder
+        if math.abs(enemy.x - targetX) > 1 then
+          local direction = (targetX > enemy.x) and 1 or -1
+          enemy.velocityX = direction * constants.ENEMY_LADDER_CENTER_SPEED
+        else
+          enemy.velocityX = 0
+          enemy.x = targetX -- Snap when very close
+        end
+
+        -- Continue climbing based on direction
+        if enemy.climbingUp then
+          enemy.velocityY = -constants.ENEMY_CLIMB_SPEED
+
+          -- Check if reached top of ladder
+          if enemy.y <= currentLadder.y - 5 then
+            -- Try to find a platform above the ladder to stand on
+            local foundPlatform = false
+
+            for _, platform in ipairs(gameState.platforms) do
+              -- Check if there's a platform at the top of the ladder
+              if platform.y <= currentLadder.y + 5 and platform.y >= currentLadder.y - 20 then
+                local platformLeft = platform.x
+                local platformRight = platform.x + platform.width
+                local enemyLeft = enemy.x
+                local enemyRight = enemy.x + enemy.width
+
+                -- If enemy can fit on this platform (with some overlap tolerance)
+                if enemyLeft >= platformLeft - 5 and enemyRight <= platformRight + 5 then
+                  -- Start transitioning to platform instead of teleporting
+                  enemy.onLadder = false
+                  enemy.transitioningToPlatform = true
+                  enemy.targetPlatformY = platform.y - enemy.height
+                  enemy.velocityX = (math.random() < 0.5) and -constants.ENEMY_SPEED or constants.ENEMY_SPEED
+                  enemy.targetLadder = nil
+                  enemy.climbingUp = false
+                  enemy.climbingDown = false
+                  foundPlatform = true
+                  break
+                end
+              end
+            end
+
+            -- If no suitable platform found, stop climbing and let physics handle it
+            if not foundPlatform then
+              enemy.onLadder = false
+              enemy.velocityY = 0
+              enemy.velocityX = (math.random() < 0.5) and -constants.ENEMY_SPEED or constants.ENEMY_SPEED
+              enemy.targetLadder = nil
+              enemy.climbingUp = false
+              enemy.climbingDown = false
+            end
+          end
+        elseif enemy.climbingDown then
+          enemy.velocityY = constants.ENEMY_CLIMB_SPEED
+
+          -- Check if enemy would land on a platform while climbing down
+          local foundPlatformBelow = false
+          for _, platform in ipairs(gameState.platforms) do
+            local enemyBottom = enemy.y + enemy.height + constants.ENEMY_CLIMB_SPEED * dt -- Look ahead
+            local enemyLeft = enemy.x
+            local enemyRight = enemy.x + enemy.width
+            local platformLeft = platform.x
+            local platformRight = platform.x + platform.width
+            local platformTop = platform.y
+
+            -- Check if enemy would collide with platform horizontally and is approaching from above
+            local horizontalOverlap = (enemyRight > platformLeft + 2 and enemyLeft < platformRight - 2)
+            local approachingFromAbove = enemyBottom >= platformTop - 2 and enemy.y + enemy.height < platformTop + 10
+
+            -- Make sure this isn't the platform the enemy started from (must be significantly below)
+            local significantlyBelow = platformTop > currentLadder.y + 10
+
+            if horizontalOverlap and approachingFromAbove and significantlyBelow then
+              -- Land on the platform and align properly
+              enemy.y = platformTop - enemy.height
+              enemy.onLadder = false
+              enemy.velocityY = 0
+              enemy.velocityX = (math.random() < 0.5) and -constants.ENEMY_SPEED or constants.ENEMY_SPEED
+              enemy.targetLadder = nil
+              enemy.climbingUp = false
+              enemy.climbingDown = false
+              enemy.justFinishedClimbing = true -- Prevent immediate falling
+              foundPlatformBelow = true
+              break
+            end
+          end
+
+          -- If no platform found, check if reached bottom of ladder
+          if not foundPlatformBelow and enemy.y + enemy.height >= currentLadder.y + currentLadder.height - 5 then
+            -- Try one more time to find a platform at the bottom of the ladder
+            for _, platform in ipairs(gameState.platforms) do
+              local enemyBottom = enemy.y + enemy.height
+              local enemyLeft = enemy.x
+              local enemyRight = enemy.x + enemy.width
+              local platformLeft = platform.x
+              local platformRight = platform.x + platform.width
+              local platformTop = platform.y
+
+              -- Check if there's a platform right at the bottom of the ladder
+              local horizontalOverlap = (enemyRight > platformLeft + 2 and enemyLeft < platformRight - 2)
+              local verticalMatch = math.abs(enemyBottom - platformTop) <= 15
+
+              if horizontalOverlap and verticalMatch then
+                -- Snap to platform
+                enemy.y = platformTop - enemy.height
+                enemy.onLadder = false
+                enemy.velocityY = 0
+                enemy.velocityX = (math.random() < 0.5) and -constants.ENEMY_SPEED or constants.ENEMY_SPEED
+                enemy.targetLadder = nil
+                enemy.climbingUp = false
+                enemy.climbingDown = false
+                enemy.justFinishedClimbing = true
+                foundPlatformBelow = true
+                break
+              end
+            end
+
+            -- If still no platform found, stop climbing and let physics handle it
+            if not foundPlatformBelow then
+              enemy.onLadder = false
+              enemy.velocityY = 0
+              enemy.velocityX = (math.random() < 0.5) and -constants.ENEMY_SPEED or constants.ENEMY_SPEED
+              enemy.targetLadder = nil
+              enemy.climbingUp = false
+              enemy.climbingDown = false
+            end
+          end
+        end
+      else
+        -- No longer on ladder
+        enemy.onLadder = false
+        enemy.velocityY = 0
+        enemy.velocityX = (math.random() < 0.5) and -constants.ENEMY_SPEED or constants.ENEMY_SPEED
+        enemy.movingToLadder = false
+        enemy.targetLadder = nil
+        enemy.climbingUp = false
+        enemy.climbingDown = false
+      end
+    else
+      -- Handle platform transition
+      if enemy.transitioningToPlatform and enemy.targetPlatformY then
+        -- Smoothly move to target platform position
+        local targetY = enemy.targetPlatformY
+        local deltaY = targetY - enemy.y
+
+        if math.abs(deltaY) > 1 then
+          -- Move toward target position
+          local direction = (deltaY > 0) and 1 or -1
+          enemy.velocityY = direction * constants.ENEMY_PLATFORM_TRANSITION_SPEED
+        else
+          -- Close enough - snap to position and finish transition
+          enemy.y = targetY
+          enemy.velocityY = 0
+          enemy.transitioningToPlatform = false
+          enemy.targetPlatformY = nil
+        end
+      else
+        -- Normal gravity when not on ladder and not transitioning
+        if not enemy.velocityY then
+          enemy.velocityY = 0
+        end
+
+        -- Skip gravity for one frame if just finished climbing to prevent falling
+        if enemy.justFinishedClimbing then
+          enemy.justFinishedClimbing = false
+        else
+          enemy.velocityY = enemy.velocityY + constants.GRAVITY * dt
+        end
+      end
+    end
+
+    -- Move enemy
+    enemy.x = enemy.x + enemy.velocityX * dt
+    enemy.y = enemy.y + enemy.velocityY * dt
+
+    -- Check if enemy would fall off a platform or hit screen boundaries or crates (skip if on ladder)
+    local wouldFall = true
+    local hitBoundary = false
+    local hitCrate = false
+
+    if not enemy.onLadder then
+      -- Store old Y position for platform collision
+      local oldY = enemy.y - enemy.velocityY * dt
+
+      -- Check screen boundaries
+      if enemy.x <= 0 or enemy.x + enemy.width >= constants.SCREEN_WIDTH then
+        hitBoundary = true
+      end
+
+      -- Check collision with crates
+      for _, crate in ipairs(gameState.crates) do
+        if collision.checkCollision(enemy, crate) then
+          hitCrate = true
+          break
+        end
+      end
+
+      -- Check platform collisions
+      for _, platform in ipairs(gameState.platforms) do
+        if collision.checkCollision(enemy, platform) then
+          local oldEnemyBottom = oldY + enemy.height
+
+          -- Landing on platform from above
+          if enemy.velocityY > 0 and oldEnemyBottom <= platform.y then
+            enemy.y = platform.y - enemy.height
+            enemy.velocityY = 0
+            wouldFall = false
+          end
+        end
+      end
+
+      -- Check if enemy is on a platform (for horizontal movement validation)
+      if not wouldFall then
+        wouldFall = true
+        local enemyBottom = enemy.y + enemy.height
+        for _, platform in ipairs(gameState.platforms) do
+          if math.abs(enemyBottom - platform.y) < 5 then
+            local enemyLeft = enemy.x
+            local enemyRight = enemy.x + enemy.width
+            local platformLeft = platform.x
+            local platformRight = platform.x + platform.width
+
+            if enemyLeft >= platformLeft and enemyRight <= platformRight then
+              wouldFall = false
+              break
+            end
+          end
+        end
+      end
+
+      -- If enemy would fall off, hit boundary, or hit crate, reverse direction and restore position
+      if wouldFall or hitBoundary or hitCrate then
+        enemy.x = oldX
+        enemy.velocityX = -enemy.velocityX
+      end
     end
   end
 end

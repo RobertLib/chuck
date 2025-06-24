@@ -2,9 +2,9 @@ local constants = require("constants")
 local collision = require("collision")
 local crates = require("crates")
 local crumbling_platforms = require("crumbling_platforms")
-local particles = require("particles")
 local gamestate = require("gamestate")
 local moving_platforms = require("moving_platforms")
+local playerDeath = require("player_death")
 
 local player = {}
 
@@ -106,10 +106,8 @@ function player.updatePlayer(dt, gameState)
   end
 
   if p.y > constants.SCREEN_HEIGHT then
-    -- Create both blood particles and death particles for visual effect
-    particles.createBloodParticles(p.x + p.width / 2, constants.SCREEN_HEIGHT - 20)
-    particles.createPlayerDeathParticles(p.x + p.width / 2, p.y + p.height / 2)
-    gameState.gameOver = true
+    -- Use centralized death handling for screen boundary
+    playerDeath.killPlayer(gameState, p.x + p.width / 2, constants.SCREEN_HEIGHT - 20, "fall_off_screen")
   end
 
   -- Collision detection with platforms and crates
@@ -651,18 +649,9 @@ function player.checkFallDamage(gameState)
 
     -- Check if fall was dangerous
     if fallDistance > constants.MAX_SAFE_FALL_DISTANCE and fallSpeed > constants.FALL_DAMAGE_THRESHOLD then
-      -- Player took fall damage - same logic as enemy collision
-      if not gameState.invulnerable and not p.isWaitingToRespawn then
-        -- Create both blood particles and death particles for visual effect
-        particles.createBloodParticles(p.x + p.width / 2, p.y + p.height / 2)
-        particles.createPlayerDeathParticles(p.x + p.width / 2, p.y + p.height / 2)
-
-        gameState.lives = gameState.lives - 1
-        if gameState.lives <= 0 then
-          gameState.gameOver = true
-        else
-          player.startDelayedRespawn(gameState)
-        end
+      -- Player took fall damage - use centralized death handling
+      if playerDeath.killPlayerAtCenter(gameState, "fall_damage") then
+        -- Fall damage handled
       end
     end
 

@@ -75,10 +75,9 @@ function bats.drawBat(bat)
   local wingOffset = math.sin(bat.animTime) * 3
 
   -- Bat colors (more visible, still spooky)
-  local bodyColor = { 0.4, 0.2, 0.2 }    -- Lighter brown body
-  local wingColor = { 0.3, 0.15, 0.15 }  -- Lighter wings
-  local outlineColor = { 0.8, 0.8, 0.8 } -- Light outline for visibility
-  local eyeColor = { 1.0, 0.3, 0.3 }     -- Brighter red glowing eyes
+  local bodyColor = { 0.4, 0.2, 0.2 }   -- Lighter brown body
+  local wingColor = { 0.3, 0.15, 0.15 } -- Lighter wings
+  local eyeColor = { 1.0, 0.3, 0.3 }    -- Brighter red glowing eyes
 
   -- Determine facing direction for sprite flipping
   local scaleX = bat.direction
