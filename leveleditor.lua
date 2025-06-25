@@ -17,13 +17,15 @@ local editorState = {
     spikes = {},
     crumbling_platforms = {},
     moving_platforms = {},
+    conveyor_belts = {},
     decorations = {},
     water = {},
     timeLimit = 60
   },
-  selectedTool = "platform",                 -- platform, ladder, egg, enemy, crate, spike, crumbling_platform, moving_platform, decoration, water, delete, move
+  selectedTool = "platform",                 -- platform, ladder, egg, enemy, crate, spike, crumbling_platform, moving_platform, conveyor_belt, decoration, water, delete, move
   selectedDecorationType = 1,                -- 1=moss, 2=torch, 3=crystal_cluster
   selectedMovingPlatformType = "horizontal", -- horizontal, vertical
+  selectedConveyorBeltDirection = 1,         -- 1=right, -1=left
   dragStart = nil,
   selectedObject = nil,
   selectedObjectType = nil,
@@ -46,6 +48,7 @@ local toolColors = {
   spike = { 1, 0, 1 },
   crumbling_platform = { 0.7, 0.5, 0.3 },
   moving_platform = { 0.6, 0.8, 0.6 },
+  conveyor_belt = { 0.4, 0.4, 0.4 },
   decoration = { 0.5, 0.8, 0.5 },
   water = { 0.2, 0.5, 0.9 },
   delete = { 1, 0, 0 },
@@ -62,6 +65,7 @@ local availableTools = {
   { id = "spike",              name = "Spike",              key = "6", draggable = false },
   { id = "crumbling_platform", name = "Crumbling Platform", key = "7", draggable = true },
   { id = "moving_platform",    name = "Moving Platform",    key = "8", draggable = true },
+  { id = "conveyor_belt",      name = "Conveyor Belt",      key = "B", draggable = true },
   { id = "decoration",         name = "Decoration",         key = "9", draggable = false },
   { id = "water",              name = "Water",              key = "0", draggable = true },
   { id = "move",               name = "Move",               key = "M", draggable = false },
@@ -164,7 +168,7 @@ end
 -- Find object at position
 function levelEditor.findObjectAt(x, y)
   local objectTypes = { "platforms", "ladders", "eggs", "enemies", "crates", "spikes", "crumbling_platforms",
-    "moving_platforms", "decorations", "water" }
+    "moving_platforms", "conveyor_belts", "decorations", "water" }
 
   for _, objType in ipairs(objectTypes) do
     local objects = editorState.currentLevel[objType]
@@ -220,6 +224,15 @@ function levelEditor.addObject(x, y, tool)
       editorState.currentLevel.moving_platforms = {}
     end
     table.insert(editorState.currentLevel.moving_platforms, newObj)
+  elseif tool == "conveyor_belt" then
+    newObj.width = 100
+    newObj.height = 20
+    newObj.speed = 50
+    newObj.direction = editorState.selectedConveyorBeltDirection
+    if not editorState.currentLevel.conveyor_belts then
+      editorState.currentLevel.conveyor_belts = {}
+    end
+    table.insert(editorState.currentLevel.conveyor_belts, newObj)
   elseif tool == "decoration" then
     newObj.type = editorState.selectedDecorationType
     if not editorState.currentLevel.decorations then
@@ -272,7 +285,7 @@ function levelEditor.mousepressed(x, y, button)
       -- For placing objects, use grid-snapped coordinates
       local mx, my = levelEditor.getGridSnappedMouse()
       -- Check if dragging to create platforms/ladders/crumbling platforms
-      if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
+      if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "moving_platform" or editorState.selectedTool == "conveyor_belt" or editorState.selectedTool == "water" then
         editorState.dragStart = { x = mx, y = my }
       else
         levelEditor.addObject(mx, my, editorState.selectedTool)
@@ -288,7 +301,7 @@ function levelEditor.mousereleased(x, y, button)
   local mx, my = levelEditor.getGridSnappedMouse()
 
   if button == 1 and editorState.dragStart then
-    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "water" then
+    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "moving_platform" or editorState.selectedTool == "conveyor_belt" or editorState.selectedTool == "water" then
       local width = math.abs(mx - editorState.dragStart.x) + editorState.gridSize
       local height = math.abs(my - editorState.dragStart.y) + editorState.gridSize
 
@@ -309,6 +322,21 @@ function levelEditor.mousereleased(x, y, button)
             editorState.currentLevel.crumbling_platforms = {}
           end
           table.insert(editorState.currentLevel.crumbling_platforms, newObj)
+        elseif editorState.selectedTool == "moving_platform" then
+          newObj.speed = 50
+          newObj.range = 100
+          newObj.movementType = editorState.selectedMovingPlatformType
+          if not editorState.currentLevel.moving_platforms then
+            editorState.currentLevel.moving_platforms = {}
+          end
+          table.insert(editorState.currentLevel.moving_platforms, newObj)
+        elseif editorState.selectedTool == "conveyor_belt" then
+          newObj.speed = 50
+          newObj.direction = editorState.selectedConveyorBeltDirection
+          if not editorState.currentLevel.conveyor_belts then
+            editorState.currentLevel.conveyor_belts = {}
+          end
+          table.insert(editorState.currentLevel.conveyor_belts, newObj)
         elseif editorState.selectedTool == "water" then
           if not editorState.currentLevel.water then
             editorState.currentLevel.water = {}
@@ -356,6 +384,8 @@ function levelEditor.keypressed(key)
     editorState.selectedTool = "crumbling_platform"
   elseif key == "8" then
     editorState.selectedTool = "moving_platform"
+  elseif key == "b" then
+    editorState.selectedTool = "conveyor_belt"
   elseif key == "9" then
     editorState.selectedTool = "decoration"
   elseif key == "0" then
@@ -378,6 +408,12 @@ function levelEditor.keypressed(key)
     editorState.selectedMovingPlatformType = "horizontal"
   elseif key == "w" and editorState.selectedTool == "moving_platform" then
     editorState.selectedMovingPlatformType = "vertical"
+
+    -- Conveyor belt direction selection (when conveyor belt tool is active)
+  elseif key == "a" and editorState.selectedTool == "conveyor_belt" then
+    editorState.selectedConveyorBeltDirection = -1 -- left
+  elseif key == "d" and editorState.selectedTool == "conveyor_belt" then
+    editorState.selectedConveyorBeltDirection = 1  -- right
 
     -- Toggle tool panel
   elseif key == "t" then
@@ -430,6 +466,7 @@ function levelEditor.keypressed(key)
     editorState.currentLevel.spikes = {}
     editorState.currentLevel.crumbling_platforms = {}
     editorState.currentLevel.moving_platforms = {}
+    editorState.currentLevel.conveyor_belts = {}
     editorState.currentLevel.decorations = {}
     editorState.currentLevel.water = {}
 
@@ -604,7 +641,7 @@ function levelEditor.drawObject(obj, objType)
   local color = toolColors[objType] or { 1, 1, 1 }
   love.graphics.setColor(color[1], color[2], color[3], 0.8)
 
-  if objType == "platforms" or objType == "ladders" or objType == "crumbling_platforms" or objType == "moving_platforms" or objType == "water" then
+  if objType == "platforms" or objType == "ladders" or objType == "crumbling_platforms" or objType == "moving_platforms" or objType == "conveyor_belts" or objType == "water" then
     love.graphics.rectangle("fill", obj.x, obj.y, obj.width, obj.height)
     love.graphics.setColor(1, 1, 1)
     love.graphics.rectangle("line", obj.x, obj.y, obj.width, obj.height)
@@ -633,6 +670,32 @@ function levelEditor.drawObject(obj, objType)
         -- Draw vertical arrows
         for i = 4, obj.height - 4, 12 do
           love.graphics.rectangle("fill", obj.x + obj.width / 2 - 1, obj.y + i, 2, 8)
+        end
+      end
+      -- Add visual indicator for conveyor belts
+    elseif objType == "conveyor_belts" then
+      love.graphics.setColor(0.4, 0.4, 0.4, 0.8) -- Gray overlay
+      love.graphics.rectangle("fill", obj.x + 2, obj.y + 2, obj.width - 4, obj.height - 4)
+      -- Add direction arrows
+      love.graphics.setColor(0.8, 0.8, 0.8)
+      local arrowSpacing = 16
+      for i = 8, obj.width - 8, arrowSpacing do
+        local arrowX = obj.x + i
+        local arrowY = obj.y + obj.height / 2
+        if obj.direction > 0 then
+          -- Right arrow
+          love.graphics.polygon("fill",
+            arrowX, arrowY - 3,
+            arrowX + 6, arrowY,
+            arrowX, arrowY + 3
+          )
+        else
+          -- Left arrow
+          love.graphics.polygon("fill",
+            arrowX + 6, arrowY - 3,
+            arrowX, arrowY,
+            arrowX + 6, arrowY + 3
+          )
         end
       end
       -- Add visual effect for water
@@ -706,6 +769,9 @@ function levelEditor.drawUI()
     toolText = toolText .. " (" .. decorTypeName .. ")"
   elseif editorState.selectedTool == "moving_platform" then
     toolText = toolText .. " (" .. editorState.selectedMovingPlatformType .. ")"
+  elseif editorState.selectedTool == "conveyor_belt" then
+    local direction = editorState.selectedConveyorBeltDirection == 1 and "Right" or "Left"
+    toolText = toolText .. " (Direction: " .. direction .. ")"
   end
   love.graphics.print(toolText, 10, 40)
 
@@ -719,17 +785,23 @@ function levelEditor.drawUI()
   if editorState.selectedTool == "moving_platform" then
     love.graphics.print("Platform Type: Q:Horizontal W:Vertical", 10, 70)
   end
+  if editorState.selectedTool == "conveyor_belt" then
+    love.graphics.print("Belt Direction: A:Left D:Right", 10, 70)
+  end
 
   local controlText = "S:Save N:New C:Clear G:Grid H:Help ←→:Switch Level"
   love.graphics.print(controlText, 10,
-    (editorState.selectedTool == "decoration" or editorState.selectedTool == "moving_platform") and 85 or 70)
+    (editorState.selectedTool == "decoration" or editorState.selectedTool == "moving_platform" or editorState.selectedTool == "conveyor_belt") and
+    85 or 70)
 
   if editorState.showToolPanel then
     love.graphics.print("Tool Panel: ON (T to toggle)", 10,
-      (editorState.selectedTool == "decoration" or editorState.selectedTool == "moving_platform") and 100 or 85)
+      (editorState.selectedTool == "decoration" or editorState.selectedTool == "moving_platform" or editorState.selectedTool == "conveyor_belt") and
+      100 or 85)
   else
     love.graphics.print("Tool Panel: OFF (T to toggle)", 10,
-      (editorState.selectedTool == "decoration" or editorState.selectedTool == "moving_platform") and 100 or 85)
+      (editorState.selectedTool == "decoration" or editorState.selectedTool == "moving_platform" or editorState.selectedTool == "conveyor_belt") and
+      100 or 85)
   end
 
   -- Current tool highlight
@@ -738,7 +810,7 @@ function levelEditor.drawUI()
   love.graphics.setColor(color[1], color[2], color[3], 0.5)
 
   if editorState.selectedTool ~= "delete" and editorState.selectedTool ~= "move" then
-    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "moving_platform" or editorState.selectedTool == "water" then
+    if editorState.selectedTool == "platform" or editorState.selectedTool == "ladder" or editorState.selectedTool == "crumbling_platform" or editorState.selectedTool == "moving_platform" or editorState.selectedTool == "conveyor_belt" or editorState.selectedTool == "water" then
       if not editorState.dragStart then
         love.graphics.rectangle("fill", mx, my, 100, 20)
       end
@@ -778,6 +850,10 @@ E - Crystal Cluster
 MOVING PLATFORM TYPES (when moving platform tool is selected):
 Q - Horizontal
 W - Vertical
+
+CONVEYOR BELT DIRECTIONS (when conveyor belt tool is selected):
+A - Left
+D - Right
 
 CONTROLS:
 T - Toggle tool panel (mouse interface)

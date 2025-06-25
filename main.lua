@@ -14,6 +14,7 @@ local transition = require("transition")
 local particles = require("particles")
 local water = require("water")
 local moving_platforms = require("moving_platforms")
+local conveyor_belts = require("conveyor_belts")
 local fireballs = require("fireballs")
 local playerDeath = require("player_death")
 
@@ -158,6 +159,9 @@ function love.update(dt)
   -- Update moving platforms
   moving_platforms.update(gameState.moving_platforms, dt)
 
+  -- Update conveyor belts
+  conveyor_belts.update(gameState.conveyor_belts or {}, dt)
+
   -- Update crumbling platforms
   local crumbling_platforms = require("crumbling_platforms")
   crumbling_platforms.update(gameState, dt)
@@ -209,6 +213,7 @@ function love.draw()
   rendering.drawPlatforms(gameState)
   rendering.drawCrumblingPlatforms(gameState)
   rendering.drawMovingPlatforms(gameState)
+  rendering.drawConveyorBelts(gameState)
   rendering.drawLadders(gameState)
   rendering.drawDecorations(gameState)
   rendering.drawCollectibles(gameState)

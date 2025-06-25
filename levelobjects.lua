@@ -1,6 +1,7 @@
 local colors = require("colors")
 local crumbling_platforms = require("crumbling_platforms")
 local moving_platforms = require("moving_platforms")
+local conveyor_belts = require("conveyor_belts")
 
 local levelobjects = {}
 
@@ -200,6 +201,12 @@ end
 
 function levelobjects.drawMovingPlatforms(gameState)
   moving_platforms.draw(gameState.moving_platforms)
+end
+
+function levelobjects.drawConveyorBelts(gameState)
+  if gameState.conveyor_belts then
+    conveyor_belts.draw(gameState.conveyor_belts)
+  end
 end
 
 return levelobjects

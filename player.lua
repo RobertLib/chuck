@@ -4,6 +4,7 @@ local crates = require("crates")
 local crumbling_platforms = require("crumbling_platforms")
 local gamestate = require("gamestate")
 local moving_platforms = require("moving_platforms")
+local conveyor_belts = require("conveyor_belts")
 local playerDeath = require("player_death")
 
 local player = {}
@@ -153,6 +154,29 @@ function player.updatePlayer(dt, gameState)
   -- Check moving platforms
   moving_platforms.checkPlayerCollision(p, gameState.moving_platforms, dt)
 
+  -- Check conveyor belts collision
+  if gameState.conveyor_belts then
+    for _, belt in ipairs(gameState.conveyor_belts) do
+      if collision.checkCollision(p, belt) then
+        -- If player is on ladder and moving up, don't block with belt
+        if p.onLadder and p.velocityY < 0 then
+          -- Ignore belt collision when climbing up ladder
+        elseif isStartingClimbDown then
+          -- Ignore belt collision when starting to climb down from platform
+        elseif p.velocityY > 0 and oldY + p.height <= belt.y then
+          -- Falling from above - check old position to prevent teleporting through belt
+          p.y = belt.y - p.height
+          p.velocityY = 0
+          p.onGround = true
+        elseif p.velocityY < 0 and oldY >= belt.y + belt.height and not p.onLadder then
+          -- Hit from below (only when not on ladder) - check old position
+          p.y = belt.y + belt.height
+          p.velocityY = 0
+        end
+      end
+    end
+  end
+
   -- Check crates for vertical collision first (standing on top)
   for _, crate in ipairs(gameState.crates) do
     if collision.checkCollision(p, crate) then
@@ -243,6 +267,11 @@ function player.updatePlayer(dt, gameState)
 
   -- Check for fall damage
   player.checkFallDamage(gameState)
+
+  -- Apply conveyor belt effects
+  if gameState.conveyor_belts then
+    conveyor_belts.applyBeltEffect(gameState.conveyor_belts, p, dt)
+  end
 end
 
 -- Player animation system

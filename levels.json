@@ -61,6 +61,24 @@
       }
     ],
     "water": [{ "x": 320, "y": 520, "width": 160, "height": 60 }],
+    "conveyor_belts": [
+      {
+        "x": 400,
+        "y": 560,
+        "width": 120,
+        "height": 20,
+        "speed": 60,
+        "direction": 1
+      },
+      {
+        "x": 100,
+        "y": 430,
+        "width": 200,
+        "height": 20,
+        "speed": 40,
+        "direction": -1
+      }
+    ],
     "timeLimit": 45
   },
   {

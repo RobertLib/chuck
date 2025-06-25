@@ -72,6 +72,11 @@ function rendering.drawMovingPlatforms(gameState)
   levelobjects.drawMovingPlatforms(gameState)
 end
 
+function rendering.drawConveyorBelts(gameState)
+  local levelobjects = require("levelobjects")
+  levelobjects.drawConveyorBelts(gameState)
+end
+
 function rendering.drawLadders(gameState)
   local levelobjects = require("levelobjects")
   levelobjects.drawLadders(gameState)

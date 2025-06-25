@@ -50,6 +50,7 @@ function levels.loadLevels()
         spikes = {},
         crumbling_platforms = {},
         moving_platforms = {},
+        conveyor_belts = {},
         decorations = {},
         water = {}
       }
@@ -127,6 +128,21 @@ function levels.loadLevels()
         end
       end
 
+      -- Convert conveyor belts
+      if level.conveyor_belts then
+        for _, belt in ipairs(level.conveyor_belts) do
+          if belt.x and belt.y and belt.width and belt.height then
+            -- Default values if not specified
+            local speed = belt.speed or 50
+            local direction = belt.direction or 1
+            table.insert(config.conveyor_belts, {
+              belt.x, belt.y, belt.width, belt.height,
+              speed, direction
+            })
+          end
+        end
+      end
+
       -- Convert decorations
       if level.decorations then
         for _, decoration in ipairs(level.decorations) do
@@ -164,6 +180,7 @@ function levels.createLevel(gameState)
   gameState.spikes = {}
   gameState.crumbling_platforms = {}
   gameState.moving_platforms = {}
+  gameState.conveyor_belts = {}
   gameState.decorations = {}
   gameState.water = {}
   gameState.bats = {}
@@ -283,6 +300,19 @@ function levels.createLevel(gameState)
     table.insert(gameState.moving_platforms, movePlatform)
   end
 
+  -- Create conveyor belts
+  local conveyor_belts = require("conveyor_belts")
+  for _, belt in ipairs(config.conveyor_belts) do
+    table.insert(gameState.conveyor_belts, conveyor_belts.create(
+      belt[1], -- x
+      belt[2], -- y
+      belt[3], -- width
+      belt[4], -- height
+      belt[5], -- speed
+      belt[6]  -- direction
+    ))
+  end
+
   -- Create decorations
   for _, decoration in ipairs(config.decorations) do
     table.insert(gameState.decorations, {
@@ -329,6 +359,7 @@ function levels.applyEditorChanges(editorLevels)
         spikes = {},
         crumbling_platforms = {},
         moving_platforms = {},
+        conveyor_belts = {},
         decorations = {},
         water = {}
       }
@@ -407,6 +438,21 @@ function levels.applyEditorChanges(editorLevels)
             table.insert(config.moving_platforms, {
               platform.x, platform.y, platform.width, platform.height,
               speed, range, movementType
+            })
+          end
+        end
+      end
+
+      -- Convert conveyor belts
+      if level.conveyor_belts then
+        for _, belt in ipairs(level.conveyor_belts) do
+          if belt.x and belt.y and belt.width and belt.height then
+            -- Default values if not specified
+            local speed = belt.speed or 50
+            local direction = belt.direction or 1
+            table.insert(config.conveyor_belts, {
+              belt.x, belt.y, belt.width, belt.height,
+              speed, direction
             })
           end
         end
