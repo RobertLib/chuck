@@ -3,6 +3,9 @@ local constants = require("constants")
 
 local levels = {}
 
+-- Global variable indicating level loading error
+levels.loadError = nil
+
 -- Level configurations
 local levelConfigs = {}
 -- Temporary level configs modified by editor (runtime only)
@@ -10,29 +13,31 @@ local tempLevelConfigs = {}
 
 -- Function to load levels from JSON file with error handling
 function levels.loadLevels()
+  levels.loadError = nil -- reset on every load
   -- Check if json.lua exists first
   if not love.filesystem.getInfo("json.lua") then
     print("Error: json.lua file not found")
+    levels.loadError = "File json.lua not found. The game cannot load levels."
     return
   end
 
-  local file = io.open("levels.json", "r")
-  if not file then
+  local content = love.filesystem.read("levels.json")
+  if not content then
     print("Warning: Could not read levels.json, using default levels")
+    levels.loadError = "File levels.json not found or cannot be read. Please check your game installation."
     return
   end
-
-  local content = file:read("*all")
-  file:close()
 
   local success, data = pcall(json.decode, content)
   if not success then
     print("Error: Failed to parse levels.json - " .. tostring(data))
+    levels.loadError = "File levels.json is corrupted or invalid."
     return
   end
 
   if not data or type(data) ~= "table" or #data == 0 then
     print("Error: levels.json does not contain valid level data")
+    levels.loadError = "File levels.json does not contain any valid level data."
     return
   end
 

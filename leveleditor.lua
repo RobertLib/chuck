@@ -125,11 +125,8 @@ end
 
 -- Load all levels from JSON
 function levelEditor.loadAllLevels()
-  local file = io.open("levels.json", "r")
-  if file then
-    local content = file:read("*all")
-    file:close()
-
+  local content = love.filesystem.read("levels.json")
+  if content then
     local success, data = pcall(json.decode, content)
     if success and data then
       editorState.allLevels = data
@@ -145,10 +142,8 @@ function levelEditor.saveAllLevels()
   editorState.allLevels[editorState.levelIndex] = editorState.currentLevel
   local jsonData = json.encode(editorState.allLevels)
 
-  local file = io.open("levels.json", "w")
-  if file then
-    file:write(jsonData)
-    file:close()
+  local success = love.filesystem.write("levels.json", jsonData)
+  if success then
     print("Levels saved!")
   else
     print("Error: Could not save levels.json")
@@ -274,12 +269,13 @@ function levelEditor.mousepressed(x, y, button)
         levelEditor.deleteObject(obj, objType, index)
       end
     elseif editorState.selectedTool == "move" then
-      -- For move tool, use exact mouse coordinates to find objects
-      local obj, objType, index = levelEditor.findObjectAt(x, y)
+      -- For move tool, use grid-snapped coordinates to find and drag objects
+      local mx, my = levelEditor.getGridSnappedMouse()
+      local obj, objType, index = levelEditor.findObjectAt(mx, my)
       if obj then
         editorState.selectedObject = obj
         editorState.selectedObjectType = objType
-        editorState.dragStart = { x = x - obj.x, y = y - obj.y }
+        editorState.dragStart = { x = mx - obj.x, y = my - obj.y }
       end
     else
       -- For placing objects, use grid-snapped coordinates
@@ -641,7 +637,7 @@ function levelEditor.drawObject(obj, objType)
   local color = toolColors[objType] or { 1, 1, 1 }
   love.graphics.setColor(color[1], color[2], color[3], 0.8)
 
-  if objType == "platforms" or objType == "ladders" or objType == "crumbling_platforms" or objType == "moving_platforms" or objType == "conveyor_belts" or objType == "water" then
+  if objType == "platforms" or objType == "crumbling_platforms" or objType == "moving_platforms" or objType == "conveyor_belts" or objType == "water" then
     love.graphics.rectangle("fill", obj.x, obj.y, obj.width, obj.height)
     love.graphics.setColor(1, 1, 1)
     love.graphics.rectangle("line", obj.x, obj.y, obj.width, obj.height)
@@ -722,6 +718,21 @@ function levelEditor.drawObject(obj, objType)
     -- Draw selection box for decorations
     love.graphics.setColor(1, 1, 1, 0.3)
     love.graphics.rectangle("line", obj.x, obj.y, 20, 20)
+  elseif objType == "eggs" then
+    love.graphics.setColor(1, 1, 0, 0.8)
+    love.graphics.ellipse("fill", obj.x + 10, obj.y + 10, 10, 14)
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.ellipse("line", obj.x + 10, obj.y + 10, 10, 14)
+  elseif objType == "enemies" then
+    love.graphics.setColor(1, 0.2, 0.2, 0.8)
+    love.graphics.rectangle("fill", obj.x, obj.y, 20, 20)
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.rectangle("line", obj.x, obj.y, 20, 20)
+  elseif objType == "ladders" then
+    love.graphics.setColor(0.55, 0.27, 0.07, 0.8)
+    love.graphics.rectangle("fill", obj.x, obj.y, obj.width or 20, obj.height or 80)
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.rectangle("line", obj.x, obj.y, obj.width or 20, obj.height or 80)
   else
     local size = 20
     love.graphics.rectangle("fill", obj.x, obj.y, size, size)

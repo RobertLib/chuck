@@ -98,6 +98,11 @@ function love.load()
 end
 
 function love.update(dt)
+  local levels = require("levels")
+  if levels.loadError then
+    return -- Stop update if there is a level loading error
+  end
+
   -- Skip game update if level editor is active
   if levelEditor.isActive() then
     return
@@ -141,11 +146,22 @@ function love.update(dt)
     gameState.timeLeft = gameState.timeLeft - dt
     if gameState.timeLeft <= 0 then
       gameState.timeLeft = 0
-      -- Time's up - use centralized death handling
-      if not gameState.player.isWaitingToRespawn then
-        playerDeath.killPlayerAtCenter(gameState, "timeout")
-      end
+      -- Time's up - show times up panel and restart level after short delay
+      gameState.showingTimesUp = true
+      gameState.timesUpTimer = 2.0 -- seconds to show the panel
     end
+  end
+
+  -- Handle times up panel and restart level
+  if gameState.showingTimesUp then
+    gameState.timesUpTimer = gameState.timesUpTimer - dt
+    if gameState.timesUpTimer <= 0 then
+      gameState.showingTimesUp = false
+      -- Restart the same level, keep lives
+      levels.createLevel(gameState)
+      gameState.player = player.initializePlayer()
+    end
+    return -- Don't update game while showing times up panel
   end
 
   player.updatePlayer(dt, gameState)
@@ -192,6 +208,13 @@ function love.update(dt)
 end
 
 function love.draw()
+  local levels = require("levels")
+  if levels.loadError then
+    local rendering = require("rendering")
+    rendering.drawGameMessages(gameState, levels.getLevelCount())
+    return
+  end
+
   -- If level editor is active, draw editor instead of game
   if levelEditor.isActive() then
     levelEditor.draw()

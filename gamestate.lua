@@ -72,8 +72,6 @@ function gamestate.resetPlayerPosition(state)
   state.player.maxFallSpeed = 0
   state.invulnerable = true
   state.invulnerabilityTimer = constants.INVULNERABILITY_DURATION
-  -- Reset level timer to original time limit
-  state.timeLeft = state.levelTimeLimit
 end
 
 -- Reset level timer

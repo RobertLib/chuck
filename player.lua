@@ -19,6 +19,7 @@ function player.initializePlayer()
     velocityY = 0,
     onGround = false,
     onLadder = false,
+    isClimbingLadder = false,
     -- Animation state
     animState = "idle",
     animTime = 0,
@@ -68,6 +69,8 @@ function player.updatePlayer(dt, gameState)
   local canClimbDown = false
   local isStartingClimbDown = false
 
+  p.isClimbingLadder = false
+
   if p.onLadder and not isJumping then
     p.velocityY = 0
     if love.keyboard.isDown("up", "w") then
@@ -75,13 +78,18 @@ function player.updatePlayer(dt, gameState)
     elseif love.keyboard.isDown("down", "s") then
       p.velocityY = constants.PLAYER_SPEED
     end
+    -- If on ladder and has nonzero velocity, really climbing
+    if math.abs(p.velocityY) > constants.VELOCITY_THRESHOLD then
+      p.isClimbingLadder = true
+    end
   elseif not isJumping and p.onGround and love.keyboard.isDown("down", "s") then
     -- Check if there's a ladder below the player to allow climbing down from platform
     canClimbDown = player.checkLadderBelow(p, gameState.ladders)
     if canClimbDown then
       p.velocityY = constants.PLAYER_SPEED
-      p.onGround = false -- Allow falling onto the ladder
+      p.onGround = false        -- Allow falling onto the ladder
       isStartingClimbDown = true
+      p.isClimbingLadder = true -- Starts climbing down
     end
   end
 
@@ -130,12 +138,30 @@ function player.updatePlayer(dt, gameState)
     end
   end
 
-  -- Check platforms (but not when player is on ladder and going up, or starting to climb down)
+  -- Check platforms (ignore collision only if player is truly climbing)
   for _, platform in ipairs(gameState.platforms) do
     if collision.checkCollision(p, platform) then
-      -- If player is on ladder and moving up, don't block with platform
-      if p.onLadder and p.velocityY < 0 then
-        -- Ignore platform collision when climbing up ladder
+      -- If the player is climbing a ladder, check if there is also a ladder at the collision area
+      local ignorePlatform = false
+      if p.isClimbingLadder then
+        -- Create an overlap area between the player and the platform
+        local overlapArea = {
+          x = math.max(p.x, platform.x),
+          y = math.max(p.y, platform.y),
+          width = math.min(p.x + p.width, platform.x + platform.width) - math.max(p.x, platform.x),
+          height = math.min(p.y + p.height, platform.y + platform.height) - math.max(p.y, platform.y)
+        }
+        -- Check all ladders; if any ladder collides with overlapArea, ignore platform collision
+        for _, ladder in ipairs(gameState.ladders) do
+          if collision.checkCollision(overlapArea, ladder) then
+            ignorePlatform = true
+            break
+          end
+        end
+      end
+      if ignorePlatform then
+        -- If there is a ladder on the platform, ignore the collision
+        -- Do nothing, allow climbing through platform
       elseif isStartingClimbDown then
         -- Ignore platform collision when starting to climb down from platform
       elseif p.velocityY > 0 and oldY + p.height <= platform.y then
@@ -654,6 +680,9 @@ function player.drawPlayer(gameState)
     love.graphics.rectangle("fill", baseX + 5 + legOffsetX, legY + legHeight, legWidth + 1, 3) -- Left shoe
     love.graphics.rectangle("fill", baseX + 9 - legOffsetX, legY + legHeight, legWidth + 1, 3) -- Right shoe
   end
+
+  -- Reset color to white after drawing the player
+  love.graphics.setColor(1, 1, 1, 1)
 end
 
 -- Function to check for fall damage

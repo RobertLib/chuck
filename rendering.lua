@@ -6,16 +6,12 @@ local rendering = {}
 -- Function to draw top status bar
 function rendering.drawTopStatusBar(gameState)
   -- Draw background bar (matching game background but lighter)
-  love.graphics.setColor(0.12, 0.12, 0.25, 0.85) -- Darker blue-purple matching background
+  love.graphics.setColor(0.12, 0.12, 0.25, 0.2) -- Darker blue-purple matching background
   love.graphics.rectangle("fill", 0, 0, constants.SCREEN_WIDTH, constants.STATUS_BAR_HEIGHT)
 
   -- Draw subtle gradient effect
   love.graphics.setColor(0.16, 0.16, 0.32, 0.35) -- Slightly lighter for gradient
   love.graphics.rectangle("fill", 0, 0, constants.SCREEN_WIDTH, constants.STATUS_BAR_HEIGHT / 2)
-
-  -- Draw thin border at bottom with platform color
-  love.graphics.setColor(colors.platform[1], colors.platform[2], colors.platform[3], 0.6)
-  love.graphics.rectangle("fill", 0, constants.STATUS_BAR_HEIGHT - 2, constants.SCREEN_WIDTH, 2)
 
   -- Left side - Score and Level
   love.graphics.setColor(1, 0.9, 0.2) -- Brighter gold for score
@@ -143,6 +139,29 @@ function rendering.drawBackground(gameState)
 end
 
 function rendering.drawGameMessages(gameState, levelCount)
+  -- Show error message if level loading failed
+  local levels = require("levels")
+  if levels.loadError then
+    local font = love.graphics.getFont()
+    local message = "ERROR: " .. tostring(levels.loadError)
+    local subtitle = "Check your game files and restart."
+    local messageWidth = font:getWidth(message)
+    local subtitleWidth = font:getWidth(subtitle)
+    local maxWidth = math.max(messageWidth, subtitleWidth)
+    local boxWidth = maxWidth + 60
+    local boxHeight = 100
+    local boxX = (constants.SCREEN_WIDTH - boxWidth) / 2
+    local boxY = (constants.SCREEN_HEIGHT - boxHeight) / 2
+
+    love.graphics.setColor(0.2, 0.05, 0.05, 0.95)
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, boxHeight)
+    love.graphics.setColor(1, 0.3, 0.3)
+    love.graphics.printf(message, boxX, boxY + 20, boxWidth, "center")
+    love.graphics.setColor(1, 1, 1)
+    love.graphics.printf(subtitle, boxX, boxY + 60, boxWidth, "center")
+    return
+  end
+
   -- Game state messages with exact status bar style
   if gameState.gameOver then
     -- Game Over message
@@ -295,6 +314,37 @@ function rendering.drawGameMessages(gameState, levelCount)
 
     -- Subtitle text
     love.graphics.setColor(0.9, 0.9, 0.9) -- Light gray
+    love.graphics.printf(subtitle, boxX, boxY + 45, boxWidth, "center")
+  elseif gameState.showingTimesUp then
+    -- Times Up message
+    local font = love.graphics.getFont()
+    local message = "TIME'S UP!"
+    local subtitle = "Restarting level..."
+
+    local messageWidth = font:getWidth(message)
+    local subtitleWidth = font:getWidth(subtitle)
+    local maxWidth = math.max(messageWidth, subtitleWidth)
+    local boxWidth = maxWidth + 60
+    local boxHeight = 80
+    local boxX = (constants.SCREEN_WIDTH - boxWidth) / 2
+    local boxY = (constants.SCREEN_HEIGHT - boxHeight) / 2
+
+    love.graphics.setColor(0.12, 0.12, 0.25, 0.85)
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, boxHeight)
+
+    love.graphics.setColor(0.16, 0.16, 0.32, 0.35)
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, boxHeight / 2)
+
+    love.graphics.setColor(colors.platform[1], colors.platform[2], colors.platform[3], 0.6)
+    love.graphics.rectangle("fill", boxX, boxY + boxHeight - 2, boxWidth, 2)
+    love.graphics.rectangle("fill", boxX, boxY, boxWidth, 2)
+    love.graphics.rectangle("fill", boxX, boxY, 2, boxHeight)
+    love.graphics.rectangle("fill", boxX + boxWidth - 2, boxY, 2, boxHeight)
+
+    love.graphics.setColor(1, 0.9, 0.4) -- Yellow
+    love.graphics.printf(message, boxX, boxY + 15, boxWidth, "center")
+
+    love.graphics.setColor(0.9, 0.9, 0.9)
     love.graphics.printf(subtitle, boxX, boxY + 45, boxWidth, "center")
   end
 end
