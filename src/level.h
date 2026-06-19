@@ -1,0 +1,95 @@
+#ifndef CHUCK_LEVEL_H
+#define CHUCK_LEVEL_H
+
+#include "common.h"
+
+typedef enum
+{
+    TILE_EMPTY = 0,
+    TILE_WALL,
+    TILE_LADDER,
+    TILE_DOOR,
+    TILE_ELEVATOR_SHAFT /* visual only – not solid */
+} TileType;
+
+/* A moving elevator platform within a vertical shaft. */
+typedef struct
+{
+    int col;         /* tile column of the shaft */
+    float y;         /* current top of the moving platform (world px) */
+    float top_limit; /* minimum y (top of shaft) */
+    float bot_limit; /* maximum y the platform top may reach */
+    float vy;        /* current vertical velocity (positive = downward) */
+} Elevator;
+
+/* A door tile position. Doors are paired by index: door[0]<->door[1], door[2]<->door[3], etc. */
+typedef struct
+{
+    int col, row;
+} Door;
+
+typedef enum
+{
+    ITEM_CARD = 0,
+    ITEM_GUN
+} ItemType;
+
+typedef struct
+{
+    float x, y; /* center position of the item */
+    bool collected;
+    ItemType type;
+} Item;
+
+typedef struct
+{
+    float x, y; /* spawn position (top-left of entity box) */
+} EnemySpawn;
+
+typedef struct
+{
+    int width;
+    int height;
+    TileType tiles[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
+
+    float start_x, start_y; /* player spawn (top-left of player box) */
+
+    bool has_exit;
+    int exit_col, exit_row;
+
+    Item items[MAX_ITEMS];
+    int item_count;
+    int card_count;        /* items of type ITEM_CARD */
+    int active_card_index; /* index into items[] of the randomly chosen key card */
+    int items_remaining;   /* 1 = key card not yet found, 0 = key card collected */
+
+    EnemySpawn enemy_spawns[MAX_ENEMIES];
+    int enemy_count;
+
+    Door doors[MAX_DOORS];
+    int door_count;
+    int door_spawn_counts[MAX_DOORS]; /* enemies queued to spawn from each door */
+
+    Elevator elevators[MAX_ELEVATORS];
+    int elevator_count;
+} Level;
+
+/* Load a level from a text file. Returns true on success. */
+bool level_load(Level *level, const char *path);
+
+/* Tile queries. Out-of-bounds is treated as solid wall. */
+TileType level_tile(const Level *level, int col, int row);
+bool level_is_solid(const Level *level, int col, int row);
+bool level_is_ladder(const Level *level, int col, int row);
+void level_update_elevators(Level *level, float dt);
+
+/*
+ * Move an axis-aligned box by its velocity and resolve collisions against
+ * the tile map. Walls are fully solid. Ladders behave as one-way platforms
+ * (you can stand on their top), unless 'climbing' is true, in which case the
+ * box passes freely through ladder tiles.
+ */
+void level_move(const Level *level, float *x, float *y, float *vx, float *vy,
+                float w, float h, float dt, bool climbing, bool *on_ground);
+
+#endif /* CHUCK_LEVEL_H */
