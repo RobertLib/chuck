@@ -1,0 +1,201 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>@CHUCK_TITLE@</title>
+<!--
+  The page itch.io serves. `packaging/build_web.sh` fills the placeholders in and
+  writes it out as index.html, which is the one filename an itch.io HTML5 upload
+  is allowed to have at the root of its zip.
+
+  Three things here are load-bearing rather than decoration, and each is a rule
+  from somebody else's documentation:
+
+  - The canvas carries no border and no padding. SDL's own emscripten README
+    says so in as many words ("things will break in unexpected ways"), because
+    the mouse coordinates it computes come off the element's box.
+  - The game is not started on load. `-sINVOKE_RUN=0` holds `main` back until
+    the click below, so that the first frame the player sees is also the first
+    frame allowed to make noise: a browser throws audio away until the page has
+    been interacted with, and SDL will happily open a device and feed silence
+    into it for as long as that lasts. Starting on the click is the SDL
+    README's own second suggestion and it costs one line of Javascript.
+  - The canvas fills its frame and SDL does the scaling, which is not what the
+    first version of this file did and is worth the paragraph. SDL creates the
+    window `SDL_WINDOW_RESIZABLE`, and its emscripten backend answers that by
+    keeping the canvas *backing store* equal to the element's CSS size — so a
+    page that sets a CSS size in the hope of scaling a fixed backing store does
+    not get one: it gets a backing store of the size it asked for, and SDL's
+    own `SDL_LOGICAL_PRESENTATION_LETTERBOX` doing the scaling underneath.
+    Which is exactly what the game does in fullscreen on a desktop, so letting
+    it happen is how a browser tab behaves like the game rather than like a
+    stricter cousin of it. At the 800x552 viewport itch.io is told to use, it
+    is 1:1 and no scaling happens at all.
+    (Measured, not assumed: at a 1600x1104 frame the backing store comes back
+    1600x1104, and at 800x552 it comes back 800x552.)
+-->
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #05070c;
+    color: #c8d0dc;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  #frame {
+    position: absolute;
+    inset: 0;
+  }
+  /* No border, no padding. See the note at the top of this file. */
+  canvas#canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    padding: 0;
+    background: #000;
+    /* Does nothing while SDL keeps the backing store equal to this box, which
+       is every case measured. It is here for the one where that stops being
+       true — a device pixel ratio SDL decides to honour — because the wrong
+       answer there is a blurred picture rather than a broken one, and nobody
+       would notice. */
+    image-rendering: pixelated;
+    outline: none;
+    /* Hidden until the run starts, so the player never sees an empty black
+       rectangle sitting under the button they have not pressed yet. */
+    visibility: hidden;
+  }
+  body.running canvas#canvas { visibility: visible; }
+  #veil {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: #05070c;
+    text-align: center;
+    padding: 24px;
+    box-sizing: border-box;
+  }
+  body.running #veil { display: none; }
+  #title {
+    font-size: 30px;
+    letter-spacing: 0.42em;
+    /* The margin balances the letter-spacing, which is applied after the last
+       glyph as well and would otherwise push the word off centre. */
+    margin-right: -0.42em;
+    color: #f2b632;
+    font-weight: 700;
+  }
+  #play {
+    font: inherit;
+    font-size: 15px;
+    letter-spacing: 0.2em;
+    margin-right: -0.2em;
+    padding: 12px 26px;
+    color: #05070c;
+    background: #f2b632;
+    border: 0;
+    cursor: pointer;
+  }
+  #play:disabled { background: #2a3242; color: #7c8797; cursor: default; }
+  #play:not(:disabled):hover { background: #ffd166; }
+  #note { color: #5d6675; font-size: 12px; }
+  #bar { width: 260px; height: 3px; background: #1a212e; }
+  #bar > i { display: block; height: 100%; width: 0; background: #f2b632; }
+  body.running #bar { display: none; }
+</style>
+
+<div id="frame"><canvas id="canvas" tabindex="-1"></canvas></div>
+
+<div id="veil">
+  <div id="title">@CHUCK_NAME_UPPER@</div>
+  <button id="play" disabled>LOADING</button>
+  <div id="bar"><i></i></div>
+  <div id="note">Keyboard or gamepad.</div>
+</div>
+
+<script>
+  var VIEW_W = @VIEW_W@, VIEW_H = @VIEW_H@;
+  var canvas = document.getElementById('canvas');
+  var veil = document.getElementById('veil');
+  var play = document.getElementById('play');
+  var bar = document.querySelector('#bar > i');
+
+  /* The size the game draws at, before SDL has had an opinion. From here the
+     canvas is CSS-sized to its frame and SDL keeps up; see the note at the top
+     of this file for why there is no scaling arithmetic in this page. */
+  canvas.width = VIEW_W;
+  canvas.height = VIEW_H;
+
+  /* Arrow keys and space scroll a page, and on itch.io this page is an iframe
+     inside a much taller one. SDL stops the keys it handles from doing that,
+     but only once it is running and only for the element it listens on, so the
+     window gets the same refusal for the whole time the game is up. Anything
+     with a modifier is left alone: those are the browser's own shortcuts and
+     taking them is how a page stops being closeable. */
+  var SWALLOW = {
+    ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1,
+    Space: 1, PageUp: 1, PageDown: 1, Home: 1, End: 1, Tab: 1
+  };
+  window.addEventListener('keydown', function (e) {
+    if (!document.body.classList.contains('running')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (SWALLOW[e.code]) e.preventDefault();
+  }, { passive: false });
+
+  var Module = {
+    canvas: canvas,
+    /* The default shell prints to a textarea this page does not have. SDL_Log
+       and printf go to the browser console instead, which is where the SDL
+       README says to look for them. */
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.error(t); },
+    setStatus: function (text) {
+      var m = /([0-9.]+)\/([0-9.]+)/.exec(text || '');
+      if (m) {
+        bar.style.width = (100 * (+m[1] / +m[2])) + '%';
+        return;
+      }
+      if (!text) { ready(); }
+    },
+    onAbort: function (what) {
+      play.disabled = true;
+      play.textContent = 'FAILED TO START';
+      document.getElementById('note').textContent =
+        'This browser could not start the game (' + what + '). ' +
+        'WebGL and WebAssembly are both required.';
+    }
+  };
+
+  var started = false;
+  function ready() {
+    if (started) return;
+    bar.style.width = '100%';
+    play.disabled = false;
+    play.textContent = 'PLAY';
+  }
+
+  play.addEventListener('click', function () {
+    if (started || play.disabled) return;
+    started = true;
+    document.body.classList.add('running');
+    /* Focus so the keyboard reaches the game without a second click — which
+       matters on itch.io, where the game is an iframe the player has just
+       clicked into once already. */
+    canvas.focus();
+    Module.callMain([]);
+  });
+
+  /* There is deliberately no `onExit` here. This build offers no way out of
+     itself — `CHUCK_OFFERS_QUIT` is nought under emscripten and the title
+     screen's last chip is not drawn — and the main loop keeps the runtime
+     alive after main returns anyway, so the hook cannot fire. A handler for a
+     case that cannot happen is a handler nobody has ever seen work. */
+</script>
+<script async src="@CHUCK_JS@"></script>

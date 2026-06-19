@@ -1,0 +1,983 @@
+#include "enemy.h"
+
+#include <math.h>
+
+void enemy_init(Enemy *enemy, float x, float y, EnemyKind kind, Rng *rng)
+{
+    enemy->kind = kind;
+    enemy->x = x;
+    enemy->y = y;
+    enemy->vx = 0.0f;
+    enemy->vy = 0.0f;
+    enemy->dir = rng_range(rng, 2) == 0 ? -1 : 1;
+    enemy->on_ground = false;
+    enemy->on_elevator = -1;
+    enemy->climbing = false;
+    enemy->climb_dir = -1;
+    enemy->ladder_col = 0;
+    enemy->climb_start_floor_row = 0;
+    enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
+    enemy->mounting_crate = false;
+    enemy->obstacle_avoid_timer = 0.0f;
+    enemy->hp = enemy_kind_hp(kind);
+    enemy->dead = false;
+    /* Stagger initial shoot time so enemies don't all fire at once */
+    enemy->shoot_cooldown = 1.0f + rng_range(rng, 250) * 0.01f;
+    enemy->aim_timer = 0.0f;
+    enemy->aim_target_x = 0.0f;
+    enemy->aim_target_y = 0.0f;
+    enemy->pursuit_target_x = x + ENEMY_W * 0.5f;
+    enemy->pursuit_target_y = y + ENEMY_H * 0.5f;
+    enemy->has_pursuit_target = false;
+    enemy->provoked = false;
+    enemy->encounter_decided = false;
+    enemy->encounter_lost_timer = 0.0f;
+    enemy->raising_alarm = false;
+    enemy->alarm_switch_index = -1;
+    enemy->alarm_use_timer = 0.0f;
+    enemy->alarm_run_timer = 0.0f;
+    enemy->alarm_switches_tried = 0;
+    enemy->investigate_timer = 0.0f;
+    enemy->investigate_x = x + ENEMY_W * 0.5f;
+    enemy->investigate_y = y + ENEMY_H * 0.5f;
+    enemy->investigate_scan_timer = 0.0f;
+    enemy->bodies_investigated = 0;
+    enemy->aim_vdir = 0;
+    enemy->talking = false;
+    enemy->talk_timer = 0.0f;
+    enemy->talk_partner = -1;
+    enemy->talk_cooldown = 0.0f;
+    enemy->body_turn_cooldown = 0.0f;
+    /* Spread across the whole gap rather than starting at the top of it, so a
+     * shift that came on together does not report in chorus. */
+    enemy->radio_timer =
+        ENEMY_RADIO_GAP_MIN +
+        (ENEMY_RADIO_GAP_MAX - ENEMY_RADIO_GAP_MIN) * rng_unit(rng);
+    enemy->blind_timer = 0.0f;
+    enemy->anim_time = (float)rng_range(rng, 628) * 0.01f;
+    enemy->recoil_timer = 0.0f;
+}
+
+void dog_init(Dog *dog, float x, float y, int owner, Rng *rng)
+{
+    dog->x = x;
+    dog->y = y;
+    dog->vx = 0.0f;
+    dog->vy = 0.0f;
+    dog->dir = rng_range(rng, 2) == 0 ? -1 : 1;
+    dog->on_ground = false;
+    dog->hp = DOG_HP;
+    dog->dead = false;
+    dog->owner = owner;
+    dog->state = DOG_GUARD;
+    dog->state_timer = 0.4f + rng_range(rng, 120) * 0.01f;
+    dog->turn_cooldown = 0.0f;
+    dog->bite_cooldown = 0.0f;
+    dog->blind_timer = 0.0f;
+    dog->lost_timer = 0.0f;
+    dog->chase_target_x = x + DOG_W * 0.5f;
+    dog->has_chase_target = false;
+    dog->guard_x = x;
+    dog->guard_y = y;
+    dog->roam_target_x = x;
+    dog->vocal_timer = 0.8f + rng_range(rng, 150) * 0.01f;
+    dog->anim_time = (float)rng_range(rng, 628) * 0.01f;
+    dog->attack_timer = 0.0f;
+}
+
+static void enemy_update_talking(Enemy *enemy, Level *level, float dt)
+{
+    /* While talking, enemies stand still on the ground (or fall if unsupported).
+     * They do not aim or patrol. The talk timer counts down until they resume. */
+    enemy->vy += GRAVITY * dt;
+    if (enemy->vy > MAX_FALL_SPEED)
+        enemy->vy = MAX_FALL_SPEED;
+
+    enemy->vx = 0.0f;
+
+    enemy->talk_timer -= dt;
+    if (enemy->talk_timer <= 0.0f)
+    {
+        enemy->talk_timer = 0.0f;
+        enemy->talking = false;
+        /* Leave partner cleanup to game logic; start per-enemy cooldown */
+        if (enemy->talk_cooldown <= 0.0f)
+            enemy->talk_cooldown = ENEMY_TALK_COOLDOWN;
+    }
+
+    bool ignored_ground = false;
+    level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
+               ENEMY_W, ENEMY_H, dt, false, &ignored_ground,
+               false, STANCE_UPRIGHT);
+}
+
+static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
+                                  bool pursuing, float target_x,
+                                  float target_y, Rng *rng)
+{
+    /* Obstacle avoidance only governs horizontal steering. Once a pursuing
+     * guard reaches a ladder, it must keep routing toward the target floor;
+     * otherwise a recent crate collision turns ladder exits into random
+     * patrol choices and can trap it in the short corridor beside the crate. */
+    bool routing_to_target = pursuing;
+
+    /* Finish the chosen climb direction before making another routing
+       decision. Re-evaluating it from target_y on every frame can reverse the
+       enemy just after it passes the target height, trapping it in a short
+       up/down loop when a side exit is not yet available. */
+
+    /* Smoothly slide toward the ladder column centre instead of hard-snapping,
+       to avoid a one-frame position jump when climbing starts. */
+    float ladder_x =
+        enemy->ladder_col * (float)TILE_SIZE +
+        (TILE_SIZE - ENEMY_W) * 0.5f;
+    float align_dx = ladder_x - enemy->x;
+
+    /* Centre the whole collision box before moving vertically. Starting the
+     * climb while part of the guard is still over the neighbouring floor tile
+     * lets vertical collision pin it to that floor indefinitely. */
+    if (fabsf(align_dx) > 0.5f)
+    {
+        enemy->vx = align_dx * 10.0f;
+        enemy->vy = 0.0f;
+        enemy->on_ground = false;
+        level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
+                   ENEMY_W, ENEMY_H, dt, true, &enemy->on_ground,
+                   false, STANCE_UPRIGHT);
+        return;
+    }
+    enemy->x = ladder_x;
+    enemy->vx = 0.0f;
+    enemy->vy = (float)enemy->climb_dir * ENEMY_CLIMB_SPEED;
+
+    /* A side exit is only usable when the adjacent column is free of solid
+       tiles across the enemy's full body height AND there is floor to land on.
+       This prevents the enemy from trying to step off into a blocked column
+       (e.g. while the body still overlaps the floor row on both sides),
+       which would cause instant wall-bounce oscillation. */
+    int top_row = (int)floorf(enemy->y / TILE_SIZE);
+    int bot_row = (int)floorf((enemy->y + ENEMY_H - 1.0f) / TILE_SIZE);
+
+    bool left_clear = true, right_clear = true;
+    for (int r = top_row; r <= bot_row; ++r)
+    {
+        if (level_is_solid(level, enemy->ladder_col - 1, r))
+            left_clear = false;
+        if (level_is_solid(level, enemy->ladder_col + 1, r))
+            right_clear = false;
+    }
+    bool can_left = left_clear && level_is_solid(level, enemy->ladder_col - 1, bot_row + 1);
+    bool can_right = right_clear && level_is_solid(level, enemy->ladder_col + 1, bot_row + 1);
+    bool floor_beside = can_left || can_right;
+
+    bool ladder_ahead;
+    if (enemy->climb_dir < 0)
+    {
+        int row_above = (int)floorf((enemy->y - 1.0f) / TILE_SIZE);
+        /* A rung above the head means there is more ladder to climb. When they
+           run out the climb is still not finished, because the topmost tile of
+           a ladder threaded through a slab *is* the hole cut in that slab: a
+           guard who lets go as soon as nothing is above his head lets go
+           standing in the hole, with the slab against both shoulders, no floor
+           to step onto and the rung under his feet catching him every time he
+           tries to fall back down. He stands there until something kills him.
+           So keep climbing while a rung is still inside the body — that last
+           tile is what lifts him out onto the storey above. A ladder that
+           already offers a step-off here (one run up the side of a rooftop
+           block) has arrived and needs no extra tile, and a ceiling ends the
+           climb whatever the rungs say. */
+        ladder_ahead =
+            level_is_ladder(level, enemy->ladder_col, row_above) ||
+            (level_is_ladder(level, enemy->ladder_col, bot_row) &&
+             !floor_beside &&
+             !level_is_solid(level, enemy->ladder_col, row_above));
+    }
+    else
+    {
+        int row_below = (int)floorf((enemy->y + ENEMY_H + 1.0f) / TILE_SIZE);
+        ladder_ahead = level_is_ladder(level, enemy->ladder_col, row_below);
+    }
+
+    int target_row = (int)floorf(target_y / TILE_SIZE);
+    int exit_floor_row = bot_row + 1;
+    float exit_y = exit_floor_row * (float)TILE_SIZE - ENEMY_H;
+    bool reached_target_floor =
+        routing_to_target && target_row == bot_row &&
+        fabsf(enemy->y - exit_y) <= ENEMY_CLIMB_SPEED * dt + 0.5f;
+    /* At the start of a patrol climb the floor beside the ladder is already a
+       valid side exit. Do not roll for that same exit again while the guard's
+       body is still passing it, or a successful mount can be cancelled on the
+       very next frame. Other floors remain eligible for random patrol exits. */
+    bool reached_new_patrol_floor =
+        !routing_to_target &&
+        exit_floor_row != enemy->climb_start_floor_row;
+    bool leave_ladder =
+        !ladder_ahead ||
+        (floor_beside &&
+         (routing_to_target ? reached_target_floor
+                            : (reached_new_patrol_floor &&
+                               rng_range(rng, 100) < 4)));
+    if (leave_ladder)
+    {
+        if (reached_target_floor)
+            enemy->y = exit_y;
+        enemy->climbing = false;
+        enemy->vy = 0.0f;
+        enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
+        if (can_left && can_right)
+        {
+            if (routing_to_target)
+            {
+                float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
+                enemy->dir = target_x < enemy_center_x ? -1 : 1;
+            }
+            else
+            {
+                enemy->dir = rng_range(rng, 2) == 0 ? -1 : 1;
+            }
+        }
+        else if (can_left)
+            enemy->dir = -1;
+        else if (can_right)
+            enemy->dir = 1;
+        else
+            enemy->dir = rng_range(rng, 2) == 0 ? -1 : 1;
+    }
+
+    /* Do not carry the grounded state from before the climb. In particular,
+       an enemy leaving a ladder must land before the walking AI is allowed to
+       activate that same ladder again. */
+    enemy->on_ground = false;
+    level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
+               ENEMY_W, ENEMY_H, dt, enemy->climbing, &enemy->on_ground,
+               false, STANCE_UPRIGHT);
+}
+
+static bool enemy_box_tiles_clear(const Level *level, float x, float y,
+                                  float w, float h)
+{
+    int left = (int)floorf(x / TILE_SIZE);
+    int right = (int)floorf((x + w - 1.0f) / TILE_SIZE);
+    int top = (int)floorf(y / TILE_SIZE);
+    int bottom = (int)floorf((y + h - 1.0f) / TILE_SIZE);
+    for (int r = top; r <= bottom; ++r)
+        for (int c = left; c <= right; ++c)
+            if (level_is_solid(level, c, r))
+                return false;
+    return true;
+}
+
+static bool enemy_over_elevator(const Enemy *enemy, const Elevator *elevator)
+{
+    float center_x = enemy->x + ENEMY_W * 0.5f;
+    float platform_x = elevator->col * (float)TILE_SIZE;
+    return center_x > platform_x && center_x < platform_x + TILE_SIZE;
+}
+
+/* Elevators move before enemy AI. A remembered rider therefore has to be
+ * carried to the platform's new top before gravity and steering run. */
+static void enemy_begin_elevator_ride(Enemy *enemy, const Level *level)
+{
+    if (enemy->on_elevator < 0 ||
+        enemy->on_elevator >= level->runtime.elevator_count ||
+        enemy->climbing)
+    {
+        enemy->on_elevator = -1;
+        return;
+    }
+
+    const Elevator *elevator =
+        &level->runtime.elevators[enemy->on_elevator];
+    if (!enemy_over_elevator(enemy, elevator) || enemy->vy < 0.0f)
+    {
+        enemy->on_elevator = -1;
+        return;
+    }
+
+    enemy->y = elevator->y - ENEMY_H;
+    enemy->vy = 0.0f;
+    enemy->on_ground = true;
+}
+
+/* Snap a falling guard onto a lift it crossed this frame, or keep an existing
+ * rider attached after walking/aiming physics cleared the grounded flag. */
+static void enemy_finish_elevator_ride(Enemy *enemy, const Level *level,
+                                       float previous_y)
+{
+    if (enemy->climbing || enemy->vy < 0.0f)
+    {
+        enemy->on_elevator = -1;
+        return;
+    }
+
+    int remembered = enemy->on_elevator;
+    enemy->on_elevator = -1;
+    float previous_feet = previous_y + ENEMY_H;
+    float feet = enemy->y + ENEMY_H;
+    for (int i = 0; i < level->runtime.elevator_count; ++i)
+    {
+        const Elevator *elevator = &level->runtime.elevators[i];
+        if (!enemy_over_elevator(enemy, elevator))
+            continue;
+        bool kept_ride = i == remembered;
+        bool crossed_top =
+            previous_feet <= elevator->y + 1.0f && feet >= elevator->y;
+        if (!kept_ride && !crossed_top)
+            continue;
+        enemy->y = elevator->y - ENEMY_H;
+        enemy->vy = 0.0f;
+        enemy->on_ground = true;
+        enemy->on_elevator = i;
+        return;
+    }
+}
+
+static bool enemy_can_leave_elevator(const Level *level,
+                                     const Enemy *enemy, int dir)
+{
+    if (enemy->on_elevator < 0 ||
+        enemy->on_elevator >= level->runtime.elevator_count)
+        return false;
+
+    const Elevator *elevator =
+        &level->runtime.elevators[enemy->on_elevator];
+    int floor_row = (int)lroundf(elevator->y / TILE_SIZE);
+    float floor_y = floor_row * (float)TILE_SIZE;
+    if (fabsf(elevator->y - floor_y) >
+        ENEMY_ELEVATOR_FLOOR_TOLERANCE)
+        return false;
+
+    int floor_col = elevator->col + dir;
+    if (!level_is_solid(level, floor_col, floor_row) &&
+        !level_is_ladder(level, floor_col, floor_row))
+        return false;
+
+    float exit_x = floor_col * (float)TILE_SIZE +
+                   (TILE_SIZE - ENEMY_W) * 0.5f;
+    return enemy_box_tiles_clear(level, exit_x, floor_y - ENEMY_H,
+                                 ENEMY_W, ENEMY_H);
+}
+
+static int enemy_elevator_ahead(const Level *level, const Enemy *enemy,
+                                int dir, float *floor_y)
+{
+    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f
+                            : enemy->x - 3.0f;
+    int col = (int)floorf(probe_x / TILE_SIZE);
+    int row = (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
+    float y = row * (float)TILE_SIZE;
+    for (int i = 0; i < level->runtime.elevator_count; ++i)
+    {
+        const Elevator *elevator = &level->runtime.elevators[i];
+        if (elevator->col == col &&
+            y >= elevator->top_limit - ENEMY_ELEVATOR_FLOOR_TOLERANCE &&
+            y <= elevator->bot_limit + ENEMY_ELEVATOR_FLOOR_TOLERANCE)
+        {
+            *floor_y = y;
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* The whole of "is there anything to stand on in this column at this row",
+ * asked by column rather than by probe offset so that the same answer can be
+ * had about a tile the guard is not standing beside yet — see
+ * `enemy_can_advance`. */
+static bool enemy_floor_in_col(const Level *level, int col, int row)
+{
+    if (level_is_solid(level, col, row) || level_is_ladder(level, col, row))
+        return true;
+
+    /* Dynamic platforms are not part of the tile map. Without checking them
+     * here, a pursuing guard mistakes a perfectly walkable platform for a gap
+     * and jumps over it. A falling platform only counts while its top is still
+     * level with the current floor. */
+    for (int i = 0; i < level->runtime.fall_platform_count; ++i)
+    {
+        const FallPlatform *platform = &level->runtime.fall_platforms[i];
+        if (!platform->removed && platform->col == col &&
+            fabsf(platform->y - row * (float)TILE_SIZE) < 3.0f)
+            return true;
+    }
+    for (int i = 0; i < level->runtime.moving_platform_count; ++i)
+    {
+        const MovingPlatform *platform = &level->runtime.moving_platforms[i];
+        if (platform->row == row &&
+            (int)floorf(platform->x / TILE_SIZE) == col)
+            return true;
+    }
+    for (int i = 0; i < level->runtime.elevator_count; ++i)
+    {
+        const Elevator *elevator = &level->runtime.elevators[i];
+        if (elevator->col == col &&
+            fabsf(elevator->y - row * (float)TILE_SIZE) <=
+                ENEMY_ELEVATOR_FLOOR_TOLERANCE)
+            return true;
+    }
+    return false;
+}
+
+static int enemy_foot_row(const Enemy *enemy)
+{
+    return (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
+}
+
+static bool enemy_floor_ahead(const Level *level, const Enemy *enemy, int dir)
+{
+    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f : enemy->x - 3.0f;
+    return enemy_floor_in_col(level, (int)floorf(probe_x / TILE_SIZE),
+                              enemy_foot_row(enemy));
+}
+
+/* Is there a landing within jump range across a gap in the given direction? */
+static bool enemy_can_jump_gap(const Level *level, const Enemy *enemy, int dir)
+{
+    int row = (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
+    int front = dir > 0
+                    ? (int)floorf((enemy->x + ENEMY_W + 3.0f) / TILE_SIZE)
+                    : (int)floorf((enemy->x - 3.0f) / TILE_SIZE);
+    for (int gap = 1; gap <= ENEMY_JUMP_MAX_GAP_TILES; ++gap)
+    {
+        int col = front + dir * gap;
+        if (!level_is_solid(level, col, row) &&
+            !level_is_ladder(level, col, row))
+            continue;
+        float x = col * (float)TILE_SIZE + (TILE_SIZE - ENEMY_W) * 0.5f;
+        if (enemy_box_tiles_clear(level, x, enemy->y, ENEMY_W, ENEMY_H) &&
+            enemy_box_tiles_clear(level, x, enemy->y - TILE_SIZE * 0.8f,
+                                  ENEMY_W, ENEMY_H))
+            return true;
+    }
+    return false;
+}
+
+/* Permit a deliberate step off a ledge only when ground is close below it.
+ * Guards still need short drops to navigate split-height floors, but should
+ * turn around instead of throwing themselves down a lift shaft or atrium.
+ * Split by column for the same reason `enemy_floor_in_col` is. */
+static bool enemy_step_down_from_col(const Level *level, int col, int feet_row)
+{
+    if (level_is_solid(level, col, feet_row - 1))
+        return false;
+    for (int drop = 1; drop <= ENEMY_STEP_DOWN_MAX_TILES; ++drop)
+    {
+        int row = feet_row + drop;
+        if (level_is_solid(level, col, row) ||
+            level_is_ladder(level, col, row))
+            return true;
+    }
+    return false;
+}
+
+static bool enemy_can_step_down(const Level *level, const Enemy *enemy,
+                                int dir)
+{
+    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f
+                            : enemy->x - 3.0f;
+    return enemy_step_down_from_col(level, (int)floorf(probe_x / TILE_SIZE),
+                                    enemy_foot_row(enemy));
+}
+
+/*
+ * Whether the guard has anywhere to go on this side, asked a whole tile out.
+ *
+ * The two reversal rules in `enemy_update_walking` probe from the body edge at
+ * different offsets — 1px for masonry at his shoulder, 3px for the floor his
+ * next step lands on — so between them they leave a 2px band in which neither
+ * fires. In a corridor that is one tile wide, with a wall on one side and
+ * nothing to stand on on the other, each turn drops him straight into the band
+ * where the other rule fires: he reverses every ninth simulation step and reads
+ * as a man spinning on the spot at the frame rate. That is what a duct and a
+ * fallen `F` panel two tiles apart on sector 12 did to the guard between them,
+ * and his dog with him, because `dog_anchor_x` is derived from the handler's
+ * facing.
+ *
+ * Asked by tile the question has one answer, so the two rules cannot disagree
+ * about it: he is not going anywhere, and he stands. `update_dog` already
+ * reasons this way — see `dog_can_advance` and the note on a boxed-in dog
+ * standing still rather than spinning in place.
+ */
+static bool enemy_can_advance(const Level *level, const Enemy *enemy, int dir)
+{
+    int col = (int)floorf((enemy->x + ENEMY_W * 0.5f) / TILE_SIZE) + dir;
+    int center_row = (int)floorf((enemy->y + ENEMY_H * 0.5f) / TILE_SIZE);
+    if (level_is_solid(level, col, center_row))
+        return false;
+    int feet_row = enemy_foot_row(enemy);
+    return enemy_floor_in_col(level, col, feet_row) ||
+           enemy_step_down_from_col(level, col, feet_row);
+}
+
+static bool enemy_box_crates_clear(const Level *level, float x, float y,
+                                   int ignored_crate)
+{
+    for (int i = 0; i < level->runtime.crate_count; ++i)
+    {
+        const Crate *crate = &level->runtime.crates[i];
+        if (i == ignored_crate || !crate->active)
+            continue;
+        if (x < crate->x + CRATE_W && x + ENEMY_W > crate->x &&
+            y < crate->y + CRATE_H && y + ENEMY_H > crate->y)
+            return false;
+    }
+    return true;
+}
+
+/* Start the climb before touching the crate: a guard needs enough horizontal
+ * runway for its feet to rise above the box before their collision shapes
+ * overlap. The route beyond is checked too, so mounting the crate cannot lead
+ * to a blocked edge or a stranded guard. */
+static bool enemy_can_mount_crate(const Level *level, const Enemy *enemy,
+                                  int dir)
+{
+    float enemy_feet = enemy->y + ENEMY_H;
+    int floor_row = (int)floorf((enemy_feet + 2.0f) / TILE_SIZE);
+    for (int i = 0; i < level->runtime.crate_count; ++i)
+    {
+        const Crate *crate = &level->runtime.crates[i];
+        if (!crate->active || !crate->on_ground ||
+            fabsf(crate->y + CRATE_H - enemy_feet) >
+                ENEMY_CRATE_FLOOR_TOLERANCE)
+            continue;
+
+        float gap = dir > 0
+                        ? crate->x - (enemy->x + ENEMY_W)
+                        : enemy->x - (crate->x + CRATE_W);
+        if (gap < 0.0f || gap > ENEMY_CRATE_JUMP_LOOKAHEAD)
+            continue;
+
+        float landing_x = dir > 0
+                              ? crate->x + CRATE_W +
+                                    ENEMY_CRATE_JUMP_CLEARANCE
+                              : crate->x - ENEMY_W -
+                                    ENEMY_CRATE_JUMP_CLEARANCE;
+        float landing_center_x = landing_x + ENEMY_W * 0.5f;
+        int landing_col = (int)floorf(landing_center_x / TILE_SIZE);
+        if ((!level_is_solid(level, landing_col, floor_row) &&
+             !level_is_ladder(level, landing_col, floor_row)) ||
+            !enemy_box_tiles_clear(level, landing_x, enemy->y,
+                                   ENEMY_W, ENEMY_H) ||
+            !enemy_box_crates_clear(level, landing_x, enemy->y, i))
+            continue;
+
+        float raised_y = enemy->y - CRATE_H -
+                         ENEMY_CRATE_JUMP_CLEARANCE;
+        float over_x = crate->x + (CRATE_W - ENEMY_W) * 0.5f;
+        if (enemy_box_tiles_clear(level, enemy->x, raised_y,
+                                  ENEMY_W, ENEMY_H) &&
+            enemy_box_tiles_clear(level, over_x, raised_y,
+                                  ENEMY_W, ENEMY_H) &&
+            enemy_box_tiles_clear(level, landing_x, raised_y,
+                                  ENEMY_W, ENEMY_H) &&
+            enemy_box_crates_clear(level, enemy->x, raised_y, i) &&
+            enemy_box_crates_clear(level, over_x, raised_y, i) &&
+            enemy_box_crates_clear(level, landing_x, raised_y, i))
+            return true;
+    }
+    return false;
+}
+
+/* Masonry pressed against one side, probed the same 4px out that the AI layer
+ * probes for bodies. The two are deliberately separate questions: see
+ * `body_blocks_side` in [gameplay_ai.c](gameplay_ai.c) for what conflating
+ * them cost. */
+static bool enemy_tile_blocks_side(const Level *level, const Enemy *enemy,
+                                   int dir)
+{
+    float x = dir < 0 ? enemy->x - ENEMY_SIDE_PROBE : enemy->x + ENEMY_W;
+    return !enemy_box_tiles_clear(level, x, enemy->y + 1.0f,
+                                  ENEMY_SIDE_PROBE, ENEMY_H - 2.0f);
+}
+
+static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
+                                 bool pursuing, bool alarmed, float target_x,
+                                 float target_y, bool body_left,
+                                 bool body_right,
+                                 float speed_scale, Rng *rng)
+{
+    /*
+     * No horizontal escape, which stops the walk so a man with nowhere to go
+     * does not alternate left and right every frame. Masonry only: a body is
+     * in the way of a step and gone a moment later, and counting one as a pin
+     * is what turned a pair of guards who met into a pile that never came
+     * apart. See `body_blocks_side` in [gameplay_ai.c](gameplay_ai.c).
+     */
+    bool hemmed_in = enemy_tile_blocks_side(level, enemy, -1) &&
+                     enemy_tile_blocks_side(level, enemy, 1);
+    bool following_target =
+        pursuing && enemy->obstacle_avoid_timer <= 0.0f;
+    bool routing_to_target = pursuing;
+
+    enemy->vy += GRAVITY * dt;
+    if (enemy->vy > MAX_FALL_SPEED)
+    {
+        enemy->vy = MAX_FALL_SPEED;
+    }
+
+    /* Stand still while aiming */
+    if (enemy->aim_timer > 0.0f)
+    {
+        enemy->vx = 0.0f;
+        level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
+                   ENEMY_W, ENEMY_H, dt, false, &enemy->on_ground,
+                   false, STANCE_UPRIGHT);
+        return;
+    }
+
+    /* Speed decreases with each hit taken */
+    float speed = ENEMY_WALK_SPEED;
+    if (enemy->hp == ENEMY_HP - 1)
+        speed = ENEMY_WALK_SPEED * ENEMY_SPEED_HP2;
+    else if (enemy->hp < ENEMY_HP - 1)
+        speed = ENEMY_WALK_SPEED * ENEMY_SPEED_HP1;
+    if (alarmed)
+        speed *= ENEMY_ALARM_SPEED_MULTIPLIER;
+    speed *= speed_scale;
+
+    float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
+    float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
+    float target_dx = target_x - enemy_center_x;
+    bool target_on_same_floor =
+        fabsf(target_y - enemy_center_y) <= TILE_SIZE * 0.75f;
+    bool reached_target_x = false;
+    bool waiting_on_elevator = false;
+
+    if (enemy->on_elevator >= 0)
+    {
+        int exit_dir = enemy->dir;
+        if (following_target && fabsf(target_dx) > 2.0f)
+            exit_dir = target_dx < 0.0f ? -1 : 1;
+        bool may_leave = (!following_target || target_on_same_floor) &&
+                         enemy_can_leave_elevator(level, enemy, exit_dir);
+        if (may_leave)
+        {
+            enemy->dir = exit_dir;
+        }
+        else
+        {
+            /* Stay on the one-tile platform between floors. A pursuing guard
+             * only steps off when the lift reaches its target storey. */
+            waiting_on_elevator = true;
+        }
+    }
+
+    /*
+     * Nowhere to walk on either side, which stops the walk for the same reason
+     * `hemmed_in` does: a man with no way out stands rather than picking one of
+     * two refusals every frame. Kept as its own flag because it is a different
+     * question — `hemmed_in` asks what is pressed against his body, this asks
+     * whether either neighbouring tile is somewhere he could put a foot — and
+     * because the pursuit hop below is a genuine way off a one-tile island and
+     * must not be suppressed with the walk. A lift rider is excluded: the
+     * platform under him is not a tile, and stepping off it is the elevator
+     * block's own decision, made just above.
+     */
+    bool dead_end =
+        enemy->on_ground && enemy->on_elevator < 0 && !enemy->climbing &&
+        !enemy_can_advance(level, enemy, -1) &&
+        !enemy_can_advance(level, enemy, 1);
+    if (dead_end && following_target && target_on_same_floor &&
+        enemy_can_jump_gap(level, enemy, target_dx < 0.0f ? -1 : 1))
+        dead_end = false;
+
+    /* Only follow the target's X position once the enemy is on its floor.
+     * Otherwise, crossing that X position makes the direction flip every
+     * frame and prevents the enemy from continuing along the platform to a
+     * ladder. Keeping the current patrol direction lets the ladder logic
+     * below find a route between floors. */
+    if (following_target && !hemmed_in && target_on_same_floor)
+    {
+        if (fabsf(target_dx) > 2.0f)
+            enemy->dir = target_dx < 0.0f ? -1 : 1;
+        else
+            reached_target_x = true;
+    }
+
+    /*
+     * Somebody standing where he is walking, and somewhere else to be.
+     *
+     * The two reversals further down answer masonry and an unsafe edge, and
+     * there was never a third for a *body* — the only answer one ever had was
+     * the pin above, and a pin is exactly the wrong answer to a thing that
+     * moves. This is the third: turn away, provided the way he would turn is
+     * one he could actually walk.
+     *
+     * That proviso is the whole of why the rule lives here rather than beside
+     * the probe that feeds it. Without `enemy_can_advance` vetting the new
+     * facing, this rule and the unsafe-edge reversal below take turns undoing
+     * each other every frame — which is a man vibrating on the spot, the very
+     * thing the pin was written to stop. Measured at a ladder head on sector
+     * 17 with the roof's fifteen men around it.
+     *
+     * And the veto is not enough on its own, because this rule can chatter
+     * against *itself*: turning away walks him out until the neighbour is just
+     * clear of a 4px probe, which parks a body on the boundary and makes the
+     * flag flicker on sub-pixel drift. `body_turn_cooldown` is what makes the
+     * turn a decision instead; see ENEMY_BODY_TURN_COOLDOWN for the figures.
+     *
+     * Not while running somebody down: the steering above has just pointed him
+     * at his target and a colleague in the doorway is not a reason to give up.
+     * He walks through the man instead, which is a moment of two figures
+     * overlapping against a pile that used to be permanent.
+     */
+    if (enemy->on_ground && !following_target && !hemmed_in &&
+        enemy->on_elevator < 0 && enemy->body_turn_cooldown <= 0.0f &&
+        (enemy->dir > 0 ? body_right : body_left) &&
+        !(enemy->dir > 0 ? body_left : body_right) &&
+        enemy_can_advance(level, enemy, -enemy->dir))
+    {
+        enemy->dir = -enemy->dir;
+        enemy->body_turn_cooldown = ENEMY_BODY_TURN_COOLDOWN;
+    }
+
+    bool preserving_crate_mount =
+        !enemy->on_ground && enemy->mounting_crate;
+    bool preserving_gap_jump =
+        !enemy->on_ground &&
+        fabsf(enemy->vx) >= ENEMY_JUMP_MIN_SPEED - 0.5f;
+    enemy->vx = (hemmed_in || dead_end || reached_target_x ||
+                 waiting_on_elevator)
+                    ? 0.0f
+                    : preserving_crate_mount
+                          ? (float)enemy->dir * ENEMY_CRATE_MOUNT_SPEED
+                          : preserving_gap_jump
+                          ? (float)enemy->dir *
+                                fmaxf(fabsf(enemy->vx),
+                                      ENEMY_JUMP_MIN_SPEED)
+                          : (float)enemy->dir * speed;
+
+    if (enemy->on_ground)
+    {
+        enemy->mounting_crate = false;
+        int center_col = (int)floorf((enemy->x + ENEMY_W * 0.5f) / TILE_SIZE);
+        /* The row the body occupies, which is the row a wall has to be in to
+         * stop him — the one under his feet is the floor he is standing on.
+         * This used to be computed twice, the second copy called `foot_row`,
+         * which named a row it was not. */
+        int center_row = (int)floorf((enemy->y + ENEMY_H * 0.5f) / TILE_SIZE);
+
+        /* A guard routing to another storey waits at a shaft instead of
+         * jumping over it. The lift never pauses, so once it aligns with the
+         * floor, commit the final half-step onto its one-tile platform. */
+        if (following_target && !target_on_same_floor &&
+            enemy->on_elevator < 0 && !hemmed_in)
+        {
+            float floor_y = 0.0f;
+            int elevator_index =
+                enemy_elevator_ahead(level, enemy, enemy->dir, &floor_y);
+            if (elevator_index >= 0)
+            {
+                const Elevator *elevator =
+                    &level->runtime.elevators[elevator_index];
+                enemy->vx = 0.0f;
+                if (fabsf(elevator->y - floor_y) <=
+                    ENEMY_ELEVATOR_FLOOR_TOLERANCE)
+                {
+                    enemy->x = elevator->col * (float)TILE_SIZE +
+                               (TILE_SIZE - ENEMY_W) * 0.5f;
+                    enemy->y = elevator->y - ENEMY_H;
+                    enemy->vy = 0.0f;
+                    enemy->on_ground = true;
+                    enemy->on_elevator = elevator_index;
+                    return;
+                }
+            }
+        }
+
+        /* At a safe crate, a guard makes one choice: mount it or keep walking
+         * in the foreground. The avoidance timer commits a foreground route
+         * long enough to cross the box instead of re-rolling every frame. */
+        if (!hemmed_in && enemy->vx != 0.0f &&
+            enemy->obstacle_avoid_timer <= 0.0f &&
+            enemy_can_mount_crate(level, enemy, enemy->dir))
+        {
+            int jump_chance = following_target
+                                  ? ENEMY_CRATE_PURSUIT_JUMP_CHANCE
+                                  : ENEMY_CRATE_PATROL_JUMP_CHANCE;
+            bool jump = rng_range(rng, 100) < jump_chance;
+            if (jump)
+            {
+                enemy->vy = -ENEMY_JUMP_SPEED;
+                enemy->vx =
+                    (float)enemy->dir * ENEMY_CRATE_MOUNT_SPEED;
+                enemy->on_ground = false;
+                enemy->mounting_crate = true;
+            }
+            else
+            {
+                enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
+            }
+        }
+
+        /* Reverse at walls and keep searching in that direction for a moment.
+         * Otherwise same-floor pursuit steering turns the guard back toward
+         * an unreachable target on the next frame and pins it to the wall. */
+        int ahead_col = (enemy->dir > 0)
+                            ? (int)floorf((enemy->x + ENEMY_W + 1.0f) / TILE_SIZE)
+                            : (int)floorf((enemy->x - 1.0f) / TILE_SIZE);
+        if (enemy->on_ground && !hemmed_in && enemy->vx != 0.0f &&
+            level_is_solid(level, ahead_col, center_row))
+        {
+            enemy->dir = -enemy->dir;
+            enemy->vx = (float)enemy->dir * speed;
+            if (pursuing)
+                enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
+        }
+
+        /* While chasing, hop a short gap rather than stalling at its edge,
+         * but only when the target lies ahead and not below it. */
+        if (enemy->on_ground && following_target && !hemmed_in &&
+            enemy->vx != 0.0f &&
+            !enemy_floor_ahead(level, enemy, enemy->dir) &&
+            target_dx * (float)enemy->dir > 0.0f &&
+            target_y < enemy_center_y + TILE_SIZE * 0.75f &&
+            enemy_can_jump_gap(level, enemy, enemy->dir))
+        {
+            enemy->vy = -ENEMY_GAP_JUMP_SPEED;
+            if (fabsf(enemy->vx) < ENEMY_JUMP_MIN_SPEED)
+                enemy->vx = (float)enemy->dir * ENEMY_JUMP_MIN_SPEED;
+            enemy->on_ground = false;
+        }
+
+        /* A short step down is useful navigation; a blind drop through an
+         * atrium or lift shaft is not. Reverse before crossing an unsafe edge
+         * so both patrols and pursuing guards can look for another route. */
+        if (enemy->on_ground && !hemmed_in && enemy->vx != 0.0f &&
+            !enemy_floor_ahead(level, enemy, enemy->dir) &&
+            !enemy_can_step_down(level, enemy, enemy->dir))
+        {
+            enemy->dir = -enemy->dir;
+            enemy->vx = (float)enemy->dir * speed;
+            enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
+        }
+
+        /* Patrols use ladders occasionally. During an alarm, take a usable
+         * ladder immediately when it leads toward the player's floor. */
+        enemy->climb_cooldown -= dt;
+        bool ladder_here = level_is_ladder(level, center_col, center_row);
+        if (enemy->on_ground && ladder_here &&
+            (pursuing || enemy->climb_cooldown <= 0.0f))
+        {
+            bool up_ok = level_is_ladder(level, center_col, center_row - 1);
+            bool down_ok = level_is_ladder(level, center_col, center_row + 1);
+            /* Read again rather than reusing the value from the top of the
+             * function: an elevator may have snapped the guard onto its
+             * platform since, and which way a ladder leads is decided from
+             * where he is standing now. */
+            float ladder_center_y = enemy->y + ENEMY_H * 0.5f;
+            int desired_climb_dir =
+                target_y < ladder_center_y ? -1 : 1;
+            bool ladder_toward_target =
+                desired_climb_dir < 0 ? up_ok : down_ok;
+            bool start_climbing =
+                routing_to_target
+                    ? (fabsf(target_y - ladder_center_y) >
+                           TILE_SIZE * 0.75f &&
+                       ladder_toward_target)
+                    : ((up_ok || down_ok) &&
+                       rng_range(rng, 100) < ENEMY_CLIMB_CHANCE);
+            if (start_climbing)
+            {
+                enemy->climbing = true;
+                enemy->on_ground = false;
+                enemy->ladder_col = center_col;
+                enemy->climb_start_floor_row =
+                    (int)floorf((enemy->y + ENEMY_H - 1.0f) /
+                                TILE_SIZE) + 1;
+                if (routing_to_target)
+                {
+                    enemy->climb_dir = desired_climb_dir;
+                }
+                else if (up_ok && down_ok)
+                {
+                    enemy->climb_dir = rng_range(rng, 2) == 0 ? -1 : 1;
+                }
+                else
+                {
+                    enemy->climb_dir = up_ok ? -1 : 1;
+                }
+                enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
+                return;
+            }
+        }
+    }
+
+    level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
+               ENEMY_W, ENEMY_H, dt, false, &enemy->on_ground,
+               false, STANCE_UPRIGHT);
+}
+
+void enemy_update(Enemy *enemy, Level *level, float dt,
+                  bool pursuing, bool alarmed,
+                  float target_x, float target_y,
+                  bool body_left, bool body_right,
+                  float speed_scale, Rng *rng)
+{
+    enemy_begin_elevator_ride(enemy, level);
+    float previous_y = enemy->y;
+
+    /* Conversation cooldown must advance in every AI state, including walking
+     * and climbing, so enemies eventually become eligible to talk again. */
+    if (enemy->talk_cooldown > 0.0f)
+    {
+        enemy->talk_cooldown -= dt;
+        if (enemy->talk_cooldown < 0.0f)
+            enemy->talk_cooldown = 0.0f;
+    }
+
+    if (enemy->obstacle_avoid_timer > 0.0f)
+    {
+        enemy->obstacle_avoid_timer -= dt;
+        if (enemy->obstacle_avoid_timer < 0.0f)
+            enemy->obstacle_avoid_timer = 0.0f;
+    }
+
+    /* Beside the two above rather than inside the walker, so a man who spends
+     * the interval climbing or on the phone comes back off it able to turn. */
+    if (enemy->body_turn_cooldown > 0.0f)
+    {
+        enemy->body_turn_cooldown -= dt;
+        if (enemy->body_turn_cooldown < 0.0f)
+            enemy->body_turn_cooldown = 0.0f;
+    }
+
+    if (enemy->recoil_timer > 0.0f)
+    {
+        enemy->recoil_timer -= dt;
+        if (enemy->recoil_timer < 0.0f)
+            enemy->recoil_timer = 0.0f;
+    }
+
+    if (enemy->climbing)
+        enemy->anim_time += dt * (2.4f + fabsf(enemy->vy) * 0.022f);
+    else if (fabsf(enemy->vx) > 1.0f && enemy->aim_timer <= 0.0f && !enemy->talking)
+        enemy->anim_time += dt * (2.3f + fabsf(enemy->vx) * 0.030f);
+    else
+        enemy->anim_time += dt;
+
+    if (enemy->talking && !pursuing)
+    {
+        enemy_update_talking(enemy, level, dt);
+        enemy_finish_elevator_ride(enemy, level, previous_y);
+        return;
+    }
+    if (pursuing && enemy->talking)
+    {
+        enemy->talking = false;
+        enemy->talk_timer = 0.0f;
+        enemy->talk_cooldown = ENEMY_TALK_COOLDOWN;
+    }
+    if (enemy->climbing)
+    {
+        enemy_update_climbing(enemy, level, dt,
+                              pursuing, target_x, target_y, rng);
+    }
+    else
+    {
+        enemy_update_walking(enemy, level, dt,
+                             pursuing, alarmed, target_x, target_y,
+                             body_left, body_right, speed_scale, rng);
+    }
+    enemy_finish_elevator_ride(enemy, level, previous_y);
+}

@@ -1,0 +1,113 @@
+# Build the Linux archive and hand it back as an artifact to download.
+#
+# **It publishes nothing and it starts on nothing.** No tag, no push, no
+# schedule: the only way this runs is somebody pressing the button on the Actions
+# tab, and the only thing it produces is one file attached to that run.
+#
+# It exists because the Linux payload cannot be built anywhere else: its SDL is
+# compiled against the userland it will run on, so a Mac cannot make one. The
+# macOS and Windows archives are both `make` targets that work on a Mac, which is
+# why they are not here.
+
+name: payloads
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: linux x86_64
+    # Pinned, not `ubuntu-latest`, and the reason is a promise made to players
+    # rather than reproducibility in the abstract. A payload's glibc floor is
+    # whatever the machine that linked it had, and
+    # itch/install-instructions.md tells a Linux player exactly which that is —
+    # "Built on Ubuntu 24.04 for x86_64 (glibc 2.39)" — so they can tell whether
+    # it will start on their distribution at all. On `ubuntu-latest` that floor
+    # rises the day GitHub rolls the label over, silently, and the sentence
+    # becomes a lie that costs somebody a download and an error naming nothing
+    # they can act on. tools/check_docs.py holds the sentence to this line.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # SDL turns a missing X extension into a hard configure error rather than a
+      # backend it goes without, so this list is what a player's SDL has to have
+      # been built with: the two window systems, input, the two audio servers, and
+      # libdecor for a Wayland titlebar.
+      #
+      # **Every X extension SDL asks about is named here, including the two that
+      # used to arrive by accident.** `libxtst-dev` was missing outright and the
+      # job died on `Couldn't find dependency package for XTEST` after twenty
+      # lines of successful checks; `libxrender-dev` was never listed either and
+      # only ever present because `libxcursor-dev` depends on it. The first cost a
+      # release, the second was one apt resolution away from costing the next one.
+      # A list of somebody else's build requirements cannot be held by a check in
+      # this repository — the requirement lives in SDL's cmake — so the answer is
+      # `preflight_x11` in packaging/build_linux.sh, which names the missing
+      # package in one line instead of leaving cmake to say it in twenty.
+      - name: Install what SDL needs to build with a screen in it
+        run: |
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev \
+            libxfixes-dev libxrender-dev libxss-dev libxtst-dev \
+            libxkbcommon-dev \
+            libwayland-dev wayland-protocols libdecor-0-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgbm-dev libdrm-dev \
+            libasound2-dev libpulse-dev
+
+      - name: make linux
+        run: make linux
+
+      # Started before it is handed to anybody, on the dummy video driver — the
+      # same check `make soak` is, and the only one available to a runner with no
+      # screen. It is the *payload's* binary rather than a fresh build, because
+      # what is worth proving is the artefact: that it finds the SDL travelling
+      # beside it. An rpath of `$ORIGIN/lib` is easy to get wrong in a way that
+      # only shows up on a machine other than the one that built it.
+      #
+      # **It unpacks the archive rather than reading the staging tree, and the
+      # reason is that this step had never once run.** It used to open with
+      # `ls -d dist/stage/Chuck-*-linux-x86_64`, and the last thing
+      # build_linux.sh does before printing "upload this" is `rm -rf
+      # "$dist/stage"` — deliberately, so that dist/ does not hold the payload
+      # twice and nobody uploads the folder instead of the tarball. So the step
+      # died on `ls: cannot access` every time, which is the *same defect* as the
+      # macOS release written up in AGENTS.md: a step consuming an intermediate
+      # that the step before it is documented as destroying. Nobody saw it
+      # because this workflow is `workflow_dispatch` and starts on nothing.
+      #
+      # Unpacking is not a workaround for that, it is the stronger question. The
+      # staging tree is not what a player downloads; the tarball is. Extracting
+      # it also proves tar kept the executable bit and the `lib/` beside it, and
+      # it cannot be broken again by the script tidying up after itself, because
+      # what it consumes is the shipped file.
+      - name: Start the payload
+        env:
+          SOAK_MODE: smoke
+          SOAK_SECONDS: "1"
+        run: |
+          archive=$(ls dist/Chuck-*-linux-x86_64.tar.gz)
+          rm -rf dist/unpacked
+          mkdir -p dist/unpacked
+          tar -C dist/unpacked -xzf "$archive"
+          payload=$(ls -d dist/unpacked/Chuck-*-linux-x86_64)
+          test -x "$payload/chuck" || {
+              echo "payload lost its executable bit in the tarball" >&2
+              exit 1
+          }
+          make soak SOAK_BINARY="$payload/chuck" SOAK_EDITOR=/nonexistent
+          # Removed for the same reason build_linux.sh removes its staging tree:
+          # the upload step globs dist/, and a loose copy of the payload beside
+          # the archive is how the wrong thing gets attached to a run.
+          rm -rf dist/unpacked
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: dist/Chuck-*-linux-x86_64.tar.gz
+          if-no-files-found: error
