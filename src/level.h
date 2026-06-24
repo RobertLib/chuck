@@ -60,6 +60,11 @@ typedef struct
 
 typedef struct
 {
+    float x, y; /* spawn position (top-left of mine box) */
+} MineSpawn;
+
+typedef struct
+{
     int width;
     int height;
     TileType tiles[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
@@ -77,6 +82,8 @@ typedef struct
 
     EnemySpawn enemy_spawns[MAX_ENEMIES];
     int enemy_count;
+    MineSpawn mine_spawns[MAX_MINES];
+    int mine_count;
 
     Door doors[MAX_DOORS];
     int door_count;

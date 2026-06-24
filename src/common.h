@@ -13,6 +13,14 @@
 #define MAX_ITEMS 128
 #define MAX_ENEMIES 16
 
+/* Mines */
+#define MAX_MINES 32
+#define MINE_W 16
+#define MINE_H 10
+#define MINE_TRIGGER_DELAY 0.45f /* seconds between stepping and explosion */
+#define MINE_DAMAGE 1
+#define MINE_RADIUS (36.0f) /* damage radius in pixels */
+
 /* Player tuning (pixels per second) */
 #define PLAYER_W 22
 #define PLAYER_H 28

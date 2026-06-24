@@ -26,6 +26,14 @@ typedef enum
 
 typedef struct
 {
+    float x, y;     /* top-left of mine box */
+    bool active;    /* not yet exploded */
+    bool triggered; /* player stepped on it */
+    float timer;    /* countdown until explosion */
+} Mine;
+
+typedef struct
+{
     SDL_Window *window;
     SDL_Renderer *renderer;
 
@@ -33,6 +41,9 @@ typedef struct
     Player player;
     Enemy enemies[MAX_ENEMIES];
     int enemy_count;
+
+    Mine mines[MAX_MINES];
+    int mine_count;
 
     Bullet bullets[MAX_BULLETS];             /* fired by player */
     Bullet enemy_bullets[MAX_ENEMY_BULLETS]; /* fired by enemies */

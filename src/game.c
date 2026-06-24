@@ -79,6 +79,17 @@ static bool load_level(Game *game, int index)
                    game->level.enemy_spawns[i].y);
     }
 
+    /* Initialise mines from level spawns */
+    game->mine_count = game->level.mine_count;
+    for (int i = 0; i < game->mine_count; ++i)
+    {
+        game->mines[i].x = game->level.mine_spawns[i].x;
+        game->mines[i].y = game->level.mine_spawns[i].y;
+        game->mines[i].active = true;
+        game->mines[i].triggered = false;
+        game->mines[i].timer = 0.0f;
+    }
+
     game->invuln_timer = 0.0f;
     game->message_timer = 0.0f;
     game->state = STATE_PLAYING;
@@ -322,6 +333,45 @@ void game_update(Game *game, float dt)
     if (game->teleport_cooldown > 0.0f)
         game->teleport_cooldown -= dt;
 
+    /* Mines: stepping triggers a short countdown, then explosion */
+    for (int i = 0; i < game->mine_count; ++i)
+    {
+        /* Mine stored in Game as an inline struct */
+        Mine *m = &game->mines[i];
+        if (!m->active)
+            continue;
+        if (!m->triggered)
+        {
+            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, PLAYER_H,
+                              m->x, m->y, (float)MINE_W, (float)MINE_H))
+            {
+                m->triggered = true;
+                m->timer = MINE_TRIGGER_DELAY;
+            }
+        }
+        else
+        {
+            m->timer -= dt;
+            if (m->timer <= 0.0f)
+            {
+                m->active = false;
+                float cx = m->x + MINE_W * 0.5f;
+                float cy = m->y + MINE_H * 0.5f;
+                particle_system_explosion(&game->particles, cx, cy, 48);
+                /* Damage player if within radius and not invulnerable */
+                float px = game->player.x + PLAYER_W * 0.5f;
+                float py = game->player.y + PLAYER_H * 0.5f;
+                float dx = px - cx;
+                float dy = py - cy;
+                float dist2 = dx * dx + dy * dy;
+                if (dist2 <= MINE_RADIUS * MINE_RADIUS && game->invuln_timer <= 0.0f)
+                {
+                    hit_player(game);
+                }
+            }
+        }
+    }
+
     if (game->input.use_door && game->player.on_ground && game->teleport_cooldown <= 0.0f)
     {
         int center_col = (int)floorf((game->player.x + PLAYER_W * 0.5f) / TILE_SIZE);
@@ -480,6 +530,10 @@ void game_update(Game *game, float dt)
                 e->hp--;
                 if (e->hp <= 0)
                 {
+                    /* Emit blood particles at enemy death, then mark dead */
+                    float cx = e->x + ENEMY_W * 0.5f;
+                    float cy = e->y + ENEMY_H * 0.5f;
+                    particle_system_emit(&game->particles, cx, cy, 24, e->dir);
                     e->dead = true;
                     game->score += 150;
                 }
@@ -589,6 +643,9 @@ void game_update(Game *game, float dt)
             game->message_timer = 1.2f;
         }
     }
+
+    /* Update particle system every frame so non-player-triggered effects animate. */
+    particle_system_update(&game->particles, dt);
 }
 
 /* ---------------- Rendering ---------------- */
@@ -759,6 +816,21 @@ static void render_world(Game *game)
             SDL_SetRenderDrawColor(r, 140, 140, 140, 255);
             fill_rect(r, x + 4, y + 2, 11, 2);
         }
+    }
+
+    /* Mines */
+    for (int i = 0; i < game->mine_count; ++i)
+    {
+        const Mine *m = &game->mines[i];
+        if (!m->active)
+            continue;
+        float x = m->x;
+        float y = m->y + oy;
+        SDL_SetRenderDrawColor(r, 30, 30, 30, 255);
+        fill_rect(r, x, y, MINE_W, MINE_H);
+        /* small red indicator */
+        SDL_SetRenderDrawColor(r, 220, 50, 50, 255);
+        fill_rect(r, x + MINE_W * 0.5f - 2.0f, y + 2.0f, 4.0f, 4.0f);
     }
 
     /* Enemies */

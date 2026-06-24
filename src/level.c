@@ -28,6 +28,18 @@ static void place_enemy(Level *level, int col, int row)
     e->y = (row + 1) * TILE_SIZE - ENEMY_H;
 }
 
+static void place_mine(Level *level, int col, int row)
+{
+    if (level->mine_count >= MAX_MINES)
+    {
+        return;
+    }
+    MineSpawn *m = &level->mine_spawns[level->mine_count++];
+    /* Place the mine resting on the floor of the tile */
+    m->x = col * TILE_SIZE + (TILE_SIZE - MINE_W) * 0.5f;
+    m->y = (row + 1) * TILE_SIZE - MINE_H;
+}
+
 bool level_load(Level *level, const char *path)
 {
     size_t size = 0;
@@ -94,6 +106,10 @@ bool level_load(Level *level, const char *path)
         case 'M':
             level->tiles[row][col] = TILE_EMPTY;
             place_enemy(level, col, row);
+            break;
+        case 'X':
+            level->tiles[row][col] = TILE_EMPTY;
+            place_mine(level, col, row);
             break;
         case 'S':
             level->tiles[row][col] = TILE_EMPTY;

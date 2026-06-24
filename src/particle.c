@@ -40,6 +40,30 @@ void particle_system_emit(ParticleSystem *ps, float x, float y, int count, int f
   }
 }
 
+void particle_system_explosion(ParticleSystem *ps, float x, float y, int count)
+{
+  if (count <= 0)
+    return;
+
+  for (int i = 0; i < PS_MAX_PARTICLES && count > 0; ++i)
+  {
+    if (!ps->particles[i].active)
+    {
+      Particle *p = &ps->particles[i];
+      p->active = true;
+      p->x = x + frand_range(-6.0f, 6.0f);
+      p->y = y + frand_range(-6.0f, 6.0f);
+      float ang = frand_range(-3.14159265f, 3.14159265f);
+      float sp = frand_range(60.0f, 220.0f);
+      p->vx = cosf(ang) * sp;
+      p->vy = sinf(ang) * sp * 0.6f - frand_range(20.0f, 60.0f);
+      p->life = frand_range(0.35f, 1.1f);
+      p->size = frand_range(3.0f, 7.0f);
+      --count;
+    }
+  }
+}
+
 void particle_system_update(ParticleSystem *ps, float dt)
 {
   for (int i = 0; i < PS_MAX_PARTICLES; ++i)
@@ -63,7 +87,13 @@ void particle_system_render(ParticleSystem *ps, SDL_Renderer *r, float oy)
     Particle *p = &ps->particles[i];
     if (!p->active)
       continue;
-    SDL_SetRenderDrawColor(r, 180, 20, 20, 255);
+    /* Color varies by size/life to give explosion / spark variety */
+    if (p->size > 4.5f)
+      SDL_SetRenderDrawColor(r, 240, 160, 30, 255);
+    else if (p->size > 3.0f)
+      SDL_SetRenderDrawColor(r, 220, 80, 20, 255);
+    else
+      SDL_SetRenderDrawColor(r, 180, 20, 20, 255);
     SDL_FRect rect = {p->x - p->size * 0.5f, p->y + oy - p->size * 0.5f, p->size, p->size};
     SDL_RenderFillRect(r, &rect);
   }
