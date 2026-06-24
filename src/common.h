@@ -66,3 +66,9 @@
 #define ELEVATOR_PLAT_H 6    /* pixel height of the moving platform */
 
 #endif /* CHUCK_COMMON_H */
+
+/* Falling platforms */
+#define MAX_FALL_PLATFORMS 64
+#define FALL_PLATFORM_H 6                 /* pixel height of the falling platform */
+#define FALL_PLATFORM_TRIGGER_DELAY 0.25f /* seconds before falling starts after trigger */
+#define FALL_PLATFORM_ACCEL 420.0f        /* pixels/sec^2 applied once falling */

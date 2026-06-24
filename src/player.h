@@ -28,6 +28,6 @@ typedef struct
 } Player;
 
 void player_reset(Player *player, const Level *level);
-void player_update(Player *player, const Level *level, const Input *input, float dt);
+void player_update(Player *player, Level *level, const Input *input, float dt);
 
 #endif /* CHUCK_PLAYER_H */

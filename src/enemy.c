@@ -21,7 +21,7 @@ void enemy_init(Enemy *enemy, float x, float y)
     enemy->aim_timer = 0.0f;
 }
 
-static void enemy_update_climbing(Enemy *enemy, const Level *level, float dt)
+static void enemy_update_climbing(Enemy *enemy, Level *level, float dt)
 {
     /* Smoothly slide toward the ladder column centre instead of hard-snapping,
        to avoid a one-frame position jump when climbing starts. */
@@ -78,10 +78,11 @@ static void enemy_update_climbing(Enemy *enemy, const Level *level, float dt)
 
     bool ignored_ground = false;
     level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
-               ENEMY_W, ENEMY_H, dt, true, &ignored_ground);
+               ENEMY_W, ENEMY_H, dt, true, &ignored_ground,
+               false);
 }
 
-static void enemy_update_walking(Enemy *enemy, const Level *level, float dt)
+static void enemy_update_walking(Enemy *enemy, Level *level, float dt)
 {
     enemy->vy += GRAVITY * dt;
     if (enemy->vy > MAX_FALL_SPEED)
@@ -94,7 +95,8 @@ static void enemy_update_walking(Enemy *enemy, const Level *level, float dt)
     {
         enemy->vx = 0.0f;
         level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
-                   ENEMY_W, ENEMY_H, dt, false, &enemy->on_ground);
+                   ENEMY_W, ENEMY_H, dt, false, &enemy->on_ground,
+                   false);
         return;
     }
 
@@ -149,10 +151,11 @@ static void enemy_update_walking(Enemy *enemy, const Level *level, float dt)
     }
 
     level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
-               ENEMY_W, ENEMY_H, dt, false, &enemy->on_ground);
+               ENEMY_W, ENEMY_H, dt, false, &enemy->on_ground,
+               false);
 }
 
-void enemy_update(Enemy *enemy, const Level *level, float dt)
+void enemy_update(Enemy *enemy, Level *level, float dt)
 {
     if (enemy->climbing)
     {

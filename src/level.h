@@ -9,7 +9,8 @@ typedef enum
     TILE_WALL,
     TILE_LADDER,
     TILE_DOOR,
-    TILE_ELEVATOR_SHAFT /* visual only – not solid */
+    TILE_ELEVATOR_SHAFT /* visual only – not solid */,
+    TILE_FALL_PLATFORM /* single-tile one-way platform that can fall */
 } TileType;
 
 /* A moving elevator platform within a vertical shaft. */
@@ -21,6 +22,17 @@ typedef struct
     float bot_limit; /* maximum y the platform top may reach */
     float vy;        /* current vertical velocity (positive = downward) */
 } Elevator;
+
+/* Single-tile platform that falls when stepped on. */
+typedef struct
+{
+    int col, row;   /* tile grid position */
+    float y;        /* current top position in world px */
+    float vy;       /* vertical velocity (positive = down) */
+    float timer;    /* time since triggered */
+    bool triggered; /* true when player/enemy stepped on it */
+    bool removed;   /* true when it has fallen away */
+} FallPlatform;
 
 /* A door tile position. Doors are paired by index: door[0]<->door[1], door[2]<->door[3], etc. */
 typedef struct
@@ -72,6 +84,9 @@ typedef struct
 
     Elevator elevators[MAX_ELEVATORS];
     int elevator_count;
+
+    FallPlatform fall_platforms[MAX_FALL_PLATFORMS];
+    int fall_platform_count;
 } Level;
 
 /* Load a level from a text file. Returns true on success. */
@@ -82,6 +97,7 @@ TileType level_tile(const Level *level, int col, int row);
 bool level_is_solid(const Level *level, int col, int row);
 bool level_is_ladder(const Level *level, int col, int row);
 void level_update_elevators(Level *level, float dt);
+void level_update_falling_platforms(Level *level, float dt);
 
 /*
  * Move an axis-aligned box by its velocity and resolve collisions against
@@ -89,7 +105,8 @@ void level_update_elevators(Level *level, float dt);
  * (you can stand on their top), unless 'climbing' is true, in which case the
  * box passes freely through ladder tiles.
  */
-void level_move(const Level *level, float *x, float *y, float *vx, float *vy,
-                float w, float h, float dt, bool climbing, bool *on_ground);
+void level_move(Level *level, float *x, float *y, float *vx, float *vy,
+                float w, float h, float dt, bool climbing, bool *on_ground,
+                bool triggers_falling);
 
 #endif /* CHUCK_LEVEL_H */

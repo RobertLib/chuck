@@ -299,6 +299,7 @@ void game_update(Game *game, float dt)
     game->input.jump = false;
 
     level_update_elevators(&game->level, dt);
+    level_update_falling_platforms(&game->level, dt);
     game->player_on_elevator = -1;
     for (int i = 0; i < game->level.elevator_count; ++i)
     {
@@ -671,6 +672,20 @@ static void render_world(Game *game)
         fill_rect(r, px, py, TILE_SIZE, ELEVATOR_PLAT_H);
         /* Bright top edge */
         SDL_SetRenderDrawColor(r, 220, 225, 235, 255);
+        fill_rect(r, px, py, TILE_SIZE, 2);
+    }
+
+    /* Falling platforms */
+    for (int i = 0; i < lvl->fall_platform_count; ++i)
+    {
+        const FallPlatform *fp = &lvl->fall_platforms[i];
+        if (fp->removed)
+            continue;
+        float px = fp->col * (float)TILE_SIZE;
+        float py = fp->y + oy;
+        SDL_SetRenderDrawColor(r, 150, 90, 50, 255);
+        fill_rect(r, px, py, TILE_SIZE, FALL_PLATFORM_H);
+        SDL_SetRenderDrawColor(r, 210, 160, 120, 255);
         fill_rect(r, px, py, TILE_SIZE, 2);
     }
 

@@ -118,6 +118,20 @@ bool level_load(Level *level, const char *path)
         case 'V':
             level->tiles[row][col] = TILE_ELEVATOR_SHAFT;
             break;
+        case 'F':
+            level->tiles[row][col] = TILE_EMPTY;
+            if (level->fall_platform_count < MAX_FALL_PLATFORMS)
+            {
+                FallPlatform *fp = &level->fall_platforms[level->fall_platform_count++];
+                fp->col = col;
+                fp->row = row;
+                fp->y = row * (float)TILE_SIZE;
+                fp->vy = 0.0f;
+                fp->timer = 0.0f;
+                fp->triggered = false;
+                fp->removed = false;
+            }
+            break;
         default:
             level->tiles[row][col] = TILE_EMPTY;
             break;
@@ -264,8 +278,9 @@ bool level_is_ladder(const Level *level, int col, int row)
     return level->tiles[row][col] == TILE_LADDER;
 }
 
-void level_move(const Level *level, float *x, float *y, float *vx, float *vy,
-                float w, float h, float dt, bool climbing, bool *on_ground)
+void level_move(Level *level, float *x, float *y, float *vx, float *vy,
+                float w, float h, float dt, bool climbing, bool *on_ground,
+                bool triggers_falling)
 {
     *on_ground = false;
     float prev_y = *y;
@@ -336,7 +351,32 @@ void level_move(const Level *level, float *x, float *y, float *vx, float *vy,
                         break;
                     }
                 }
+                /* Falling platforms: treat as one-way platforms that can be triggered. */
+                for (int p = 0; p < level->fall_platform_count; ++p)
+                {
+                    FallPlatform *fp = &level->fall_platforms[p];
+                    if (fp->removed)
+                        continue;
+                    if (fp->col != c)
+                        continue;
+                    /* Use platform's current top position for landing tests. */
+                    float plat_top = fp->y;
+                    if (prev_feet <= plat_top + 1.0f && feet >= plat_top)
+                    {
+                        *y = plat_top - h;
+                        *vy = 0.0f;
+                        *on_ground = true;
+                        /* Trigger platform to start falling after a short delay. */
+                        if (triggers_falling && !fp->triggered)
+                        {
+                            fp->triggered = true;
+                            fp->timer = 0.0f;
+                        }
+                        goto landed_check_done;
+                    }
+                }
             }
+        landed_check_done:;
         }
         else if (*vy < 0.0f)
         {
@@ -350,6 +390,27 @@ void level_move(const Level *level, float *x, float *y, float *vx, float *vy,
                     break;
                 }
             }
+        }
+    }
+}
+
+void level_update_falling_platforms(Level *level, float dt)
+{
+    for (int i = 0; i < level->fall_platform_count; ++i)
+    {
+        FallPlatform *fp = &level->fall_platforms[i];
+        if (fp->removed || !fp->triggered)
+            continue;
+        fp->timer += dt;
+        if (fp->timer < FALL_PLATFORM_TRIGGER_DELAY)
+            continue;
+        /* Start accelerating downward. */
+        fp->vy += FALL_PLATFORM_ACCEL * dt;
+        fp->y += fp->vy * dt;
+        /* Remove platform once it has fallen entirely out of its tile. */
+        if (fp->y >= (fp->row + 1) * (float)TILE_SIZE)
+        {
+            fp->removed = true;
         }
     }
 }

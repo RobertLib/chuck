@@ -21,6 +21,6 @@ typedef struct
 } Enemy;
 
 void enemy_init(Enemy *enemy, float x, float y);
-void enemy_update(Enemy *enemy, const Level *level, float dt);
+void enemy_update(Enemy *enemy, Level *level, float dt);
 
 #endif /* CHUCK_ENEMY_H */

@@ -26,7 +26,7 @@ static bool player_over_ladder(const Player *player, const Level *level)
            level_is_ladder(level, col, row_feet);
 }
 
-void player_update(Player *player, const Level *level, const Input *input, float dt)
+void player_update(Player *player, Level *level, const Input *input, float dt)
 {
     /* Horizontal intent */
     float move = 0.0f;
@@ -88,5 +88,6 @@ void player_update(Player *player, const Level *level, const Input *input, float
     }
 
     level_move(level, &player->x, &player->y, &player->vx, &player->vy,
-               PLAYER_W, PLAYER_H, dt, player->on_ladder, &player->on_ground);
+               PLAYER_W, PLAYER_H, dt, player->on_ladder, &player->on_ground,
+               true);
 }
