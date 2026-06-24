@@ -12,6 +12,8 @@ void player_reset(Player *player, const Level *level)
     player->on_ladder = false;
     player->facing = 1;
     player->bullets = MAX_AMMO;
+    player->dying = false;
+    player->death_timer = 0.0f;
 }
 
 /* True when the player box overlaps a ladder near its center or feet. */

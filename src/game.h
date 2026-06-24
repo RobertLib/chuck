@@ -5,6 +5,7 @@
 #include "level.h"
 #include "player.h"
 #include "enemy.h"
+#include "particle.h"
 
 #define LEVEL_COUNT 2
 
@@ -50,6 +51,9 @@ typedef struct
     float teleport_cooldown;      /* seconds before player can teleport again */
 
     int player_on_elevator; /* index into level.elevators[], or -1 */
+
+    /* Particle system for effects */
+    ParticleSystem particles;
 
     GameState state;
     Uint64 last_tick;

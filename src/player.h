@@ -23,6 +23,8 @@ typedef struct
     bool on_ladder;
     int facing;  /* -1 = left, +1 = right */
     int bullets; /* current ammo, 0..MAX_AMMO */
+    bool dying;  /* true while death animation plays */
+    float death_timer;
 } Player;
 
 void player_reset(Player *player, const Level *level);

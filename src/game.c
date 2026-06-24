@@ -139,6 +139,9 @@ bool game_init(Game *game)
         return false;
     }
 
+    /* Initialise particle system */
+    particle_system_init(&game->particles);
+
     game->last_tick = SDL_GetTicksNS();
     return true;
 }
@@ -179,16 +182,17 @@ static void read_input(Game *game)
 
 static void hit_player(Game *game)
 {
-    game->lives -= 1;
-    game->invuln_timer = INVULN_TIME;
-    if (game->lives <= 0)
-    {
-        game->state = STATE_GAME_OVER;
-    }
-    else
-    {
-        player_reset(&game->player, &game->level);
-    }
+    /* Start death animation using the particle system. Use a player-local
+     * dying flag so other game state remains unchanged. */
+    if (game->player.dying)
+        return;
+
+    float cx = game->player.x + PLAYER_W * 0.5f;
+    float cy = game->player.y + PLAYER_H * 0.5f;
+    particle_system_emit(&game->particles, cx, cy, 32, game->player.facing);
+    /* mark player as dying; actual life loss / respawn happens after timer */
+    game->player.dying = true;
+    game->player.death_timer = 0.75f;
 }
 
 static void advance_level(Game *game)
@@ -203,6 +207,26 @@ static void advance_level(Game *game)
     }
 }
 
+static void finish_player_death(Game *game)
+{
+    /* Apply the actual hit effects after the death animation */
+    game->player.dying = false;
+    game->player.death_timer = 0.0f;
+    particle_system_clear(&game->particles);
+
+    game->lives -= 1;
+    game->invuln_timer = INVULN_TIME;
+
+    if (game->lives <= 0)
+    {
+        game->state = STATE_GAME_OVER;
+    }
+    else
+    {
+        player_reset(&game->player, &game->level);
+    }
+}
+
 void game_update(Game *game, float dt)
 {
     read_input(game);
@@ -214,6 +238,17 @@ void game_update(Game *game, float dt)
         {
             advance_level(game);
         }
+        game->input.jump = false;
+        return;
+    }
+
+    /* If player is in dying animation, update particles and wait */
+    if (game->player.dying)
+    {
+        particle_system_update(&game->particles, dt);
+        game->player.death_timer -= dt;
+        if (game->player.death_timer <= 0.0f)
+            finish_player_death(game);
         game->input.jump = false;
         return;
     }
@@ -759,18 +794,34 @@ static void render_world(Game *game)
         fill_rect(r, b->x, b->y + oy, BULLET_W, BULLET_H);
     }
 
-    /* Player (blink while invulnerable) */
-    bool blink = game->invuln_timer > 0.0f &&
-                 ((int)(game->invuln_timer * 12.0f) % 2 == 0);
-    if (!blink)
+    /* Particles (blood, etc.) */
+    particle_system_render(&game->particles, r, oy);
+
+    /* Player (blink while invulnerable). Hide player while in dying animation. */
+    if (!game->player.dying)
     {
-        float x = game->player.x;
-        float y = game->player.y + oy;
-        SDL_SetRenderDrawColor(r, 60, 120, 230, 255);
-        fill_rect(r, x, y, PLAYER_W, PLAYER_H);
-        SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-        float eye = (game->player.facing > 0) ? x + PLAYER_W - 8 : x + 4;
-        fill_rect(r, eye, y + 6, 4, 4);
+        bool blink = game->invuln_timer > 0.0f &&
+                     ((int)(game->invuln_timer * 12.0f) % 2 == 0);
+        if (!blink)
+        {
+            float x = game->player.x;
+            float y = game->player.y + oy;
+            SDL_SetRenderDrawColor(r, 60, 120, 230, 255);
+            fill_rect(r, x, y, PLAYER_W, PLAYER_H);
+            SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+            float eye = (game->player.facing > 0) ? x + PLAYER_W - 8 : x + 4;
+            fill_rect(r, eye, y + 6, 4, 4);
+        }
+    }
+    else
+    {
+        /* Draw a gore splat once (use particle[0] as the splat marker) */
+        const Particle *s = &game->particles.particles[0];
+        if (s->active && s->life > 0.0f)
+        {
+            SDL_SetRenderDrawColor(r, 90, 10, 10, 255);
+            fill_rect(r, s->x - 6.0f, s->y + oy - 4.0f, 12.0f, 6.0f);
+        }
     }
 }
 
