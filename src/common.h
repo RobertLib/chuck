@@ -8,7 +8,7 @@
 #define TILE_SIZE 32
 #define HUD_HEIGHT 40
 
-#define MAX_LEVEL_WIDTH 64
+#define MAX_LEVEL_WIDTH 128
 #define MAX_LEVEL_HEIGHT 48
 #define MAX_ITEMS 128
 #define MAX_ENEMIES 16

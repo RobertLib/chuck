@@ -108,9 +108,18 @@ static bool load_level(Game *game, int index)
     SDL_memset(game->bullets, 0, sizeof(game->bullets));
     SDL_memset(game->enemy_bullets, 0, sizeof(game->enemy_bullets));
 
-    int win_w = game->level.width * TILE_SIZE;
-    int win_h = game->level.height * TILE_SIZE + HUD_HEIGHT;
-    SDL_SetWindowSize(game->window, win_w, win_h);
+    /* Keep the existing window size; initialise camera to centre on player. */
+    int win_w = 0, win_h = 0;
+    SDL_GetWindowSize(game->window, &win_w, &win_h);
+    float max_cam = game->level.width * (float)TILE_SIZE - (float)win_w;
+    if (max_cam < 0.0f)
+        max_cam = 0.0f;
+    float desired = game->player.x + PLAYER_W * 0.5f - (float)win_w * 0.5f;
+    if (desired < 0.0f)
+        desired = 0.0f;
+    if (desired > max_cam)
+        desired = max_cam;
+    game->cam_x = desired;
 
     return true;
 }
@@ -646,6 +655,25 @@ void game_update(Game *game, float dt)
 
     /* Update particle system every frame so non-player-triggered effects animate. */
     particle_system_update(&game->particles, dt);
+
+    /* Camera: follow player horizontally, clamped to level bounds */
+    {
+        int win_w = 0, win_h = 0;
+        SDL_GetWindowSize(game->window, &win_w, &win_h);
+        float desired = game->player.x + PLAYER_W * 0.5f - (float)win_w * 0.5f;
+        float max_cam = game->level.width * (float)TILE_SIZE - (float)win_w;
+        if (max_cam < 0.0f)
+            max_cam = 0.0f;
+        if (desired < 0.0f)
+            desired = 0.0f;
+        if (desired > max_cam)
+            desired = max_cam;
+        /* Smoothly interpolate camera towards desired position (lerp). */
+        float alpha = 8.0f * dt; /* responsiveness factor */
+        if (alpha > 1.0f)
+            alpha = 1.0f;
+        game->cam_x += (desired - game->cam_x) * alpha;
+    }
 }
 
 /* ---------------- Rendering ---------------- */
@@ -682,14 +710,19 @@ static void render_world(Game *game)
     SDL_Renderer *r = game->renderer;
     const Level *lvl = &game->level;
     const float oy = HUD_HEIGHT;
+    int win_w = 0, win_h = 0;
+    SDL_GetWindowSize(game->window, &win_w, &win_h);
+    const float cam_x = game->cam_x;
 
     /* Tiles */
     for (int row = 0; row < lvl->height; ++row)
     {
         for (int col = 0; col < lvl->width; ++col)
         {
-            float x = col * (float)TILE_SIZE;
+            float x = col * (float)TILE_SIZE - cam_x;
             float y = row * (float)TILE_SIZE + oy;
+            if (x + TILE_SIZE < 0.0f || x > (float)win_w)
+                continue;
             TileType t = lvl->tiles[row][col];
             if (t == TILE_WALL)
             {
@@ -722,7 +755,7 @@ static void render_world(Game *game)
     for (int i = 0; i < lvl->elevator_count; ++i)
     {
         const Elevator *el = &lvl->elevators[i];
-        float px = el->col * (float)TILE_SIZE;
+        float px = el->col * (float)TILE_SIZE - cam_x;
         float py = el->y + oy;
         /* Platform body */
         SDL_SetRenderDrawColor(r, 160, 165, 175, 255);
@@ -738,7 +771,7 @@ static void render_world(Game *game)
         const FallPlatform *fp = &lvl->fall_platforms[i];
         if (fp->removed)
             continue;
-        float px = fp->col * (float)TILE_SIZE;
+        float px = fp->col * (float)TILE_SIZE - cam_x;
         float py = fp->y + oy;
         SDL_SetRenderDrawColor(r, 150, 90, 50, 255);
         fill_rect(r, px, py, TILE_SIZE, FALL_PLATFORM_H);
@@ -749,7 +782,7 @@ static void render_world(Game *game)
     /* Doors (all identical — part of the puzzle) */
     for (int d = 0; d < lvl->door_count; ++d)
     {
-        float x = lvl->doors[d].col * (float)TILE_SIZE;
+        float x = lvl->doors[d].col * (float)TILE_SIZE - cam_x;
         float y = lvl->doors[d].row * (float)TILE_SIZE + oy;
         /* Frame */
         SDL_SetRenderDrawColor(r, 75, 45, 15, 255);
@@ -765,7 +798,7 @@ static void render_world(Game *game)
     /* Exit */
     if (lvl->has_exit)
     {
-        float x = lvl->exit_col * (float)TILE_SIZE;
+        float x = lvl->exit_col * (float)TILE_SIZE - cam_x;
         float y = lvl->exit_row * (float)TILE_SIZE + oy;
         if (lvl->items_remaining == 0)
         {
@@ -788,7 +821,7 @@ static void render_world(Game *game)
         {
             continue;
         }
-        float x = it->x - 7.0f;
+        float x = it->x - 7.0f - cam_x;
         float y = it->y - 9.0f + oy;
         if (it->type == ITEM_CARD)
         {
@@ -824,7 +857,7 @@ static void render_world(Game *game)
         const Mine *m = &game->mines[i];
         if (!m->active)
             continue;
-        float x = m->x;
+        float x = m->x - cam_x;
         float y = m->y + oy;
         SDL_SetRenderDrawColor(r, 30, 30, 30, 255);
         fill_rect(r, x, y, MINE_W, MINE_H);
@@ -839,7 +872,7 @@ static void render_world(Game *game)
         const Enemy *e = &game->enemies[i];
         if (e->dead)
             continue;
-        float x = e->x;
+        float x = e->x - cam_x;
         float y = e->y + oy;
         /* Body color reflects remaining HP */
         if (e->hp >= ENEMY_HP)
@@ -870,7 +903,7 @@ static void render_world(Game *game)
         const Bullet *b = &game->bullets[i];
         if (!b->active)
             continue;
-        fill_rect(r, b->x, b->y + oy, BULLET_W, BULLET_H);
+        fill_rect(r, b->x - cam_x, b->y + oy, BULLET_W, BULLET_H);
     }
     SDL_SetRenderDrawColor(r, 255, 90, 30, 255);
     for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
@@ -878,11 +911,11 @@ static void render_world(Game *game)
         const Bullet *b = &game->enemy_bullets[i];
         if (!b->active)
             continue;
-        fill_rect(r, b->x, b->y + oy, BULLET_W, BULLET_H);
+        fill_rect(r, b->x - cam_x, b->y + oy, BULLET_W, BULLET_H);
     }
 
     /* Particles (blood, etc.) */
-    particle_system_render(&game->particles, r, oy);
+    particle_system_render(&game->particles, r, oy, cam_x);
 
     /* Player (blink while invulnerable). Hide player while in dying animation. */
     if (!game->player.dying)
@@ -891,7 +924,7 @@ static void render_world(Game *game)
                      ((int)(game->invuln_timer * 12.0f) % 2 == 0);
         if (!blink)
         {
-            float x = game->player.x;
+            float x = game->player.x - cam_x;
             float y = game->player.y + oy;
             SDL_SetRenderDrawColor(r, 60, 120, 230, 255);
             fill_rect(r, x, y, PLAYER_W, PLAYER_H);
@@ -916,8 +949,10 @@ static void render_hud(Game *game)
 {
     SDL_Renderer *r = game->renderer;
 
+    int win_w = 0, win_h = 0;
+    SDL_GetWindowSize(game->window, &win_w, &win_h);
     SDL_SetRenderDrawColor(r, 20, 20, 28, 255);
-    fill_rect(r, 0, 0, (float)(game->level.width * TILE_SIZE), HUD_HEIGHT);
+    fill_rect(r, 0, 0, (float)win_w, HUD_HEIGHT);
 
     char buf[128];
     SDL_snprintf(buf, sizeof(buf), "LIVES %d  AMMO %d  KEY: %s  LEVEL %d  SCORE %d",

@@ -80,7 +80,7 @@ void particle_system_update(ParticleSystem *ps, float dt)
   }
 }
 
-void particle_system_render(ParticleSystem *ps, SDL_Renderer *r, float oy)
+void particle_system_render(ParticleSystem *ps, SDL_Renderer *r, float oy, float cam_x)
 {
   for (int i = 0; i < PS_MAX_PARTICLES; ++i)
   {
@@ -94,7 +94,7 @@ void particle_system_render(ParticleSystem *ps, SDL_Renderer *r, float oy)
       SDL_SetRenderDrawColor(r, 220, 80, 20, 255);
     else
       SDL_SetRenderDrawColor(r, 180, 20, 20, 255);
-    SDL_FRect rect = {p->x - p->size * 0.5f, p->y + oy - p->size * 0.5f, p->size, p->size};
+    SDL_FRect rect = {p->x - cam_x - p->size * 0.5f, p->y + oy - p->size * 0.5f, p->size, p->size};
     SDL_RenderFillRect(r, &rect);
   }
 }

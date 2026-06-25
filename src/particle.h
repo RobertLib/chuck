@@ -24,7 +24,7 @@ void particle_system_init(ParticleSystem *ps);
 void particle_system_emit(ParticleSystem *ps, float x, float y, int count, int facing);
 void particle_system_explosion(ParticleSystem *ps, float x, float y, int count);
 void particle_system_update(ParticleSystem *ps, float dt);
-void particle_system_render(ParticleSystem *ps, SDL_Renderer *r, float oy);
+void particle_system_render(ParticleSystem *ps, SDL_Renderer *r, float oy, float cam_x);
 void particle_system_clear(ParticleSystem *ps);
 
 #endif /* CHUCK_PARTICLE_H */

@@ -68,6 +68,7 @@ typedef struct
 
     GameState state;
     Uint64 last_tick;
+    float cam_x; /* world x of left edge of the viewport */
 } Game;
 
 bool game_init(Game *game);
