@@ -21,6 +21,14 @@
 #define MINE_DAMAGE 1
 #define MINE_RADIUS (36.0f) /* damage radius in pixels */
 
+/* Grenades */
+#define MAX_GRENADES 8
+#define GRENADE_W 10
+#define GRENADE_H 10
+#define GRENADE_FUSE_TIME 1.4f     /* seconds until detonation after thrown */
+#define GRENADE_RADIUS (48.0f)     /* explosion radius in pixels */
+#define GRENADE_THROW_SPEED 260.0f /* initial horizontal speed when thrown */
+
 /* Player tuning (pixels per second) */
 #define PLAYER_W 22
 #define PLAYER_H 28

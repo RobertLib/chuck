@@ -43,7 +43,8 @@ typedef struct
 typedef enum
 {
     ITEM_CARD = 0,
-    ITEM_GUN
+    ITEM_GUN,
+    ITEM_GRENADE
 } ItemType;
 
 typedef struct

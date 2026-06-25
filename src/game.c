@@ -26,6 +26,16 @@ static int find_enemy_slot(Game *game)
     return -1;
 }
 
+static int find_grenade_slot(Game *game)
+{
+    for (int i = 0; i < game->grenade_count; ++i)
+        if (!game->grenades[i].active)
+            return i;
+    if (game->grenade_count < MAX_GRENADES)
+        return game->grenade_count++;
+    return -1;
+}
+
 /*
  * Returns true when the enemy has an unobstructed horizontal view of the
  * player: same floor level (within 1 tile of Y), within ENEMY_SHOOT_RANGE,
@@ -93,6 +103,17 @@ static bool load_level(Game *game, int index)
     game->invuln_timer = 0.0f;
     game->message_timer = 0.0f;
     game->state = STATE_PLAYING;
+
+    /* Initialise grenades state */
+    game->grenade_count = 0;
+    for (int i = 0; i < MAX_GRENADES; ++i)
+    {
+        game->grenades[i].active = false;
+        game->grenades[i].timer = 0.0f;
+        game->grenades[i].grounded = false;
+        game->grenades[i].vx = 0.0f;
+        game->grenades[i].vy = 0.0f;
+    }
 
     /* Initialise per-door state */
     for (int i = 0; i < game->level.door_count; ++i)
@@ -379,6 +400,72 @@ void game_update(Game *game, float dt)
                 }
             }
         }
+
+        /* Grenades: update thrown grenades (physics + fuse) */
+        for (int i = 0; i < game->grenade_count; ++i)
+        {
+            Grenade *g = &game->grenades[i];
+            if (!g->active)
+                continue;
+
+            /* Apply gravity to grenade velocity, then integrate with collisions
+             * so grenades arc and come to rest on floors. */
+            g->vy += GRAVITY * dt;
+            if (g->vy > MAX_FALL_SPEED)
+                g->vy = MAX_FALL_SPEED;
+
+            bool on_ground = false;
+            level_move(&game->level, &g->x, &g->y, &g->vx, &g->vy,
+                       GRENADE_W, GRENADE_H, dt, false, &on_ground, false);
+            if (on_ground)
+            {
+                g->grounded = true;
+                g->vx = 0.0f;
+                g->vy = 0.0f;
+            }
+
+            g->timer -= dt;
+            if (g->timer <= 0.0f)
+            {
+                /* Explode */
+                g->active = false;
+                float cx = g->x + GRENADE_W * 0.5f;
+                float cy = g->y + GRENADE_H * 0.5f;
+                particle_system_explosion(&game->particles, cx, cy, 64);
+                /* Kill enemies in radius */
+                for (int j = 0; j < game->enemy_count; ++j)
+                {
+                    Enemy *e = &game->enemies[j];
+                    if (e->dead)
+                        continue;
+                    float ex = e->x + ENEMY_W * 0.5f;
+                    float ey = e->y + ENEMY_H * 0.5f;
+                    float dx = ex - cx;
+                    float dy = ey - cy;
+                    float dist2 = dx * dx + dy * dy;
+                    if (dist2 <= GRENADE_RADIUS * GRENADE_RADIUS)
+                    {
+                        /* instant kill */
+                        e->hp = 0;
+                        float px = e->x + ENEMY_W * 0.5f;
+                        float py = e->y + ENEMY_H * 0.5f;
+                        particle_system_emit(&game->particles, px, py, 24, e->dir);
+                        e->dead = true;
+                        game->score += 150;
+                    }
+                }
+                /* Damage player if within radius */
+                float px = game->player.x + PLAYER_W * 0.5f;
+                float py = game->player.y + PLAYER_H * 0.5f;
+                float dx = px - cx;
+                float dy = py - cy;
+                float dist2 = dx * dx + dy * dy;
+                if (dist2 <= GRENADE_RADIUS * GRENADE_RADIUS && game->invuln_timer <= 0.0f)
+                {
+                    hit_player(game);
+                }
+            }
+        }
     }
 
     if (game->input.use_door && game->player.on_ground && game->teleport_cooldown <= 0.0f)
@@ -441,28 +528,65 @@ void game_update(Game *game, float dt)
         }
     }
 
-    /* Shoot */
-    if (game->input.shoot && game->player.bullets > 0)
+    /* Shoot or throw grenade */
+    if (game->input.shoot)
     {
-        for (int i = 0; i < MAX_BULLETS; ++i)
+        /* If player has a grenade, throw it */
+        if (game->player.grenades > 0)
         {
-            if (!game->bullets[i].active)
+            int slot = find_grenade_slot(game);
+            if (slot >= 0)
             {
-                Bullet *b = &game->bullets[i];
-                b->active = true;
-                b->y = game->player.y + PLAYER_H * 0.35f;
-                if (game->player.facing > 0)
+                Grenade *g = &game->grenades[slot];
+                g->active = true;
+                g->timer = GRENADE_FUSE_TIME;
+                g->grounded = false;
+                /* Spawn near player's hand */
+                g->y = game->player.y + PLAYER_H * 0.45f;
+                /* Spawn slightly ahead of player and choose velocities so the
+                 * grenade follows a parabolic arc landing some distance ahead. */
                 {
-                    b->x = game->player.x + PLAYER_W;
-                    b->vx = BULLET_SPEED;
+                    const float desired_range = 160.0f;              /* px: target horizontal distance */
+                    const float base_v = GRENADE_THROW_SPEED * 0.9f; /* calmer forward throw */
+                    float vx = (game->player.facing > 0) ? base_v : -base_v;
+                    float hand_offset = (game->player.facing > 0) ? (PLAYER_W + 6.0f) : -(GRENADE_W + 6.0f);
+                    g->x = game->player.x + hand_offset;
+                    g->vx = vx;
+                    /* Compute required initial upward speed magnitude to reach approx range
+                     * R = |vx| * (2*vy / g)  =>  vy = R * g / (2 * |vx|) */
+                    float vy_mag = (desired_range * GRAVITY) / (2.0f * fabsf(vx));
+                    /* clamp vy_mag to reasonable bounds */
+                    if (vy_mag < 30.0f)
+                        vy_mag = 30.0f;
+                    if (vy_mag > 220.0f)
+                        vy_mag = 220.0f;
+                    g->vy = -vy_mag;
                 }
-                else
+                game->player.grenades = 0;
+            }
+        }
+        else if (game->player.bullets > 0)
+        {
+            for (int i = 0; i < MAX_BULLETS; ++i)
+            {
+                if (!game->bullets[i].active)
                 {
-                    b->x = game->player.x - BULLET_W;
-                    b->vx = -BULLET_SPEED;
+                    Bullet *b = &game->bullets[i];
+                    b->active = true;
+                    b->y = game->player.y + PLAYER_H * 0.35f;
+                    if (game->player.facing > 0)
+                    {
+                        b->x = game->player.x + PLAYER_W;
+                        b->vx = BULLET_SPEED;
+                    }
+                    else
+                    {
+                        b->x = game->player.x - BULLET_W;
+                        b->vx = -BULLET_SPEED;
+                    }
+                    game->player.bullets--;
+                    break;
                 }
-                game->player.bullets--;
-                break;
             }
         }
     }
@@ -494,9 +618,13 @@ void game_update(Game *game, float dt)
                     game->level.items_remaining = 0;
                 }
             }
-            else /* ITEM_GUN */
+            else if (it->type == ITEM_GUN)
             {
                 game->player.bullets = MAX_AMMO;
+            }
+            else if (it->type == ITEM_GRENADE)
+            {
+                game->player.grenades = 1; /* pickup gives one grenade */
             }
         }
     }
@@ -838,7 +966,7 @@ static void render_world(Game *game)
             SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
             fill_rect(r, x + 5, y + 7, 4, 4);
         }
-        else /* ITEM_GUN */
+        else if (it->type == ITEM_GUN)
         {
             /* barrel */
             SDL_SetRenderDrawColor(r, 80, 80, 80, 255);
@@ -848,6 +976,14 @@ static void render_world(Game *game)
             /* highlight on barrel */
             SDL_SetRenderDrawColor(r, 140, 140, 140, 255);
             fill_rect(r, x + 4, y + 2, 11, 2);
+        }
+        else if (it->type == ITEM_GRENADE)
+        {
+            /* draw grenade pickup — brown body with lighter pin */
+            SDL_SetRenderDrawColor(r, 140, 90, 40, 255);
+            fill_rect(r, x + 3.0f, y + 4.0f, GRENADE_W, GRENADE_H);
+            SDL_SetRenderDrawColor(r, 220, 180, 110, 255);
+            fill_rect(r, x + 5.0f, y + 3.0f, 2.0f, 2.0f); /* pin */
         }
     }
 
@@ -894,6 +1030,19 @@ static void render_world(Game *game)
                 SDL_SetRenderDrawColor(r, 70, 30, 30, 255);
             fill_rect(r, x + 2 + h * 7, y - 6, 5, 4);
         }
+    }
+
+    /* Thrown grenades */
+    SDL_SetRenderDrawColor(r, 140, 90, 40, 255);
+    for (int i = 0; i < game->grenade_count; ++i)
+    {
+        const Grenade *g = &game->grenades[i];
+        if (!g->active)
+            continue;
+        fill_rect(r, g->x - cam_x, g->y + oy, GRENADE_W, GRENADE_H);
+        SDL_SetRenderDrawColor(r, 220, 180, 110, 255);
+        fill_rect(r, g->x - cam_x + 2.0f, g->y + oy + 1.0f, 2.0f, 2.0f);
+        SDL_SetRenderDrawColor(r, 140, 90, 40, 255);
     }
 
     /* Bullets (player = yellow, enemy = orange-red) */
@@ -955,12 +1104,26 @@ static void render_hud(Game *game)
     fill_rect(r, 0, 0, (float)win_w, HUD_HEIGHT);
 
     char buf[128];
-    SDL_snprintf(buf, sizeof(buf), "LIVES %d  AMMO %d  KEY: %s  LEVEL %d  SCORE %d",
-                 game->lives,
-                 game->player.bullets,
-                 game->level.items_remaining == 0 ? "YES" : "NO",
-                 game->current_level + 1,
-                 game->score);
+    /* Restore original HUD layout and only append a small 'G' indicator when
+     * player has a grenade so the status bar layout is unchanged. */
+    if (game->player.grenades > 0)
+    {
+        SDL_snprintf(buf, sizeof(buf), "LIVES %d  AMMO %d  KEY: %s  LEVEL %d  SCORE %d  G",
+                     game->lives,
+                     game->player.bullets,
+                     game->level.items_remaining == 0 ? "YES" : "NO",
+                     game->current_level + 1,
+                     game->score);
+    }
+    else
+    {
+        SDL_snprintf(buf, sizeof(buf), "LIVES %d  AMMO %d  KEY: %s  LEVEL %d  SCORE %d",
+                     game->lives,
+                     game->player.bullets,
+                     game->level.items_remaining == 0 ? "YES" : "NO",
+                     game->current_level + 1,
+                     game->score);
+    }
     draw_text(r, 8, 12, 2.0f, 240, 240, 240, buf);
 }
 

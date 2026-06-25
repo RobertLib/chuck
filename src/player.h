@@ -21,9 +21,10 @@ typedef struct
     float vx, vy;
     bool on_ground;
     bool on_ladder;
-    int facing;  /* -1 = left, +1 = right */
-    int bullets; /* current ammo, 0..MAX_AMMO */
-    bool dying;  /* true while death animation plays */
+    int facing;   /* -1 = left, +1 = right */
+    int bullets;  /* current ammo, 0..MAX_AMMO */
+    int grenades; /* current grenades carried (0 or 1) */
+    bool dying;   /* true while death animation plays */
     float death_timer;
 } Player;
 

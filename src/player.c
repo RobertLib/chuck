@@ -12,6 +12,7 @@ void player_reset(Player *player, const Level *level)
     player->on_ladder = false;
     player->facing = 1;
     player->bullets = MAX_AMMO;
+    player->grenades = 0;
     player->dying = false;
     player->death_timer = 0.0f;
 }

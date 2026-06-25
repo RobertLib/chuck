@@ -16,6 +16,15 @@ typedef struct
     bool active;
 } Bullet;
 
+typedef struct
+{
+    float x, y;    /* top-left of grenade box */
+    float vx, vy;  /* full physics (gravity) */
+    bool active;   /* true until exploded */
+    float timer;   /* countdown until explosion */
+    bool grounded; /* true when resting on floor */
+} Grenade;
+
 typedef enum
 {
     STATE_PLAYING,
@@ -44,6 +53,9 @@ typedef struct
 
     Mine mines[MAX_MINES];
     int mine_count;
+
+    Grenade grenades[MAX_GRENADES];
+    int grenade_count;
 
     Bullet bullets[MAX_BULLETS];             /* fired by player */
     Bullet enemy_bullets[MAX_ENEMY_BULLETS]; /* fired by enemies */
