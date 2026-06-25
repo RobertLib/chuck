@@ -610,6 +610,11 @@ void game_update(Game *game, float dt)
                           it->x - 8.0f, it->y - 8.0f, 16.0f, 16.0f))
         {
             it->collected = true;
+            /* Start respawn timer for ammo and grenade pickups; cards do not respawn. */
+            if (it->type == ITEM_GUN || it->type == ITEM_GRENADE)
+            {
+                it->respawn_timer = ITEM_RESPAWN_TIME;
+            }
             if (it->type == ITEM_CARD)
             {
                 game->score += 100;
@@ -626,6 +631,22 @@ void game_update(Game *game, float dt)
             {
                 game->player.grenades = 1; /* pickup gives one grenade */
             }
+        }
+    }
+
+    /* Respawn timers for ammo/grenade pickups: decrement timers and un-collect when expired. */
+    for (int i = 0; i < game->level.item_count; ++i)
+    {
+        Item *it = &game->level.items[i];
+        if (!it->collected)
+            continue;
+        if (it->type == ITEM_CARD)
+            continue; /* cards never respawn */
+        it->respawn_timer -= dt;
+        if (it->respawn_timer <= 0.0f)
+        {
+            it->collected = false;
+            it->respawn_timer = 0.0f;
         }
     }
 

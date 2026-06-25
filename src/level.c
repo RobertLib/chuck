@@ -13,6 +13,7 @@ static void place_item(Level *level, int col, int row, ItemType type)
     it->x = col * TILE_SIZE + TILE_SIZE * 0.5f;
     it->y = row * TILE_SIZE + TILE_SIZE * 0.5f;
     it->collected = false;
+    it->respawn_timer = 0.0f;
     it->type = type;
 }
 

@@ -52,6 +52,7 @@ typedef struct
     float x, y; /* center position of the item */
     bool collected;
     ItemType type;
+    float respawn_timer; /* seconds until this item reappears (if collected) */
 } Item;
 
 typedef struct

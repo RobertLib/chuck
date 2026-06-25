@@ -12,6 +12,8 @@
 #define MAX_LEVEL_HEIGHT 48
 #define MAX_ITEMS 128
 #define MAX_ENEMIES 16
+/* Seconds before ammo/grenade pickups reappear after being collected */
+#define ITEM_RESPAWN_TIME 10.0f
 
 /* Mines */
 #define MAX_MINES 32
