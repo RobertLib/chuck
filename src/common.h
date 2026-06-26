@@ -52,6 +52,11 @@
 #define ENEMY_CLIMB_CHANCE 3 /* percent per eligible frame */
 #define ENEMY_HP 3
 
+/* Reaction: when player is nearby and enemy is moving away while player is
+ * not crawling, there's a per-frame chance the enemy will turn and attack. */
+#define ENEMY_RETALIATE_RADIUS (3 * TILE_SIZE) /* px horizontal radius */
+#define ENEMY_RETALIATE_CHANCE 8               /* percent per eligible frame */
+
 /* Enemy conversation: when two enemies meet they talk for a short time and
  * will ignore the player unless the player comes very close. */
 #define ENEMY_TALK_DURATION 4.0f                    /* seconds enemies chat when meeting */

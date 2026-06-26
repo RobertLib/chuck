@@ -897,6 +897,63 @@ void game_update(Game *game, float dt)
         }
     }
 
+    /* Enemy reaction: if the player is close and the enemy is moving away
+     * while the player is not crawling, there's a small chance the enemy
+     * will turn to face the player and start aiming to attack. */
+    for (int i = 0; i < game->enemy_count; ++i)
+    {
+        Enemy *e = &game->enemies[i];
+        if (e->dead || e->climbing || e->talking)
+            continue;
+        if (game->player.crawling)
+            continue; /* don't retaliate at lowered (crawling) player */
+        float px = game->player.x + PLAYER_W * 0.5f;
+        float ex = e->x + ENEMY_W * 0.5f;
+        float dx = px - ex;
+        /* Only consider when enemy is moving away from player */
+        if (dx * (float)e->dir >= 0.0f)
+            continue;
+        if (fabsf(dx) > (float)ENEMY_RETALIATE_RADIUS)
+            continue;
+        /* Check unobstructed horizontal line of sight (ignore current facing)
+         * and reasonable vertical alignment. This mirrors `enemy_has_los`
+         * but does not require the enemy to already face the player. */
+        {
+            const Player *p = &game->player;
+            float ey = e->y + ENEMY_H * 0.5f;
+            float ph = p->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            float py = p->y + ph * 0.5f;
+            if (fabsf(py - ey) > (float)TILE_SIZE * 1.2f)
+                continue;
+            int row = (int)floorf(ey / TILE_SIZE);
+            float ex = e->x + ENEMY_W * 0.5f;
+            float px2 = p->x + PLAYER_W * 0.5f;
+            int col0 = (int)floorf(fminf(ex, px2) / TILE_SIZE);
+            int col1 = (int)floorf(fmaxf(ex, px2) / TILE_SIZE);
+            bool blocked = false;
+            for (int c = col0; c <= col1; ++c)
+            {
+                if (level_is_solid(&game->level, c, row))
+                {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (blocked)
+                continue;
+        }
+        if (SDL_rand(100) < ENEMY_RETALIATE_CHANCE)
+        {
+            e->dir = (dx > 0.0f) ? 1 : -1;
+            e->aim_target_x = px;
+            if (game->player.crawling)
+                e->aim_target_y = game->player.y + (float)PLAYER_CRAWL_H * 0.45f;
+            else
+                e->aim_target_y = game->player.y + (float)PLAYER_H * 0.15f;
+            e->aim_timer = ENEMY_AIM_TIME;
+        }
+    }
+
     /* Enemy shooting: tick cooldowns, fire when LOS to player is clear. */
     for (int i = 0; i < game->enemy_count; ++i)
     {
