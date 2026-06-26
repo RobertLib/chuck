@@ -536,3 +536,54 @@ void level_update_moving_platforms(Level *level, float dt)
         }
     }
 }
+
+void level_reveal_init(Level *level)
+{
+    /* Default: hide everything and start reveal from top-left. */
+    for (int r = 0; r < MAX_LEVEL_HEIGHT; ++r)
+    {
+        for (int c = 0; c < MAX_LEVEL_WIDTH; ++c)
+            level->tiles_visible[r][c] = false;
+    }
+    level->reveal_next_row = 0;
+    level->reveal_next_col = 0;
+    level->reveal_timer = 0.0f;
+    /* Reduced interval and larger batch to make reveal noticeably faster. */
+    level->reveal_interval = 0.004f; /* smaller delay between reveal steps */
+    level->reveal_done = false;
+}
+
+bool level_reveal_step(Level *level, float dt)
+{
+    if (level->reveal_done)
+        return false;
+
+    level->reveal_timer += dt;
+    const int batch = 12; /* reveal this many tiles per interval (larger = faster) */
+    bool just_finished = false;
+    while (level->reveal_timer >= level->reveal_interval && !level->reveal_done)
+    {
+        level->reveal_timer -= level->reveal_interval;
+        for (int b = 0; b < batch && !level->reveal_done; ++b)
+        {
+            if (level->reveal_next_row >= level->height)
+            {
+                level->reveal_done = true;
+                just_finished = true;
+                break;
+            }
+            /* Only iterate up to the level width for each row. */
+            if (level->reveal_next_col < level->width)
+            {
+                level->tiles_visible[level->reveal_next_row][level->reveal_next_col] = true;
+            }
+            level->reveal_next_col++;
+            if (level->reveal_next_col >= level->width)
+            {
+                level->reveal_next_col = 0;
+                level->reveal_next_row++;
+            }
+        }
+    }
+    return just_finished;
+}

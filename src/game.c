@@ -92,28 +92,15 @@ static bool load_level(Game *game, int index)
 
     player_reset(&game->player, &game->level);
 
-    game->enemy_count = game->level.enemy_count;
-    for (int i = 0; i < game->enemy_count; ++i)
-    {
-        enemy_init(&game->enemies[i],
-                   game->level.enemy_spawns[i].x,
-                   game->level.enemy_spawns[i].y);
-    }
-
-    /* Initialise mines from level spawns */
-    game->mine_count = game->level.mine_count;
-    for (int i = 0; i < game->mine_count; ++i)
-    {
-        game->mines[i].x = game->level.mine_spawns[i].x;
-        game->mines[i].y = game->level.mine_spawns[i].y;
-        game->mines[i].active = true;
-        game->mines[i].triggered = false;
-        game->mines[i].timer = 0.0f;
-    }
+    /* Start with no active enemies/mines: we'll reveal the level first and
+     * spawn entities after the tile-reveal animation completes. */
+    game->enemy_count = 0;
+    game->mine_count = 0;
 
     game->invuln_timer = 0.0f;
     game->message_timer = 0.0f;
-    game->state = STATE_PLAYING;
+    game->state = STATE_LEVEL_START;
+    level_reveal_init(&game->level);
 
     /* Initialise grenades state */
     game->grenade_count = 0;
@@ -155,6 +142,30 @@ static bool load_level(Game *game, int index)
     game->cam_x = desired;
 
     return true;
+}
+
+/* Spawn enemies/mines/etc after the level reveal animation completes. */
+static void spawn_level_entities_after_reveal(Game *game)
+{
+    /* Initialise enemies from level spawn points */
+    game->enemy_count = game->level.enemy_count;
+    for (int i = 0; i < game->enemy_count; ++i)
+    {
+        enemy_init(&game->enemies[i],
+                   game->level.enemy_spawns[i].x,
+                   game->level.enemy_spawns[i].y);
+    }
+
+    /* Initialise mines from level spawns */
+    game->mine_count = game->level.mine_count;
+    for (int i = 0; i < game->mine_count; ++i)
+    {
+        game->mines[i].x = game->level.mine_spawns[i].x;
+        game->mines[i].y = game->level.mine_spawns[i].y;
+        game->mines[i].active = true;
+        game->mines[i].triggered = false;
+        game->mines[i].timer = 0.0f;
+    }
 }
 
 static void restart_game(Game *game)
@@ -298,6 +309,21 @@ static void finish_player_death(Game *game)
 void game_update(Game *game, float dt)
 {
     read_input(game);
+
+    /* Level start reveal animation: show tiles progressively, then spawn entities. */
+    if (game->state == STATE_LEVEL_START)
+    {
+        /* Advance reveal; if not finished yet, skip the rest of update. */
+        level_reveal_step(&game->level, (float)dt);
+        if (!game->level.reveal_done)
+        {
+            game->input.jump = false;
+            return;
+        }
+        /* Reveal finished: spawn entities and switch to playing state. */
+        spawn_level_entities_after_reveal(game);
+        game->state = STATE_PLAYING;
+    }
 
     if (game->state == STATE_LEVEL_CLEARED)
     {
@@ -1185,6 +1211,9 @@ static void render_world(Game *game)
             float y = row * (float)TILE_SIZE + oy;
             if (x + TILE_SIZE < 0.0f || x > (float)win_w)
                 continue;
+            /* Only draw tiles that have been revealed yet. */
+            if (!lvl->tiles_visible[row][col])
+                continue;
             TileType t = lvl->tiles[row][col];
             if (t == TILE_WALL)
             {
@@ -1212,6 +1241,10 @@ static void render_world(Game *game)
             }
         }
     }
+
+    /* If reveal animation still in progress, don't draw other entities yet. */
+    if (!lvl->reveal_done)
+        return;
 
     /* Elevator moving platforms */
     for (int i = 0; i < lvl->elevator_count; ++i)

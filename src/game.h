@@ -28,6 +28,7 @@ typedef struct
 
 typedef enum
 {
+    STATE_LEVEL_START,
     STATE_PLAYING,
     STATE_LEVEL_CLEARED,
     STATE_GAME_OVER,

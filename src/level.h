@@ -109,6 +109,16 @@ typedef struct
     /* Horizontally moving platforms */
     MovingPlatform moving_platforms[MAX_MOVING_PLATFORMS];
     int moving_platform_count;
+
+    /* Reveal/intro animation state: whether each tile has been revealed yet.
+     * At level start we animate tiles appearing; items/enemies are shown after
+     * the reveal completes. */
+    bool tiles_visible[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
+    int reveal_next_row;   /* next tile row to reveal */
+    int reveal_next_col;   /* next tile col to reveal */
+    float reveal_timer;    /* accumulator for reveal timing */
+    float reveal_interval; /* seconds between revealing individual tiles */
+    bool reveal_done;      /* true when full reveal finished */
 } Level;
 
 /* Load a level from a text file. Returns true on success. */
@@ -121,6 +131,11 @@ bool level_is_ladder(const Level *level, int col, int row);
 void level_update_elevators(Level *level, float dt);
 void level_update_falling_platforms(Level *level, float dt);
 void level_update_moving_platforms(Level *level, float dt);
+
+/* Initialise level reveal state (hide all tiles and start timer). */
+void level_reveal_init(Level *level);
+/* Advance reveal animation by dt seconds; returns true when reveal just completed. */
+bool level_reveal_step(Level *level, float dt);
 
 /*
  * Move an axis-aligned box by its velocity and resolve collisions against
