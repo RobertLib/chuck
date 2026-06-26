@@ -903,13 +903,28 @@ void game_update(Game *game, float dt)
     for (int i = 0; i < game->enemy_count; ++i)
     {
         Enemy *e = &game->enemies[i];
-        if (e->dead || e->climbing || e->talking)
+        if (e->dead || e->climbing)
             continue;
         if (game->player.crawling)
             continue; /* don't retaliate at lowered (crawling) player */
         float px = game->player.x + PLAYER_W * 0.5f;
         float ex = e->x + ENEMY_W * 0.5f;
         float dx = px - ex;
+
+        /* If the enemy is currently talking, only notice the player when
+         * the player is very close (ENEMY_TALK_NOTICE_RADIUS). In that case
+         * interrupt the conversation so the enemy can retaliate. */
+        if (e->talking)
+        {
+            if (fabsf(dx) > (float)ENEMY_TALK_NOTICE_RADIUS)
+                continue;
+            /* Interrupt talk and start per-enemy cooldown so they won't
+             * immediately start another conversation. */
+            e->talking = false;
+            e->talk_timer = 0.0f;
+            if (e->talk_cooldown <= 0.0f)
+                e->talk_cooldown = ENEMY_TALK_COOLDOWN;
+        }
         /* Only consider when enemy is moving away from player */
         if (dx * (float)e->dir >= 0.0f)
             continue;
