@@ -21,6 +21,44 @@ void enemy_init(Enemy *enemy, float x, float y)
     enemy->aim_timer = 0.0f;
     enemy->aim_target_x = 0.0f;
     enemy->aim_target_y = 0.0f;
+    enemy->talking = false;
+    enemy->talk_timer = 0.0f;
+    enemy->talk_partner = -1;
+    enemy->talk_cooldown = 0.0f;
+}
+
+static void enemy_update_talking(Enemy *enemy, Level *level, float dt)
+{
+    /* While talking, enemies stand still on the ground (or fall if unsupported).
+     * They do not aim or patrol. The talk timer counts down until they resume. */
+    enemy->vy += GRAVITY * dt;
+    if (enemy->vy > MAX_FALL_SPEED)
+        enemy->vy = MAX_FALL_SPEED;
+
+    enemy->vx = 0.0f;
+
+    enemy->talk_timer -= dt;
+    if (enemy->talk_timer <= 0.0f)
+    {
+        enemy->talk_timer = 0.0f;
+        enemy->talking = false;
+        /* Leave partner cleanup to game logic; start per-enemy cooldown */
+        if (enemy->talk_cooldown <= 0.0f)
+            enemy->talk_cooldown = ENEMY_TALK_COOLDOWN;
+    }
+
+    bool ignored_ground = false;
+    level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
+               ENEMY_W, ENEMY_H, dt, false, &ignored_ground,
+               false);
+
+    /* Tick per-enemy cooldown if any */
+    if (enemy->talk_cooldown > 0.0f)
+    {
+        enemy->talk_cooldown -= dt;
+        if (enemy->talk_cooldown < 0.0f)
+            enemy->talk_cooldown = 0.0f;
+    }
 }
 
 static void enemy_update_climbing(Enemy *enemy, Level *level, float dt)
@@ -159,6 +197,11 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt)
 
 void enemy_update(Enemy *enemy, Level *level, float dt)
 {
+    if (enemy->talking)
+    {
+        enemy_update_talking(enemy, level, dt);
+        return;
+    }
     if (enemy->climbing)
     {
         enemy_update_climbing(enemy, level, dt);

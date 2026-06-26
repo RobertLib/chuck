@@ -21,6 +21,10 @@ typedef struct
     /* Stored target coordinates captured when aiming starts. */
     float aim_target_x;
     float aim_target_y;
+    bool talking;        /* true while chatting with another enemy */
+    float talk_timer;    /* seconds remaining while talking */
+    float talk_cooldown; /* seconds remaining before eligible to talk again */
+    int talk_partner;    /* index of partner enemy, -1 if none */
 } Enemy;
 
 void enemy_init(Enemy *enemy, float x, float y);

@@ -52,6 +52,16 @@
 #define ENEMY_CLIMB_CHANCE 3 /* percent per eligible frame */
 #define ENEMY_HP 3
 
+/* Enemy conversation: when two enemies meet they talk for a short time and
+ * will ignore the player unless the player comes very close. */
+#define ENEMY_TALK_DURATION 4.0f                    /* seconds enemies chat when meeting */
+#define ENEMY_TALK_NOTICE_RADIUS (TILE_SIZE * 1.5f) /* px player must be within to be noticed while talking */
+/* Chance (percent) that two nearby enemies will stop and talk when they meet. */
+#define ENEMY_TALK_CHANCE 30
+/* Cooldown after a conversation finishes during which the enemy won't start
+ * another conversation. */
+#define ENEMY_TALK_COOLDOWN 5.0f
+
 /* Bullet tuning */
 #define MAX_BULLETS 8
 #define BULLET_SPEED 600.0f

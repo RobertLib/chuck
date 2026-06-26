@@ -50,6 +50,16 @@ static bool enemy_has_los(const Game *game, const Enemy *e)
     float ph = p->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
     float py = p->y + ph * 0.5f;
 
+    /* If the enemy is currently talking to another enemy, they will ignore
+     * the player unless the player comes very close. */
+    if (e->talking)
+    {
+        float dx = px - ex;
+        float dy = py - ey;
+        if (fabsf(dx) > (float)ENEMY_TALK_NOTICE_RADIUS || fabsf(dy) > (float)ENEMY_TALK_NOTICE_RADIUS)
+            return false;
+    }
+
     if (fabsf(px - ex) > (float)ENEMY_SHOOT_RANGE)
         return false;
     if (fabsf(py - ey) > (float)TILE_SIZE * 1.2f)
@@ -647,6 +657,126 @@ void game_update(Game *game, float dt)
             enemy_update(&game->enemies[i], &game->level, dt);
     }
 
+    /* Enemy conversations: pair-only logic. Two nearby, grounded enemies may
+     * stop and chat with some chance. They are nudged apart slightly to stand
+     * facing each other; a partner link prevents third parties joining. */
+    for (int i = 0; i < game->enemy_count; ++i)
+    {
+        Enemy *a = &game->enemies[i];
+        if (a->dead || a->talking || a->climbing || !a->on_ground || a->talk_partner != -1 || a->talk_cooldown > 0.0f)
+            continue;
+        for (int j = i + 1; j < game->enemy_count; ++j)
+        {
+            Enemy *b = &game->enemies[j];
+            if (b->dead || b->talking || b->climbing || !b->on_ground || b->talk_partner != -1 || b->talk_cooldown > 0.0f)
+                continue;
+
+            /* Must be approximately same vertical level */
+            if (fabsf(a->y - b->y) > (float)TILE_SIZE * 0.5f)
+                continue;
+
+            /* Horizontal proximity check */
+            float axc = a->x + ENEMY_W * 0.5f;
+            float bxc = b->x + ENEMY_W * 0.5f;
+            float absdx = fabsf(axc - bxc);
+            if (absdx > (float)ENEMY_W + 16.0f)
+                continue;
+
+            /* Chance to start a conversation */
+            if (SDL_rand(100) >= ENEMY_TALK_CHANCE)
+                continue;
+
+            /* Try to nudge them apart horizontally if overlapping so they stand
+             * in front of each other rather than stacked. Compute desired shifts
+             * and verify target tiles are free. */
+            Enemy *left = (a->x < b->x) ? a : b;
+            Enemy *right = (a->x < b->x) ? b : a;
+            float overlap = (left->x + ENEMY_W) - right->x;
+            float gap = 6.0f;
+            float shift = 0.0f;
+            if (overlap > 0.0f)
+                shift = (overlap + gap) * 0.5f;
+            float new_left_x = left->x - shift;
+            float new_right_x = right->x + shift;
+
+            /* Check that new positions don't collide with solid tiles */
+            int top_row = (int)floorf(left->y / TILE_SIZE);
+            int bot_row = (int)floorf((left->y + ENEMY_H - 1.0f) / TILE_SIZE);
+            bool can_place = true;
+            for (int r = top_row; r <= bot_row && can_place; ++r)
+            {
+                int lc = (int)floorf(new_left_x / TILE_SIZE);
+                int rc = (int)floorf((new_right_x + ENEMY_W - 1.0f) / TILE_SIZE);
+                int lc_end = (int)floorf((new_left_x + ENEMY_W - 1.0f) / TILE_SIZE);
+                int rc_start = (int)floorf(new_right_x / TILE_SIZE);
+                /* left enemy area */
+                for (int c = lc; c <= lc_end; ++c)
+                {
+                    if (level_is_solid(&game->level, c, r))
+                    {
+                        can_place = false;
+                        break;
+                    }
+                }
+                /* right enemy area */
+                for (int c = rc_start; c <= rc; ++c)
+                {
+                    if (level_is_solid(&game->level, c, r))
+                    {
+                        can_place = false;
+                        break;
+                    }
+                }
+            }
+            if (!can_place)
+                continue; /* cannot safely separate, skip conversation */
+
+            /* Start conversation pair */
+            left->x = new_left_x;
+            right->x = new_right_x;
+            left->vx = right->vx = 0.0f;
+            left->aim_timer = right->aim_timer = 0.0f;
+            left->talking = right->talking = true;
+            left->talk_timer = right->talk_timer = ENEMY_TALK_DURATION;
+            left->talk_partner = (int)(right - game->enemies);
+            right->talk_partner = (int)(left - game->enemies);
+            left->dir = 1;   /* face right */
+            right->dir = -1; /* face left */
+            break;           /* only pair with one partner */
+        }
+    }
+
+    /* Cleanup partner links: if either partner finished talking, clear both
+     * sides and start a cooldown so they won't immediately talk again. */
+    for (int i = 0; i < game->enemy_count; ++i)
+    {
+        Enemy *e = &game->enemies[i];
+        if (e->talk_partner < 0)
+            continue;
+        int p = e->talk_partner;
+        if (p < 0 || p >= game->enemy_count)
+        {
+            e->talk_partner = -1;
+            continue;
+        }
+        Enemy *pe = &game->enemies[p];
+        if (!e->talking || !pe->talking)
+        {
+            /* Clear partner links on both sides */
+            if (pe->talk_partner == i)
+            {
+                pe->talk_partner = -1;
+                pe->talking = false;
+                pe->talk_timer = 0.0f;
+                pe->talk_cooldown = ENEMY_TALK_COOLDOWN;
+            }
+            e->talk_partner = -1;
+            e->talking = false;
+            e->talk_timer = 0.0f;
+            e->talk_cooldown = ENEMY_TALK_COOLDOWN;
+        }
+    }
+
     /* Collect items. */
     for (int i = 0; i < game->level.item_count; ++i)
     {
@@ -1144,6 +1274,28 @@ static void render_world(Game *game)
             else
                 SDL_SetRenderDrawColor(r, 70, 30, 30, 255);
             fill_rect(r, x + 2 + h * 7, y - 6, 5, 4);
+        }
+
+        /* Speech bubble when talking: a small white rectangle with three dots */
+        if (e->talking)
+        {
+            float bw = 20.0f;
+            float bh = 10.0f;
+            float bx = x + (ENEMY_W - bw) * 0.5f;
+            float by = y - 18.0f - bh; /* place above HP dots */
+            if (by < oy)
+                by = oy; /* clamp to not draw over HUD */
+            SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+            fill_rect(r, bx, by, bw, bh);
+            /* small tail */
+            SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+            fill_rect(r, x + ENEMY_W * 0.5f - 2.0f, by + bh, 4.0f, 3.0f);
+            /* dots */
+            SDL_SetRenderDrawColor(r, 30, 30, 35, 255);
+            fill_rect(r, bx + 4.0f, by + 3.0f, 3.0f, 3.0f);
+            fill_rect(r, bx + 9.0f, by + 3.0f, 3.0f, 3.0f);
+            fill_rect(r, bx + 14.0f, by + 3.0f, 3.0f, 3.0f);
+            SDL_SetRenderDrawColor(r, 140, 90, 40, 255); /* restore grenade color */
         }
     }
 
