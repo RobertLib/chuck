@@ -73,7 +73,8 @@ typedef struct
     float door_timers[MAX_DOORS]; /* seconds until next spawn from each door */
     float teleport_cooldown;      /* seconds before player can teleport again */
 
-    int player_on_elevator; /* index into level.elevators[], or -1 */
+    int player_on_elevator;        /* index into level.elevators[], or -1 */
+    int player_on_moving_platform; /* index into level.moving_platforms[], or -1 */
 
     /* Particle system for effects */
     ParticleSystem particles;

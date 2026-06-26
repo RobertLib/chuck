@@ -153,6 +153,18 @@ bool level_load(Level *level, const char *path)
                 fp->removed = false;
             }
             break;
+        case 'P':
+            level->tiles[row][col] = TILE_EMPTY;
+            if (level->moving_platform_count < MAX_MOVING_PLATFORMS)
+            {
+                MovingPlatform *mp = &level->moving_platforms[level->moving_platform_count++];
+                mp->row = row;
+                mp->x = col * (float)TILE_SIZE;
+                mp->left_limit = mp->x;
+                mp->right_limit = mp->x;
+                mp->vx = MOVING_PLATFORM_SPEED; /* start moving right */
+            }
+            break;
         default:
             level->tiles[row][col] = TILE_EMPTY;
             break;
@@ -230,6 +242,39 @@ bool level_load(Level *level, const char *path)
                 r++;
             }
         }
+    }
+
+    /* Initialise moving platforms' left/right limits by scanning the row for
+     * non-solid tiles. Platforms patrol between the leftmost and rightmost
+     * contiguous empty tiles around their spawn column. */
+    for (int i = 0; i < level->moving_platform_count; ++i)
+    {
+        MovingPlatform *mp = &level->moving_platforms[i];
+        int col = (int)floorf(mp->x / TILE_SIZE);
+        int row_mp = mp->row;
+        int lc = col;
+        while (lc - 1 >= 0)
+        {
+            TileType t = level->tiles[row_mp][lc - 1];
+            if (t == TILE_WALL || t == TILE_DOOR || t == TILE_ELEVATOR_SHAFT)
+                break;
+            lc--;
+        }
+        int rc = col;
+        while (rc + 1 < level->width)
+        {
+            TileType t = level->tiles[row_mp][rc + 1];
+            if (t == TILE_WALL || t == TILE_DOOR || t == TILE_ELEVATOR_SHAFT)
+                break;
+            rc++;
+        }
+        mp->left_limit = lc * (float)TILE_SIZE;
+        mp->right_limit = rc * (float)TILE_SIZE;
+        /* Ensure vx has correct sign */
+        if (mp->vx > 0.0f)
+            mp->vx = MOVING_PLATFORM_SPEED;
+        else
+            mp->vx = -MOVING_PLATFORM_SPEED;
     }
 
     /* Parse optional SPAWNS metadata line: "SPAWNS n0 n1 n2 ..."
@@ -396,6 +441,24 @@ void level_move(Level *level, float *x, float *y, float *vx, float *vy,
                         goto landed_check_done;
                     }
                 }
+                /* Moving platforms: treat like one-way platforms that patrol horizontally. */
+                for (int m = 0; m < level->moving_platform_count; ++m)
+                {
+                    MovingPlatform *mp = &level->moving_platforms[m];
+                    if (mp->row != row)
+                        continue;
+                    int plat_col = (int)floorf(mp->x / TILE_SIZE);
+                    if (plat_col != c)
+                        continue;
+                    float plat_top = mp->row * (float)TILE_SIZE;
+                    if (prev_feet <= plat_top + 1.0f && feet >= plat_top)
+                    {
+                        *y = plat_top - h;
+                        *vy = 0.0f;
+                        *on_ground = true;
+                        goto landed_check_done;
+                    }
+                }
             }
         landed_check_done:;
         }
@@ -451,6 +514,25 @@ void level_update_elevators(Level *level, float dt)
         {
             el->y = el->bot_limit;
             el->vy = -ELEVATOR_SPEED;
+        }
+    }
+}
+
+void level_update_moving_platforms(Level *level, float dt)
+{
+    for (int i = 0; i < level->moving_platform_count; ++i)
+    {
+        MovingPlatform *mp = &level->moving_platforms[i];
+        mp->x += mp->vx * dt;
+        if (mp->vx > 0.0f && mp->x >= mp->right_limit)
+        {
+            mp->x = mp->right_limit;
+            mp->vx = -MOVING_PLATFORM_SPEED;
+        }
+        else if (mp->vx < 0.0f && mp->x <= mp->left_limit)
+        {
+            mp->x = mp->left_limit;
+            mp->vx = MOVING_PLATFORM_SPEED;
         }
     }
 }

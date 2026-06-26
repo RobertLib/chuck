@@ -90,3 +90,8 @@
 #define FALL_PLATFORM_H 6                 /* pixel height of the falling platform */
 #define FALL_PLATFORM_TRIGGER_DELAY 0.25f /* seconds before falling starts after trigger */
 #define FALL_PLATFORM_ACCEL 420.0f        /* pixels/sec^2 applied once falling */
+
+/* Moving horizontal platforms */
+#define MAX_MOVING_PLATFORMS 64
+#define MOVING_PLATFORM_H 6         /* pixel height (visual) */
+#define MOVING_PLATFORM_SPEED 72.0f /* default horizontal speed (px/s) */

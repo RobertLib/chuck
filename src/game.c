@@ -125,6 +125,7 @@ static bool load_level(Game *game, int index)
     game->teleport_cooldown = 0.0f;
 
     game->player_on_elevator = -1;
+    game->player_on_moving_platform = -1;
 
     SDL_memset(game->bullets, 0, sizeof(game->bullets));
     SDL_memset(game->enemy_bullets, 0, sizeof(game->enemy_bullets));
@@ -341,6 +342,7 @@ void game_update(Game *game, float dt)
 
     level_update_elevators(&game->level, dt);
     level_update_falling_platforms(&game->level, dt);
+    level_update_moving_platforms(&game->level, dt);
     game->player_on_elevator = -1;
     for (int i = 0; i < game->level.elevator_count; ++i)
     {
@@ -358,6 +360,35 @@ void game_update(Game *game, float dt)
             game->player.on_ground = true;
             game->player_on_elevator = i;
         }
+    }
+
+    /* Moving platforms: detect if player stands on one and snap/carry them. */
+    game->player_on_moving_platform = -1;
+    for (int i = 0; i < game->level.moving_platform_count; ++i)
+    {
+        const MovingPlatform *mp = &game->level.moving_platforms[i];
+        float plat_x = mp->x;
+        float player_cx = game->player.x + PLAYER_W * 0.5f;
+        float player_feet = game->player.y + PLAYER_H;
+        float plat_top = mp->row * (float)TILE_SIZE;
+        if (player_cx > plat_x && player_cx < plat_x + TILE_SIZE &&
+            game->player.vy >= 0.0f &&
+            player_feet >= plat_top - 2.0f &&
+            player_feet <= plat_top + MOVING_PLATFORM_H + 8.0f)
+        {
+            game->player.y = plat_top - PLAYER_H;
+            game->player.vy = 0.0f;
+            game->player.on_ground = true;
+            game->player_on_moving_platform = i;
+            break;
+        }
+    }
+
+    /* If riding a moving platform, carry the player horizontally. */
+    if (game->player_on_moving_platform >= 0 && game->player_on_moving_platform < game->level.moving_platform_count)
+    {
+        const MovingPlatform *mp = &game->level.moving_platforms[game->player_on_moving_platform];
+        game->player.x += mp->vx * dt;
     }
 
     if (game->teleport_cooldown > 0.0f)
@@ -924,6 +955,18 @@ static void render_world(Game *game)
         float py = fp->y + oy;
         SDL_SetRenderDrawColor(r, 150, 90, 50, 255);
         fill_rect(r, px, py, TILE_SIZE, FALL_PLATFORM_H);
+        SDL_SetRenderDrawColor(r, 210, 160, 120, 255);
+        fill_rect(r, px, py, TILE_SIZE, 2);
+    }
+
+    /* Moving horizontal platforms */
+    for (int i = 0; i < lvl->moving_platform_count; ++i)
+    {
+        const MovingPlatform *mp = &lvl->moving_platforms[i];
+        float px = mp->x - cam_x;
+        float py = mp->row * (float)TILE_SIZE + oy;
+        SDL_SetRenderDrawColor(r, 140, 95, 60, 255);
+        fill_rect(r, px, py, TILE_SIZE, MOVING_PLATFORM_H);
         SDL_SetRenderDrawColor(r, 210, 160, 120, 255);
         fill_rect(r, px, py, TILE_SIZE, 2);
     }
