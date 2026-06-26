@@ -903,23 +903,29 @@ void game_update(Game *game, float dt)
                     if (b->active)
                         continue;
                     /* Use the stored target snapshot captured when aiming started. */
+                    /* Fire horizontally toward the captured target X while
+                     * keeping vertical speed zero so the bullet travels straight.
+                     * Place the bullet vertically at the captured aim Y (head
+                     * or knee level) so crouching affects impact height. */
                     float px = e->aim_target_x;
-                    float py = e->aim_target_y;
                     float sx = e->x + ENEMY_W * 0.5f;
-                    float sy = e->y + ENEMY_H * 0.5f;
-                    float dx = px - sx;
-                    float dy = py - sy;
-                    float len = sqrtf(dx * dx + dy * dy);
-                    if (len <= 0.001f)
+                    int dir = (fabsf(px - sx) < 0.001f) ? (e->dir >= 0 ? 1 : -1) : ((px > sx) ? 1 : -1);
+                    b->vx = (float)dir * ENEMY_BULLET_SPEED;
+                    b->vy = 0.0f;
+                    b->x = (dir > 0) ? e->x + ENEMY_W : e->x - BULLET_W;
+                    /* center bullet vertically on the captured target Y, but
+                     * clamp it to remain within the enemy's body so bullets
+                     * don't spawn above the shooter. */
+                    /* Simple: spawn bullet from enemy's head; if the player is
+                     * crawling, spawn lower (approx knee level of the enemy). */
+                    if (game->player.crawling)
                     {
-                        dx = (game->player.x + PLAYER_W * 0.5f > sx) ? 1.0f : -1.0f;
-                        dy = 0.0f;
-                        len = 1.0f;
+                        b->y = e->y + ENEMY_H * 0.6f - BULLET_H * 0.5f; /* knee-ish */
                     }
-                    b->vx = (dx / len) * ENEMY_BULLET_SPEED;
-                    b->vy = (dy / len) * ENEMY_BULLET_SPEED;
-                    b->x = (b->vx > 0) ? e->x + ENEMY_W : e->x - BULLET_W;
-                    b->y = e->y + ENEMY_H * 0.35f;
+                    else
+                    {
+                        b->y = e->y + ENEMY_H * 0.15f; /* head-ish */
+                    }
                     b->active = true;
                     break;
                 }
@@ -934,11 +940,20 @@ void game_update(Game *game, float dt)
 
         /* Start aiming – capture the player's position now and freeze for ENEMY_AIM_TIME before firing. */
         {
-            /* Capture player's horizontal centre but aim at their head/top so
-             * crouching after aim-start will let the projectile pass over. */
-            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            /* Capture player's horizontal centre; aim near the head when
+             * standing, but if the player is crawling aim lower (knee level)
+             * so crouching changes the vertical aim point. */
             e->aim_target_x = game->player.x + PLAYER_W * 0.5f;
-            e->aim_target_y = game->player.y + ph * 0.15f; /* near head */
+            if (game->player.crawling)
+            {
+                /* Aim a bit above the feet of the crawling box to approximate knees. */
+                e->aim_target_y = game->player.y + (float)PLAYER_CRAWL_H * 0.45f;
+            }
+            else
+            {
+                /* Aim near the top of the standing player (head). */
+                e->aim_target_y = game->player.y + (float)PLAYER_H * 0.15f;
+            }
             e->aim_timer = ENEMY_AIM_TIME;
         }
     }
