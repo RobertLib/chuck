@@ -47,7 +47,8 @@ static bool enemy_has_los(const Game *game, const Enemy *e)
     float ex = e->x + ENEMY_W * 0.5f;
     float ey = e->y + ENEMY_H * 0.5f;
     float px = p->x + PLAYER_W * 0.5f;
-    float py = p->y + PLAYER_H * 0.5f;
+    float ph = p->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+    float py = p->y + ph * 0.5f;
 
     if (fabsf(px - ex) > (float)ENEMY_SHOOT_RANGE)
         return false;
@@ -229,8 +230,9 @@ static void hit_player(Game *game)
     if (game->player.dying)
         return;
 
+    float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
     float cx = game->player.x + PLAYER_W * 0.5f;
-    float cy = game->player.y + PLAYER_H * 0.5f;
+    float cy = game->player.y + ph * 0.5f;
     particle_system_emit(&game->particles, cx, cy, 32, game->player.facing);
     /* mark player as dying; actual life loss / respawn happens after timer */
     game->player.dying = true;
@@ -349,13 +351,14 @@ void game_update(Game *game, float dt)
         const Elevator *el = &game->level.elevators[i];
         float plat_x = el->col * (float)TILE_SIZE;
         float player_cx = game->player.x + PLAYER_W * 0.5f;
-        float player_feet = game->player.y + PLAYER_H;
+        float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+        float player_feet = game->player.y + ph;
         if (player_cx > plat_x && player_cx < plat_x + TILE_SIZE &&
             game->player.vy >= 0.0f &&
             player_feet >= el->y - 2.0f &&
             player_feet <= el->y + ELEVATOR_PLAT_H + 8.0f)
         {
-            game->player.y = el->y - PLAYER_H;
+            game->player.y = el->y - ph;
             game->player.vy = 0.0f;
             game->player.on_ground = true;
             game->player_on_elevator = i;
@@ -369,14 +372,15 @@ void game_update(Game *game, float dt)
         const MovingPlatform *mp = &game->level.moving_platforms[i];
         float plat_x = mp->x;
         float player_cx = game->player.x + PLAYER_W * 0.5f;
-        float player_feet = game->player.y + PLAYER_H;
+        float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+        float player_feet = game->player.y + ph;
         float plat_top = mp->row * (float)TILE_SIZE;
         if (player_cx > plat_x && player_cx < plat_x + TILE_SIZE &&
             game->player.vy >= 0.0f &&
             player_feet >= plat_top - 2.0f &&
             player_feet <= plat_top + MOVING_PLATFORM_H + 8.0f)
         {
-            game->player.y = plat_top - PLAYER_H;
+            game->player.y = plat_top - ph;
             game->player.vy = 0.0f;
             game->player.on_ground = true;
             game->player_on_moving_platform = i;
@@ -399,11 +403,12 @@ void game_update(Game *game, float dt)
     {
         /* Mine stored in Game as an inline struct */
         Mine *m = &game->mines[i];
+        float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
         if (!m->active)
             continue;
         if (!m->triggered)
         {
-            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, PLAYER_H,
+            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
                               m->x, m->y, (float)MINE_W, (float)MINE_H))
             {
                 m->triggered = true;
@@ -420,8 +425,9 @@ void game_update(Game *game, float dt)
                 float cy = m->y + MINE_H * 0.5f;
                 particle_system_explosion(&game->particles, cx, cy, 48);
                 /* Damage player if within radius and not invulnerable */
+                float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
                 float px = game->player.x + PLAYER_W * 0.5f;
-                float py = game->player.y + PLAYER_H * 0.5f;
+                float py = game->player.y + ph * 0.5f;
                 float dx = px - cx;
                 float dy = py - cy;
                 float dist2 = dx * dx + dy * dy;
@@ -486,8 +492,9 @@ void game_update(Game *game, float dt)
                     }
                 }
                 /* Damage player if within radius */
+                float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
                 float px = game->player.x + PLAYER_W * 0.5f;
-                float py = game->player.y + PLAYER_H * 0.5f;
+                float py = game->player.y + ph * 0.5f;
                 float dx = px - cx;
                 float dy = py - cy;
                 float dist2 = dx * dx + dy * dy;
@@ -502,7 +509,8 @@ void game_update(Game *game, float dt)
     if (game->input.use_door && game->player.on_ground && game->teleport_cooldown <= 0.0f)
     {
         int center_col = (int)floorf((game->player.x + PLAYER_W * 0.5f) / TILE_SIZE);
-        int center_row = (int)floorf((game->player.y + PLAYER_H * 0.5f) / TILE_SIZE);
+        float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+        int center_row = (int)floorf((game->player.y + ph * 0.5f) / TILE_SIZE);
         const Level *lvl = &game->level;
         for (int d = 0; d < lvl->door_count; ++d)
         {
@@ -513,7 +521,7 @@ void game_update(Game *game, float dt)
                 {
                     const Door *dest = &lvl->doors[pair];
                     game->player.x = dest->col * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
-                    game->player.y = (dest->row + 1) * TILE_SIZE - PLAYER_H;
+                    game->player.y = (dest->row + 1) * TILE_SIZE - ph;
                     game->player.vx = 0.0f;
                     game->player.vy = 0.0f;
                     game->teleport_cooldown = TELEPORT_COOLDOWN;
@@ -537,11 +545,14 @@ void game_update(Game *game, float dt)
         const Door *door = &game->level.doors[d];
         float dx = door->col * (float)TILE_SIZE;
         float dy = door->row * (float)TILE_SIZE;
-        if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, PLAYER_H,
-                          dx, dy, (float)TILE_SIZE, (float)TILE_SIZE))
         {
-            game->door_timers[d] = 0.5f; /* retry soon */
-            continue;
+            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
+                              dx, dy, (float)TILE_SIZE, (float)TILE_SIZE))
+            {
+                game->door_timers[d] = 0.5f; /* retry soon */
+                continue;
+            }
         }
 
         int slot = find_enemy_slot(game);
@@ -573,7 +584,10 @@ void game_update(Game *game, float dt)
                 g->timer = GRENADE_FUSE_TIME;
                 g->grounded = false;
                 /* Spawn near player's hand */
-                g->y = game->player.y + PLAYER_H * 0.45f;
+                {
+                    float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+                    g->y = game->player.y + ph * 0.45f;
+                }
                 /* Spawn slightly ahead of player and choose velocities so the
                  * grenade follows a parabolic arc landing some distance ahead. */
                 {
@@ -604,7 +618,11 @@ void game_update(Game *game, float dt)
                 {
                     Bullet *b = &game->bullets[i];
                     b->active = true;
-                    b->y = game->player.y + PLAYER_H * 0.35f;
+                    {
+                        float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+                        b->y = game->player.y + ph * 0.35f;
+                        b->vy = 0.0f;
+                    }
                     if (game->player.facing > 0)
                     {
                         b->x = game->player.x + PLAYER_W;
@@ -637,30 +655,33 @@ void game_update(Game *game, float dt)
         {
             continue;
         }
-        if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, PLAYER_H,
-                          it->x - 8.0f, it->y - 8.0f, 16.0f, 16.0f))
         {
-            it->collected = true;
-            /* Start respawn timer for ammo and grenade pickups; cards do not respawn. */
-            if (it->type == ITEM_GUN || it->type == ITEM_GRENADE)
+            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
+                              it->x - 8.0f, it->y - 8.0f, 16.0f, 16.0f))
             {
-                it->respawn_timer = ITEM_RESPAWN_TIME;
-            }
-            if (it->type == ITEM_CARD)
-            {
-                game->score += 100;
-                if (i == game->level.active_card_index)
+                it->collected = true;
+                /* Start respawn timer for ammo and grenade pickups; cards do not respawn. */
+                if (it->type == ITEM_GUN || it->type == ITEM_GRENADE)
                 {
-                    game->level.items_remaining = 0;
+                    it->respawn_timer = ITEM_RESPAWN_TIME;
                 }
-            }
-            else if (it->type == ITEM_GUN)
-            {
-                game->player.bullets = MAX_AMMO;
-            }
-            else if (it->type == ITEM_GRENADE)
-            {
-                game->player.grenades = 1; /* pickup gives one grenade */
+                if (it->type == ITEM_CARD)
+                {
+                    game->score += 100;
+                    if (i == game->level.active_card_index)
+                    {
+                        game->level.items_remaining = 0;
+                    }
+                }
+                else if (it->type == ITEM_GUN)
+                {
+                    game->player.bullets = MAX_AMMO;
+                }
+                else if (it->type == ITEM_GRENADE)
+                {
+                    game->player.grenades = 1; /* pickup gives one grenade */
+                }
             }
         }
     }
@@ -689,6 +710,7 @@ void game_update(Game *game, float dt)
             continue;
 
         b->x += b->vx * dt;
+        b->y += b->vy * dt;
 
         /* Off-screen */
         if (b->x + BULLET_W < 0.0f || b->x > game->level.width * (float)TILE_SIZE)
@@ -750,8 +772,22 @@ void game_update(Game *game, float dt)
                     Bullet *b = &game->enemy_bullets[j];
                     if (b->active)
                         continue;
-                    float px = game->player.x + PLAYER_W * 0.5f;
-                    b->vx = (px > e->x + ENEMY_W * 0.5f) ? ENEMY_BULLET_SPEED : -ENEMY_BULLET_SPEED;
+                    /* Use the stored target snapshot captured when aiming started. */
+                    float px = e->aim_target_x;
+                    float py = e->aim_target_y;
+                    float sx = e->x + ENEMY_W * 0.5f;
+                    float sy = e->y + ENEMY_H * 0.5f;
+                    float dx = px - sx;
+                    float dy = py - sy;
+                    float len = sqrtf(dx * dx + dy * dy);
+                    if (len <= 0.001f)
+                    {
+                        dx = (game->player.x + PLAYER_W * 0.5f > sx) ? 1.0f : -1.0f;
+                        dy = 0.0f;
+                        len = 1.0f;
+                    }
+                    b->vx = (dx / len) * ENEMY_BULLET_SPEED;
+                    b->vy = (dy / len) * ENEMY_BULLET_SPEED;
                     b->x = (b->vx > 0) ? e->x + ENEMY_W : e->x - BULLET_W;
                     b->y = e->y + ENEMY_H * 0.35f;
                     b->active = true;
@@ -766,8 +802,15 @@ void game_update(Game *game, float dt)
         if (e->shoot_cooldown > 0.0f || !enemy_has_los(game, e))
             continue;
 
-        /* Start aiming – enemy freezes for ENEMY_AIM_TIME before firing. */
-        e->aim_timer = ENEMY_AIM_TIME;
+        /* Start aiming – capture the player's position now and freeze for ENEMY_AIM_TIME before firing. */
+        {
+            /* Capture player's horizontal centre but aim at their head/top so
+             * crouching after aim-start will let the projectile pass over. */
+            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            e->aim_target_x = game->player.x + PLAYER_W * 0.5f;
+            e->aim_target_y = game->player.y + ph * 0.15f; /* near head */
+            e->aim_timer = ENEMY_AIM_TIME;
+        }
     }
 
     /* Update enemy bullets: move, wall check, player hit. */
@@ -778,8 +821,9 @@ void game_update(Game *game, float dt)
             continue;
 
         b->x += b->vx * dt;
+        b->y += b->vy * dt;
 
-        if (b->x + BULLET_W < 0.0f || b->x > game->level.width * (float)TILE_SIZE)
+        if (b->x + BULLET_W < 0.0f || b->x > game->level.width * (float)TILE_SIZE || b->y + BULLET_H < 0.0f)
         {
             b->active = false;
             continue;
@@ -793,12 +837,15 @@ void game_update(Game *game, float dt)
             continue;
         }
 
-        if (game->invuln_timer <= 0.0f &&
-            boxes_overlap(b->x, b->y, BULLET_W, BULLET_H,
-                          game->player.x, game->player.y, PLAYER_W, PLAYER_H))
+        if (game->invuln_timer <= 0.0f)
         {
-            b->active = false;
-            hit_player(game);
+            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            if (boxes_overlap(b->x, b->y, BULLET_W, BULLET_H,
+                              game->player.x, game->player.y, PLAYER_W, ph))
+            {
+                b->active = false;
+                hit_player(game);
+            }
         }
     }
 
@@ -810,7 +857,8 @@ void game_update(Game *game, float dt)
             Enemy *e = &game->enemies[i];
             if (e->dead)
                 continue;
-            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, PLAYER_H,
+            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
                               e->x, e->y, ENEMY_W, ENEMY_H))
             {
                 hit_player(game);
@@ -825,11 +873,14 @@ void game_update(Game *game, float dt)
     {
         float ex = game->level.exit_col * (float)TILE_SIZE;
         float ey = game->level.exit_row * (float)TILE_SIZE;
-        if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, PLAYER_H,
-                          ex, ey, TILE_SIZE, TILE_SIZE))
         {
-            game->state = STATE_LEVEL_CLEARED;
-            game->message_timer = 1.2f;
+            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
+                              ex, ey, TILE_SIZE, TILE_SIZE))
+            {
+                game->state = STATE_LEVEL_CLEARED;
+                game->message_timer = 1.2f;
+            }
         }
     }
 
@@ -1139,8 +1190,9 @@ static void render_world(Game *game)
         {
             float x = game->player.x - cam_x;
             float y = game->player.y + oy;
+            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
             SDL_SetRenderDrawColor(r, 60, 120, 230, 255);
-            fill_rect(r, x, y, PLAYER_W, PLAYER_H);
+            fill_rect(r, x, y, PLAYER_W, ph);
             SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
             float eye = (game->player.facing > 0) ? x + PLAYER_W - 8 : x + 4;
             fill_rect(r, eye, y + 6, 4, 4);

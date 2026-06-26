@@ -19,6 +19,8 @@ void enemy_init(Enemy *enemy, float x, float y)
     /* Stagger initial shoot time so enemies don't all fire at once */
     enemy->shoot_cooldown = 1.0f + SDL_rand(250) * 0.01f;
     enemy->aim_timer = 0.0f;
+    enemy->aim_target_x = 0.0f;
+    enemy->aim_target_y = 0.0f;
 }
 
 static void enemy_update_climbing(Enemy *enemy, Level *level, float dt)

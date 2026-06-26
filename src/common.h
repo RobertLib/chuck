@@ -39,6 +39,10 @@
 #define PLAYER_JUMP_SPEED 365.0f
 #define PLAYER_LIVES 3
 
+/* Crawling (duck) tuning */
+#define PLAYER_CRAWL_H 16
+#define PLAYER_CRAWL_SPEED 60.0f
+
 /* Enemy tuning */
 #define ENEMY_W 22
 #define ENEMY_H 26

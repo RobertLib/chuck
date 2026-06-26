@@ -18,6 +18,9 @@ typedef struct
     bool dead;
     float shoot_cooldown; /* seconds until next shot */
     float aim_timer;      /* > 0 while enemy is standing still to aim */
+    /* Stored target coordinates captured when aiming starts. */
+    float aim_target_x;
+    float aim_target_y;
 } Enemy;
 
 void enemy_init(Enemy *enemy, float x, float y);

@@ -13,6 +13,7 @@ typedef struct
 {
     float x, y; /* world-space position (top-left) */
     float vx;   /* horizontal velocity, no gravity */
+    float vy;   /* vertical velocity for aimed bullets */
     bool active;
 } Bullet;
 
