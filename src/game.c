@@ -204,13 +204,27 @@ void game_handle_event(Game *game, const SDL_Event *event)
     if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat)
     {
         SDL_Keycode key = event->key.key;
+        /* Shoot on Space only */
         if (key == SDLK_SPACE)
         {
-            game->input.jump = true;
-        }
-        if (key == SDLK_X || key == SDLK_LCTRL)
-        {
             game->input.shoot = true;
+        }
+        /* Jump on Up arrow, but avoid interfering with ladders: only trigger
+         * jump edge when player is on the ground and not overlapping a ladder.
+         */
+        if (key == SDLK_UP || event->key.scancode == SDL_SCANCODE_W)
+        {
+            /* Determine whether player box overlaps a ladder near center/feet */
+            int col = (int)floorf((game->player.x + PLAYER_W * 0.5f) / TILE_SIZE);
+            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            int row_center = (int)floorf((game->player.y + ph * 0.5f) / TILE_SIZE);
+            int row_feet = (int)floorf((game->player.y + ph - 1.0f) / TILE_SIZE);
+            bool over_ladder = level_is_ladder(&game->level, col, row_center) ||
+                               level_is_ladder(&game->level, col, row_feet);
+            if (!over_ladder && !game->player.on_ladder && game->player.on_ground)
+            {
+                game->input.jump = true;
+            }
         }
         if (key == SDLK_DOWN || key == SDLK_S)
         {
