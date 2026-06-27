@@ -85,6 +85,8 @@ typedef struct
     /* Sprite sheets (NULL = procedural fallback) */
     Sprites sprites;
 
+    bool fullscreen; /* true when window is fullscreen */
+
     GameState state;
     Uint64 last_tick;
     float cam_x; /* world x of left edge of the viewport */

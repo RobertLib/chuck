@@ -4,6 +4,22 @@
 #include <stdlib.h>
 #include <time.h>
 
+/* Helper: get the current logical render size if enabled, otherwise fall
+ * back to actual window size. This ensures camera and clipping use the same
+ * coordinate system as the renderer's logical presentation. */
+static void get_view_size(Game *game, int *out_w, int *out_h)
+{
+    int lw = 0, lh = 0;
+    SDL_RendererLogicalPresentation mode;
+    if (SDL_GetRenderLogicalPresentation(game->renderer, &lw, &lh, &mode) && lw > 0 && lh > 0)
+    {
+        *out_w = lw;
+        *out_h = lh;
+        return;
+    }
+    SDL_GetWindowSize(game->window, out_w, out_h);
+}
+
 static const char *LEVEL_FILES[LEVEL_COUNT] = {
     "levels/level1.txt",
     "levels/level2.txt"};
@@ -130,7 +146,7 @@ static bool load_level(Game *game, int index)
 
     /* Keep the existing window size; initialise camera to centre on player. */
     int win_w = 0, win_h = 0;
-    SDL_GetWindowSize(game->window, &win_w, &win_h);
+    get_view_size(game, &win_w, &win_h);
     float max_cam = game->level.width * (float)TILE_SIZE - (float)win_w;
     if (max_cam < 0.0f)
         max_cam = 0.0f;
@@ -192,6 +208,11 @@ bool game_init(Game *game)
         return false;
     }
 
+    /* Use a fixed logical presentation so the game's coordinate system stays
+     * consistent when the window is resized or when toggling fullscreen.
+     * This makes the game look identical but scaled when entering fullscreen. */
+    SDL_SetRenderLogicalPresentation(game->renderer, 800, 552, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+
     SDL_SetRenderVSync(game->renderer, 1);
     srand((unsigned int)time(NULL));
     SDL_srand(SDL_GetTicksNS());
@@ -218,6 +239,25 @@ void game_handle_event(Game *game, const SDL_Event *event)
     if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat)
     {
         SDL_Keycode key = event->key.key;
+        /* Toggle fullscreen on 'f' or Alt+Enter. Use scancode/modifier via
+         * keyboard state to avoid dependency on deprecated keycode macros. */
+        SDL_Scancode sc = event->key.scancode;
+        const bool *kstate = SDL_GetKeyboardState(NULL);
+        if (sc == SDL_SCANCODE_F ||
+            (sc == SDL_SCANCODE_RETURN && (kstate[SDL_SCANCODE_LALT] || kstate[SDL_SCANCODE_RALT])))
+        {
+            if (!game->fullscreen)
+            {
+                SDL_SetWindowFullscreen(game->window, true);
+                game->fullscreen = true;
+            }
+            else
+            {
+                SDL_SetWindowFullscreen(game->window, false);
+                game->fullscreen = false;
+            }
+            return;
+        }
         /* Shoot on Space only */
         if (key == SDLK_SPACE)
         {
@@ -1150,7 +1190,7 @@ void game_update(Game *game, float dt)
     /* Camera: follow player horizontally, clamped to level bounds */
     {
         int win_w = 0, win_h = 0;
-        SDL_GetWindowSize(game->window, &win_w, &win_h);
+        get_view_size(game, &win_w, &win_h);
         float desired = game->player.x + PLAYER_W * 0.5f - (float)win_w * 0.5f;
         float max_cam = game->level.width * (float)TILE_SIZE - (float)win_w;
         if (max_cam < 0.0f)
@@ -1188,7 +1228,7 @@ static void draw_text_centered(Game *game, float center_y, float scale,
                                Uint8 cr, Uint8 cg, Uint8 cb, const char *text)
 {
     int win_w = 0, win_h = 0;
-    SDL_GetWindowSize(game->window, &win_w, &win_h);
+    get_view_size(game, &win_w, &win_h);
     float text_w = (float)SDL_strlen(text) * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
     float text_h = (float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
     float x = (win_w - text_w) * 0.5f;
@@ -1203,7 +1243,7 @@ static void render_world(Game *game)
     const Sprites *spr = &game->sprites;
     const float oy = HUD_HEIGHT;
     int win_w = 0, win_h = 0;
-    SDL_GetWindowSize(game->window, &win_w, &win_h);
+    get_view_size(game, &win_w, &win_h);
     const float cam_x = game->cam_x;
 
     /* Tiles */
