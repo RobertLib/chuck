@@ -13,6 +13,11 @@ static SDL_Texture *load_sheet(SDL_Renderer *renderer, const char *path)
   SDL_DestroySurface(surf);
   if (!tex)
     SDL_Log("sprites: texture creation failed for '%s': %s", path, SDL_GetError());
+  else
+  {
+    /* Ensure the texture supports alpha modulation by enabling blend mode. */
+    SDL_SetTextureBlendMode(tex, SDL_BLENDMODE_BLEND);
+  }
   return tex;
 }
 

@@ -363,9 +363,55 @@ void game_update(Game *game, float dt)
             game->input.jump = false;
             return;
         }
-        /* Reveal finished: spawn entities and switch to playing state. */
-        spawn_level_entities_after_reveal(game);
-        game->state = STATE_PLAYING;
+        /* Reveal finished: either start key-card intro animation or spawn entities. */
+        if (game->level.card_count > 0 && game->level.active_card_index >= 0)
+        {
+            /* Determine active card position among card items. */
+            int active_pos = 0;
+            for (int i = 0; i < game->level.item_count; ++i)
+            {
+                if (game->level.items[i].type != ITEM_CARD)
+                    continue;
+                if (i == game->level.active_card_index)
+                    break;
+                active_pos++;
+            }
+            game->card_anim_count = game->level.card_count;
+            game->card_anim_current = 0;
+            game->card_anim_step = 0;
+            game->card_anim_interval = 0.075f; /* 75ms per step (faster) */
+            game->card_anim_timer = 0.0f;
+            /* Run a few cycles before landing on the chosen card */
+            int cycles = 3;
+            game->card_anim_total_steps = cycles * game->card_anim_count + active_pos;
+            game->state = STATE_SHOW_KEYCARD;
+        }
+        else
+        {
+            spawn_level_entities_after_reveal(game);
+            game->state = STATE_PLAYING;
+        }
+    }
+
+    /* Key-card intro animation: cycle highlight until target reached, then begin play */
+    if (game->state == STATE_SHOW_KEYCARD)
+    {
+        game->card_anim_timer += dt;
+        if (game->card_anim_timer >= game->card_anim_interval)
+        {
+            game->card_anim_timer -= game->card_anim_interval;
+            game->card_anim_step++;
+            if (game->card_anim_count > 0)
+                game->card_anim_current = (game->card_anim_current + 1) % game->card_anim_count;
+            if (game->card_anim_step >= game->card_anim_total_steps)
+            {
+                /* Animation finished: spawn entities and start playing. */
+                spawn_level_entities_after_reveal(game);
+                game->state = STATE_PLAYING;
+            }
+        }
+        game->input.jump = false;
+        return;
     }
 
     if (game->state == STATE_LEVEL_CLEARED)
@@ -1438,38 +1484,49 @@ static void render_world(Game *game)
     }
 
     /* Items */
+    /* Ensure renderer blending is enabled so per-item alpha is respected. */
+    SDL_BlendMode _prev_blend = SDL_BLENDMODE_NONE;
+    SDL_GetRenderDrawBlendMode(r, &_prev_blend);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    int card_pos = 0;
     for (int i = 0; i < lvl->item_count; ++i)
     {
         const Item *it = &lvl->items[i];
         if (it->collected)
-        {
             continue;
-        }
         float x = it->x - 7.0f - cam_x;
         float y = it->y - 9.0f + oy;
+
         if (it->type == ITEM_CARD)
         {
+            /* Determine per-item alpha during intro animation */
+            Uint8 alpha = 255;
+            if (game->state == STATE_SHOW_KEYCARD)
+                alpha = (card_pos == game->card_anim_current) ? 255 : 90;
             if (spr->items)
             {
+                SDL_SetTextureAlphaMod(spr->items, alpha);
                 SDL_FRect src = {(float)(SPRITE_ITEM_CARD * SPRITE_CELL), 0, 14, 18};
                 SDL_FRect dst = {x, y, 14, 18};
                 SDL_RenderTexture(r, spr->items, &src, &dst);
+                SDL_SetTextureAlphaMod(spr->items, 255);
             }
             else
             {
                 /* Card body */
-                SDL_SetRenderDrawColor(r, 30, 190, 200, 255);
+                SDL_SetRenderDrawColor(r, 30, 190, 200, alpha);
                 fill_rect(r, x, y, 14, 18);
                 /* Card border */
-                SDL_SetRenderDrawColor(r, 200, 255, 255, 255);
+                SDL_SetRenderDrawColor(r, 200, 255, 255, alpha);
                 fill_rect(r, x, y, 14, 2);
                 fill_rect(r, x, y + 16, 14, 2);
                 fill_rect(r, x, y, 2, 18);
                 fill_rect(r, x + 12, y, 2, 18);
                 /* Small dot symbol */
-                SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+                SDL_SetRenderDrawColor(r, 255, 255, 255, alpha);
                 fill_rect(r, x + 5, y + 7, 4, 4);
             }
+            card_pos++;
         }
         else if (it->type == ITEM_GUN)
         {
@@ -1509,6 +1566,8 @@ static void render_world(Game *game)
             }
         }
     }
+    /* restore previous blend mode */
+    SDL_SetRenderDrawBlendMode(r, _prev_blend);
 
     /* Mines */
     for (int i = 0; i < game->mine_count; ++i)
@@ -1723,6 +1782,8 @@ void game_render(Game *game)
 
     render_world(game);
     render_hud(game);
+
+    /* No overlay: during STATE_SHOW_KEYCARD we change item opacity when drawing items */
 
     if (game->state == STATE_LEVEL_CLEARED)
     {

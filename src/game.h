@@ -30,6 +30,7 @@ typedef struct
 typedef enum
 {
     STATE_LEVEL_START,
+    STATE_SHOW_KEYCARD,
     STATE_PLAYING,
     STATE_LEVEL_CLEARED,
     STATE_GAME_OVER,
@@ -90,6 +91,13 @@ typedef struct
     GameState state;
     Uint64 last_tick;
     float cam_x; /* world x of left edge of the viewport */
+    /* Key-card intro animation state (used between reveal and playing) */
+    int card_anim_current;     /* current highlighted position */
+    int card_anim_step;        /* steps advanced in animation */
+    int card_anim_total_steps; /* total steps to run before stopping */
+    int card_anim_count;       /* number of card positions */
+    float card_anim_interval;  /* seconds between highlight steps */
+    float card_anim_timer;     /* accumulator for highlight timing */
 } Game;
 
 bool game_init(Game *game);
