@@ -206,6 +206,9 @@ bool game_init(Game *game)
     /* Initialise particle system */
     particle_system_init(&game->particles);
 
+    /* Load sprite sheets (falls back to procedural rendering if files missing) */
+    sprites_load(&game->sprites, game->renderer);
+
     game->last_tick = SDL_GetTicksNS();
     return true;
 }
@@ -1197,6 +1200,7 @@ static void render_world(Game *game)
 {
     SDL_Renderer *r = game->renderer;
     const Level *lvl = &game->level;
+    const Sprites *spr = &game->sprites;
     const float oy = HUD_HEIGHT;
     int win_w = 0, win_h = 0;
     SDL_GetWindowSize(game->window, &win_w, &win_h);
@@ -1217,27 +1221,54 @@ static void render_world(Game *game)
             TileType t = lvl->tiles[row][col];
             if (t == TILE_WALL)
             {
-                SDL_SetRenderDrawColor(r, 110, 70, 40, 255);
-                fill_rect(r, x, y, TILE_SIZE, TILE_SIZE);
-                SDL_SetRenderDrawColor(r, 140, 95, 60, 255);
-                fill_rect(r, x, y, TILE_SIZE, 4);
+                if (spr->tileset)
+                {
+                    SDL_FRect src = {(float)(SPRITE_TILE_WALL * SPRITE_CELL), SPRITE_TILE_ROW_Y, SPRITE_CELL, SPRITE_TILE_ROW_H};
+                    SDL_FRect dst = {x, y, TILE_SIZE, TILE_SIZE};
+                    SDL_RenderTexture(r, spr->tileset, &src, &dst);
+                }
+                else
+                {
+                    SDL_SetRenderDrawColor(r, 110, 70, 40, 255);
+                    fill_rect(r, x, y, TILE_SIZE, TILE_SIZE);
+                    SDL_SetRenderDrawColor(r, 140, 95, 60, 255);
+                    fill_rect(r, x, y, TILE_SIZE, 4);
+                }
             }
             else if (t == TILE_LADDER)
             {
-                SDL_SetRenderDrawColor(r, 210, 200, 90, 255);
-                SDL_RenderLine(r, x + 6, y, x + 6, y + TILE_SIZE);
-                SDL_RenderLine(r, x + TILE_SIZE - 6, y, x + TILE_SIZE - 6, y + TILE_SIZE);
-                for (int rung = 4; rung < TILE_SIZE; rung += 10)
+                if (spr->tileset)
                 {
-                    SDL_RenderLine(r, x + 6, y + rung, x + TILE_SIZE - 6, y + rung);
+                    SDL_FRect src = {(float)(SPRITE_TILE_LADDER * SPRITE_CELL), SPRITE_TILE_ROW_Y, SPRITE_CELL, SPRITE_TILE_ROW_H};
+                    SDL_FRect dst = {x, y, TILE_SIZE, TILE_SIZE};
+                    SDL_RenderTexture(r, spr->tileset, &src, &dst);
+                }
+                else
+                {
+                    SDL_SetRenderDrawColor(r, 210, 200, 90, 255);
+                    SDL_RenderLine(r, x + 6, y, x + 6, y + TILE_SIZE);
+                    SDL_RenderLine(r, x + TILE_SIZE - 6, y, x + TILE_SIZE - 6, y + TILE_SIZE);
+                    for (int rung = 4; rung < TILE_SIZE; rung += 10)
+                    {
+                        SDL_RenderLine(r, x + 6, y + rung, x + TILE_SIZE - 6, y + rung);
+                    }
                 }
             }
             else if (t == TILE_ELEVATOR_SHAFT)
             {
-                /* Draw two vertical guide rails */
-                SDL_SetRenderDrawColor(r, 100, 105, 115, 255);
-                SDL_RenderLine(r, x + 9, y, x + 9, y + TILE_SIZE);
-                SDL_RenderLine(r, x + TILE_SIZE - 9, y, x + TILE_SIZE - 9, y + TILE_SIZE);
+                if (spr->tileset)
+                {
+                    SDL_FRect src = {(float)(SPRITE_TILE_ELEVATOR_SHAFT * SPRITE_CELL), SPRITE_TILE_ROW_Y, SPRITE_CELL, SPRITE_TILE_ROW_H};
+                    SDL_FRect dst = {x, y, TILE_SIZE, TILE_SIZE};
+                    SDL_RenderTexture(r, spr->tileset, &src, &dst);
+                }
+                else
+                {
+                    /* Draw two vertical guide rails */
+                    SDL_SetRenderDrawColor(r, 100, 105, 115, 255);
+                    SDL_RenderLine(r, x + 9, y, x + 9, y + TILE_SIZE);
+                    SDL_RenderLine(r, x + TILE_SIZE - 9, y, x + TILE_SIZE - 9, y + TILE_SIZE);
+                }
             }
         }
     }
@@ -1252,12 +1283,21 @@ static void render_world(Game *game)
         const Elevator *el = &lvl->elevators[i];
         float px = el->col * (float)TILE_SIZE - cam_x;
         float py = el->y + oy;
-        /* Platform body */
-        SDL_SetRenderDrawColor(r, 160, 165, 175, 255);
-        fill_rect(r, px, py, TILE_SIZE, ELEVATOR_PLAT_H);
-        /* Bright top edge */
-        SDL_SetRenderDrawColor(r, 220, 225, 235, 255);
-        fill_rect(r, px, py, TILE_SIZE, 2);
+        if (spr->tileset)
+        {
+            SDL_FRect src = {(float)(SPRITE_PLAT_ELEV * SPRITE_CELL), (float)SPRITE_PLAT_ROW_Y, SPRITE_CELL, ELEVATOR_PLAT_H};
+            SDL_FRect dst = {px, py, TILE_SIZE, ELEVATOR_PLAT_H};
+            SDL_RenderTexture(r, spr->tileset, &src, &dst);
+        }
+        else
+        {
+            /* Platform body */
+            SDL_SetRenderDrawColor(r, 160, 165, 175, 255);
+            fill_rect(r, px, py, TILE_SIZE, ELEVATOR_PLAT_H);
+            /* Bright top edge */
+            SDL_SetRenderDrawColor(r, 220, 225, 235, 255);
+            fill_rect(r, px, py, TILE_SIZE, 2);
+        }
     }
 
     /* Falling platforms */
@@ -1268,10 +1308,19 @@ static void render_world(Game *game)
             continue;
         float px = fp->col * (float)TILE_SIZE - cam_x;
         float py = fp->y + oy;
-        SDL_SetRenderDrawColor(r, 150, 90, 50, 255);
-        fill_rect(r, px, py, TILE_SIZE, FALL_PLATFORM_H);
-        SDL_SetRenderDrawColor(r, 210, 160, 120, 255);
-        fill_rect(r, px, py, TILE_SIZE, 2);
+        if (spr->tileset)
+        {
+            SDL_FRect src = {(float)(SPRITE_PLAT_FALL * SPRITE_CELL), (float)SPRITE_PLAT_ROW_Y, SPRITE_CELL, FALL_PLATFORM_H};
+            SDL_FRect dst = {px, py, TILE_SIZE, FALL_PLATFORM_H};
+            SDL_RenderTexture(r, spr->tileset, &src, &dst);
+        }
+        else
+        {
+            SDL_SetRenderDrawColor(r, 150, 90, 50, 255);
+            fill_rect(r, px, py, TILE_SIZE, FALL_PLATFORM_H);
+            SDL_SetRenderDrawColor(r, 210, 160, 120, 255);
+            fill_rect(r, px, py, TILE_SIZE, 2);
+        }
     }
 
     /* Moving horizontal platforms */
@@ -1280,10 +1329,19 @@ static void render_world(Game *game)
         const MovingPlatform *mp = &lvl->moving_platforms[i];
         float px = mp->x - cam_x;
         float py = mp->row * (float)TILE_SIZE + oy;
-        SDL_SetRenderDrawColor(r, 140, 95, 60, 255);
-        fill_rect(r, px, py, TILE_SIZE, MOVING_PLATFORM_H);
-        SDL_SetRenderDrawColor(r, 210, 160, 120, 255);
-        fill_rect(r, px, py, TILE_SIZE, 2);
+        if (spr->tileset)
+        {
+            SDL_FRect src = {(float)(SPRITE_PLAT_MOVE * SPRITE_CELL), (float)SPRITE_PLAT_ROW_Y, SPRITE_CELL, MOVING_PLATFORM_H};
+            SDL_FRect dst = {px, py, TILE_SIZE, MOVING_PLATFORM_H};
+            SDL_RenderTexture(r, spr->tileset, &src, &dst);
+        }
+        else
+        {
+            SDL_SetRenderDrawColor(r, 140, 95, 60, 255);
+            fill_rect(r, px, py, TILE_SIZE, MOVING_PLATFORM_H);
+            SDL_SetRenderDrawColor(r, 210, 160, 120, 255);
+            fill_rect(r, px, py, TILE_SIZE, 2);
+        }
     }
 
     /* Doors (all identical — part of the puzzle) */
@@ -1291,15 +1349,24 @@ static void render_world(Game *game)
     {
         float x = lvl->doors[d].col * (float)TILE_SIZE - cam_x;
         float y = lvl->doors[d].row * (float)TILE_SIZE + oy;
-        /* Frame */
-        SDL_SetRenderDrawColor(r, 75, 45, 15, 255);
-        fill_rect(r, x, y, TILE_SIZE, TILE_SIZE);
-        /* Panel */
-        SDL_SetRenderDrawColor(r, 115, 65, 25, 255);
-        fill_rect(r, x + 3, y + 3, TILE_SIZE - 6, TILE_SIZE - 3);
-        /* Knob */
-        SDL_SetRenderDrawColor(r, 195, 165, 55, 255);
-        fill_rect(r, x + TILE_SIZE - 10, y + TILE_SIZE / 2 - 2, 5, 5);
+        if (spr->tileset)
+        {
+            SDL_FRect src = {(float)(SPRITE_TILE_DOOR * SPRITE_CELL), SPRITE_TILE_ROW_Y, SPRITE_CELL, SPRITE_TILE_ROW_H};
+            SDL_FRect dst = {x, y, TILE_SIZE, TILE_SIZE};
+            SDL_RenderTexture(r, spr->tileset, &src, &dst);
+        }
+        else
+        {
+            /* Frame */
+            SDL_SetRenderDrawColor(r, 75, 45, 15, 255);
+            fill_rect(r, x, y, TILE_SIZE, TILE_SIZE);
+            /* Panel */
+            SDL_SetRenderDrawColor(r, 115, 65, 25, 255);
+            fill_rect(r, x + 3, y + 3, TILE_SIZE - 6, TILE_SIZE - 3);
+            /* Knob */
+            SDL_SetRenderDrawColor(r, 195, 165, 55, 255);
+            fill_rect(r, x + TILE_SIZE - 10, y + TILE_SIZE / 2 - 2, 5, 5);
+        }
     }
 
     /* Exit */
@@ -1307,17 +1374,27 @@ static void render_world(Game *game)
     {
         float x = lvl->exit_col * (float)TILE_SIZE - cam_x;
         float y = lvl->exit_row * (float)TILE_SIZE + oy;
-        if (lvl->items_remaining == 0)
+        if (spr->tileset)
         {
-            SDL_SetRenderDrawColor(r, 60, 220, 90, 255);
+            int tile_idx = (lvl->items_remaining == 0) ? SPRITE_TILE_EXIT_ON : SPRITE_TILE_EXIT_OFF;
+            SDL_FRect src = {(float)(tile_idx * SPRITE_CELL), SPRITE_TILE_ROW_Y, SPRITE_CELL, SPRITE_TILE_ROW_H};
+            SDL_FRect dst = {x, y, TILE_SIZE, TILE_SIZE};
+            SDL_RenderTexture(r, spr->tileset, &src, &dst);
         }
         else
         {
-            SDL_SetRenderDrawColor(r, 80, 80, 90, 255);
+            if (lvl->items_remaining == 0)
+            {
+                SDL_SetRenderDrawColor(r, 60, 220, 90, 255);
+            }
+            else
+            {
+                SDL_SetRenderDrawColor(r, 80, 80, 90, 255);
+            }
+            fill_rect(r, x + 4, y + 2, TILE_SIZE - 8, TILE_SIZE - 2);
+            SDL_SetRenderDrawColor(r, 30, 30, 35, 255);
+            fill_rect(r, x + TILE_SIZE - 12, y + TILE_SIZE / 2 - 2, 4, 4);
         }
-        fill_rect(r, x + 4, y + 2, TILE_SIZE - 8, TILE_SIZE - 2);
-        SDL_SetRenderDrawColor(r, 30, 30, 35, 255);
-        fill_rect(r, x + TILE_SIZE - 12, y + TILE_SIZE / 2 - 2, 4, 4);
     }
 
     /* Items */
@@ -1332,37 +1409,64 @@ static void render_world(Game *game)
         float y = it->y - 9.0f + oy;
         if (it->type == ITEM_CARD)
         {
-            /* Card body */
-            SDL_SetRenderDrawColor(r, 30, 190, 200, 255);
-            fill_rect(r, x, y, 14, 18);
-            /* Card border */
-            SDL_SetRenderDrawColor(r, 200, 255, 255, 255);
-            fill_rect(r, x, y, 14, 2);
-            fill_rect(r, x, y + 16, 14, 2);
-            fill_rect(r, x, y, 2, 18);
-            fill_rect(r, x + 12, y, 2, 18);
-            /* Small dot symbol */
-            SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-            fill_rect(r, x + 5, y + 7, 4, 4);
+            if (spr->items)
+            {
+                SDL_FRect src = {(float)(SPRITE_ITEM_CARD * SPRITE_CELL), 0, 14, 18};
+                SDL_FRect dst = {x, y, 14, 18};
+                SDL_RenderTexture(r, spr->items, &src, &dst);
+            }
+            else
+            {
+                /* Card body */
+                SDL_SetRenderDrawColor(r, 30, 190, 200, 255);
+                fill_rect(r, x, y, 14, 18);
+                /* Card border */
+                SDL_SetRenderDrawColor(r, 200, 255, 255, 255);
+                fill_rect(r, x, y, 14, 2);
+                fill_rect(r, x, y + 16, 14, 2);
+                fill_rect(r, x, y, 2, 18);
+                fill_rect(r, x + 12, y, 2, 18);
+                /* Small dot symbol */
+                SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+                fill_rect(r, x + 5, y + 7, 4, 4);
+            }
         }
         else if (it->type == ITEM_GUN)
         {
-            /* barrel */
-            SDL_SetRenderDrawColor(r, 80, 80, 80, 255);
-            fill_rect(r, x + 4, y + 2, 11, 4);
-            /* grip */
-            fill_rect(r, x + 4, y + 5, 6, 7);
-            /* highlight on barrel */
-            SDL_SetRenderDrawColor(r, 140, 140, 140, 255);
-            fill_rect(r, x + 4, y + 2, 11, 2);
+            if (spr->items)
+            {
+                SDL_FRect src = {(float)(SPRITE_ITEM_GUN * SPRITE_CELL), 0, 15, 12};
+                SDL_FRect dst = {x + 4, y + 2, 15, 12};
+                SDL_RenderTexture(r, spr->items, &src, &dst);
+            }
+            else
+            {
+                /* barrel */
+                SDL_SetRenderDrawColor(r, 80, 80, 80, 255);
+                fill_rect(r, x + 4, y + 2, 11, 4);
+                /* grip */
+                fill_rect(r, x + 4, y + 5, 6, 7);
+                /* highlight on barrel */
+                SDL_SetRenderDrawColor(r, 140, 140, 140, 255);
+                fill_rect(r, x + 4, y + 2, 11, 2);
+            }
         }
         else if (it->type == ITEM_GRENADE)
         {
-            /* draw grenade pickup — brown body with lighter pin */
-            SDL_SetRenderDrawColor(r, 140, 90, 40, 255);
-            fill_rect(r, x + 3.0f, y + 4.0f, GRENADE_W, GRENADE_H);
-            SDL_SetRenderDrawColor(r, 220, 180, 110, 255);
-            fill_rect(r, x + 5.0f, y + 3.0f, 2.0f, 2.0f); /* pin */
+            if (spr->items)
+            {
+                SDL_FRect src = {(float)(SPRITE_ITEM_GRENADE * SPRITE_CELL), 0, 13, 14};
+                SDL_FRect dst = {x + 3.0f, y + 3.0f, 13, 14};
+                SDL_RenderTexture(r, spr->items, &src, &dst);
+            }
+            else
+            {
+                /* draw grenade pickup — brown body with lighter pin */
+                SDL_SetRenderDrawColor(r, 140, 90, 40, 255);
+                fill_rect(r, x + 3.0f, y + 4.0f, GRENADE_W, GRENADE_H);
+                SDL_SetRenderDrawColor(r, 220, 180, 110, 255);
+                fill_rect(r, x + 5.0f, y + 3.0f, 2.0f, 2.0f); /* pin */
+            }
         }
     }
 
@@ -1374,11 +1478,20 @@ static void render_world(Game *game)
             continue;
         float x = m->x - cam_x;
         float y = m->y + oy;
-        SDL_SetRenderDrawColor(r, 30, 30, 30, 255);
-        fill_rect(r, x, y, MINE_W, MINE_H);
-        /* small red indicator */
-        SDL_SetRenderDrawColor(r, 220, 50, 50, 255);
-        fill_rect(r, x + MINE_W * 0.5f - 2.0f, y + 2.0f, 4.0f, 4.0f);
+        if (spr->items)
+        {
+            SDL_FRect src = {(float)(SPRITE_ITEM_MINE * SPRITE_CELL), 0, MINE_W, MINE_H};
+            SDL_FRect dst = {x, y, MINE_W, MINE_H};
+            SDL_RenderTexture(r, spr->items, &src, &dst);
+        }
+        else
+        {
+            SDL_SetRenderDrawColor(r, 30, 30, 30, 255);
+            fill_rect(r, x, y, MINE_W, MINE_H);
+            /* small red indicator */
+            SDL_SetRenderDrawColor(r, 220, 50, 50, 255);
+            fill_rect(r, x + MINE_W * 0.5f - 2.0f, y + 2.0f, 4.0f, 4.0f);
+        }
     }
 
     /* Enemies */
@@ -1389,17 +1502,29 @@ static void render_world(Game *game)
             continue;
         float x = e->x - cam_x;
         float y = e->y + oy;
-        /* Body color reflects remaining HP */
-        if (e->hp >= ENEMY_HP)
-            SDL_SetRenderDrawColor(r, 210, 50, 50, 255);
-        else if (e->hp == 2)
-            SDL_SetRenderDrawColor(r, 210, 130, 50, 255);
+        if (spr->enemy)
+        {
+            SDL_FRect src = {0, 0, ENEMY_W, ENEMY_H};
+            SDL_FRect dst = {x, y, ENEMY_W, ENEMY_H};
+            if (e->dir < 0)
+                SDL_RenderTextureRotated(r, spr->enemy, &src, &dst, 0.0, NULL, SDL_FLIP_HORIZONTAL);
+            else
+                SDL_RenderTexture(r, spr->enemy, &src, &dst);
+        }
         else
-            SDL_SetRenderDrawColor(r, 200, 200, 50, 255);
-        fill_rect(r, x, y, ENEMY_W, ENEMY_H);
-        SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-        fill_rect(r, x + 4, y + 6, 4, 4);
-        fill_rect(r, x + ENEMY_W - 8, y + 6, 4, 4);
+        {
+            /* Body color reflects remaining HP */
+            if (e->hp >= ENEMY_HP)
+                SDL_SetRenderDrawColor(r, 210, 50, 50, 255);
+            else if (e->hp == 2)
+                SDL_SetRenderDrawColor(r, 210, 130, 50, 255);
+            else
+                SDL_SetRenderDrawColor(r, 200, 200, 50, 255);
+            fill_rect(r, x, y, ENEMY_W, ENEMY_H);
+            SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+            fill_rect(r, x + 4, y + 6, 4, 4);
+            fill_rect(r, x + ENEMY_W - 8, y + 6, 4, 4);
+        }
         /* HP dots above the enemy head */
         for (int h = 0; h < ENEMY_HP; ++h)
         {
@@ -1429,21 +1554,28 @@ static void render_world(Game *game)
             fill_rect(r, bx + 4.0f, by + 3.0f, 3.0f, 3.0f);
             fill_rect(r, bx + 9.0f, by + 3.0f, 3.0f, 3.0f);
             fill_rect(r, bx + 14.0f, by + 3.0f, 3.0f, 3.0f);
-            SDL_SetRenderDrawColor(r, 140, 90, 40, 255); /* restore grenade color */
         }
     }
 
     /* Thrown grenades */
-    SDL_SetRenderDrawColor(r, 140, 90, 40, 255);
     for (int i = 0; i < game->grenade_count; ++i)
     {
         const Grenade *g = &game->grenades[i];
         if (!g->active)
             continue;
-        fill_rect(r, g->x - cam_x, g->y + oy, GRENADE_W, GRENADE_H);
-        SDL_SetRenderDrawColor(r, 220, 180, 110, 255);
-        fill_rect(r, g->x - cam_x + 2.0f, g->y + oy + 1.0f, 2.0f, 2.0f);
-        SDL_SetRenderDrawColor(r, 140, 90, 40, 255);
+        if (spr->items)
+        {
+            SDL_FRect src = {(float)(SPRITE_ITEM_THROWN * SPRITE_CELL), 0, GRENADE_W, GRENADE_H};
+            SDL_FRect dst = {g->x - cam_x, g->y + oy, GRENADE_W, GRENADE_H};
+            SDL_RenderTexture(r, spr->items, &src, &dst);
+        }
+        else
+        {
+            SDL_SetRenderDrawColor(r, 140, 90, 40, 255);
+            fill_rect(r, g->x - cam_x, g->y + oy, GRENADE_W, GRENADE_H);
+            SDL_SetRenderDrawColor(r, 220, 180, 110, 255);
+            fill_rect(r, g->x - cam_x + 2.0f, g->y + oy + 1.0f, 2.0f, 2.0f);
+        }
     }
 
     /* Bullets (player = yellow, enemy = orange-red) */
@@ -1477,11 +1609,24 @@ static void render_world(Game *game)
             float x = game->player.x - cam_x;
             float y = game->player.y + oy;
             float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
-            SDL_SetRenderDrawColor(r, 60, 120, 230, 255);
-            fill_rect(r, x, y, PLAYER_W, ph);
-            SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
-            float eye = (game->player.facing > 0) ? x + PLAYER_W - 8 : x + 4;
-            fill_rect(r, eye, y + 6, 4, 4);
+            int frame = game->player.crawling ? SPRITE_PLAYER_CRAWL : SPRITE_PLAYER_STAND;
+            if (spr->player)
+            {
+                SDL_FRect src = {(float)(frame * SPRITE_CELL), 0, PLAYER_W, ph};
+                SDL_FRect dst = {x, y, PLAYER_W, ph};
+                if (game->player.facing < 0)
+                    SDL_RenderTextureRotated(r, spr->player, &src, &dst, 0.0, NULL, SDL_FLIP_HORIZONTAL);
+                else
+                    SDL_RenderTexture(r, spr->player, &src, &dst);
+            }
+            else
+            {
+                SDL_SetRenderDrawColor(r, 60, 120, 230, 255);
+                fill_rect(r, x, y, PLAYER_W, ph);
+                SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+                float eye = (game->player.facing > 0) ? x + PLAYER_W - 8 : x + 4;
+                fill_rect(r, eye, y + 6, 4, 4);
+            }
         }
     }
     else
@@ -1559,6 +1704,7 @@ void game_render(Game *game)
 
 void game_shutdown(Game *game)
 {
+    sprites_free(&game->sprites);
     if (game->renderer)
     {
         SDL_DestroyRenderer(game->renderer);

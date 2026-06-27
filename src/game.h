@@ -6,6 +6,7 @@
 #include "player.h"
 #include "enemy.h"
 #include "particle.h"
+#include "sprites.h"
 
 #define LEVEL_COUNT 2
 
@@ -80,6 +81,9 @@ typedef struct
 
     /* Particle system for effects */
     ParticleSystem particles;
+
+    /* Sprite sheets (NULL = procedural fallback) */
+    Sprites sprites;
 
     GameState state;
     Uint64 last_tick;
