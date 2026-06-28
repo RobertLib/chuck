@@ -143,7 +143,7 @@ def write_guided_bmp(path, width, height, fill=(180, 180, 180), force=False, kin
     _draw_rect_outline(buf, width, height, 0, 0, 32, 32, black)
     _draw_rect_outline(buf, width, height, 0, 0, 22, 26, red)
   elif kind == 'items':
-    sizes = [(14, 18), (15, 12), (13, 14), (16, 10), (10, 10)]
+    sizes = [(14, 18), (15, 12), (13, 14), (16, 10), (10, 10), (14, 14)]
     cell_w = 32
     cell_h = 32
     for i, (w, h) in enumerate(sizes):
@@ -174,7 +174,7 @@ def main():
     write_guided_bmp("assets/tileset.bmp", 192, 38,  fill=(180, 180, 180), force=force, kind='tileset')
     write_guided_bmp("assets/player.bmp",   64, 32,  fill=(180, 180, 180), force=force, kind='player')
     write_guided_bmp("assets/enemy.bmp",    32, 32,  fill=(180, 180, 180), force=force, kind='enemy')
-    write_guided_bmp("assets/items.bmp",   160, 32,  fill=(180, 180, 180), force=force, kind='items')
+    write_guided_bmp("assets/items.bmp",   192, 32,  fill=(180, 180, 180), force=force, kind='items')
     print("Done.")
     print()
     print("Open the files in a pixel editor (e.g. Aseprite, GIMP, or LibreSprite)")

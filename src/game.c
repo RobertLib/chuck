@@ -943,7 +943,7 @@ void game_update(Game *game, float dt)
                               it->x - 8.0f, it->y - 8.0f, 16.0f, 16.0f))
             {
                 it->collected = true;
-                /* Start respawn timer for ammo and grenade pickups; cards do not respawn. */
+                /* Start respawn timer only for pickups that should respawn (ammo, grenades). */
                 if (it->type == ITEM_GUN || it->type == ITEM_GRENADE)
                 {
                     it->respawn_timer = ITEM_RESPAWN_TIME;
@@ -966,18 +966,24 @@ void game_update(Game *game, float dt)
                 {
                     game->player.grenades = 1; /* pickup gives one grenade */
                 }
+                else if (it->type == ITEM_MEDKIT)
+                {
+                    /* Give the player an extra life when picking up a medkit, capped. */
+                    if (game->lives < MAX_LIVES)
+                        game->lives += 1;
+                }
             }
         }
     }
 
-    /* Respawn timers for ammo/grenade pickups: decrement timers and un-collect when expired. */
+    /* Respawn timers: only decremented for items that should respawn (ammo, grenades). */
     for (int i = 0; i < game->level.item_count; ++i)
     {
         Item *it = &game->level.items[i];
         if (!it->collected)
             continue;
-        if (it->type == ITEM_CARD)
-            continue; /* cards never respawn */
+        if (it->type != ITEM_GUN && it->type != ITEM_GRENADE)
+            continue; /* only ammo and grenades respawn */
         it->respawn_timer -= dt;
         if (it->respawn_timer <= 0.0f)
         {
@@ -1588,6 +1594,24 @@ static void render_world(Game *game)
                 fill_rect(r, x + 3.0f, y + 4.0f, GRENADE_W, GRENADE_H);
                 SDL_SetRenderDrawColor(r, 220, 180, 110, 255);
                 fill_rect(r, x + 5.0f, y + 3.0f, 2.0f, 2.0f); /* pin */
+            }
+        }
+        else if (it->type == ITEM_MEDKIT)
+        {
+            if (spr->items)
+            {
+                SDL_FRect src = {(float)(SPRITE_ITEM_MEDKIT * SPRITE_CELL), 0, 14, 14};
+                SDL_FRect dst = {x + 3.0f, y + 3.0f, 14, 14};
+                SDL_RenderTexture(r, spr->items, &src, &dst);
+            }
+            else
+            {
+                /* draw medkit — red box with white cross */
+                SDL_SetRenderDrawColor(r, 200, 40, 40, 255);
+                fill_rect(r, x + 3.0f, y + 3.0f, 14, 14);
+                SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
+                fill_rect(r, x + 8.0f - 2.0f, y + 3.0f + 3.0f, 4.0f, 8.0f);
+                fill_rect(r, x + 3.0f + 3.0f, y + 8.0f - 2.0f, 8.0f, 4.0f);
             }
         }
     }

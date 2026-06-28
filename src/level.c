@@ -108,6 +108,10 @@ bool level_load(Level *level, const char *path)
             level->tiles[row][col] = TILE_EMPTY;
             place_item(level, col, row, ITEM_GRENADE);
             break;
+        case 'K':
+            level->tiles[row][col] = TILE_EMPTY;
+            place_item(level, col, row, ITEM_MEDKIT);
+            break;
         case 'M':
             level->tiles[row][col] = TILE_EMPTY;
             place_enemy(level, col, row);

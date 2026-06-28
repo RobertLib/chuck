@@ -38,6 +38,8 @@
 #define PLAYER_CLIMB_SPEED 100.0f
 #define PLAYER_JUMP_SPEED 365.0f
 #define PLAYER_LIVES 3
+/* Maximum allowed lives (medkits cannot raise above this). */
+#define MAX_LIVES 9
 
 /* Crawling (duck) tuning */
 #define PLAYER_CRAWL_H 16

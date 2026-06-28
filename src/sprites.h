@@ -68,6 +68,7 @@
 #define SPRITE_ITEM_GRENADE 2
 #define SPRITE_ITEM_MINE 3
 #define SPRITE_ITEM_THROWN 4
+#define SPRITE_ITEM_MEDKIT 5
 
 typedef struct
 {
