@@ -98,6 +98,7 @@ typedef struct
     int card_anim_count;       /* number of card positions */
     float card_anim_interval;  /* seconds between highlight steps */
     float card_anim_timer;     /* accumulator for highlight timing */
+    float exit_unlocked_timer; /* seconds to show "EXIT UNLOCKED" overlay */
 } Game;
 
 bool game_init(Game *game);

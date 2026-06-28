@@ -446,6 +446,12 @@ void game_update(Game *game, float dt)
     {
         game->invuln_timer -= dt;
     }
+    if (game->exit_unlocked_timer > 0.0f)
+    {
+        game->exit_unlocked_timer -= dt;
+        if (game->exit_unlocked_timer < 0.0f)
+            game->exit_unlocked_timer = 0.0f;
+    }
 
     /* --- Elevator: pre-carry (upward), player physics, update platforms, snap --- */
     {
@@ -931,6 +937,8 @@ void game_update(Game *game, float dt)
                     if (i == game->level.active_card_index)
                     {
                         game->level.items_remaining = 0;
+                        /* show a short on-screen notification so player notices */
+                        game->exit_unlocked_timer = 2.5f;
                     }
                 }
                 else if (it->type == ITEM_GUN)
@@ -1782,6 +1790,27 @@ void game_render(Game *game)
 
     render_world(game);
     render_hud(game);
+
+    /* Small overlay when exit is unlocked so player notices even off-camera */
+    if (game->exit_unlocked_timer > 0.0f)
+    {
+        /* Draw centered message */
+        draw_text_centered(game, 56.0f, 3.0f, 90, 255, 200, "EXIT UNLOCKED");
+        /* Draw simple directional hint if exit is off-screen */
+        int win_w = 0, win_h = 0;
+        get_view_size(game, &win_w, &win_h);
+        float ex_screen = game->level.exit_col * (float)TILE_SIZE - game->cam_x;
+        if (ex_screen + TILE_SIZE < 0.0f)
+        {
+            /* exit is left of viewport */
+            draw_text(game->renderer, 8.0f, 56.0f, 3.0f, 200, 200, 80, "<-");
+        }
+        else if (ex_screen > (float)win_w)
+        {
+            /* exit is right of viewport */
+            draw_text(game->renderer, (float)win_w - 28.0f, 56.0f, 3.0f, 200, 200, 80, "->");
+        }
+    }
 
     /* No overlay: during STATE_SHOW_KEYCARD we change item opacity when drawing items */
 
