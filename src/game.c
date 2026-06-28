@@ -379,11 +379,28 @@ void game_update(Game *game, float dt)
             game->card_anim_count = game->level.card_count;
             game->card_anim_current = 0;
             game->card_anim_step = 0;
-            game->card_anim_interval = 0.075f; /* 75ms per step (faster) */
             game->card_anim_timer = 0.0f;
-            /* Run a few cycles before landing on the chosen card */
+            /* Run a few cycles before landing on the chosen card. Compute
+             * interval so the total animation duration is roughly constant
+             * regardless of number of cards. */
             int cycles = 3;
             game->card_anim_total_steps = cycles * game->card_anim_count + active_pos;
+            if (game->card_anim_total_steps <= 0)
+            {
+                game->card_anim_interval = 0.075f;
+            }
+            else
+            {
+                const float target_total = 0.75f; /* total seconds for keycard intro */
+                float interval = target_total / (float)game->card_anim_total_steps;
+                const float min_interval = 0.02f; /* don't go too fast per step */
+                const float max_interval = 0.15f; /* don't go too slow per step */
+                if (interval < min_interval)
+                    interval = min_interval;
+                if (interval > max_interval)
+                    interval = max_interval;
+                game->card_anim_interval = interval;
+            }
             game->state = STATE_SHOW_KEYCARD;
         }
         else
