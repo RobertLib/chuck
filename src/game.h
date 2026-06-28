@@ -107,4 +107,11 @@ void game_update(Game *game, float dt);
 void game_render(Game *game);
 void game_shutdown(Game *game);
 
+/* Helper: obtain current view size (logical or window). Exposed to render
+ * module so rendering and camera code can share the same behavior. */
+void game_get_view_size(Game *game, int *out_w, int *out_h);
+
+/* Read current keyboard state into `game->input`. */
+void game_read_input(Game *game);
+
 #endif /* CHUCK_GAME_H */
