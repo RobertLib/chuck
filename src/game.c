@@ -1527,6 +1527,16 @@ static void render_world(Game *game)
             continue;
         float x = it->x - 7.0f - cam_x;
         float y = it->y - 9.0f + oy;
+        /* Gentle bobbing animation: slow sinusoidal vertical offset per item */
+        {
+            float t = (float)SDL_GetTicksNS() * 1e-9f; /* seconds (float) */
+            const float TWO_PI = 6.283185307179586f;
+            const float FREQ = 0.5f;       /* Hz: cycles per second (slow) */
+            const float AMP = 3.0f;        /* pixels amplitude (subtle) */
+            float phase = (float)i * 0.7f; /* per-item phase offset */
+            float bob = sinf(t * TWO_PI * FREQ + phase) * AMP;
+            y += bob;
+        }
 
         if (it->type == ITEM_CARD)
         {
