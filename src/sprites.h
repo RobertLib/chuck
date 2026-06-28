@@ -24,6 +24,8 @@
  *   col 0  standing  – draw your sprite within the first 22×28 px
  *   col 1  crawling  – draw your sprite within the first 22×16 px
  *   Sprite is flipped horizontally for left-facing direction.
+ *   Walk frames (right-facing) start at column index 2 and are used
+ *   for the player's walking animation.
  *
  * assets/enemy.bmp    (32 × 32)
  *   Single frame – draw within the first 22×26 px.
@@ -61,6 +63,9 @@
 /* Player frame column indices (player.bmp) */
 #define SPRITE_PLAYER_STAND 0
 #define SPRITE_PLAYER_CRAWL 1
+/* Walk frames start index and count */
+#define SPRITE_PLAYER_WALK_START 2
+#define SPRITE_PLAYER_WALK_COUNT 6
 
 /* Item column indices (items.bmp) */
 #define SPRITE_ITEM_CARD 0

@@ -15,6 +15,7 @@ void player_reset(Player *player, const Level *level)
     player->grenades = 0;
     player->dying = false;
     player->death_timer = 0.0f;
+    player->anim_timer = 0.0f;
     player->crawling = false;
 }
 

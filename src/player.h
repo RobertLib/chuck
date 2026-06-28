@@ -26,7 +26,8 @@ typedef struct
     int grenades; /* current grenades carried (0 or 1) */
     bool dying;   /* true while death animation plays */
     float death_timer;
-    bool crawling; /* true while player is crawling (lower) */
+    bool crawling;    /* true while player is crawling (lower) */
+    float anim_timer; /* accumulator for animation timing */
 } Player;
 
 void player_reset(Player *player, const Level *level);

@@ -1298,6 +1298,25 @@ void game_update(Game *game, float dt)
             alpha = 1.0f;
         game->cam_x += (desired - game->cam_x) * alpha;
     }
+    /* Player walk animation timing: advance when walking on ground and not crawling. */
+    {
+        const Sprites *spr = &game->sprites;
+        bool walking = !game->player.crawling && game->player.on_ground &&
+                       (game->input.left || game->input.right || fabsf(game->player.vx) > 0.1f);
+        if (walking && spr->player)
+        {
+            const float FRAME_TIME = 1.0f / 10.0f; /* 10 FPS */
+            game->player.anim_timer += dt;
+            /* wrap to avoid float overflow */
+            float cycle = FRAME_TIME * (float)SPRITE_PLAYER_WALK_COUNT;
+            if (game->player.anim_timer >= cycle)
+                game->player.anim_timer = fmodf(game->player.anim_timer, cycle);
+        }
+        else
+        {
+            game->player.anim_timer = 0.0f;
+        }
+    }
 }
 
 /* ---------------- Rendering ---------------- */
@@ -1800,7 +1819,27 @@ static void render_world(Game *game)
             float x = game->player.x - cam_x;
             float y = game->player.y + oy;
             float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
-            int frame = game->player.crawling ? SPRITE_PLAYER_CRAWL : SPRITE_PLAYER_STAND;
+            int frame = SPRITE_PLAYER_STAND;
+            if (game->player.crawling)
+            {
+                frame = SPRITE_PLAYER_CRAWL;
+            }
+            else
+            {
+                /* Use walk frames when player is moving on ground */
+                bool is_walking = game->player.on_ground &&
+                                  (game->input.left || game->input.right || fabsf(game->player.vx) > 0.1f);
+                if (is_walking && spr->player)
+                {
+                    const float FRAME_TIME = 1.0f / 10.0f; /* 10 FPS */
+                    int idx = (int)(game->player.anim_timer / FRAME_TIME) % SPRITE_PLAYER_WALK_COUNT;
+                    frame = SPRITE_PLAYER_WALK_START + idx;
+                }
+                else
+                {
+                    frame = SPRITE_PLAYER_STAND;
+                }
+            }
             if (spr->player)
             {
                 SDL_FRect src = {(float)(frame * SPRITE_CELL), 0, PLAYER_W, ph};

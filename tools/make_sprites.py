@@ -133,12 +133,27 @@ def write_guided_bmp(path, width, height, fill=(180, 180, 180), force=False, kin
   blue = (40, 120, 200)
 
   if kind == 'player':
+    # Player sheet: columns include standing (col 0), crawling (col 1),
+    # and walk frames starting at col 2. Draw guides for all columns present
+    # and mark walk frames (up to 6) for visibility.
     cell_w = 32
     cell_h = 32
-    for col in range(2):
+    cols = max(1, width // cell_w)
+    for col in range(cols):
       _draw_rect_outline(buf, width, height, col * cell_w, 0, cell_w, cell_h, black)
+    # standing guide (first cell)
     _draw_rect_outline(buf, width, height, 0, 0, 22, 28, red)
+    # crawling guide (second cell)
     _draw_rect_outline(buf, width, height, cell_w, 0, 22, 16, red)
+    # mark up to 6 walk frames (cols 2..7) with subtle vertical stripes
+    walk_colors = [(30, 30, 200), (60, 60, 220), (90, 90, 240), (120, 120, 255), (30, 120, 200), (80, 40, 160)]
+    for i in range(max(0, min(6, cols-2))):
+      col = 2 + i
+      cx = col * cell_w + 4
+      for y in range(4, height-4):
+        color = walk_colors[i % len(walk_colors)]
+        _set_pixel(buf, width, height, cx, y, color)
+        _set_pixel(buf, width, height, cx+1, y, color)
   elif kind == 'enemy':
     _draw_rect_outline(buf, width, height, 0, 0, 32, 32, black)
     _draw_rect_outline(buf, width, height, 0, 0, 22, 26, red)
