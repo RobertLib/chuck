@@ -78,6 +78,11 @@ typedef struct
 
 typedef struct
 {
+    float x, y; /* spawn position (top-left of spike tile) */
+} SpikeSpawn;
+
+typedef struct
+{
     int width;
     int height;
     TileType tiles[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
@@ -97,6 +102,8 @@ typedef struct
     int enemy_count;
     MineSpawn mine_spawns[MAX_MINES];
     int mine_count;
+    SpikeSpawn spike_spawns[MAX_SPIKES];
+    int spike_count;
 
     Door doors[MAX_DOORS];
     int door_count;

@@ -992,6 +992,22 @@ void game_update(Game *game, float dt)
         }
     }
 
+    /* Spikes: instant hazard — if player overlaps a spike tile they take a hit. */
+    if (game->invuln_timer <= 0.0f)
+    {
+        for (int i = 0; i < game->level.spike_count; ++i)
+        {
+            const SpikeSpawn *s = &game->level.spike_spawns[i];
+            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
+                              s->x, s->y, (float)SPIKE_W, (float)SPIKE_H))
+            {
+                hit_player(game);
+                break;
+            }
+        }
+    }
+
     /* Update bullets. */
     for (int i = 0; i < MAX_BULLETS; ++i)
     {
@@ -1627,6 +1643,23 @@ static void render_world(Game *game)
     }
     /* restore previous blend mode */
     SDL_SetRenderDrawBlendMode(r, _prev_blend);
+
+    /* Spikes (hazard tiles) */
+    for (int i = 0; i < lvl->spike_count; ++i)
+    {
+        const SpikeSpawn *s = &lvl->spike_spawns[i];
+        float px = s->x - cam_x;
+        float py = s->y + oy;
+        /* Procedural spikes: draw several narrow dark spikes with a light
+         * inner highlight to make them readable without a tileset. */
+        for (int k = 0; k < TILE_SIZE; k += 8)
+        {
+            SDL_SetRenderDrawColor(r, 40, 40, 40, 255);
+            fill_rect(r, px + (float)k, py + (float)TILE_SIZE - 12.0f, 6.0f, 12.0f);
+            SDL_SetRenderDrawColor(r, 180, 180, 180, 255);
+            fill_rect(r, px + (float)k + 1.0f, py + (float)TILE_SIZE - 10.0f, 4.0f, 10.0f);
+        }
+    }
 
     /* Mines */
     for (int i = 0; i < game->mine_count; ++i)

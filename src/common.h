@@ -104,6 +104,11 @@
 #define ELEVATOR_SPEED 72.0f /* pixels per second */
 #define ELEVATOR_PLAT_H 6    /* pixel height of the moving platform */
 
+/* Spikes (hazard tiles) */
+#define MAX_SPIKES 128
+#define SPIKE_W TILE_SIZE
+#define SPIKE_H TILE_SIZE
+
 #endif /* CHUCK_COMMON_H */
 
 /* Falling platforms */

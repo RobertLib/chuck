@@ -41,6 +41,15 @@ static void place_mine(Level *level, int col, int row)
     m->y = (row + 1) * TILE_SIZE - MINE_H;
 }
 
+static void place_spike(Level *level, int col, int row)
+{
+    if (level->spike_count >= MAX_SPIKES)
+        return;
+    SpikeSpawn *s = &level->spike_spawns[level->spike_count++];
+    s->x = col * TILE_SIZE;
+    s->y = row * TILE_SIZE;
+}
+
 bool level_load(Level *level, const char *path)
 {
     size_t size = 0;
@@ -119,6 +128,10 @@ bool level_load(Level *level, const char *path)
         case 'X':
             level->tiles[row][col] = TILE_EMPTY;
             place_mine(level, col, row);
+            break;
+        case '^':
+            level->tiles[row][col] = TILE_EMPTY;
+            place_spike(level, col, row);
             break;
         case 'S':
             level->tiles[row][col] = TILE_EMPTY;

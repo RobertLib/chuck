@@ -11,6 +11,7 @@ This file describes the meaning of characters used in the level text files.
 - `K` : Medkit item (`ITEM_MEDKIT`).
 - `M` : Enemy spawn (enemy is placed here).
 - `X` : Mine (places an explosive mine).
+- `^` : Spike / hazard (instant damage when stepped on).
 - `S` : Player start position.
 - `E` : Exit / level end.
 - `D` : Door tile (`TILE_DOOR`).
