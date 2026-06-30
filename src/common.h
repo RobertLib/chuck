@@ -32,8 +32,8 @@
 #define GRENADE_THROW_SPEED 260.0f /* initial horizontal speed when thrown */
 
 /* Player tuning (pixels per second) */
-#define PLAYER_W 22
-#define PLAYER_H 28
+#define PLAYER_W 26
+#define PLAYER_H 32
 #define PLAYER_WALK_SPEED 135.0f
 #define PLAYER_CLIMB_SPEED 100.0f
 #define PLAYER_JUMP_SPEED 365.0f
@@ -42,12 +42,12 @@
 #define MAX_LIVES 9
 
 /* Crawling (duck) tuning */
-#define PLAYER_CRAWL_H 16
+#define PLAYER_CRAWL_H 18
 #define PLAYER_CRAWL_SPEED 60.0f
 
 /* Enemy tuning */
-#define ENEMY_W 22
-#define ENEMY_H 26
+#define ENEMY_W 26
+#define ENEMY_H 32
 #define ENEMY_WALK_SPEED 62.0f
 #define ENEMY_CLIMB_SPEED 60.0f
 #define ENEMY_CLIMB_COOLDOWN 1.8f

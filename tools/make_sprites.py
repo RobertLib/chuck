@@ -24,14 +24,15 @@ assets/tileset.bmp  (192 × 38 px)
     col 1  FALLING platform
     col 2  MOVING (horizontal) platform
 
-assets/player.bmp   (64 × 32 px)
-  Two 32×32 cells:
-    col 0  standing  – draw your sprite within the first 22×28 px
-    col 1  crawling  – draw your sprite within the first 22×16 px
+assets/player.bmp   (256 × 32 px)
+  Eight 32×32 cells:
+    col 0  standing  – draw your sprite within the first 26×32 px
+    col 1  crawling  – draw your sprite within the first 26×18 px
+    col 2..7  walking animation frames
   The game flips the sprite horizontally for left-facing direction.
 
 assets/enemy.bmp    (32 × 32 px)
-  One 32×32 cell – draw within the first 22×26 px.
+  One 32×32 cell – draw within the first 26×32 px.
   The game flips the sprite horizontally when the enemy faces left.
 
 assets/items.bmp   (160 × 32 px)
@@ -142,9 +143,9 @@ def write_guided_bmp(path, width, height, fill=(180, 180, 180), force=False, kin
     for col in range(cols):
       _draw_rect_outline(buf, width, height, col * cell_w, 0, cell_w, cell_h, black)
     # standing guide (first cell)
-    _draw_rect_outline(buf, width, height, 0, 0, 22, 28, red)
+    _draw_rect_outline(buf, width, height, 0, 0, 26, 32, red)
     # crawling guide (second cell)
-    _draw_rect_outline(buf, width, height, cell_w, 0, 22, 16, red)
+    _draw_rect_outline(buf, width, height, cell_w, 0, 26, 18, red)
     # mark up to 6 walk frames (cols 2..7) with subtle vertical stripes
     walk_colors = [(30, 30, 200), (60, 60, 220), (90, 90, 240), (120, 120, 255), (30, 120, 200), (80, 40, 160)]
     for i in range(max(0, min(6, cols-2))):
@@ -156,7 +157,7 @@ def write_guided_bmp(path, width, height, fill=(180, 180, 180), force=False, kin
         _set_pixel(buf, width, height, cx+1, y, color)
   elif kind == 'enemy':
     _draw_rect_outline(buf, width, height, 0, 0, 32, 32, black)
-    _draw_rect_outline(buf, width, height, 0, 0, 22, 26, red)
+    _draw_rect_outline(buf, width, height, 0, 0, 26, 32, red)
   elif kind == 'items':
     sizes = [(14, 18), (15, 12), (13, 14), (16, 10), (10, 10), (14, 14)]
     cell_w = 32
@@ -187,7 +188,7 @@ def main():
     force = "--force" in sys.argv
     print("Generating placeholder BMP sprite sheets…")
     write_guided_bmp("assets/tileset.bmp", 192, 38,  fill=(180, 180, 180), force=force, kind='tileset')
-    write_guided_bmp("assets/player.bmp",   64, 32,  fill=(180, 180, 180), force=force, kind='player')
+    write_guided_bmp("assets/player.bmp",  256, 32,  fill=(180, 180, 180), force=force, kind='player')
     write_guided_bmp("assets/enemy.bmp",    32, 32,  fill=(180, 180, 180), force=force, kind='enemy')
     write_guided_bmp("assets/items.bmp",   192, 32,  fill=(180, 180, 180), force=force, kind='items')
     print("Done.")

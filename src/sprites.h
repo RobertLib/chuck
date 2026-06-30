@@ -20,15 +20,15 @@
  *     col 1  FALLING platform
  *     col 2  MOVING (horizontal) platform
  *
- * assets/player.bmp   (64 × 32)
- *   col 0  standing  – draw your sprite within the first 22×28 px
- *   col 1  crawling  – draw your sprite within the first 22×16 px
+ * assets/player.bmp   (256 × 32)
+ *   col 0  standing  – draw your sprite within the first 26×32 px
+ *   col 1  crawling  – draw your sprite within the first 26×18 px
  *   Sprite is flipped horizontally for left-facing direction.
- *   Walk frames (right-facing) start at column index 2 and are used
+ *   Walk frames (right-facing) are cols 2..7 and are used
  *   for the player's walking animation.
  *
  * assets/enemy.bmp    (32 × 32)
- *   Single frame – draw within the first 22×26 px.
+ *   Single frame – draw within the first 26×32 px.
  *   Sprite is flipped horizontally when the enemy faces left.
  *
  * assets/items.bmp   (160 × 32)
