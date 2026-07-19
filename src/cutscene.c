@@ -18,6 +18,10 @@ static const SDL_Color COL_CYAN = {74, 222, 212, 255};
 static const float TRANSITION_DOOR_TOP = 358.0f;
 static const float TRANSITION_DOOR_INNER_TOP = 368.0f;
 static const float TRANSITION_DOOR_DEPTH_TOP = 376.0f;
+static const float OUTRO_REUNION_AGENT_OFFSET = 1.0f;
+static const float OUTRO_REUNION_HOSTAGE_OFFSET = -31.0f;
+static const float OUTRO_REUNION_AGENT_SCALE = 1.48f;
+static const float OUTRO_REUNION_HOSTAGE_SCALE = 1.18f;
 
 static void set_color(SDL_Renderer *r, SDL_Color color)
 {
@@ -1709,9 +1713,10 @@ static void draw_reunion_pair(SDL_Renderer *r, float center_x,
      * Keep the ending deliberately simple: the two original sprites stand
      * close and face one another, with no overlapping limbs to muddy them.
      */
-    draw_agent(r, center_x - 38.0f, ground_y, 1.35f, 0.0f, 1);
-    draw_hostage(r, center_x + 1.0f, ground_y,
-                 1.18f, 0.0f, -1, false);
+    draw_hostage(r, center_x + OUTRO_REUNION_HOSTAGE_OFFSET, ground_y,
+                 OUTRO_REUNION_HOSTAGE_SCALE, 0.0f, 1, false);
+    draw_agent(r, center_x + OUTRO_REUNION_AGENT_OFFSET, ground_y,
+               OUTRO_REUNION_AGENT_SCALE, 0.0f, -1);
     draw_pixel_heart(r, center_x, ground_y - 94.0f, time);
 }
 
@@ -1780,6 +1785,11 @@ void outro_cutscene_render(SDL_Renderer *r,
     const float hostage_x = 344.0f;
     const float captor_two_x = 390.0f;
     const float agent_stop_x = 538.0f;
+    const float reunion_center_x = (float)win_w * 0.5f;
+    const float reunion_agent_x =
+        reunion_center_x + OUTRO_REUNION_AGENT_OFFSET;
+    const float reunion_hostage_x =
+        reunion_center_x + OUTRO_REUNION_HOSTAGE_OFFSET;
 
     render_outro_sky(r, time, win_w, win_h);
     render_rooftop(r, time, win_w, win_h);
@@ -1886,9 +1896,10 @@ void outro_cutscene_render(SDL_Renderer *r,
         }
         else if (time < 18.35f)
         {
-            float reunion = smoothstep01((time - 16.45f) / 1.75f);
-            draw_hostage(r, lerpf(woman_x, 452.0f, reunion),
-                         ground, 1.18f, time * 1.4f, 1, false);
+            float reunion = smoothstep01((time - 16.45f) / 1.90f);
+            draw_hostage(r, lerpf(woman_x, reunion_hostage_x, reunion),
+                         ground, OUTRO_REUNION_HOSTAGE_SCALE,
+                         time * 1.4f, 1, false);
         }
     }
 
@@ -1921,13 +1932,14 @@ void outro_cutscene_render(SDL_Renderer *r,
     }
     else if (time >= 16.40f && time < 18.35f)
     {
-        float reunion = smoothstep01((time - 16.40f) / 1.75f);
-        draw_agent(r, lerpf(agent_stop_x, 430.0f, reunion),
-                   ground, 1.48f, time * 1.35f, -1);
+        float reunion = smoothstep01((time - 16.40f) / 1.95f);
+        draw_agent(r, lerpf(agent_stop_x, reunion_agent_x, reunion),
+                   ground, OUTRO_REUNION_AGENT_SCALE,
+                   time * 1.35f, -1);
     }
     else if (time >= 18.35f && time < OUTRO_FINAL_REVEAL_TIME)
     {
-        draw_reunion_pair(r, 451.0f, ground, time);
+        draw_reunion_pair(r, reunion_center_x, ground, time);
     }
 
     /* Three deliberate shots tell the turn-and-rescue beat without gameplay. */
@@ -1964,7 +1976,7 @@ void outro_cutscene_render(SDL_Renderer *r,
         fill_rect(r, 0.0f, 99.0f, (float)win_w, 2.0f);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-        draw_reunion_pair(r, 400.0f, 438.0f, time);
+        draw_reunion_pair(r, reunion_center_x, ground, time);
         draw_cutscene_text_centered(
             r, (float)win_w * 0.5f, 69.0f, 2.2f,
             (SDL_Color){(Uint8)(91.0f * reveal),
