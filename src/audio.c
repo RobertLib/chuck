@@ -819,17 +819,76 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_noise(s, 0.00f, 0.44f, 0.09f, 0.35f, 0.012f, 0.09f, 0x5aa5u);
         break;
     case SFX_DOG_BARK:
-        if (!begin_sound(audio, effect, 0.32f, 0.38f, 340))
+        if (!begin_sound(audio, effect, 0.39f, 0.44f, 420))
             return false;
-        add_tone(s, 0.00f, 0.14f, 168.0f, 78.0f, 0.66f, WAVE_SAW, 0.005f, 0.10f);
-        add_noise(s, 0.00f, 0.14f, 0.48f, 0.10f, 0.005f, 0.11f, 0xb0a1u);
-        add_tone(s, 0.18f, 0.14f, 138.0f, 66.0f, 0.56f, WAVE_SAW, 0.005f, 0.11f);
+        /* Two chesty "woof" pulses: a falling fundamental, vocal formants
+         * and breath noise make this read as a dog instead of an alarm tone. */
+        add_tone(s, 0.00f, 0.18f, 205.0f, 82.0f, 0.70f,
+                 WAVE_SAW, 0.004f, 0.13f);
+        add_tone(s, 0.01f, 0.15f, 490.0f, 230.0f, 0.25f,
+                 WAVE_TRIANGLE, 0.004f, 0.12f);
+        add_noise(s, 0.00f, 0.17f, 0.40f, 0.16f,
+                  0.004f, 0.14f, 0xb0a1u);
+        add_tone(s, 0.22f, 0.17f, 176.0f, 72.0f, 0.63f,
+                 WAVE_SAW, 0.004f, 0.13f);
+        add_tone(s, 0.23f, 0.14f, 405.0f, 205.0f, 0.21f,
+                 WAVE_TRIANGLE, 0.004f, 0.11f);
+        add_noise(s, 0.22f, 0.16f, 0.34f, 0.14f,
+                  0.004f, 0.13f, 0x4d72u);
+        break;
+    case SFX_DOG_BARK_ALT:
+        if (!begin_sound(audio, effect, 0.25f, 0.43f, 420))
+            return false;
+        /* A shorter, sharper bark keeps repeated chase calls from sounding
+         * like the exact same cached sample every time. */
+        add_noise(s, 0.00f, 0.045f, 0.52f, 0.62f,
+                  0.003f, 0.036f, 0xc731u);
+        add_tone(s, 0.00f, 0.22f, 248.0f, 96.0f, 0.69f,
+                 WAVE_SAW, 0.004f, 0.17f);
+        add_tone(s, 0.012f, 0.17f, 620.0f, 285.0f, 0.23f,
+                 WAVE_TRIANGLE, 0.004f, 0.14f);
+        add_noise(s, 0.02f, 0.20f, 0.32f, 0.13f,
+                  0.004f, 0.17f, 0x2e19u);
+        break;
+    case SFX_DOG_GROWL:
+        if (!begin_sound(audio, effect, 0.52f, 0.27f, 900))
+            return false;
+        /* Closely spaced throat pulses form a low, rough growl. */
+        for (int pulse = 0; pulse < 6; ++pulse)
+        {
+            float at = pulse * 0.072f;
+            float pitch = 105.0f - pulse * 3.5f;
+            add_tone(s, at, 0.13f, pitch, pitch * 0.74f, 0.34f,
+                     WAVE_SAW, 0.008f, 0.085f);
+            add_noise(s, at, 0.12f, 0.19f, 0.08f,
+                      0.008f, 0.08f, 0x6610u + (Uint32)(pulse * 97));
+        }
         break;
     case SFX_DOG_BITE:
-        if (!begin_sound(audio, effect, 0.17f, 0.36f, 120))
+        if (!begin_sound(audio, effect, 0.22f, 0.39f, 140))
             return false;
-        add_noise(s, 0.00f, 0.17f, 0.62f, 0.16f, 0.004f, 0.15f, 0x91b2u);
-        add_tone(s, 0.00f, 0.13f, 220.0f, 65.0f, 0.54f, WAVE_TRIANGLE, 0.004f, 0.105f);
+        add_tone(s, 0.00f, 0.17f, 170.0f, 61.0f, 0.57f,
+                 WAVE_SAW, 0.004f, 0.13f);
+        add_noise(s, 0.00f, 0.17f, 0.48f, 0.12f,
+                  0.004f, 0.14f, 0x91b2u);
+        /* Dry jaw snap at the end of the snarl. */
+        add_noise(s, 0.135f, 0.045f, 0.76f, 0.72f,
+                  0.002f, 0.038f, 0x8fe3u);
+        add_tone(s, 0.135f, 0.075f, 310.0f, 88.0f, 0.31f,
+                 WAVE_TRIANGLE, 0.002f, 0.062f);
+        break;
+    case SFX_DOG_YELP:
+        if (!begin_sound(audio, effect, 0.43f, 0.43f, 320))
+            return false;
+        /* Quick upward cry followed by a falling whimper. */
+        add_tone(s, 0.00f, 0.17f, 390.0f, 980.0f, 0.57f,
+                 WAVE_TRIANGLE, 0.005f, 0.055f);
+        add_tone(s, 0.04f, 0.13f, 690.0f, 1180.0f, 0.18f,
+                 WAVE_SINE, 0.005f, 0.05f);
+        add_noise(s, 0.00f, 0.16f, 0.16f, 0.24f,
+                  0.006f, 0.08f, 0x71a4u);
+        add_tone(s, 0.15f, 0.28f, 850.0f, 310.0f, 0.42f,
+                 WAVE_TRIANGLE, 0.004f, 0.22f);
         break;
     case SFX_GRENADE_THROW:
         if (!begin_sound(audio, effect, 0.20f, 0.34f, 80))

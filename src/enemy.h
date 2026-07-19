@@ -53,6 +53,7 @@ typedef struct
     float guard_x;
     float guard_y;
     float roam_target_x;
+    float vocal_timer; /* seconds until another chase bark or growl */
     float anim_time;    /* local procedural animation clock */
     float attack_timer; /* bite/lunge follow-through */
 } Dog;

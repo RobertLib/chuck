@@ -131,7 +131,7 @@ static void kill_dog_with_crate(Game *game, Dog *dog)
     dog->hp = 0;
     dog->dead = true;
     particle_system_emit(&game->particles, cx, cy, 14, dog->dir);
-    play_world_sound(game, SFX_ENEMY_DOWN, cx, cy);
+    play_world_sound(game, SFX_DOG_YELP, cx, cy);
     game->score += 75;
 }
 
@@ -612,6 +612,8 @@ static void dog_update_ai(Game *game, Dog *dog, float dt)
 {
     if (dog->dead)
         return;
+
+    dog->vocal_timer -= dt;
 
     if (dog->attack_timer > 0.0f)
     {
@@ -1488,8 +1490,12 @@ void game_update(Game *game, float dt)
                                          dog->y + DOG_H * 0.5f,
                                          14,
                                          dog->dir);
+                    dog->hp = 0;
                     dog->dead = true;
                     game->score += 75;
+                    play_world_sound(game, SFX_DOG_YELP,
+                                     dog->x + DOG_W * 0.5f,
+                                     dog->y + DOG_H * 0.5f);
                 }
             }
             for (int j = 0; j < game->level.crate_count; ++j)
@@ -1691,9 +1697,31 @@ void game_update(Game *game, float dt)
             if (previous_state != DOG_CHASE &&
                 game->dogs[i].state == DOG_CHASE)
             {
-                play_world_sound(game, SFX_DOG_BARK,
+                SoundEffect bark = SDL_rand(2) == 0
+                                       ? SFX_DOG_BARK
+                                       : SFX_DOG_BARK_ALT;
+                play_world_sound(game, bark,
                                  game->dogs[i].x + DOG_W * 0.5f,
                                  game->dogs[i].y + DOG_H * 0.5f);
+                game->dogs[i].vocal_timer =
+                    1.0f + SDL_rand(100) * 0.01f;
+            }
+            else if (game->dogs[i].state == DOG_CHASE &&
+                     game->dogs[i].vocal_timer <= 0.0f)
+            {
+                float dog_cx = game->dogs[i].x + DOG_W * 0.5f;
+                float dog_cy = game->dogs[i].y + DOG_H * 0.5f;
+                float dx = (game->player.x + PLAYER_W * 0.5f) - dog_cx;
+                SoundEffect voice =
+                    fabsf(dx) < 3.0f * TILE_SIZE && SDL_rand(3) == 0
+                        ? SFX_DOG_GROWL
+                        : (SDL_rand(2) == 0
+                               ? SFX_DOG_BARK
+                               : SFX_DOG_BARK_ALT);
+                play_world_sound(game, voice, dog_cx, dog_cy);
+                /* Dogs stay audible in a chase without barking every second. */
+                game->dogs[i].vocal_timer =
+                    1.7f + SDL_rand(180) * 0.01f;
             }
         }
     }
@@ -1985,12 +2013,12 @@ void game_update(Game *game, float dt)
                                          dog->dir);
                     dog->dead = true;
                     game->score += 75;
-                    play_world_sound(game, SFX_ENEMY_DOWN,
+                    play_world_sound(game, SFX_DOG_YELP,
                                      dog->x + DOG_W * 0.5f,
                                      dog->y + DOG_H * 0.5f);
                 }
                 else
-                    play_world_sound(game, SFX_ENEMY_HIT,
+                    play_world_sound(game, SFX_DOG_YELP,
                                      dog->x + DOG_W * 0.5f,
                                      dog->y + DOG_H * 0.5f);
                 break;
@@ -2276,7 +2304,9 @@ void game_update(Game *game, float dt)
                 dog->attack_timer = 0.18f;
                 dog->state = DOG_CHASE;
                 dog->lost_timer = DOG_LOST_TIME;
-                audio_play(&game->audio, SFX_DOG_BITE);
+                play_world_sound(game, SFX_DOG_BITE,
+                                 dog->x + DOG_W * 0.5f,
+                                 dog->y + DOG_H * 0.5f);
                 hit_player(game);
                 break;
             }

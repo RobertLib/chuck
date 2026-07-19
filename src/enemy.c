@@ -47,6 +47,7 @@ void dog_init(Dog *dog, float x, float y, int owner)
     dog->guard_x = x;
     dog->guard_y = y;
     dog->roam_target_x = x;
+    dog->vocal_timer = 0.8f + SDL_rand(150) * 0.01f;
     dog->anim_time = (float)SDL_rand(628) * 0.01f;
     dog->attack_timer = 0.0f;
 }
