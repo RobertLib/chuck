@@ -111,6 +111,75 @@ static void destroy_crate(Game *game, Crate *crate)
     game->score += 20;
 }
 
+static void kill_enemy_with_crate(Game *game, Enemy *enemy)
+{
+    float cx = enemy->x + ENEMY_W * 0.5f;
+    float cy = enemy->y + ENEMY_H * 0.5f;
+
+    enemy->hp = 0;
+    enemy->dead = true;
+    particle_system_emit(&game->particles, cx, cy, 24, enemy->dir);
+    play_world_sound(game, SFX_ENEMY_DOWN, cx, cy);
+    game->score += 150;
+}
+
+static void kill_dog_with_crate(Game *game, Dog *dog)
+{
+    float cx = dog->x + DOG_W * 0.5f;
+    float cy = dog->y + DOG_H * 0.5f;
+
+    dog->hp = 0;
+    dog->dead = true;
+    particle_system_emit(&game->particles, cx, cy, 14, dog->dir);
+    play_world_sound(game, SFX_ENEMY_DOWN, cx, cy);
+    game->score += 75;
+}
+
+/*
+ * Kill enemies crossed by the crate's downward-facing edge. Checking the
+ * whole swept distance prevents a fast crate from skipping an enemy between
+ * frames, while the previous-bottom test keeps sideways pushes harmless.
+ */
+static void resolve_falling_crate_hits(Game *game, const Crate *crate,
+                                       float previous_y)
+{
+    float previous_bottom = previous_y + CRATE_H;
+    float current_bottom = crate->y + CRATE_H;
+
+    if (current_bottom <= previous_bottom)
+        return;
+
+    for (int i = 0; i < game->enemy_count; ++i)
+    {
+        Enemy *enemy = &game->enemies[i];
+        if (enemy->dead)
+            continue;
+        if (crate->x >= enemy->x + ENEMY_W ||
+            crate->x + CRATE_W <= enemy->x)
+            continue;
+        if (previous_bottom <= enemy->y &&
+            current_bottom >= enemy->y)
+        {
+            kill_enemy_with_crate(game, enemy);
+        }
+    }
+
+    for (int i = 0; i < game->dog_count; ++i)
+    {
+        Dog *dog = &game->dogs[i];
+        if (dog->dead)
+            continue;
+        if (crate->x >= dog->x + DOG_W ||
+            crate->x + CRATE_W <= dog->x)
+            continue;
+        if (previous_bottom <= dog->y &&
+            current_bottom >= dog->y)
+        {
+            kill_dog_with_crate(game, dog);
+        }
+    }
+}
+
 static void update_crates(Game *game, float dt)
 {
     for (int i = 0; i < game->level.crate_count; ++i)
@@ -129,8 +198,10 @@ static void update_crates(Game *game, float dt)
             crate->vx = 0.0f;
 
         crate->on_ground = false;
+        float previous_y = crate->y;
         float desired_y = crate->vy * dt;
         float moved_y = move_crate_y(game, i, desired_y);
+        resolve_falling_crate_hits(game, crate, previous_y);
         if (fabsf(moved_y - desired_y) > 0.01f)
         {
             if (desired_y > 0.0f)
