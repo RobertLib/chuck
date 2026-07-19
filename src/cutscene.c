@@ -7,12 +7,14 @@
 
 #include <math.h>
 
-static const SDL_Color COL_INK = {6, 9, 14, 255};
-static const SDL_Color COL_NIGHT = {9, 15, 25, 255};
-static const SDL_Color COL_CREAM = {226, 222, 199, 255};
-static const SDL_Color COL_RUST = {183, 49, 43, 255};
-static const SDL_Color COL_AMBER = {229, 158, 50, 255};
-static const SDL_Color COL_CYAN = {55, 188, 189, 255};
+#include "fx.h"
+
+static const SDL_Color COL_INK = {5, 7, 12, 255};
+static const SDL_Color COL_NIGHT = {10, 14, 23, 255};
+static const SDL_Color COL_CREAM = {236, 238, 224, 255};
+static const SDL_Color COL_RUST = {186, 54, 46, 255};
+static const SDL_Color COL_AMBER = {248, 188, 74, 255};
+static const SDL_Color COL_CYAN = {74, 222, 212, 255};
 static const float TRANSITION_DOOR_TOP = 358.0f;
 static const float TRANSITION_DOOR_INNER_TOP = 368.0f;
 static const float TRANSITION_DOOR_DEPTH_TOP = 376.0f;
@@ -178,14 +180,11 @@ static void draw_window(SDL_Renderer *r, float x, float y,
 
 static void render_city(SDL_Renderer *r, float time, int win_w, int win_h)
 {
-    for (int y = 0; y < win_h; y += 16)
-    {
-        float p = (float)y / (float)win_h;
-        set_rgba(r, (Uint8)(COL_NIGHT.r + p * 5.0f),
-                 (Uint8)(COL_NIGHT.g + p * 7.0f),
-                 (Uint8)(COL_NIGHT.b + p * 9.0f), 255);
-        fill_rect(r, 0.0f, (float)y, (float)win_w, 16.0f);
-    }
+    /* Smooth night gradient with a storm-lit teal horizon. */
+    color_rect(r, COL_NIGHT, 0.0f, 0.0f, (float)win_w, (float)win_h);
+    fx_vgrad(r, 0.0f, 0.0f, (float)win_w, (float)win_h,
+             (SDL_Color){6, 9, 16, 255}, 255,
+             (SDL_Color){18, 28, 40, 255}, 255);
 
     /* Sparse stars remain visible above the high-rise through the rain. */
     for (unsigned i = 0; i < 58u; ++i)
@@ -222,6 +221,11 @@ static void render_city(SDL_Renderer *r, float time, int win_w, int win_h)
             }
         }
     }
+
+    /* Wet-night haze settles between the skyline and the street. */
+    fx_vgrad(r, 0.0f, 352.0f, (float)win_w, 82.0f,
+             (SDL_Color){30, 48, 60, 255}, 0,
+             (SDL_Color){30, 48, 60, 255}, 60);
 }
 
 static void render_tower(SDL_Renderer *r, float time, int win_w)
@@ -269,6 +273,9 @@ static void render_tower(SDL_Renderer *r, float time, int win_w)
     color_rect(r, (SDL_Color){118, 128, 116, 255},
                x + 205.0f, ground - 68.0f, 112.0f, 4.0f);
     color_rect(r, COL_AMBER, x + 220.0f, ground - 76.0f, 82.0f, 3.0f);
+    fx_glow(r, x + 261.0f, ground - 74.0f, 46.0f, COL_AMBER, 42);
+    fx_light_cone(r, x + 261.0f, ground - 73.0f, 42.0f, 58.0f, 74.0f,
+                  (SDL_Color){248, 205, 130, 255}, 26);
 
     draw_text(r, x + 226.0f, ground - 91.0f, 0.75f,
               (SDL_Color){159, 158, 140, 255}, "KESSLER TOWER");
@@ -771,6 +778,10 @@ void opening_cutscene_render(SDL_Renderer *r,
     render_rain(r, time, win_w, win_h);
     render_cinematic_ui(r, time, win_w, win_h, suv_x);
 
+    /* Film finish: vignette and animated grain under the letterbox bars. */
+    fx_vignette(r, win_w, win_h, 74);
+    fx_grain(r, win_w, win_h, time, 26);
+
     /* Narrow letterbox bars frame the scene without hiding the gameplay art. */
     color_rect(r, (SDL_Color){3, 5, 8, 255},
                0.0f, 0.0f, (float)win_w, 19.0f);
@@ -909,14 +920,11 @@ static void render_transition_corridor(SDL_Renderer *r, float time,
                                        int win_w, int win_h,
                                        float door_x, float ground_y)
 {
-    for (int y = 151; y < win_h; y += 14)
-    {
-        float p = (float)(y - 151) / (float)(win_h - 151);
-        set_rgba(r, (Uint8)(14.0f + p * 9.0f),
-                 (Uint8)(22.0f + p * 11.0f),
-                 (Uint8)(28.0f + p * 10.0f), 255);
-        fill_rect(r, 0.0f, (float)y, (float)win_w, 14.0f);
-    }
+    color_rect(r, (SDL_Color){14, 22, 28, 255},
+               0.0f, 151.0f, (float)win_w, (float)win_h - 151.0f);
+    fx_vgrad(r, 0.0f, 151.0f, (float)win_w, (float)win_h - 151.0f,
+             (SDL_Color){13, 20, 30, 255}, 255,
+             (SDL_Color){24, 34, 44, 255}, 255);
 
     /* Repeating concrete bays and pipes echo the tower interior in the intro. */
     for (int i = 0; i < 8; ++i)
@@ -948,10 +956,26 @@ static void render_transition_corridor(SDL_Renderer *r, float time,
     {
         float pulse = 0.55f + 0.45f *
                                   sinf(time * 2.1f + (float)i * 0.7f);
-        color_rect(r, (SDL_Color){(Uint8)(83.0f * pulse),
-                                  (Uint8)(79.0f * pulse),
-                                  (Uint8)(50.0f * pulse), 255},
+        color_rect(r, (SDL_Color){(Uint8)(120.0f * pulse),
+                                  (Uint8)(104.0f * pulse),
+                                  (Uint8)(58.0f * pulse), 255},
                    32.0f + i * 118.0f, ground_y + 21.0f, 57.0f, 2.0f);
+        fx_glow(r, 60.0f + i * 118.0f, ground_y + 22.0f, 30.0f,
+                (SDL_Color){222, 186, 104, 255}, (Uint8)(30.0f * pulse));
+    }
+
+    /* Overhead strip lights wash the corridor between the bays. */
+    for (int i = 0; i < 4; ++i)
+    {
+        float lx = 96.0f + (float)i * 214.0f;
+        float flicker = i == 2 && fmodf(time * 1.8f, 3.8f) < 0.07f ? 0.3f : 1.0f;
+        SDL_Color lamp = fx_dim((SDL_Color){248, 205, 130, 255}, flicker);
+        color_rect(r, (SDL_Color){16, 21, 31, 255}, lx - 14.0f, 186.0f, 28.0f, 4.0f);
+        color_rect(r, lamp, lx - 11.0f, 188.0f, 22.0f, 2.0f);
+        fx_glow(r, lx, 190.0f, 18.0f, lamp, (Uint8)(60.0f * flicker));
+        fx_light_cone(r, lx, 189.0f, 13.0f, 52.0f, 120.0f,
+                      (SDL_Color){248, 205, 130, 255},
+                      (Uint8)(22.0f * flicker));
     }
 
     /* The dark aperture is drawn before the actors so they can walk into it. */
@@ -1155,6 +1179,9 @@ void level_transition_render(SDL_Renderer *r,
     render_transition_action_ui(r, time, hostage_x, ground_y,
                                 win_w, win_h);
 
+    fx_vignette(r, win_w, win_h, 70);
+    fx_grain(r, win_w, win_h, time, 24);
+
     color_rect(r, (SDL_Color){3, 5, 8, 255},
                0.0f, 0.0f, (float)win_w, 18.0f);
     color_rect(r, (SDL_Color){3, 5, 8, 255},
@@ -1232,14 +1259,25 @@ static void draw_cutscene_text_centered(SDL_Renderer *r, float center_x,
 static void render_outro_sky(SDL_Renderer *r, float time,
                              int win_w, int win_h)
 {
-    for (int y = 0; y < win_h; y += 14)
+    color_rect(r, COL_NIGHT, 0.0f, 0.0f, (float)win_w, (float)win_h);
+    fx_vgrad(r, 0.0f, 0.0f, (float)win_w, (float)win_h,
+             (SDL_Color){7, 11, 20, 255}, 255,
+             (SDL_Color){22, 32, 46, 255}, 255);
+
+    /* The same quiet moon from the title screen, higher over the roof. */
+    float moon_x = (float)win_w * 0.205f;
+    float moon_y = 86.0f;
+    fx_glow(r, moon_x, moon_y, 52.0f, (SDL_Color){196, 214, 224, 255}, 30);
+    for (int row = -11; row <= 11; ++row)
     {
-        float p = (float)y / (float)win_h;
-        set_rgba(r, (Uint8)(8.0f + p * 8.0f),
-                 (Uint8)(14.0f + p * 10.0f),
-                 (Uint8)(25.0f + p * 14.0f), 255);
-        fill_rect(r, 0.0f, (float)y, (float)win_w, 14.0f);
+        float half = sqrtf(fmaxf(0.0f, 121.0f - (float)(row * row)));
+        color_rect(r, (SDL_Color){204, 217, 224, 255},
+                   moon_x - half, moon_y + (float)row, half * 2.0f, 1.0f);
     }
+    color_rect(r, (SDL_Color){174, 190, 202, 255},
+               moon_x - 4.0f, moon_y - 3.0f, 4.0f, 3.0f);
+    color_rect(r, (SDL_Color){184, 200, 210, 255},
+               moon_x + 2.0f, moon_y + 4.0f, 3.0f, 2.0f);
 
     for (unsigned i = 0; i < 92u; ++i)
     {
@@ -1282,6 +1320,11 @@ static void render_outro_sky(SDL_Renderer *r, float time,
             }
         }
     }
+
+    /* City haze between the skyline and the rooftop parapet. */
+    fx_vgrad(r, 0.0f, 336.0f, (float)win_w, 72.0f,
+             (SDL_Color){28, 44, 58, 255}, 0,
+             (SDL_Color){28, 44, 58, 255}, 52);
 }
 
 static void render_rooftop(SDL_Renderer *r, float time, int win_w, int win_h)
@@ -1451,6 +1494,20 @@ static void draw_helicopter(SDL_Renderer *r, float x, float y,
     }
 }
 
+/* Angled searchlight cone from the hovering helicopter. */
+static void draw_search_beam(SDL_Renderer *r, float apex_x, float apex_y,
+                             float target_x, float target_y, float half_w,
+                             SDL_Color c, Uint8 alpha)
+{
+    SDL_Vertex v[3] = {
+        {{apex_x, apex_y}, fx_fcolor(c, (float)alpha / 255.0f), {0.0f, 0.0f}},
+        {{target_x - half_w, target_y}, fx_fcolor(c, 0.0f), {0.0f, 0.0f}},
+        {{target_x + half_w, target_y}, fx_fcolor(c, 0.0f), {0.0f, 0.0f}}};
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_RenderGeometry(r, NULL, v, 3, NULL, 0);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
 static void draw_outro_agent_sky_aim(SDL_Renderer *r, float x,
                                      float ground_y, float scale,
                                      float time)
@@ -1552,6 +1609,11 @@ static void draw_explosion(SDL_Renderer *r, float x, float y, float age)
 
     float expand = smoothstep01(age / 0.42f);
     float fade = 1.0f - clamp01((age - 0.95f) / 2.25f);
+
+    if (age < 1.4f)
+        fx_glow(r, x, y, 150.0f, (SDL_Color){255, 150, 60, 255},
+                (Uint8)(120.0f * (1.0f - age / 1.4f)));
+
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 
     if (age < 0.85f)
@@ -1620,11 +1682,8 @@ static void draw_pixel_heart(SDL_Renderer *r, float center_x,
     float width = 7.0f * pixel;
     float bob = sinf(time * 2.2f) * 2.0f;
 
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    set_rgba(r, 225, 49, 60, 48);
-    fill_rect(r, center_x - width * 0.5f - 5.0f, y + bob - 5.0f,
-              width + 10.0f, 6.0f * pixel + 10.0f);
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    fx_glow(r, center_x, y + bob + 3.0f * pixel, width + 14.0f,
+            (SDL_Color){236, 70, 84, 255}, 66);
 
     for (int row = 0; row < 6; ++row)
     {
@@ -1750,8 +1809,22 @@ void outro_cutscene_render(SDL_Renderer *r,
     }
 
     if (helicopter_visible)
+    {
+        /* While hovering, the helicopter sweeps a searchlight over the
+         * hostage group; the beam dies once the craft is hit. */
+        if (time >= 5.4f && time < 10.10f)
+        {
+            float sweep = sinf(time * 0.85f) * 30.0f;
+            float beam_x = hostage_x + 22.0f + sweep;
+            draw_search_beam(r, heli_x - 32.0f, heli_y + 12.0f,
+                             beam_x, ground + 4.0f, 36.0f,
+                             (SDL_Color){236, 244, 248, 255}, 36);
+            fx_glow(r, beam_x, ground + 2.0f, 46.0f,
+                    (SDL_Color){236, 244, 248, 255}, 26);
+        }
         draw_helicopter(r, heli_x, heli_y, heli_angle,
                         rotor_angle, heli_damage);
+    }
 
     if (time >= 13.35f)
     {
@@ -1869,6 +1942,9 @@ void outro_cutscene_render(SDL_Renderer *r,
                      captor_one_x + 17.0f, ground - 28.0f);
 
     render_outro_ui(r, time, hostage_x, win_w, win_h);
+
+    fx_vignette(r, win_w, win_h, 74);
+    fx_grain(r, win_w, win_h, time, 24);
 
     color_rect(r, (SDL_Color){3, 5, 8, 255},
                0.0f, 0.0f, (float)win_w, 19.0f);

@@ -8,15 +8,17 @@
 
 #include <math.h>
 
-static const SDL_Color COL_INK = {7, 10, 15, 255};
-static const SDL_Color COL_NIGHT = {11, 16, 25, 255};
-static const SDL_Color COL_WALL = {25, 33, 41, 255};
-static const SDL_Color COL_STEEL = {87, 96, 94, 255};
-static const SDL_Color COL_CREAM = {231, 226, 199, 255};
-static const SDL_Color COL_MUTED = {125, 137, 136, 255};
-static const SDL_Color COL_RUST = {181, 52, 43, 255};
-static const SDL_Color COL_AMBER = {232, 163, 54, 255};
-static const SDL_Color COL_CYAN = {66, 203, 196, 255};
+#include "fx.h"
+
+static const SDL_Color COL_INK = {5, 7, 12, 255};
+static const SDL_Color COL_NIGHT = {10, 14, 23, 255};
+static const SDL_Color COL_WALL = {27, 35, 49, 255};
+static const SDL_Color COL_STEEL = {70, 84, 99, 255};
+static const SDL_Color COL_CREAM = {236, 238, 224, 255};
+static const SDL_Color COL_MUTED = {124, 140, 152, 255};
+static const SDL_Color COL_RUST = {186, 54, 46, 255};
+static const SDL_Color COL_AMBER = {248, 188, 74, 255};
+static const SDL_Color COL_CYAN = {74, 222, 212, 255};
 
 static void set_color(SDL_Renderer *r, SDL_Color color)
 {
@@ -144,15 +146,29 @@ bool intro_hit_start_button(const Intro *intro, float x, float y)
 
 static void render_sky(SDL_Renderer *r, const Intro *intro, int win_w, int win_h)
 {
-    for (int y = 0; y < win_h; y += 16)
+    /* Deep night falling toward a faintly glowing teal horizon. */
+    color_rect(r, COL_NIGHT, 0.0f, 0.0f, (float)win_w, (float)win_h);
+    fx_vgrad(r, 0.0f, 0.0f, (float)win_w, (float)win_h,
+             (SDL_Color){6, 9, 17, 255}, 255,
+             (SDL_Color){19, 30, 42, 255}, 255);
+
+    /* A quiet moon anchors the composition's upper left. */
+    float moon_x = (float)win_w * 0.155f;
+    float moon_y = 74.0f;
+    fx_glow(r, moon_x + 1.0f, moon_y + 1.0f, 58.0f,
+            (SDL_Color){196, 214, 224, 255}, 34);
+    for (int row = -12; row <= 12; ++row)
     {
-        float p = (float)y / (float)win_h;
-        set_rgba(r,
-                 (Uint8)(COL_NIGHT.r + p * 3.0f),
-                 (Uint8)(COL_NIGHT.g + p * 5.0f),
-                 (Uint8)(COL_NIGHT.b + p * 7.0f), 255);
-        fill_rect(r, 0.0f, (float)y, (float)win_w, 16.0f);
+        float half = sqrtf(fmaxf(0.0f, 144.0f - (float)(row * row)));
+        color_rect(r, (SDL_Color){206, 219, 226, 255},
+                   moon_x - half, moon_y + (float)row, half * 2.0f, 1.0f);
     }
+    color_rect(r, (SDL_Color){176, 192, 204, 255},
+               moon_x - 5.0f, moon_y - 4.0f, 5.0f, 4.0f);
+    color_rect(r, (SDL_Color){176, 192, 204, 255},
+               moon_x + 3.0f, moon_y + 5.0f, 4.0f, 3.0f);
+    color_rect(r, (SDL_Color){186, 202, 212, 255},
+               moon_x - 2.0f, moon_y + 2.0f, 3.0f, 2.0f);
 
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     for (int i = 0; i < INTRO_STAR_COUNT; ++i)
@@ -213,21 +229,58 @@ static void render_sky(SDL_Renderer *r, const Intro *intro, int win_w, int win_h
     }
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-    /* A quiet city silhouette keeps the title grounded in a real place. */
-    static const int heights[] = {36, 58, 44, 70, 49, 62, 40, 76, 51, 66, 45};
+    /* Two skyline depths keep the title grounded in a real city.  The far
+     * row is hazy; the near row carries sparse lit windows and beacons. */
     int city_y = 184;
+    fx_vgrad(r, 0.0f, (float)city_y - 66.0f, (float)win_w, 66.0f,
+             (SDL_Color){36, 58, 70, 255}, 0,
+             (SDL_Color){36, 58, 70, 255}, 56);
+
+    static const int far_heights[] = {52, 78, 62, 90, 70, 84, 58};
+    int fx_pos = -20;
+    for (int i = 0; fx_pos < win_w + 30; ++i)
+    {
+        int width = 58 + (i * 17) % 30;
+        int height = far_heights[i % (int)SDL_arraysize(far_heights)];
+        color_rect(r, (SDL_Color){15, 22, 33, 255},
+                   (float)fx_pos, (float)(city_y - height),
+                   (float)width, (float)height);
+        fx_pos += width + 4;
+    }
+
+    static const int heights[] = {36, 58, 44, 70, 49, 62, 40, 76, 51, 66, 45};
     int x = -8;
     for (int i = 0; x < win_w + 30; ++i)
     {
         int width = 46 + (i * 13) % 28;
-        int height = heights[i % (int)(sizeof(heights) / sizeof(heights[0]))];
-        color_rect(r, (SDL_Color){13, 19, 27, 255},
-                   (float)x, (float)(city_y - height), (float)width, (float)height);
-        if (i % 2 == 0)
+        int height = heights[i % (int)SDL_arraysize(heights)];
+        float top = (float)(city_y - height);
+        color_rect(r, (SDL_Color){11, 16, 25, 255},
+                   (float)x, top, (float)width, (float)height);
+        color_rect(r, (SDL_Color){20, 28, 40, 255},
+                   (float)x, top, (float)width, 1.0f);
+
+        /* A few windows still lit this late; some rooftop hardware. */
+        for (int wdw = 0; wdw < width / 12; ++wdw)
         {
-            color_rect(r, (SDL_Color){49, 48, 38, 255},
-                       (float)x + 10.0f, (float)(city_y - height + 14),
-                       4.0f, 3.0f);
+            unsigned h = (unsigned)(i * 47 + wdw * 13);
+            h ^= h << 7;
+            if ((h % 5u) == 0u)
+            {
+                SDL_Color light = (h & 8u) ? (SDL_Color){118, 92, 48, 255}
+                                           : (SDL_Color){44, 88, 96, 255};
+                color_rect(r, light, (float)(x + 6 + wdw * 12),
+                           top + 9.0f + (float)(h % 3u) * 11.0f, 5.0f, 3.0f);
+            }
+        }
+        if (i % 4 == 1)
+        {
+            float ax = (float)x + (float)width * 0.5f;
+            color_rect(r, (SDL_Color){16, 22, 33, 255},
+                       ax, top - 12.0f, 2.0f, 12.0f);
+            float blink = sinf(intro->time * 1.8f + (float)i) > 0.75f ? 1.0f : 0.2f;
+            color_rect(r, fx_dim((SDL_Color){212, 74, 58, 255}, blink),
+                       ax - 1.0f, top - 15.0f, 4.0f, 3.0f);
         }
         x += width + 7;
     }
@@ -258,7 +311,8 @@ static const char *logo_glyph(char letter, int row)
 }
 
 static void draw_logo_letter(SDL_Renderer *r, float x, float y,
-                             char letter, SDL_Color color)
+                             char letter, SDL_Color color,
+                             bool bevel, float sweep_x)
 {
     const float pitch = 11.0f;
     const float block = 10.0f;
@@ -268,10 +322,28 @@ static void draw_logo_letter(SDL_Renderer *r, float x, float y,
         const char *bits = logo_glyph(letter, row);
         for (int col = 0; col < 5; ++col)
         {
-            if (bits[col] == '1')
+            if (bits[col] != '1')
+                continue;
+            float bx = x + col * pitch;
+            float by = y + row * pitch;
+            SDL_Color c = color;
+            if (bevel)
             {
-                color_rect(r, color, x + col * pitch, y + row * pitch,
-                           block, block);
+                /* A specular band sweeps across the face now and then. */
+                float boost = 1.0f - fabsf(bx - sweep_x) / 26.0f;
+                if (boost > 0.0f)
+                    c = fx_mix(c, (SDL_Color){255, 255, 248, 255},
+                               boost * 0.75f);
+            }
+            color_rect(r, c, bx, by, block, block);
+            if (bevel)
+            {
+                color_rect(r, fx_mix(c, (SDL_Color){255, 255, 250, 255}, 0.4f),
+                           bx, by, block, 2.0f);
+                color_rect(r, fx_dim(c, 0.68f),
+                           bx, by + block - 2.0f, block, 2.0f);
+                color_rect(r, fx_dim(c, 0.82f),
+                           bx + block - 2.0f, by + 1.0f, 2.0f, block - 2.0f);
             }
         }
     }
@@ -285,10 +357,19 @@ static void render_logo(SDL_Renderer *r, const Intro *intro, int win_w)
     const float y = 30.0f;
     const float letter_advance = 65.0f;
 
+    /* A restrained warm under-glow lifts the wordmark off the night sky. */
+    fx_glow(r, (float)win_w * 0.5f, y + 40.0f, 240.0f,
+            (SDL_Color){222, 120, 92, 255}, 26);
+
     /*
      * The wordmark assembles when the screen opens, then keeps a restrained
-     * travelling wave so the title never becomes completely static.
+     * travelling wave and an occasional specular sweep so the title never
+     * becomes completely static.
      */
+    float sweep_period = fmodf(intro->time, 7.0f);
+    float sweep_x = sweep_period < 1.4f
+                        ? x - 40.0f + (sweep_period / 1.4f) * (logo_w + 80.0f)
+                        : -1000.0f;
     for (int i = 0; i < 5; ++i)
     {
         float reveal = smoothstep01((intro->time - 0.06f - i * 0.075f) / 0.34f);
@@ -301,19 +382,22 @@ static void render_logo(SDL_Renderer *r, const Intro *intro, int win_w)
         float brightness = (0.35f + reveal * 0.65f) *
                            (0.92f + wave * 0.08f);
         draw_logo_letter(r, lx + 6.0f, ly + 7.0f, word[i],
-                         dim_color((SDL_Color){39, 18, 20, 255}, brightness));
+                         dim_color((SDL_Color){30, 14, 18, 255}, brightness),
+                         false, -1000.0f);
         draw_logo_letter(r, lx + 3.0f, ly + 4.0f, word[i],
-                         dim_color(COL_RUST, brightness));
+                         dim_color(COL_RUST, brightness), false, -1000.0f);
         draw_logo_letter(r, lx, ly, word[i],
-                         dim_color(COL_CREAM, brightness));
+                         dim_color(COL_CREAM, brightness), true, sweep_x);
     }
 
     float rule_reveal = smoothstep01((intro->time - 0.48f) / 0.42f);
     color_rect(r, COL_RUST, x, y + 84.0f, 82.0f * rule_reveal, 4.0f);
+    color_rect(r, (SDL_Color){236, 108, 88, 255},
+               x, y + 84.0f, 82.0f * rule_reveal, 1.0f);
 
     float tagline_reveal = smoothstep01((intro->time - 0.68f) / 0.45f);
     draw_text_centered(r, (float)win_w * 0.5f, y + 101.0f, 1.0f,
-                       dim_color((SDL_Color){174, 179, 166, 255},
+                       dim_color((SDL_Color){182, 190, 184, 255},
                                  tagline_reveal),
                        "THEY TOOK HER. BRING HER HOME.");
 }
@@ -519,16 +603,55 @@ static void render_building(SDL_Renderer *r, const Intro *intro, int win_w)
     const float upper_floor = y + 121.0f;
     const float lower_floor = y + 247.0f;
 
-    color_rect(r, (SDL_Color){4, 7, 11, 180}, x + 9.0f, y + 10.0f, w, h);
-    color_rect(r, (SDL_Color){47, 52, 52, 255}, x, y, w, h);
+    color_rect(r, (SDL_Color){4, 6, 10, 180}, x + 9.0f, y + 10.0f, w, h);
+    color_rect(r, (SDL_Color){52, 63, 76, 255}, x, y, w, h);
     color_rect(r, COL_WALL, x + 5.0f, y + 7.0f, w - 10.0f, h - 12.0f);
-    color_rect(r, (SDL_Color){12, 18, 25, 255},
+    color_rect(r, (SDL_Color){13, 19, 29, 255},
                x + 12.0f, y + 15.0f, w - 24.0f, h - 27.0f);
+
+    /* Warm ceiling light settles into each floor; two fixtures per room. */
+    fx_vgrad(r, x + 12.0f, y + 15.0f, w - 24.0f, 62.0f,
+             (SDL_Color){240, 196, 120, 255}, 22,
+             (SDL_Color){240, 196, 120, 255}, 0);
+    fx_vgrad(r, x + 12.0f, upper_floor + 13.0f, w - 24.0f, 58.0f,
+             (SDL_Color){240, 196, 120, 255}, 18,
+             (SDL_Color){240, 196, 120, 255}, 0);
+    for (int fixture = 0; fixture < 4; ++fixture)
+    {
+        float fxp = x + 150.0f + (float)(fixture % 2) * 400.0f;
+        float fy = fixture < 2 ? y + 15.0f : upper_floor + 13.0f;
+        float flicker = fixture == 1 &&
+                                fmodf(intro->time * 1.6f, 4.4f) < 0.07f
+                            ? 0.35f
+                            : 1.0f;
+        SDL_Color lamp = fx_dim((SDL_Color){248, 205, 130, 255}, flicker);
+        color_rect(r, (SDL_Color){16, 21, 31, 255},
+                   fxp - 12.0f, fy, 24.0f, 4.0f);
+        color_rect(r, lamp, fxp - 9.0f, fy + 2.0f, 18.0f, 2.0f);
+        fx_glow(r, fxp, fy + 4.0f, 16.0f, lamp, (Uint8)(64.0f * flicker));
+        fx_light_cone(r, fxp, fy + 3.0f, 11.0f, 42.0f, 82.0f,
+                      (SDL_Color){248, 205, 130, 255},
+                      (Uint8)(26.0f * flicker));
+    }
 
     /* Roof, columns and room seams form one continuous environment. */
     color_rect(r, COL_INK, x - 4.0f, y - 5.0f, w + 8.0f, 12.0f);
     color_rect(r, COL_STEEL, x, y - 3.0f, w, 5.0f);
-    color_rect(r, (SDL_Color){151, 149, 128, 255}, x + 3.0f, y - 3.0f, w - 6.0f, 1.0f);
+    color_rect(r, (SDL_Color){158, 172, 182, 255}, x + 3.0f, y - 3.0f, w - 6.0f, 1.0f);
+
+    /* Rooftop hardware: radio mast, AC boxes and a water tank silhouette. */
+    color_rect(r, (SDL_Color){15, 21, 32, 255}, x + 94.0f, y - 29.0f, 3.0f, 24.0f);
+    color_rect(r, (SDL_Color){15, 21, 32, 255}, x + 88.0f, y - 22.0f, 15.0f, 2.0f);
+    color_rect(r, (SDL_Color){15, 21, 32, 255}, x + 90.0f, y - 15.0f, 11.0f, 2.0f);
+    float mast_blink = sinf(intro->time * 2.2f) > 0.7f ? 1.0f : 0.25f;
+    color_rect(r, fx_dim((SDL_Color){212, 74, 58, 255}, mast_blink),
+               x + 93.0f, y - 33.0f, 5.0f, 4.0f);
+    color_rect(r, (SDL_Color){17, 24, 35, 255}, x + 262.0f, y - 13.0f, 34.0f, 8.0f);
+    color_rect(r, (SDL_Color){24, 32, 45, 255}, x + 262.0f, y - 13.0f, 34.0f, 2.0f);
+    color_rect(r, (SDL_Color){17, 24, 35, 255}, x + 588.0f, y - 27.0f, 46.0f, 20.0f);
+    color_rect(r, (SDL_Color){26, 35, 49, 255}, x + 588.0f, y - 27.0f, 46.0f, 3.0f);
+    color_rect(r, (SDL_Color){13, 18, 28, 255}, x + 592.0f, y - 7.0f, 4.0f, 4.0f);
+    color_rect(r, (SDL_Color){13, 18, 28, 255}, x + 626.0f, y - 7.0f, 4.0f, 4.0f);
 
     for (float cx = x + 12.0f; cx < x + w - 8.0f; cx += 118.0f)
     {
@@ -644,18 +767,39 @@ static void render_start_prompt(SDL_Renderer *r, const Intro *intro, int win_w)
     float cx = (float)win_w * 0.5f;
     float pulse = 0.5f + 0.5f * sinf(intro->time * 2.4f);
     SDL_Color text_color = intro->start_hovered ? COL_CREAM
-                                                 : (SDL_Color){192, 194, 178, 255};
+                                                : (SDL_Color){198, 202, 190, 255};
 
-    color_rect(r, intro->start_hovered
-                      ? (SDL_Color){28, 34, 38, 255}
-                      : (SDL_Color){16, 22, 27, 255},
-               button->x, button->y, button->w, button->h);
-    color_rect(r, (SDL_Color){45, 51, 52, 255},
-               button->x, button->y + button->h - 1.0f,
-               button->w, 1.0f);
+    if (intro->start_hovered)
+        fx_glow(r, cx, button->y + button->h * 0.5f, 120.0f,
+                (SDL_Color){222, 96, 76, 255}, 30);
+
+    color_rect(r, COL_INK, button->x - 1.0f, button->y - 1.0f,
+               button->w + 2.0f, button->h + 2.0f);
+    fx_vgrad(r, button->x, button->y, button->w, button->h,
+             intro->start_hovered ? (SDL_Color){36, 46, 60, 255}
+                                  : (SDL_Color){24, 32, 44, 255},
+             255,
+             intro->start_hovered ? (SDL_Color){20, 27, 38, 255}
+                                  : (SDL_Color){13, 19, 29, 255},
+             255);
+    color_rect(r, (SDL_Color){64, 80, 100, 255},
+               button->x, button->y, button->w, 1.0f);
+
+    /* Rust corner brackets tie the button to the cinematic UI language. */
+    set_color(r, dim_color(COL_RUST, 0.7f + pulse * 0.3f));
+    fill_rect(r, button->x - 3.0f, button->y - 3.0f, 9.0f, 2.0f);
+    fill_rect(r, button->x - 3.0f, button->y - 3.0f, 2.0f, 9.0f);
+    fill_rect(r, button->x + button->w - 6.0f, button->y - 3.0f, 9.0f, 2.0f);
+    fill_rect(r, button->x + button->w + 1.0f, button->y - 3.0f, 2.0f, 9.0f);
+    fill_rect(r, button->x - 3.0f, button->y + button->h + 1.0f, 9.0f, 2.0f);
+    fill_rect(r, button->x - 3.0f, button->y + button->h - 6.0f, 2.0f, 9.0f);
+    fill_rect(r, button->x + button->w - 6.0f, button->y + button->h + 1.0f, 9.0f, 2.0f);
+    fill_rect(r, button->x + button->w + 1.0f, button->y + button->h - 6.0f, 2.0f, 9.0f);
 
     color_rect(r, dim_color(COL_RUST, 0.55f + pulse * 0.45f),
-               button->x + 12.0f, button->y + 12.0f, 7.0f, 7.0f);
+               button->x + 12.0f, button->y + 13.0f, 7.0f, 7.0f);
+    color_rect(r, dim_color((SDL_Color){255, 170, 150, 255}, 0.55f + pulse * 0.45f),
+               button->x + 12.0f, button->y + 13.0f, 7.0f, 2.0f);
     draw_text_centered(r, cx + 9.0f, button->y + 13.0f, 1.0f,
                        text_color, "PRESS ENTER TO START");
 
@@ -664,11 +808,48 @@ static void render_start_prompt(SDL_Renderer *r, const Intro *intro, int win_w)
                button->y + button->h - 2.0f, accent_w, 2.0f);
 }
 
+static float control_hint_width(const char *key, const char *action)
+{
+    float ch = (float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * 0.75f;
+    return ch * (float)SDL_strlen(key) + 10.0f + 6.0f +
+           ch * (float)SDL_strlen(action) + 24.0f;
+}
+
+static float draw_control_hint(SDL_Renderer *r, float x, float y,
+                               const char *key, const char *action)
+{
+    const float scale = 0.75f;
+    float ch = (float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
+    float key_w = ch * (float)SDL_strlen(key) + 10.0f;
+    const float key_h = 14.0f;
+
+    /* Keycap: dark bezel, lit top edge, sunken base. */
+    color_rect(r, COL_INK, x, y, key_w, key_h);
+    color_rect(r, (SDL_Color){40, 51, 66, 255},
+               x + 1.0f, y + 1.0f, key_w - 2.0f, key_h - 2.0f);
+    color_rect(r, (SDL_Color){78, 94, 112, 255},
+               x + 1.0f, y + 1.0f, key_w - 2.0f, 1.0f);
+    color_rect(r, (SDL_Color){14, 19, 29, 255},
+               x + 1.0f, y + key_h - 2.0f, key_w - 2.0f, 1.0f);
+    draw_text(r, x + 5.0f, y + 4.0f, scale,
+              (SDL_Color){214, 222, 214, 255}, key);
+    draw_text(r, x + key_w + 6.0f, y + 4.0f, scale, COL_MUTED, action);
+    return x + key_w + 6.0f + ch * (float)SDL_strlen(action) + 24.0f;
+}
+
 static void render_controls(SDL_Renderer *r, int win_w, int win_h)
 {
-    draw_text_centered(r, (float)win_w * 0.5f, (float)win_h - 23.0f, 0.75f,
-                       COL_MUTED,
-                       "WASD / ARROWS  MOVE     UP / W  JUMP     SPACE  ACTION     DOWN / S  USE");
+    static const char *keys[] = {"WASD", "W", "SPACE", "S", "E"};
+    static const char *actions[] = {"MOVE", "JUMP", "FIRE", "USE", "HACK"};
+    float total = 0.0f;
+    for (int i = 0; i < 5; ++i)
+        total += control_hint_width(keys[i], actions[i]);
+    total -= 24.0f;
+
+    float x = ((float)win_w - total) * 0.5f;
+    float y = (float)win_h - 30.0f;
+    for (int i = 0; i < 5; ++i)
+        x = draw_control_hint(r, x, y, keys[i], actions[i]);
 }
 
 void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h)
@@ -678,4 +859,8 @@ void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h)
     render_building(r, intro, win_w);
     render_start_prompt(r, intro, win_w);
     render_controls(r, win_w, win_h);
+
+    /* Same finishing pass as gameplay so the menu belongs to the film. */
+    fx_vignette(r, win_w, win_h, 64);
+    fx_scanlines(r, win_w, win_h, 11);
 }

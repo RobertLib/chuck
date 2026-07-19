@@ -3,19 +3,22 @@
 #include <SDL3/SDL.h>
 #include <math.h>
 
+#include "fx.h"
+
 /*
  * Chuck intentionally ships without art assets.  Everything in this file is
- * assembled at runtime from small, hard-edged shapes.  The limited palette,
- * one-pixel highlights and chunky silhouettes keep the result readable as
- * pixel art while still giving the infiltration levels a coherent industrial
- * setting.
+ * assembled at runtime from small, hard-edged shapes.  The palette and the
+ * lighting primitives live in fx.h and are shared with the intro and the
+ * cutscenes, so the whole game reads as one production.  This file adds the
+ * things only gameplay needs: the tile materials, ambient occlusion under
+ * floors, warm ceiling lights, and a finishing scanline/vignette pass.
  */
 
-static const SDL_Color COL_INK = {8, 11, 17, 255};
-static const SDL_Color COL_OUTLINE = {14, 19, 28, 255};
-static const SDL_Color COL_CYAN = {48, 211, 210, 255};
-static const SDL_Color COL_AMBER = {247, 174, 55, 255};
-static const SDL_Color COL_RED = {224, 58, 54, 255};
+static const SDL_Color COL_INK = {5, 7, 12, 255};
+static const SDL_Color COL_OUTLINE = {13, 18, 27, 255};
+static const SDL_Color COL_CYAN = {74, 222, 212, 255};
+static const SDL_Color COL_AMBER = {248, 188, 74, 255};
+static const SDL_Color COL_RED = {232, 74, 62, 255};
 
 void game_get_view_size(Game *game, int *out_w, int *out_h)
 {
@@ -85,132 +88,244 @@ static unsigned tile_hash(int x, int y)
 static void draw_soft_glow(SDL_Renderer *r, float x, float y, float w, float h,
                            SDL_Color color)
 {
-  SDL_BlendMode old = SDL_BLENDMODE_NONE;
-  SDL_GetRenderDrawBlendMode(r, &old);
-  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  set_rgba(r, color.r, color.g, color.b, 22);
-  fill_rect(r, x - 5.0f, y - 5.0f, w + 10.0f, h + 10.0f);
-  set_rgba(r, color.r, color.g, color.b, 45);
-  fill_rect(r, x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f);
-  SDL_SetRenderDrawBlendMode(r, old);
+  /* True radial falloff sells emissive surfaces far better than rings. */
+  float radius = (w > h ? w : h) * 0.5f + 12.0f;
+  fx_glow(r, x + w * 0.5f, y + h * 0.5f, radius, color, 72);
 }
 
 static void render_background(Game *game, int win_w, int win_h)
 {
   SDL_Renderer *r = game->renderer;
   const float oy = HUD_HEIGHT;
+  const float fh = (float)win_h - oy;
+  float t = (float)SDL_GetTicksNS() * 1.0e-9f;
 
-  /* A banded near-black gradient reads as intentionally pixelated. */
-  for (int y = HUD_HEIGHT; y < win_h; y += 16)
+  /* Smooth atmospheric gradient: cool and dark up top, a faint teal cast
+   * toward the floor so the space feels lit from below by machinery. */
+  color_rect(r, FX_NIGHT, 0.0f, oy, (float)win_w, fh);
+  fx_vgrad(r, 0.0f, oy, (float)win_w, fh,
+           (SDL_Color){7, 10, 18, 255}, 255,
+           (SDL_Color){20, 30, 42, 255}, 255);
+
+  /* Farthest layer: hulking silhouettes of plant machinery, barely lit. */
+  float far_shift = fmodf(-game->cam_x * 0.10f, 224.0f);
+  if (far_shift > 0.0f)
+    far_shift -= 224.0f;
+  for (float x = far_shift - 48.0f; x < (float)win_w + 224.0f; x += 224.0f)
   {
-    float p = (float)(y - HUD_HEIGHT) / (float)(win_h - HUD_HEIGHT);
-    Uint8 rr = (Uint8)(12.0f + p * 5.0f);
-    Uint8 gg = (Uint8)(18.0f + p * 7.0f);
-    Uint8 bb = (Uint8)(29.0f + p * 10.0f);
-    set_rgba(r, rr, gg, bb, 255);
-    fill_rect(r, 0.0f, (float)y, (float)win_w, 16.0f);
+    unsigned seed = (unsigned)((int)(x + game->cam_x * 0.10f) / 224);
+    unsigned h = fx_hash(seed * 31u + (unsigned)game->current_level * 7u);
+    float tank_h = 96.0f + (float)(h % 60u);
+    color_rect(r, (SDL_Color){13, 18, 29, 255},
+               x + 24.0f, oy + fh - tank_h, 74.0f, tank_h);
+    color_rect(r, (SDL_Color){16, 22, 34, 255},
+               x + 30.0f, oy + fh - tank_h - 14.0f, 62.0f, 14.0f);
+    color_rect(r, (SDL_Color){13, 18, 29, 255},
+               x + 128.0f, oy + fh - 64.0f, 70.0f, 64.0f);
+    /* Slim exhaust stack with a slow-blinking service light. */
+    color_rect(r, (SDL_Color){15, 21, 32, 255},
+               x + 150.0f, oy + 34.0f, 10.0f, fh - 98.0f);
+    float blink = sinf(t * 1.4f + (float)(h % 7u)) > 0.86f ? 1.0f : 0.28f;
+    color_rect(r, fx_dim((SDL_Color){194, 84, 66, 255}, blink),
+               x + 153.0f, oy + 30.0f, 4.0f, 3.0f);
   }
 
-  /* Far service bays move slowly to establish depth during side-scrolling. */
-  float far_shift = fmodf(-game->cam_x * 0.12f, 192.0f);
-  if (far_shift > 0.0f)
-    far_shift -= 192.0f;
-  for (float x = far_shift - 32.0f; x < (float)win_w + 192.0f; x += 192.0f)
+  /* Mid layer: service bays with pilasters, pipe runs and dim windows. */
+  float mid_shift = fmodf(-game->cam_x * 0.18f, 192.0f);
+  if (mid_shift > 0.0f)
+    mid_shift -= 192.0f;
+  for (float x = mid_shift - 32.0f; x < (float)win_w + 192.0f; x += 192.0f)
   {
-    color_rect(r, (SDL_Color){17, 25, 37, 255}, x + 16.0f, oy + 28.0f, 144.0f, (float)win_h - oy - 50.0f);
-    color_rect(r, (SDL_Color){22, 33, 46, 255}, x + 20.0f, oy + 32.0f, 136.0f, 4.0f);
-    color_rect(r, (SDL_Color){9, 15, 24, 255}, x + 28.0f, oy + 55.0f, 120.0f, 76.0f);
-    color_rect(r, (SDL_Color){35, 48, 60, 255}, x + 32.0f, oy + 59.0f, 112.0f, 3.0f);
+    color_rect(r, (SDL_Color){18, 25, 38, 255},
+               x + 16.0f, oy + 26.0f, 144.0f, fh - 44.0f);
+    color_rect(r, (SDL_Color){26, 36, 50, 255},
+               x + 16.0f, oy + 26.0f, 144.0f, 3.0f);
+    color_rect(r, (SDL_Color){11, 16, 26, 255},
+               x + 28.0f, oy + 52.0f, 120.0f, 78.0f);
+    color_rect(r, (SDL_Color){31, 42, 56, 255},
+               x + 28.0f, oy + 52.0f, 120.0f, 2.0f);
+    /* Pipe run along the bay with hanging brackets. */
+    color_rect(r, (SDL_Color){24, 33, 46, 255},
+               x + 16.0f, oy + 146.0f, 144.0f, 5.0f);
+    color_rect(r, (SDL_Color){33, 45, 60, 255},
+               x + 16.0f, oy + 146.0f, 144.0f, 1.0f);
+    for (int b = 0; b < 3; ++b)
+      color_rect(r, (SDL_Color){15, 21, 32, 255},
+                 x + 34.0f + (float)b * 48.0f, oy + 130.0f, 3.0f, 16.0f);
 
-    /* Dim windows / equipment screens in the distant bays. */
+    /* Dim equipment lights; the warm ones flicker very rarely. */
     for (int lamp = 0; lamp < 4; ++lamp)
     {
-      unsigned h = tile_hash((int)x / 8 + lamp, game->current_level + 7);
-      SDL_Color lc = (h & 1u) ? (SDL_Color){39, 102, 111, 255}
-                              : (SDL_Color){105, 72, 38, 255};
-      color_rect(r, lc, x + 36.0f + lamp * 26.0f, oy + 72.0f, 12.0f, 4.0f);
+      unsigned h = tile_hash((int)(x + game->cam_x * 0.18f) / 8 + lamp,
+                             game->current_level + 7);
+      bool warm = (h & 1u) != 0u;
+      float flicker = warm && ((h >> 3) & 7u) == 0u &&
+                              fmodf(t * 1.7f + (float)lamp, 4.0f) < 0.09f
+                          ? 0.3f
+                          : 1.0f;
+      SDL_Color lc = warm ? fx_dim((SDL_Color){126, 88, 44, 255}, flicker)
+                          : (SDL_Color){40, 96, 104, 255};
+      color_rect(r, lc, x + 36.0f + lamp * 26.0f, oy + 70.0f, 12.0f, 4.0f);
+      fx_rect_a(r, lc, 26, x + 34.0f + lamp * 26.0f, oy + 68.0f, 16.0f, 8.0f);
     }
   }
 
-  /* Foreground wall seams and conduit shadows use a second parallax rate. */
-  float near_shift = fmodf(-game->cam_x * 0.28f, 96.0f);
+  /* Slow volumetric light shafts falling between the far bays. */
+  float shaft_shift = fmodf(-game->cam_x * 0.22f, 384.0f);
+  if (shaft_shift > 0.0f)
+    shaft_shift -= 384.0f;
+  for (float x = shaft_shift - 96.0f; x < (float)win_w + 384.0f; x += 384.0f)
+  {
+    float sway = sinf(t * 0.21f + x * 0.01f) * 14.0f;
+    fx_light_cone(r, x + 150.0f + sway, oy - 6.0f, 14.0f, 52.0f,
+                  fh * 0.9f, (SDL_Color){120, 190, 196, 255}, 13);
+  }
+
+  /* Near layer: wall seams and conduit shadows at a faster parallax. */
+  float near_shift = fmodf(-game->cam_x * 0.30f, 96.0f);
   if (near_shift > 0.0f)
     near_shift -= 96.0f;
-  set_rgba(r, 28, 40, 53, 150);
   for (float x = near_shift; x < (float)win_w + 96.0f; x += 96.0f)
   {
-    fill_rect(r, x, oy, 2.0f, (float)win_h - oy);
-    fill_rect(r, x + 2.0f, oy, 1.0f, (float)win_h - oy);
-    color_rect(r, (SDL_Color){11, 17, 26, 255}, x + 66.0f, oy + 8.0f, 4.0f, 86.0f);
-    color_rect(r, (SDL_Color){43, 55, 64, 255}, x + 67.0f, oy + 8.0f, 1.0f, 86.0f);
+    fx_rect_a(r, (SDL_Color){30, 42, 56, 255}, 130,
+              x, oy, 2.0f, fh);
+    color_rect(r, (SDL_Color){12, 17, 27, 255}, x + 66.0f, oy + 8.0f, 4.0f, 86.0f);
+    color_rect(r, (SDL_Color){45, 58, 72, 255}, x + 67.0f, oy + 8.0f, 1.0f, 86.0f);
   }
 
   /* Tiny, low-contrast dust motes make empty rooms feel alive. */
-  float t = (float)SDL_GetTicksNS() * 1.0e-9f;
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  for (int i = 0; i < 20; ++i)
+  for (int i = 0; i < 26; ++i)
   {
     unsigned h = tile_hash(i + game->current_level * 29, 91);
     float x = fmodf((float)(h % (unsigned)(win_w + 80)) + t * (4.0f + (float)(i % 5)), (float)(win_w + 80)) - 40.0f;
-    float y = oy + 18.0f + (float)((h >> 8) % (unsigned)(win_h - HUD_HEIGHT - 36));
-    Uint8 a = (Uint8)(24 + (h % 22u));
-    set_rgba(r, 120, 150, 158, a);
+    float y = oy + 18.0f + (float)((h >> 8) % (unsigned)(win_h - HUD_HEIGHT - 36)) +
+              sinf(t * 0.8f + (float)i) * 2.0f;
+    Uint8 a = (Uint8)(22 + (h % 20u));
+    set_rgba(r, 130, 162, 170, a);
     fill_rect(r, x, y, (i % 3 == 0) ? 2.0f : 1.0f, 1.0f);
   }
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+  /* Depth haze pooling at the bottom of the frame. */
+  fx_vgrad(r, 0.0f, oy + fh - 90.0f, (float)win_w, 90.0f,
+           (SDL_Color){8, 12, 20, 255}, 0,
+           (SDL_Color){8, 12, 20, 255}, 120);
 }
 
 static void draw_wall_tile(SDL_Renderer *r, const Level *lvl,
                            int col, int row, float x, float y)
 {
+  /* Plates span 2x2 tiles: seams and bevels only appear on panel borders,
+   * so the wall reads as riveted plating rather than a 32px checkerboard. */
+  unsigned ph = tile_hash(col >> 1, row >> 1);
   unsigned h = tile_hash(col, row);
-  Uint8 variation = (Uint8)(h % 9u);
-  SDL_Color base = {(Uint8)(47 + variation), (Uint8)(57 + variation),
-                    (Uint8)(64 + variation), 255};
+  Uint8 v = (Uint8)(ph % 7u);
+  SDL_Color base = {(Uint8)(41 + v), (Uint8)(51 + v), (Uint8)(64 + v), 255};
+  bool left_edge = (col & 1) == 0;
+  bool top_edge = (row & 1) == 0;
+  bool right_edge = !left_edge;
+  bool bottom_edge = !top_edge;
 
-  color_rect(r, COL_INK, x, y, TILE_SIZE, TILE_SIZE);
-  color_rect(r, base, x + 1.0f, y + 1.0f, TILE_SIZE - 2.0f, TILE_SIZE - 2.0f);
-  color_rect(r, (SDL_Color){65, 76, 82, 255}, x + 2.0f, y + 2.0f, TILE_SIZE - 4.0f, 2.0f);
-  color_rect(r, (SDL_Color){31, 39, 47, 255}, x + 2.0f, y + TILE_SIZE - 4.0f, TILE_SIZE - 4.0f, 2.0f);
-  color_rect(r, (SDL_Color){38, 47, 54, 255}, x + TILE_SIZE - 4.0f, y + 3.0f, 2.0f, TILE_SIZE - 7.0f);
+  color_rect(r, base, x, y, TILE_SIZE, TILE_SIZE);
 
-  /* Exposed floor tops get a bright metal lip and a warning inset. */
-  if (!level_is_solid(lvl, col, row - 1))
+  /* Quiet per-tile wear keeps large walls from feeling machine-stamped. */
+  color_rect(r, (SDL_Color){(Uint8)(35 + v), (Uint8)(45 + v), (Uint8)(57 + v), 255},
+             x + (float)(h % 21u) + 4.0f, y + (float)((h >> 6) % 22u) + 4.0f,
+             4.0f, 2.0f);
+  if ((h & 3u) == 0u)
+    color_rect(r, (SDL_Color){(Uint8)(48 + v), (Uint8)(59 + v), (Uint8)(73 + v), 255},
+               x + (float)((h >> 4) % 18u) + 6.0f, y + (float)((h >> 9) % 18u) + 8.0f,
+               6.0f, 1.0f);
+
+  /* Panel bevel: lit top/left edge, shaded bottom/right edge, dark seam. */
+  if (top_edge)
   {
-    color_rect(r, (SDL_Color){104, 119, 120, 255}, x, y, TILE_SIZE, 3.0f);
-    color_rect(r, (SDL_Color){154, 158, 139, 255}, x + 2.0f, y, TILE_SIZE - 4.0f, 1.0f);
-    if ((h & 3u) == 0u)
-      color_rect(r, COL_AMBER, x + 8.0f, y + 1.0f, 9.0f, 2.0f);
+    color_rect(r, (SDL_Color){20, 27, 39, 255}, x, y, TILE_SIZE, 1.0f);
+    color_rect(r, (SDL_Color){(Uint8)(58 + v), (Uint8)(71 + v), (Uint8)(86 + v), 255},
+               x, y + 1.0f, TILE_SIZE, 1.0f);
   }
-
-  /* Rivets and rare little cracks stop the repeating grid feeling flat. */
-  color_rect(r, (SDL_Color){112, 120, 116, 255}, x + 4.0f, y + 6.0f, 2.0f, 2.0f);
-  color_rect(r, (SDL_Color){21, 28, 34, 255}, x + 5.0f, y + 7.0f, 1.0f, 1.0f);
-  color_rect(r, (SDL_Color){112, 120, 116, 255}, x + 26.0f, y + 24.0f, 2.0f, 2.0f);
-  if ((h % 5u) == 0u)
+  if (left_edge)
   {
-    set_rgba(r, 29, 36, 42, 255);
+    color_rect(r, (SDL_Color){20, 27, 39, 255}, x, y, 1.0f, TILE_SIZE);
+    color_rect(r, (SDL_Color){(Uint8)(53 + v), (Uint8)(66 + v), (Uint8)(80 + v), 255},
+               x + 1.0f, y + 1.0f, 1.0f, TILE_SIZE - 1.0f);
+  }
+  if (bottom_edge)
+    color_rect(r, (SDL_Color){(Uint8)(30 + v), (Uint8)(39 + v), (Uint8)(51 + v), 255},
+               x, y + TILE_SIZE - 2.0f, TILE_SIZE, 2.0f);
+  if (right_edge)
+    color_rect(r, (SDL_Color){(Uint8)(33 + v), (Uint8)(42 + v), (Uint8)(54 + v), 255},
+               x + TILE_SIZE - 2.0f, y, 2.0f, TILE_SIZE);
+
+  /* One rivet per panel corner. */
+  if (top_edge && left_edge)
+  {
+    color_rect(r, (SDL_Color){118, 134, 148, 255}, x + 3.0f, y + 3.0f, 2.0f, 2.0f);
+    color_rect(r, (SDL_Color){22, 30, 42, 255}, x + 4.0f, y + 4.0f, 1.0f, 1.0f);
+  }
+  if (bottom_edge && right_edge)
+    color_rect(r, (SDL_Color){96, 110, 124, 255},
+               x + TILE_SIZE - 6.0f, y + TILE_SIZE - 6.0f, 2.0f, 2.0f);
+
+  /* Rare full-tile variants: a vent grille or a hairline crack. */
+  if ((h % 23u) == 0u)
+  {
+    for (int slit = 0; slit < 4; ++slit)
+    {
+      color_rect(r, (SDL_Color){17, 23, 35, 255},
+                 x + 8.0f, y + 9.0f + slit * 4.0f, 16.0f, 2.0f);
+      color_rect(r, (SDL_Color){(Uint8)(56 + v), (Uint8)(69 + v), (Uint8)(84 + v), 255},
+                 x + 8.0f, y + 11.0f + slit * 4.0f, 16.0f, 1.0f);
+    }
+  }
+  else if ((h % 11u) == 0u)
+  {
+    set_rgba(r, 26, 34, 46, 255);
     SDL_RenderLine(r, x + 12.0f, y + 9.0f, x + 16.0f, y + 14.0f);
     SDL_RenderLine(r, x + 16.0f, y + 14.0f, x + 14.0f, y + 20.0f);
-    set_rgba(r, 73, 81, 82, 255);
+    set_rgba(r, 62, 76, 92, 255);
     SDL_RenderLine(r, x + 13.0f, y + 9.0f, x + 17.0f, y + 14.0f);
   }
+
+  /* Exposed floor tops get a bright machined lip with worn paint dashes. */
+  if (!level_is_solid(lvl, col, row - 1))
+  {
+    color_rect(r, (SDL_Color){104, 122, 136, 255}, x, y, TILE_SIZE, 3.0f);
+    color_rect(r, (SDL_Color){168, 184, 192, 255}, x + 1.0f, y, TILE_SIZE - 2.0f, 1.0f);
+    color_rect(r, (SDL_Color){58, 72, 86, 255}, x, y + 3.0f, TILE_SIZE, 1.0f);
+    if ((h & 3u) == 0u)
+      color_rect(r, FX_AMBER_DK, x + (float)(h % 14u) + 4.0f, y + 1.0f, 9.0f, 2.0f);
+  }
+
+  /* Exposed undersides fall into shadow. */
+  if (!level_is_solid(lvl, col, row + 1))
+    color_rect(r, (SDL_Color){16, 22, 33, 255},
+               x, y + TILE_SIZE - 2.0f, TILE_SIZE, 2.0f);
+
+  /* Side faces against open air get a slim machined trim. */
+  if (!level_is_solid(lvl, col - 1, row))
+    color_rect(r, (SDL_Color){74, 90, 105, 255}, x, y, 2.0f, TILE_SIZE);
+  if (!level_is_solid(lvl, col + 1, row))
+    color_rect(r, (SDL_Color){26, 34, 46, 255},
+               x + TILE_SIZE - 2.0f, y, 2.0f, TILE_SIZE);
 }
 
 static void draw_ladder_tile(SDL_Renderer *r, float x, float y, int row)
 {
-  /* Shadow first, then steel rails and amber rung faces. */
-  color_rect(r, (SDL_Color){7, 12, 18, 180}, x + 5.0f, y, 5.0f, TILE_SIZE);
-  color_rect(r, (SDL_Color){7, 12, 18, 180}, x + 24.0f, y, 5.0f, TILE_SIZE);
-  color_rect(r, (SDL_Color){54, 49, 34, 255}, x + 7.0f, y, 4.0f, TILE_SIZE);
-  color_rect(r, (SDL_Color){54, 49, 34, 255}, x + 22.0f, y, 4.0f, TILE_SIZE);
-  color_rect(r, (SDL_Color){207, 157, 62, 255}, x + 8.0f, y, 2.0f, TILE_SIZE);
-  color_rect(r, (SDL_Color){207, 157, 62, 255}, x + 23.0f, y, 2.0f, TILE_SIZE);
+  (void)row;
+  /* Cast shadow, steel side rails, and worn amber-painted rungs. */
+  color_rect(r, (SDL_Color){6, 9, 15, 170}, x + 5.0f, y, 5.0f, TILE_SIZE);
+  color_rect(r, (SDL_Color){6, 9, 15, 170}, x + 24.0f, y, 5.0f, TILE_SIZE);
+  color_rect(r, (SDL_Color){47, 46, 38, 255}, x + 7.0f, y, 4.0f, TILE_SIZE);
+  color_rect(r, (SDL_Color){47, 46, 38, 255}, x + 22.0f, y, 4.0f, TILE_SIZE);
+  color_rect(r, (SDL_Color){196, 148, 62, 255}, x + 8.0f, y, 2.0f, TILE_SIZE);
+  color_rect(r, (SDL_Color){196, 148, 62, 255}, x + 23.0f, y, 2.0f, TILE_SIZE);
   for (int rung = -4; rung < TILE_SIZE; rung += 8)
   {
-    int ry = rung + (row & 1) * 0;
-    color_rect(r, (SDL_Color){55, 44, 28, 255}, x + 8.0f, y + (float)ry + 2.0f, 17.0f, 3.0f);
-    color_rect(r, (SDL_Color){224, 176, 72, 255}, x + 9.0f, y + (float)ry + 1.0f, 15.0f, 2.0f);
+    color_rect(r, (SDL_Color){52, 42, 28, 255}, x + 8.0f, y + (float)rung + 2.0f, 17.0f, 3.0f);
+    color_rect(r, (SDL_Color){226, 180, 84, 255}, x + 9.0f, y + (float)rung + 1.0f, 15.0f, 2.0f);
+    color_rect(r, (SDL_Color){255, 224, 150, 255}, x + 9.0f, y + (float)rung + 1.0f, 15.0f, 1.0f);
   }
 }
 
@@ -244,19 +359,32 @@ static void draw_platform(SDL_Renderer *r, float x, float y, SDL_Color accent, b
 
 static void draw_door(SDL_Renderer *r, float x, float y, int index)
 {
-  color_rect(r, (SDL_Color){8, 11, 16, 255}, x + 1.0f, y, 30.0f, 32.0f);
-  color_rect(r, (SDL_Color){82, 65, 48, 255}, x + 3.0f, y + 1.0f, 26.0f, 31.0f);
-  color_rect(r, (SDL_Color){125, 94, 58, 255}, x + 5.0f, y + 3.0f, 22.0f, 27.0f);
-  color_rect(r, (SDL_Color){59, 50, 44, 255}, x + 7.0f, y + 5.0f, 18.0f, 9.0f);
-  color_rect(r, (SDL_Color){25, 30, 34, 255}, x + 9.0f, y + 7.0f, 14.0f, 5.0f);
-  for (int line = 0; line < 3; ++line)
-    color_rect(r, (SDL_Color){135, 111, 76, 255}, x + 8.0f, y + 18.0f + line * 3.0f, 12.0f, 1.0f);
+  /* A small lamp above the frame spills warm light onto the doorway. */
+  fx_glow(r, x + 16.0f, y + 1.0f, 16.0f, (SDL_Color){248, 202, 118, 255}, 46);
+  color_rect(r, (SDL_Color){15, 20, 30, 255}, x + 10.0f, y - 3.0f, 12.0f, 3.0f);
+  color_rect(r, (SDL_Color){248, 202, 118, 255}, x + 12.0f, y - 1.0f, 8.0f, 1.0f);
 
-  color_rect(r, (SDL_Color){16, 23, 28, 255}, x + 22.0f, y + 17.0f, 5.0f, 8.0f);
-  color_rect(r, (SDL_Color){70, 213, 180, 255}, x + 23.0f, y + 18.0f, 3.0f, 2.0f);
+  /* Sliding steel service door in a machined frame. */
+  color_rect(r, COL_INK, x + 1.0f, y, 30.0f, 32.0f);
+  color_rect(r, (SDL_Color){62, 75, 90, 255}, x + 2.0f, y + 1.0f, 28.0f, 31.0f);
+  color_rect(r, (SDL_Color){88, 104, 120, 255}, x + 2.0f, y + 1.0f, 28.0f, 1.0f);
+  color_rect(r, (SDL_Color){34, 43, 56, 255}, x + 5.0f, y + 4.0f, 22.0f, 28.0f);
+  color_rect(r, (SDL_Color){44, 55, 70, 255}, x + 6.0f, y + 5.0f, 20.0f, 26.0f);
+
+  /* Recessed viewing slit and brushed panel lines. */
+  color_rect(r, (SDL_Color){12, 18, 26, 255}, x + 9.0f, y + 7.0f, 14.0f, 5.0f);
+  color_rect(r, (SDL_Color){30, 66, 76, 255}, x + 10.0f, y + 8.0f, 12.0f, 3.0f);
+  for (int line = 0; line < 3; ++line)
+    color_rect(r, (SDL_Color){33, 42, 54, 255},
+               x + 8.0f, y + 18.0f + line * 4.0f, 16.0f, 1.0f);
+
+  /* Access reader with a live status LED. */
+  color_rect(r, (SDL_Color){14, 20, 28, 255}, x + 22.0f, y + 16.0f, 5.0f, 9.0f);
+  color_rect(r, (SDL_Color){86, 226, 186, 255}, x + 23.0f, y + 17.0f, 3.0f, 2.0f);
+
   char label[3];
   SDL_snprintf(label, sizeof(label), "%d", index / 2 + 1);
-  draw_text(r, x + 12.0f, y + 6.0f, 0.65f, 111, 153, 151, label);
+  draw_text(r, x + 13.0f, y + 14.0f, 0.65f, 148, 176, 188, label);
 }
 
 static void draw_exit(SDL_Renderer *r, const Game *game, float x, float y)
@@ -868,6 +996,58 @@ static void render_world(Game *game)
   if (!lvl->reveal_done)
     return;
 
+  /* Lighting pass derived from the tile grid: soft contact shadows under
+   * every overhead surface, plus recessed warm fixtures on long ceilings.
+   * Because it reads the level itself, light always matches architecture. */
+  {
+    int first_col = (int)(cam_x / (float)TILE_SIZE) - 1;
+    if (first_col < 0)
+      first_col = 0;
+    int last_col = first_col + win_w / TILE_SIZE + 3;
+    if (last_col > lvl->width)
+      last_col = lvl->width;
+    for (int row = 0; row < lvl->height; ++row)
+    {
+      for (int col = first_col; col < last_col; ++col)
+      {
+        if (lvl->tiles[row][col] != TILE_EMPTY &&
+            lvl->tiles[row][col] != TILE_LADDER)
+          continue;
+        if (!level_is_solid(lvl, col, row - 1))
+          continue;
+        float x = col * (float)TILE_SIZE - cam_x;
+        float y = row * (float)TILE_SIZE + oy;
+        fx_vgrad(r, x, y, TILE_SIZE, 11.0f, FX_INK, 80, FX_INK, 0);
+
+        unsigned h = tile_hash(col, row);
+        bool long_ceiling = level_is_solid(lvl, col - 1, row - 1) &&
+                            level_is_solid(lvl, col + 1, row - 1);
+        if ((h % 7u) == 0u && long_ceiling &&
+            lvl->tiles[row][col] == TILE_EMPTY)
+        {
+          float cx = x + TILE_SIZE * 0.5f;
+          float flicker = ((h >> 5) % 9u) == 0u &&
+                                  fmodf(world_t * 1.9f + (float)col, 5.0f) < 0.08f
+                              ? 0.35f
+                              : 1.0f;
+          SDL_Color warm = fx_dim((SDL_Color){248, 202, 118, 255}, flicker);
+          color_rect(r, (SDL_Color){15, 20, 30, 255}, cx - 7.0f, y - 1.0f, 14.0f, 4.0f);
+          color_rect(r, warm, cx - 5.0f, y + 1.0f, 10.0f, 2.0f);
+          fx_glow(r, cx, y + 3.0f, 12.0f, warm, (Uint8)(70.0f * flicker));
+          fx_light_cone(r, cx, y + 2.0f, 7.0f, 30.0f, 86.0f,
+                        (SDL_Color){248, 205, 130, 255},
+                        (Uint8)(30.0f * flicker));
+        }
+      }
+    }
+  }
+
+  /* A soft cool pool of light keeps the hero readable in dark rooms. */
+  if (!game->player.dying)
+    fx_glow(r, game->player.x + PLAYER_W * 0.5f - cam_x,
+            game->player.y + PLAYER_H * 0.5f + oy,
+            120.0f, (SDL_Color){134, 196, 214, 255}, 26);
+
   for (int i = 0; i < lvl->elevator_count; ++i)
   {
     const Elevator *el = &lvl->elevators[i];
@@ -975,6 +1155,8 @@ static void render_world(Game *game)
       continue;
     float x = b->x - cam_x;
     float y = b->y + oy;
+    fx_glow(r, x + BULLET_W * 0.5f, y + BULLET_H * 0.5f, 11.0f,
+            (SDL_Color){255, 200, 90, 255}, 110);
     set_rgba(r, 255, 183, 38, 75);
     fill_rect(r, x - (b->vx > 0.0f ? 8.0f : -8.0f), y + 1.0f, 12.0f, 2.0f);
     color_rect(r, (SDL_Color){255, 243, 170, 255}, x, y, BULLET_W, BULLET_H);
@@ -986,6 +1168,8 @@ static void render_world(Game *game)
       continue;
     float x = b->x - cam_x;
     float y = b->y + oy;
+    fx_glow(r, x + BULLET_W * 0.5f, y + BULLET_H * 0.5f, 11.0f,
+            (SDL_Color){255, 92, 62, 255}, 110);
     set_rgba(r, 255, 52, 39, 80);
     fill_rect(r, x - (b->vx > 0.0f ? 7.0f : -7.0f), y, 11.0f, 4.0f);
     color_rect(r, (SDL_Color){255, 103, 54, 255}, x, y, BULLET_W, BULLET_H);
@@ -1016,8 +1200,28 @@ static void render_world(Game *game)
 
 static void draw_hud_separator(SDL_Renderer *r, float x)
 {
-  color_rect(r, (SDL_Color){52, 73, 84, 255}, x, 7.0f, 1.0f, 26.0f);
-  color_rect(r, (SDL_Color){8, 13, 20, 255}, x + 1.0f, 7.0f, 1.0f, 26.0f);
+  color_rect(r, (SDL_Color){6, 9, 15, 255}, x, 8.0f, 1.0f, 24.0f);
+  color_rect(r, (SDL_Color){56, 72, 92, 255}, x + 1.0f, 8.0f, 1.0f, 24.0f);
+}
+
+static void draw_hud_heart(SDL_Renderer *r, float x, float y, bool filled)
+{
+  static const char *rows[5] = {"01010", "11111", "11111", "01110", "00100"};
+  for (int row = 0; row < 5; ++row)
+  {
+    for (int col = 0; col < 5; ++col)
+    {
+      if (rows[row][col] != '1')
+        continue;
+      SDL_Color c;
+      if (filled)
+        c = row < 2 ? (SDL_Color){246, 92, 92, 255}
+                    : (SDL_Color){198, 44, 52, 255};
+      else
+        c = (SDL_Color){46, 34, 40, 255};
+      color_rect(r, c, x + col * 2.0f, y + row * 2.0f, 2.0f, 2.0f);
+    }
+  }
 }
 
 static void render_hud(Game *game)
@@ -1026,79 +1230,107 @@ static void render_hud(Game *game)
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
   (void)win_h;
+  const Uint8 label_r = 108, label_g = 128, label_b = 148;
 
-  color_rect(r, (SDL_Color){7, 12, 19, 255}, 0.0f, 0.0f, (float)win_w, HUD_HEIGHT);
-  color_rect(r, (SDL_Color){24, 39, 50, 255}, 0.0f, 2.0f, (float)win_w, 34.0f);
-  color_rect(r, (SDL_Color){40, 67, 74, 255}, 0.0f, 36.0f, (float)win_w, 2.0f);
-  color_rect(r, COL_CYAN, 0.0f, 38.0f, (float)win_w, 1.0f);
+  /* Brushed console body, lit from above, closed by a cyan status line. */
+  fx_vgrad(r, 0.0f, 0.0f, (float)win_w, 37.0f,
+           (SDL_Color){30, 40, 56, 255}, 255,
+           (SDL_Color){13, 19, 30, 255}, 255);
+  color_rect(r, (SDL_Color){60, 76, 98, 255}, 0.0f, 0.0f, (float)win_w, 1.0f);
+  color_rect(r, (SDL_Color){5, 7, 12, 255}, 0.0f, 37.0f, (float)win_w, 1.0f);
+  color_rect(r, (SDL_Color){38, 112, 110, 255}, 0.0f, 38.0f, (float)win_w, 1.0f);
+  color_rect(r, (SDL_Color){5, 7, 12, 255}, 0.0f, 39.0f, (float)win_w, 1.0f);
 
-  draw_text(r, 10.0f, 10.0f, 1.5f, 97, 230, 218, "CHUCK");
-  draw_text(r, 10.0f, 25.0f, 0.75f, 135, 157, 157, "RESCUE OPS");
+  /* Identity block. */
+  color_rect(r, COL_RED, 0.0f, 0.0f, 3.0f, 37.0f);
+  draw_text(r, 12.0f, 9.0f, 1.5f, 236, 238, 224, "CHUCK");
+  color_rect(r, (SDL_Color){170, 52, 46, 255}, 12.0f, 23.0f, 58.0f, 2.0f);
+  draw_text(r, 12.0f, 27.0f, 0.7f, 120, 138, 152, "RESCUE OPS");
   draw_hud_separator(r, 88.0f);
 
-  /* Lives: small red field crosses instead of an abstract number alone. */
-  draw_text(r, 99.0f, 8.0f, 0.75f, 145, 164, 165, "VITAL");
-  for (int i = 0; i < game->lives && i < 5; ++i)
-  {
-    color_rect(r, (SDL_Color){121, 32, 35, 255}, 99.0f + i * 12.0f, 20.0f, 10.0f, 10.0f);
-    color_rect(r, (SDL_Color){239, 78, 69, 255}, 103.0f + i * 12.0f, 22.0f, 2.0f, 6.0f);
-    color_rect(r, (SDL_Color){239, 78, 69, 255}, 101.0f + i * 12.0f, 24.0f, 6.0f, 2.0f);
-  }
+  /* Lives as pixel hearts, with empty slots so the max is always visible. */
+  draw_text(r, 99.0f, 8.0f, 0.7f, label_r, label_g, label_b, "VITAL");
+  for (int i = 0; i < 5; ++i)
+    draw_hud_heart(r, 99.0f + i * 14.0f, 19.0f, i < game->lives);
   if (game->lives > 5)
   {
     char life_buf[8];
     SDL_snprintf(life_buf, sizeof(life_buf), "+%d", game->lives - 5);
-    draw_text(r, 161.0f, 20.0f, 1.0f, 239, 102, 82, life_buf);
+    draw_text(r, 168.0f, 20.0f, 0.9f, 246, 110, 96, life_buf);
   }
   draw_hud_separator(r, 190.0f);
 
-  draw_text(r, 201.0f, 8.0f, 0.75f, 145, 164, 165, "AMMO");
-  const float ammo_slot_spacing = 7.0f;
+  /* Ammunition as brass rounds standing in a rack. */
+  draw_text(r, 201.0f, 8.0f, 0.7f, label_r, label_g, label_b, "AMMO");
   for (int i = 0; i < MAX_AMMO; ++i)
   {
-    SDL_Color bullet = i < game->player.bullets ? COL_AMBER
-                                                : (SDL_Color){63, 64, 58, 255};
-    float ammo_x = 202.0f + i * ammo_slot_spacing;
-    color_rect(r, bullet, ammo_x, 20.0f, 3.0f, 10.0f);
-    color_rect(r, (SDL_Color){99, 72, 34, 255}, ammo_x, 28.0f, 5.0f, 2.0f);
+    float ammo_x = 202.0f + i * 7.0f;
+    if (i < game->player.bullets)
+    {
+      color_rect(r, (SDL_Color){255, 236, 170, 255}, ammo_x, 19.0f, 3.0f, 3.0f);
+      color_rect(r, (SDL_Color){222, 172, 84, 255}, ammo_x, 22.0f, 3.0f, 8.0f);
+      color_rect(r, (SDL_Color){164, 118, 52, 255}, ammo_x + 2.0f, 22.0f, 1.0f, 8.0f);
+    }
+    else
+    {
+      color_rect(r, (SDL_Color){40, 48, 58, 255}, ammo_x, 19.0f, 3.0f, 11.0f);
+    }
+    color_rect(r, (SDL_Color){70, 84, 99, 255}, ammo_x - 1.0f, 30.0f, 5.0f, 2.0f);
   }
   if (game->player.grenades > 0)
     draw_grenade(r, 252.0f, 19.0f, 0.0f);
   draw_hud_separator(r, 276.0f);
 
-  draw_text(r, 287.0f, 8.0f, 0.75f, 145, 164, 165, "ACCESS");
-  if (game->level.exit_unlocked)
+  /* Access status chip with a live LED. */
+  draw_text(r, 287.0f, 8.0f, 0.7f, label_r, label_g, label_b, "ACCESS");
+  bool unlocked = game->level.exit_unlocked;
+  float blink = 0.5f + 0.5f * sinf((float)SDL_GetTicksNS() * 1.0e-9f * 4.0f);
+  if (unlocked)
   {
-    color_rect(r, (SDL_Color){35, 139, 116, 255}, 287.0f, 20.0f, 61.0f, 11.0f);
-    draw_text(r, 291.0f, 21.0f, 1.0f, 191, 255, 224, "GRANTED");
+    color_rect(r, (SDL_Color){16, 52, 40, 255}, 287.0f, 19.0f, 70.0f, 13.0f);
+    color_rect(r, (SDL_Color){40, 132, 96, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
+    color_rect(r, (SDL_Color){96, 230, 140, 255}, 291.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 298.0f, 22.0f, 0.9f, 168, 255, 206, "GRANTED");
   }
   else
   {
-    color_rect(r, (SDL_Color){94, 43, 39, 255}, 287.0f, 20.0f, 61.0f, 11.0f);
-    draw_text(r, 295.0f, 21.0f, 1.0f, 247, 151, 112, "LOCKED");
+    color_rect(r, (SDL_Color){54, 24, 24, 255}, 287.0f, 19.0f, 70.0f, 13.0f);
+    color_rect(r, (SDL_Color){124, 52, 46, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
+    color_rect(r, fx_dim((SDL_Color){246, 90, 70, 255}, 0.45f + blink * 0.55f),
+               291.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 298.0f, 22.0f, 0.9f, 250, 158, 128, "LOCKED");
   }
-  draw_hud_separator(r, 363.0f);
+  draw_hud_separator(r, 371.0f);
 
   char level_buf[32];
-  SDL_snprintf(level_buf, sizeof(level_buf), "SECTOR %02d", game->current_level + 1);
-  draw_text(r, 374.0f, 8.0f, 0.75f, 145, 164, 165, "RESCUE");
-  draw_text(r, 374.0f, 21.0f, 1.0f, 219, 226, 211, level_buf);
-  draw_hud_separator(r, 478.0f);
+  SDL_snprintf(level_buf, sizeof(level_buf), "%02d", game->current_level + 1);
+  draw_text(r, 382.0f, 8.0f, 0.7f, label_r, label_g, label_b, "SECTOR");
+  draw_text(r, 382.0f, 19.0f, 1.5f, 226, 232, 220, level_buf);
+  draw_hud_separator(r, 440.0f);
 
-  char score_buf[40];
+  /* Score keeps its leading zeros, but only the live digits glow. */
+  char score_buf[16];
   SDL_snprintf(score_buf, sizeof(score_buf), "%07d", game->score);
-  draw_text(r, 489.0f, 8.0f, 0.75f, 145, 164, 165, "SCORE");
-  draw_text(r, 489.0f, 20.0f, 1.25f, 247, 196, 90, score_buf);
+  draw_text(r, 451.0f, 8.0f, 0.7f, label_r, label_g, label_b, "SCORE");
+  int first_digit = 0;
+  while (first_digit < 6 && score_buf[first_digit] == '0')
+    ++first_digit;
+  draw_text(r, 451.0f, 19.0f, 1.5f, 74, 88, 102, score_buf);
+  draw_text(r, 451.0f + first_digit * 12.0f, 19.0f, 1.5f, 248, 196, 92,
+            score_buf + first_digit);
 
-  /* Decorative live telemetry fills the otherwise empty right edge. */
-  float pulse = 0.5f + 0.5f * sinf((float)SDL_GetTicksNS() * 1.0e-9f * 3.0f);
-  draw_text(r, 650.0f, 8.0f, 0.75f, 119, 151, 153, "TRAIL");
-  color_rect(r, (SDL_Color){38, 66, 71, 255}, 650.0f, 21.0f, 130.0f, 8.0f);
+  /* Live signal meter fills the right edge without stealing attention. */
+  float t = (float)SDL_GetTicksNS() * 1.0e-9f;
+  draw_text(r, 650.0f, 8.0f, 0.7f, label_r, label_g, label_b, "TRAIL");
+  color_rect(r, (SDL_Color){10, 15, 24, 255}, 648.0f, 17.0f, 134.0f, 16.0f);
+  color_rect(r, (SDL_Color){30, 42, 58, 255}, 648.0f, 17.0f, 134.0f, 1.0f);
   for (int i = 0; i < 12; ++i)
   {
-    float height = 2.0f + fmodf((float)(i * 7) + pulse * 8.0f, 6.0f);
-    color_rect(r, i < 9 ? COL_CYAN : (SDL_Color){63, 87, 91, 255},
-               654.0f + i * 10.0f, 27.0f - height, 6.0f, height);
+    float wave = 0.5f + 0.5f * sinf(t * 2.6f + (float)i * 0.9f);
+    float height = 3.0f + wave * 9.0f;
+    SDL_Color bar = i < 9 ? fx_mix((SDL_Color){24, 96, 96, 255}, COL_CYAN, wave)
+                          : (SDL_Color){52, 68, 82, 255};
+    color_rect(r, bar, 653.0f + i * 10.0f, 30.0f - height, 6.0f, height);
   }
 }
 
@@ -1123,11 +1355,26 @@ static void render_terminal_interaction(Game *game, int win_w, int win_h)
     progress = 1.0f;
 
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  set_rgba(r, 5, 12, 15, 230);
+  set_rgba(r, 5, 10, 15, 235);
   fill_rect(r, x, y, panel_w, panel_h);
-  set_rgba(r, 71, 242, 164, 220);
-  fill_rect(r, x, y, panel_w, 2.0f);
+  set_rgba(r, 24, 46, 44, 255);
+  fill_rect(r, x, y, panel_w, 1.0f);
+  fill_rect(r, x, y + panel_h - 1.0f, panel_w, 1.0f);
+  fill_rect(r, x, y, 1.0f, panel_h);
+  fill_rect(r, x + panel_w - 1.0f, y, 1.0f, panel_h);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+  /* Terminal-green corner ticks frame the prompt like a targeting HUD. */
+  set_rgba(r, 86, 240, 170, 255);
+  const float tick = 7.0f;
+  fill_rect(r, x, y, tick, 2.0f);
+  fill_rect(r, x, y, 2.0f, tick);
+  fill_rect(r, x + panel_w - tick, y, tick, 2.0f);
+  fill_rect(r, x + panel_w - 2.0f, y, 2.0f, tick);
+  fill_rect(r, x, y + panel_h - 2.0f, tick, 2.0f);
+  fill_rect(r, x, y + panel_h - tick, 2.0f, tick);
+  fill_rect(r, x + panel_w - tick, y + panel_h - 2.0f, tick, 2.0f);
+  fill_rect(r, x + panel_w - 2.0f, y + panel_h - tick, 2.0f, tick);
 
   char label[64];
   if (game->terminal_hacking)
@@ -1141,13 +1388,19 @@ static void render_terminal_interaction(Game *game, int win_w, int win_h)
   }
   draw_text(r, x + 12.0f, y + 9.0f, 1.25f, 174, 255, 213, label);
 
-  color_rect(r, (SDL_Color){28, 54, 51, 255},
+  color_rect(r, (SDL_Color){16, 34, 32, 255},
              x + 12.0f, y + 31.0f, panel_w - 24.0f, 7.0f);
   if (progress > 0.0f)
   {
-    color_rect(r, (SDL_Color){68, 245, 159, 255},
-               x + 12.0f, y + 31.0f,
-               (panel_w - 24.0f) * progress, 7.0f);
+    float bar_w = (panel_w - 24.0f) * progress;
+    color_rect(r, (SDL_Color){44, 168, 118, 255},
+               x + 12.0f, y + 31.0f, bar_w, 7.0f);
+    color_rect(r, (SDL_Color){120, 255, 190, 255},
+               x + 12.0f, y + 31.0f, bar_w, 2.0f);
+    color_rect(r, (SDL_Color){190, 255, 220, 255},
+               x + 12.0f + bar_w - 2.0f, y + 31.0f, 2.0f, 7.0f);
+    fx_glow(r, x + 12.0f + bar_w, y + 34.0f, 14.0f,
+            (SDL_Color){86, 240, 170, 255}, 80);
   }
 }
 
@@ -1157,14 +1410,22 @@ static void draw_overlay_panel(Game *game, float y, SDL_Color accent,
   SDL_Renderer *r = game->renderer;
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
-  (void)win_h;
+
+  /* Dim the whole scene so the verdict owns the frame. */
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  set_rgba(r, 5, 9, 15, 225);
+  set_rgba(r, 4, 6, 11, 150);
+  fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
+  set_rgba(r, 5, 9, 15, 235);
   fill_rect(r, 0.0f, y - 35.0f, (float)win_w, subtitle ? 93.0f : 70.0f);
   set_rgba(r, accent.r, accent.g, accent.b, 220);
   fill_rect(r, 0.0f, y - 35.0f, (float)win_w, 3.0f);
   fill_rect(r, 0.0f, y + (subtitle ? 55.0f : 32.0f), (float)win_w, 2.0f);
+  set_rgba(r, accent.r, accent.g, accent.b, 60);
+  fill_rect(r, 0.0f, y - 32.0f, (float)win_w, 1.0f);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+  fx_glow(r, (float)win_w * 0.5f, y + 8.0f, 190.0f, accent, 34);
+  draw_text_centered(game, y + 3.0f, 4.0f, 6, 9, 14, title);
   draw_text_centered(game, y, 4.0f, accent.r, accent.g, accent.b, title);
   if (subtitle)
     draw_text_centered(game, y + 37.0f, 1.5f, 210, 220, 215, subtitle);
@@ -1234,6 +1495,11 @@ void game_render(Game *game)
   else if (game->state == STATE_WIN)
     draw_overlay_panel(game, 225.0f, (SDL_Color){91, 237, 169, 255},
                        "SHE'S SAFE", "PRESS R TO REPLAY THE RESCUE");
+
+  /* One shared finishing pass keeps every frame looking like the same film:
+   * gentle scanlines for texture and a vignette that focuses the action. */
+  fx_vignette(r, win_w, win_h, 58);
+  fx_scanlines(r, win_w, win_h, 11);
 
   SDL_RenderPresent(r);
 }
