@@ -10,6 +10,7 @@ void game_read_input(Game *game)
   game->input.right = ks[SDL_SCANCODE_RIGHT] || ks[SDL_SCANCODE_D];
   game->input.up = ks[SDL_SCANCODE_UP] || ks[SDL_SCANCODE_W];
   game->input.down = ks[SDL_SCANCODE_DOWN] || ks[SDL_SCANCODE_S];
+  game->input.interact = ks[SDL_SCANCODE_E];
 }
 
 void game_handle_event(Game *game, const SDL_Event *event)

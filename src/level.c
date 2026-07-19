@@ -65,6 +65,15 @@ static void place_crate(Level *level, int col, int row)
     crate->on_ground = false;
 }
 
+static void place_terminal(Level *level, int col, int row)
+{
+    if (level->terminal_count >= MAX_TERMINALS)
+        return;
+    Terminal *terminal = &level->terminals[level->terminal_count++];
+    terminal->col = col;
+    terminal->row = row;
+}
+
 bool level_load(Level *level, const char *path)
 {
     size_t size = 0;
@@ -167,6 +176,10 @@ bool level_load(Level *level, const char *path)
             level->tiles[row][col] = TILE_EMPTY;
             place_crate(level, col, row);
             break;
+        case 'T':
+            level->tiles[row][col] = TILE_EMPTY;
+            place_terminal(level, col, row);
+            break;
         case 'S':
             level->tiles[row][col] = TILE_EMPTY;
             start_count++;
@@ -267,6 +280,58 @@ bool level_load(Level *level, const char *path)
     {
         level->items_remaining = 0;
     }
+
+    /* Only one of the visually identical terminals is connected to security.
+     * Prefer terminals well away from the player spawn so the alternative
+     * route still requires infiltrating a meaningful part of the level. */
+    level->active_terminal_index = -1;
+    if (level->terminal_count > 0)
+    {
+        int start_col =
+            (int)floorf((level->start_x + PLAYER_W * 0.5f) / TILE_SIZE);
+        int start_row =
+            (int)floorf((level->start_y + PLAYER_H * 0.5f) / TILE_SIZE);
+        int eligible_count = 0;
+        for (int i = 0; i < level->terminal_count; ++i)
+        {
+            const Terminal *terminal = &level->terminals[i];
+            int tile_distance =
+                abs(terminal->col - start_col) +
+                abs(terminal->row - start_row);
+            if (tile_distance >= TERMINAL_MIN_START_TILES)
+                eligible_count++;
+        }
+
+        if (eligible_count > 0)
+        {
+            int pick = (int)((unsigned)rand() % (unsigned)eligible_count);
+            for (int i = 0; i < level->terminal_count; ++i)
+            {
+                const Terminal *terminal = &level->terminals[i];
+                int tile_distance =
+                    abs(terminal->col - start_col) +
+                    abs(terminal->row - start_row);
+                if (tile_distance < TERMINAL_MIN_START_TILES)
+                    continue;
+                if (pick-- == 0)
+                {
+                    level->active_terminal_index = i;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            /* Keep custom maps playable even if all their terminals are close. */
+            level->active_terminal_index =
+                (int)((unsigned)rand() % (unsigned)level->terminal_count);
+        }
+    }
+    level->terminal_hacked = false;
+    /* Preserve the old behavior for maps with neither an access card nor a
+     * terminal. Maps containing either route start with a locked exit. */
+    level->exit_unlocked =
+        level->card_count == 0 && level->terminal_count == 0;
 
     /* Discover elevator shafts: scan each column for consecutive TILE_ELEVATOR_SHAFT runs. */
     for (int c = 0; c < level->width && level->elevator_count < MAX_ELEVATORS; ++c)

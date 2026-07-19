@@ -773,6 +773,7 @@ static bool load_level(Game *game, int index)
 
     game->invuln_timer = 0.0f;
     game->message_timer = 0.0f;
+    game->exit_unlocked_timer = 0.0f;
     game->level_elapsed_time = 0.0f;
     game->level_start_score = game->score;
     game->state = STATE_LEVEL_START;
@@ -803,6 +804,10 @@ static bool load_level(Game *game, int index)
     game->footstep_audio_timer = 0.0f;
     game->ladder_audio_timer = 0.0f;
     game->footstep_alternate = false;
+    game->terminal_hack_progress = 0.0f;
+    game->terminal_hack_tick_timer = 0.0f;
+    game->terminal_in_range = false;
+    game->terminal_hacking = false;
     SDL_memset(game->fall_platform_sounded, 0,
                sizeof(game->fall_platform_sounded));
 
@@ -936,6 +941,11 @@ static void hit_player(Game *game)
     if (game->player.dying)
         return;
 
+    game->terminal_hack_progress = 0.0f;
+    game->terminal_hack_tick_timer = 0.0f;
+    game->terminal_in_range = false;
+    game->terminal_hacking = false;
+
     float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
     float cx = game->player.x + PLAYER_W * 0.5f;
     float cy = game->player.y + ph * 0.5f;
@@ -981,6 +991,39 @@ static void finish_player_death(Game *game)
         player_reset(&game->player, &game->level);
         audio_play(&game->audio, SFX_RESPAWN);
     }
+}
+
+static void unlock_exit(Game *game)
+{
+    if (game->level.exit_unlocked)
+        return;
+
+    game->level.exit_unlocked = true;
+    game->exit_unlocked_timer = 2.5f;
+    game->terminal_in_range = false;
+    game->terminal_hacking = false;
+    audio_play(&game->audio, SFX_EXIT_UNLOCKED);
+}
+
+static bool player_near_active_terminal(const Game *game)
+{
+    int index = game->level.active_terminal_index;
+    if (game->level.exit_unlocked ||
+        index < 0 || index >= game->level.terminal_count)
+    {
+        return false;
+    }
+
+    const Terminal *terminal = &game->level.terminals[index];
+    float terminal_x = terminal->col * (float)TILE_SIZE + TILE_SIZE * 0.5f;
+    float terminal_y = terminal->row * (float)TILE_SIZE + TILE_SIZE * 0.5f;
+    float player_h =
+        game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+    float player_x = game->player.x + PLAYER_W * 0.5f;
+    float player_y = game->player.y + player_h * 0.5f;
+
+    return fabsf(player_x - terminal_x) <= TERMINAL_INTERACT_RANGE &&
+           fabsf(player_y - terminal_y) <= TILE_SIZE * 0.65f;
 }
 
 static void clear_edge_input(Game *game)
@@ -1213,8 +1256,23 @@ void game_update(Game *game, float dt)
             game->exit_unlocked_timer = 0.0f;
     }
 
+    game->terminal_in_range = player_near_active_terminal(game);
+    game->terminal_hacking =
+        game->terminal_in_range &&
+        game->input.interact &&
+        game->player.on_ground &&
+        !game->player.on_ladder;
+    if (!game->terminal_hacking)
+    {
+        game->terminal_hack_progress = 0.0f;
+        game->terminal_hack_tick_timer = 0.0f;
+    }
+
     bool player_was_grounded = game->player.on_ground;
-    bool jump_requested = game->input.jump && game->player.on_ground;
+    bool jump_requested =
+        !game->terminal_hacking &&
+        game->input.jump &&
+        game->player.on_ground;
     float player_fall_speed = game->player.vy;
     int previous_elevator = game->player_on_elevator;
 
@@ -1253,8 +1311,40 @@ void game_update(Game *game, float dt)
     float prev_player_y = game->player.y;
     float prev_player_h = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
 
-    player_update(&game->player, &game->level, &game->input, dt);
+    Input player_input = game->input;
+    if (game->terminal_hacking)
+    {
+        player_input.left = false;
+        player_input.right = false;
+        player_input.up = false;
+        player_input.down = false;
+        player_input.jump = false;
+        player_input.shoot = false;
+        player_input.use_door = false;
+        game->input.shoot = false;
+        game->input.use_door = false;
+        game->player.vx = 0.0f;
+    }
+    player_update(&game->player, &game->level, &player_input, dt);
     game->input.jump = false;
+
+    if (game->terminal_hacking)
+    {
+        game->terminal_hack_progress += dt;
+        game->terminal_hack_tick_timer -= dt;
+        if (game->terminal_hack_tick_timer <= 0.0f)
+        {
+            audio_play(&game->audio, SFX_CARD_SCAN);
+            game->terminal_hack_tick_timer = 0.45f;
+        }
+        if (game->terminal_hack_progress >= TERMINAL_HACK_TIME)
+        {
+            game->terminal_hack_progress = TERMINAL_HACK_TIME;
+            game->level.terminal_hacked = true;
+            game->score += 250;
+            unlock_exit(game);
+        }
+    }
 
     level_update_elevators(&game->level, dt);
     level_update_falling_platforms(&game->level, dt);
@@ -1887,9 +1977,7 @@ void game_update(Game *game, float dt)
                     if (i == game->level.active_card_index)
                     {
                         game->level.items_remaining = 0;
-                        /* show a short on-screen notification so player notices */
-                        game->exit_unlocked_timer = 2.5f;
-                        audio_play(&game->audio, SFX_EXIT_UNLOCKED);
+                        unlock_exit(game);
                     }
                     else
                         audio_play(&game->audio, SFX_CARD_WRONG);
@@ -2313,9 +2401,9 @@ void game_update(Game *game, float dt)
         }
     }
 
-    /* Reach the exit once every item is collected. */
+    /* Reach the exit after either access route has granted clearance. */
     if (game->state == STATE_PLAYING && game->level.has_exit &&
-        game->level.items_remaining == 0)
+        game->level.exit_unlocked)
     {
         float ex = game->level.exit_col * (float)TILE_SIZE;
         float ey = game->level.exit_row * (float)TILE_SIZE;

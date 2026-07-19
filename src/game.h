@@ -121,6 +121,13 @@ typedef struct
     float card_anim_interval;  /* seconds between highlight steps */
     float card_anim_timer;     /* accumulator for highlight timing */
     float exit_unlocked_timer; /* seconds to show "EXIT UNLOCKED" overlay */
+
+    /* Active-terminal interaction. Progress requires holding interact while
+     * stationary and resets if the player lets go or leaves its range. */
+    float terminal_hack_progress;
+    float terminal_hack_tick_timer;
+    bool terminal_in_range;
+    bool terminal_hacking;
 } Game;
 
 bool game_init(Game *game);

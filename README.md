@@ -6,8 +6,9 @@ fiancée and bringing her home alive.
 The player explores a side-scrolling building made of platforms, ladders,
 doors, elevators, hazards, and pickups. Each level is a small infiltration
 route through the kidnappers' stronghold: follow their trail, find the key card
-that opens the way deeper inside, and decide when to fight, when to sneak past,
-and when to use the environment to your advantage.
+or breach the security terminal that opens the way deeper inside, and decide
+when to fight, when to sneak past, and when to use the environment to your
+advantage.
 
 ## Story
 
@@ -32,11 +33,15 @@ goes cold. Guards patrol the building, climb between floors, and shoot when
 they spot you. They can be eliminated with weapons, avoided by taking another
 route, or bypassed by crawling, timing movement, and using cover.
 
-The game rewards careful movement as much as combat. Ammunition is limited,
-grenades are powerful but risky, and hazards such as mines, spikes, falling
-platforms, and moving platforms make the building itself part of the challenge.
-Some doors connect distant parts of a level, creating shortcuts, ambushes, or
-escape routes depending on how you use them.
+The game rewards careful movement as much as combat. Each sector contains
+several terminals, but only the brightly lit active terminal can be hacked.
+Holding position while breaching it takes several seconds and leaves Chuck
+exposed, making it a risky alternative to finding the correct key card.
+The active terminal is always selected away from the level entrance.
+Ammunition is limited, grenades are powerful but risky, and hazards such as
+mines, spikes, falling platforms, and moving platforms make the building
+itself part of the challenge. Some doors connect distant parts of a level,
+creating shortcuts, ambushes, or escape routes depending on how you use them.
 
 ## Controls
 
@@ -45,6 +50,7 @@ escape routes depending on how you use them.
 - Climb: `Up` / `Down` or `W` / `S` on ladders
 - Crawl: hold `Down` or `S` while on the ground
 - Shoot or throw a grenade: `Space`
+- Hack the active terminal: hold `E` while standing nearby
 - Use a door: `Down` or `S`
 - Mute or unmute sound and music: `M`
 - Toggle fullscreen: `F` or `Alt+Enter`

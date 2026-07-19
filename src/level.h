@@ -50,6 +50,12 @@ typedef struct
     int col, row;
 } Door;
 
+/* A wall-mounted access terminal. Exactly one terminal is active per level. */
+typedef struct
+{
+    int col, row;
+} Terminal;
+
 typedef enum
 {
     ITEM_CARD = 0,
@@ -100,12 +106,18 @@ typedef struct
 
     bool has_exit;
     int exit_col, exit_row;
+    bool exit_unlocked; /* granted by either the active card or terminal hack */
 
     Item items[MAX_ITEMS];
     int item_count;
     int card_count;        /* items of type ITEM_CARD */
     int active_card_index; /* index into items[] of the randomly chosen key card */
     int items_remaining;   /* 1 = key card not yet found, 0 = key card collected */
+
+    Terminal terminals[MAX_TERMINALS];
+    int terminal_count;
+    int active_terminal_index; /* index into terminals[], chosen at level load */
+    bool terminal_hacked;
 
     EnemySpawn enemy_spawns[MAX_ENEMIES];
     int enemy_count;

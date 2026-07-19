@@ -1,15 +1,15 @@
 #########################
 #  H   B   H       H    #
-#S H   G   H   C   H  D #
+#S H   G   H   C   HT D #
 ###H#######H#######H#####
 #  H       H  V    H    #
-#  H D     H  V    H    #
+#  H D     H  V T  H    #
 ###H#######H##V####H#####
 #  H       H  V    H    #
 #  H   C   H  V    H  D #
 ###H#######H##V####H#####
 #  H       H  V    H    #
-#  H   C   H  V G  H    #
+#  H   C T H  V G  H    #
 ###H#######H#######H#####
 #  H       H       H    #
 #  H D W ^ H B K   H  E #

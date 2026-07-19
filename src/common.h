@@ -31,6 +31,12 @@
 #define CRATE_PUSH_SPEED 95.0f
 #define CRATE_FRICTION 8.0f
 
+/* Exit-access terminals */
+#define MAX_TERMINALS 16
+#define TERMINAL_HACK_TIME 4.0f
+#define TERMINAL_INTERACT_RANGE 44.0f
+#define TERMINAL_MIN_START_TILES 12
+
 /* Grenades */
 #define MAX_GRENADES 8
 #define GRENADE_W 10

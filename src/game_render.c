@@ -261,7 +261,7 @@ static void draw_door(SDL_Renderer *r, float x, float y, int index)
 
 static void draw_exit(SDL_Renderer *r, const Game *game, float x, float y)
 {
-  bool unlocked = game->level.items_remaining == 0;
+  bool unlocked = game->level.exit_unlocked;
   SDL_Color signal = unlocked ? (SDL_Color){64, 238, 145, 255}
                               : (SDL_Color){230, 75, 61, 255};
   if (unlocked)
@@ -276,6 +276,58 @@ static void draw_exit(SDL_Renderer *r, const Game *game, float x, float y)
   color_rect(r, signal, x + 21.0f, y + 19.0f, 3.0f, 2.0f);
   draw_text(r, x + 9.0f, y + 12.0f, 0.65f, signal.r, signal.g, signal.b,
             unlocked ? "GO" : "LOCK");
+}
+
+static void draw_terminal(SDL_Renderer *r, float x, float y,
+                          bool active, bool hacked, float world_t)
+{
+  SDL_Color screen = active ? (SDL_Color){68, 245, 159, 255}
+                            : (SDL_Color){62, 75, 79, 255};
+  bool pulse = ((int)(world_t * 4.0f) & 1) == 0;
+
+  if (active)
+  {
+    draw_soft_glow(r, x + 5.0f, y + 3.0f, 22.0f, 25.0f, screen);
+    color_rect(r, pulse ? (SDL_Color){126, 255, 196, 255} : screen,
+               x + 13.0f, y - 4.0f, 6.0f, 3.0f);
+    color_rect(r, screen, x + 15.0f, y - 7.0f, 2.0f, 4.0f);
+  }
+
+  color_rect(r, COL_INK, x + 2.0f, y + 1.0f, 28.0f, 30.0f);
+  color_rect(r, active ? (SDL_Color){38, 72, 69, 255}
+                       : (SDL_Color){42, 48, 51, 255},
+             x + 4.0f, y + 3.0f, 24.0f, 27.0f);
+  color_rect(r, (SDL_Color){11, 19, 23, 255},
+             x + 6.0f, y + 5.0f, 20.0f, 13.0f);
+  color_rect(r, active ? screen : (SDL_Color){50, 61, 64, 255},
+             x + 8.0f, y + 7.0f, 16.0f, 9.0f);
+
+  if (active)
+  {
+    color_rect(r, (SDL_Color){10, 76, 60, 255},
+               x + 10.0f, y + 9.0f, 12.0f, 1.0f);
+    color_rect(r, (SDL_Color){193, 255, 218, 255},
+               x + 10.0f, y + 12.0f, hacked ? 12.0f : 7.0f, 2.0f);
+  }
+  else
+  {
+    color_rect(r, (SDL_Color){29, 35, 38, 255},
+               x + 10.0f, y + 9.0f, 12.0f, 1.0f);
+    color_rect(r, (SDL_Color){88, 47, 44, 255},
+               x + 15.0f, y + 12.0f, 2.0f, 2.0f);
+  }
+
+  color_rect(r, (SDL_Color){20, 27, 30, 255},
+             x + 7.0f, y + 20.0f, 18.0f, 8.0f);
+  color_rect(r, active ? screen : (SDL_Color){73, 78, 77, 255},
+             x + 9.0f, y + 22.0f, 3.0f, 2.0f);
+  color_rect(r, active ? screen : (SDL_Color){73, 78, 77, 255},
+             x + 14.0f, y + 22.0f, 3.0f, 2.0f);
+  color_rect(r, active ? screen : (SDL_Color){73, 78, 77, 255},
+             x + 19.0f, y + 22.0f, 3.0f, 2.0f);
+  draw_text(r, x + (active ? 7.0f : 9.0f), y + 25.0f, 0.55f,
+            screen.r, screen.g, screen.b,
+            active ? (hacked ? "OPEN" : "LIVE") : "OFF");
 }
 
 static void draw_card(SDL_Renderer *r, float x, float y, Uint8 alpha, bool active)
@@ -848,6 +900,14 @@ static void render_world(Game *game)
     float y = lvl->exit_row * (float)TILE_SIZE + oy;
     draw_exit(r, game, x, y);
   }
+  for (int i = 0; i < lvl->terminal_count; ++i)
+  {
+    float x = lvl->terminals[i].col * (float)TILE_SIZE - cam_x;
+    float y = lvl->terminals[i].row * (float)TILE_SIZE + oy;
+    bool active = i == lvl->active_terminal_index;
+    draw_terminal(r, x, y, active,
+                  active && lvl->terminal_hacked, world_t);
+  }
 
   /* Pickups bob independently and cast restrained color-coded glows. */
   int card_pos = 0;
@@ -1007,7 +1067,7 @@ static void render_hud(Game *game)
   draw_hud_separator(r, 276.0f);
 
   draw_text(r, 287.0f, 8.0f, 0.75f, 145, 164, 165, "ACCESS");
-  if (game->level.items_remaining == 0)
+  if (game->level.exit_unlocked)
   {
     color_rect(r, (SDL_Color){35, 139, 116, 255}, 287.0f, 20.0f, 61.0f, 11.0f);
     draw_text(r, 291.0f, 21.0f, 1.0f, 191, 255, 224, "GRANTED");
@@ -1039,6 +1099,55 @@ static void render_hud(Game *game)
     float height = 2.0f + fmodf((float)(i * 7) + pulse * 8.0f, 6.0f);
     color_rect(r, i < 9 ? COL_CYAN : (SDL_Color){63, 87, 91, 255},
                654.0f + i * 10.0f, 27.0f - height, 6.0f, height);
+  }
+}
+
+static void render_terminal_interaction(Game *game, int win_w, int win_h)
+{
+  if (game->state != STATE_PLAYING ||
+      !game->terminal_in_range ||
+      game->level.exit_unlocked)
+  {
+    return;
+  }
+
+  SDL_Renderer *r = game->renderer;
+  float panel_w = 330.0f;
+  float panel_h = 45.0f;
+  float x = ((float)win_w - panel_w) * 0.5f;
+  float y = (float)win_h - panel_h - 12.0f;
+  float progress = game->terminal_hack_progress / TERMINAL_HACK_TIME;
+  if (progress < 0.0f)
+    progress = 0.0f;
+  if (progress > 1.0f)
+    progress = 1.0f;
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  set_rgba(r, 5, 12, 15, 230);
+  fill_rect(r, x, y, panel_w, panel_h);
+  set_rgba(r, 71, 242, 164, 220);
+  fill_rect(r, x, y, panel_w, 2.0f);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+  char label[64];
+  if (game->terminal_hacking)
+  {
+    int percent = (int)(progress * 100.0f);
+    SDL_snprintf(label, sizeof(label), "BREACHING SECURITY... %d%%", percent);
+  }
+  else
+  {
+    SDL_snprintf(label, sizeof(label), "HOLD E TO HACK ACTIVE TERMINAL");
+  }
+  draw_text(r, x + 12.0f, y + 9.0f, 1.25f, 174, 255, 213, label);
+
+  color_rect(r, (SDL_Color){28, 54, 51, 255},
+             x + 12.0f, y + 31.0f, panel_w - 24.0f, 7.0f);
+  if (progress > 0.0f)
+  {
+    color_rect(r, (SDL_Color){68, 245, 159, 255},
+               x + 12.0f, y + 31.0f,
+               (panel_w - 24.0f) * progress, 7.0f);
   }
 }
 
@@ -1093,6 +1202,7 @@ void game_render(Game *game)
 
   render_world(game);
   render_hud(game);
+  render_terminal_interaction(game, win_w, win_h);
 
   if (game->exit_unlocked_timer > 0.0f)
   {
