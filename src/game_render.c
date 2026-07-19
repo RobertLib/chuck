@@ -993,15 +993,17 @@ static void render_hud(Game *game)
   draw_hud_separator(r, 190.0f);
 
   draw_text(r, 201.0f, 8.0f, 0.75f, 145, 164, 165, "AMMO");
+  const float ammo_slot_spacing = 7.0f;
   for (int i = 0; i < MAX_AMMO; ++i)
   {
     SDL_Color bullet = i < game->player.bullets ? COL_AMBER
                                                 : (SDL_Color){63, 64, 58, 255};
-    color_rect(r, bullet, 202.0f + i * 13.0f, 20.0f, 3.0f, 10.0f);
-    color_rect(r, (SDL_Color){99, 72, 34, 255}, 202.0f + i * 13.0f, 28.0f, 5.0f, 2.0f);
+    float ammo_x = 202.0f + i * ammo_slot_spacing;
+    color_rect(r, bullet, ammo_x, 20.0f, 3.0f, 10.0f);
+    color_rect(r, (SDL_Color){99, 72, 34, 255}, ammo_x, 28.0f, 5.0f, 2.0f);
   }
   if (game->player.grenades > 0)
-    draw_grenade(r, 247.0f, 19.0f, 0.0f);
+    draw_grenade(r, 252.0f, 19.0f, 0.0f);
   draw_hud_separator(r, 276.0f);
 
   draw_text(r, 287.0f, 8.0f, 0.75f, 145, 164, 165, "ACCESS");

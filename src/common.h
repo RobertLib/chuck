@@ -102,7 +102,7 @@
 #define BULLET_SPEED 600.0f
 #define BULLET_W 8
 #define BULLET_H 4
-#define MAX_AMMO 3
+#define MAX_AMMO 6
 
 /* Enemy shooting */
 #define MAX_ENEMY_BULLETS 16

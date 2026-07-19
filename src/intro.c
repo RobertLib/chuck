@@ -656,8 +656,8 @@ static void render_start_prompt(SDL_Renderer *r, const Intro *intro, int win_w)
 
     color_rect(r, dim_color(COL_RUST, 0.55f + pulse * 0.45f),
                button->x + 12.0f, button->y + 12.0f, 7.0f, 7.0f);
-    draw_text_centered(r, cx + 9.0f, button->y + 9.0f, 1.25f,
-                       text_color, "CONTINUE THE PURSUIT");
+    draw_text_centered(r, cx + 9.0f, button->y + 13.0f, 1.0f,
+                       text_color, "PRESS ENTER TO START");
 
     float accent_w = intro->start_hovered ? 62.0f : 24.0f + pulse * 18.0f;
     color_rect(r, COL_RUST, cx - accent_w * 0.5f,
