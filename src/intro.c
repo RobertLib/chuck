@@ -105,7 +105,7 @@ void intro_init(Intro *intro, int win_w, int win_h)
         star->phase = (float)SDL_rand(628) * 0.01f;
     }
 
-    intro->start_button.w = 238.0f;
+    intro->start_button.w = 204.0f;
     intro->start_button.h = 34.0f;
     intro->start_button.x = ((float)w - intro->start_button.w) * 0.5f;
     intro->start_button.y = (float)h - 82.0f;

@@ -510,35 +510,89 @@ static void draw_hostage(SDL_Renderer *r, float x, float ground_y,
     float step = sinf(time * 8.3f + 1.4f);
     float y = ground_y - 34.0f * scale;
     float bob = fabsf(step) * 0.55f * scale;
+    float hair_sway = step * 0.25f;
+    SDL_Color hair_dark = {76, 51, 35, 255};
+    SDL_Color hair = {137, 94, 55, 255};
+    SDL_Color skin = {224, 171, 128, 255};
+    SDL_Color coat_dark = {91, 28, 37, 255};
+    SDL_Color coat = {148, 42, 49, 255};
+    SDL_Color coat_light = {183, 57, 60, 255};
+    SDL_Color trousers = {39, 48, 58, 255};
+    SDL_Color boots = {15, 19, 25, 255};
 
     color_rect(r, (SDL_Color){2, 4, 7, 145},
                x + 3.0f * scale, ground_y - 2.0f,
                20.0f * scale, 4.0f);
+
+    /* Practical trousers and flat boots, animated with the same restrained step. */
     sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, 1, scale,
-                7 + step * 0.7f, 25, 5, 9, COL_INK);
+                7 + step * 0.7f, 23, 5, 11, COL_INK);
+    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, 1, scale,
+                8 + step * 0.7f, 24, 3, 8, trousers);
+    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, 1, scale,
+                6 + step * 0.7f, 31, 7, 3, boots);
     sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, 1, scale,
-                15 - step * 0.7f, 25, 5, 9, COL_INK);
+                15 - step * 0.7f, 23, 5, 11, COL_INK);
+    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, 1, scale,
+                16 - step * 0.7f, 24, 3, 8, trousers);
+    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, 1, scale,
+                14 - step * 0.7f, 31, 7, 3, boots);
 
-    /* Elegant red coat/dress, light hair, and a tense bound-hands pose. */
+    /* Shoulder-length hair provides the main readable cue at pixel scale. */
     sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                6, 12, 15, 16, (SDL_Color){117, 27, 36, 255});
+                7 + hair_sway, 1, 13, 15, COL_INK);
     sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                8, 12, 11, 14, (SDL_Color){191, 48, 55, 255});
+                8 + hair_sway, 2, 11, 13, hair_dark);
     sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                9, 2, 10, 11, (SDL_Color){224, 171, 128, 255});
+                7 - hair_sway, 7, 4, 9, hair_dark);
     sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                7, 0, 13, 6, (SDL_Color){209, 179, 105, 255});
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                7, 4, 4, 8, (SDL_Color){190, 153, 86, 255});
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                17, 6, 2, 2, COL_INK);
+                8 - hair_sway, 8, 2, 7, hair);
 
+    /* Simple profile without makeup accents. */
     sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                17, 15, 9, 4, (SDL_Color){224, 171, 128, 255});
+                10, 2, 10, 11, COL_INK);
     sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                22, 16, 5, 3, (SDL_Color){224, 171, 128, 255});
+                11, 3, 8, 8, skin);
     sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                23, 15, 2, 5, (SDL_Color){68, 75, 72, 255});
+                12, 10, 7, 2, skin);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                8, 0, 12, 5, hair_dark);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                9, 1, 9, 2, hair);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                8, 3, 4, 8, hair);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                17, 5, 2, 1, COL_INK);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                18, 9, 1, 1, hair_dark);
+
+    /* Straight-cut red coat keeps her silhouette distinct but grounded. */
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                12, 11, 5, 4, skin);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                7, 12, 14, 15, COL_INK);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                8, 13, 12, 13, coat);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                9, 14, 4, 10, coat_light);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                13, 14, 2, 12, coat_dark);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                8, 24, 12, 3, coat_dark);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                11, 13, 6, 2, (SDL_Color){226, 222, 199, 255});
+
+    /* Bent sleeves lead into small hands tied together in front of her. */
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                18, 14, 6, 5, COL_INK);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                19, 15, 5, 3, coat);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                22, 17, 5, 3, skin);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                24, 16, 3, 4, skin);
+    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+                24, 16, 2, 5, (SDL_Color){68, 75, 72, 255});
 }
 
 static void draw_target_brackets(SDL_Renderer *r, float x, float y,
