@@ -1488,7 +1488,7 @@ void game_render(Game *game)
 
   if (game->state == STATE_LEVEL_CLEARED)
     draw_overlay_panel(game, 240.0f, (SDL_Color){86, 233, 151, 255},
-                       "YOU FOUND HER", NULL);
+                       "THE TRAIL LEADS UP", NULL);
   else if (game->state == STATE_GAME_OVER)
     draw_overlay_panel(game, 225.0f, (SDL_Color){235, 72, 65, 255},
                        "THE TRAIL WENT COLD", "PRESS R TO RESTART THE PURSUIT");
