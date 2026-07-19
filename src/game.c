@@ -965,8 +965,10 @@ static void advance_level(Game *game)
     else
     {
         audio_stop_music(&game->audio);
-        game->state = STATE_WIN;
-        audio_play(&game->audio, SFX_WIN);
+        audio_stop_effects(&game->audio);
+        outro_cutscene_init(&game->outro_cutscene);
+        audio_play_music(&game->audio, MUSIC_INTRO);
+        game->state = STATE_OUTRO;
     }
 }
 
@@ -1032,6 +1034,7 @@ static void clear_edge_input(Game *game)
     game->input.shoot = false;
     game->input.use_door = false;
     game->input.confirm = false;
+    game->input.restart = false;
 }
 
 void game_update(Game *game, float dt)
@@ -1116,8 +1119,56 @@ void game_update(Game *game, float dt)
         return;
     }
 
+    if (game->state == STATE_OUTRO)
+    {
+        if (game->input.restart &&
+            game->outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)
+        {
+            restart_game(game);
+            clear_edge_input(game);
+            return;
+        }
+
+        /*
+         * Skipping preserves the happy ending instead of dropping the player
+         * onto a separate results screen.
+         */
+        if (game->input.confirm &&
+            game->outro_cutscene.time < OUTRO_FINAL_REVEAL_TIME)
+        {
+            audio_stop_effects(&game->audio);
+            game->outro_cutscene.time = OUTRO_FINAL_REVEAL_TIME;
+            audio_play(&game->audio, SFX_WIN);
+            clear_edge_input(game);
+            return;
+        }
+
+        Uint32 cues = 0;
+        outro_cutscene_update(&game->outro_cutscene, dt, &cues);
+        if (cues & OUTRO_CUE_DOOR)
+            audio_play(&game->audio, SFX_DOOR);
+        if (cues & OUTRO_CUE_STEP_A)
+            audio_play(&game->audio, SFX_STEP_A);
+        if (cues & OUTRO_CUE_STEP_B)
+            audio_play(&game->audio, SFX_STEP_B);
+        if (cues & OUTRO_CUE_HELICOPTER)
+            audio_play(&game->audio, SFX_OUTRO_HELICOPTER);
+        if (cues & OUTRO_CUE_PLAYER_SHOT)
+            audio_play(&game->audio, SFX_PLAYER_SHOT);
+        if (cues & OUTRO_CUE_ENEMY_DOWN)
+            audio_play(&game->audio, SFX_ENEMY_DOWN);
+        if (cues & OUTRO_CUE_EXPLOSION)
+            audio_play(&game->audio, SFX_EXPLOSION);
+        if (cues & OUTRO_CUE_WIN)
+            audio_play(&game->audio, SFX_WIN);
+
+        clear_edge_input(game);
+        return;
+    }
+
     /* If restart requested via input handler while in end state, restart. */
-    if (game->input.jump && (game->state == STATE_GAME_OVER || game->state == STATE_WIN))
+    if (game->input.restart &&
+        (game->state == STATE_GAME_OVER || game->state == STATE_WIN))
     {
         restart_game(game);
         clear_edge_input(game);

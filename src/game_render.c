@@ -1200,6 +1200,13 @@ void game_render(Game *game)
     return;
   }
 
+  if (game->state == STATE_OUTRO)
+  {
+    outro_cutscene_render(r, &game->outro_cutscene, win_w, win_h);
+    SDL_RenderPresent(r);
+    return;
+  }
+
   render_world(game);
   render_hud(game);
   render_terminal_interaction(game, win_w, win_h);

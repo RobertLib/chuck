@@ -5,6 +5,8 @@
 
 #define OPENING_CUTSCENE_DURATION 12.4f
 #define LEVEL_TRANSITION_DURATION 9.4f
+#define OUTRO_CUTSCENE_DURATION 25.0f
+#define OUTRO_FINAL_REVEAL_TIME 19.4f
 
 typedef enum
 {
@@ -44,6 +46,23 @@ typedef struct
     int hostiles_neutralized;
 } LevelTransition;
 
+typedef enum
+{
+    OUTRO_CUE_DOOR = 1u << 0,
+    OUTRO_CUE_STEP_A = 1u << 1,
+    OUTRO_CUE_STEP_B = 1u << 2,
+    OUTRO_CUE_HELICOPTER = 1u << 3,
+    OUTRO_CUE_PLAYER_SHOT = 1u << 4,
+    OUTRO_CUE_ENEMY_DOWN = 1u << 5,
+    OUTRO_CUE_EXPLOSION = 1u << 6,
+    OUTRO_CUE_WIN = 1u << 7
+} OutroCutsceneCue;
+
+typedef struct
+{
+    float time;
+} OutroCutscene;
+
 void opening_cutscene_init(OpeningCutscene *cutscene);
 
 /*
@@ -71,5 +90,16 @@ bool level_transition_update(LevelTransition *transition, float dt,
 void level_transition_render(SDL_Renderer *renderer,
                              const LevelTransition *transition,
                              int win_w, int win_h);
+
+/*
+ * Final rooftop rescue. The scene remains on its thank-you frame after the
+ * animation finishes so the player can take in the ending or replay it.
+ */
+void outro_cutscene_init(OutroCutscene *cutscene);
+void outro_cutscene_update(OutroCutscene *cutscene, float dt,
+                           Uint32 *out_cues);
+void outro_cutscene_render(SDL_Renderer *renderer,
+                           const OutroCutscene *cutscene,
+                           int win_w, int win_h);
 
 #endif /* CHUCK_CUTSCENE_H */

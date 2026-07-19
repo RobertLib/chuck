@@ -23,7 +23,8 @@ identify the correct access key card, and reach the exit before he can continue
 the pursuit.
 
 The mission is simple: follow the kidnappers through every level, overcome the
-building's security, and bring his fiancée home.
+building's security, and bring his fiancée home. The pursuit ends in a
+cinematic rooftop rescue after the final sector.
 
 ## Gameplay
 
@@ -54,6 +55,7 @@ creating shortcuts, ambushes, or escape routes depending on how you use them.
 - Use a door: `Down` or `S`
 - Mute or unmute sound and music: `M`
 - Toggle fullscreen: `F` or `Alt+Enter`
+- Skip a cinematic to its next screen: `Space` or `Enter`
 - Restart after win or game over: `R`
 
 ## Running

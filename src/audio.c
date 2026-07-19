@@ -698,6 +698,26 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.29f, 0.14f, 94.0f, 42.0f, 0.48f,
                  WAVE_TRIANGLE, 0.003f, 0.12f);
         break;
+    case SFX_OUTRO_HELICOPTER:
+        if (!begin_sound(audio, effect, 9.35f, 0.30f, 500))
+            return false;
+        /*
+         * Two detuned low rotors and filtered noise create a long approach.
+         * The cached sound ends just before the aircraft hits the roof.
+         */
+        add_tone(s, 0.00f, 9.35f, 34.0f, 28.0f, 0.52f,
+                 WAVE_SAW, 0.18f, 0.42f);
+        add_tone(s, 0.00f, 9.35f, 68.0f, 56.0f, 0.23f,
+                 WAVE_TRIANGLE, 0.18f, 0.42f);
+        add_noise(s, 0.00f, 9.35f, 0.18f, 0.045f,
+                  0.18f, 0.42f, 0x48454c49u);
+        for (int beat = 0; beat < 37; ++beat)
+        {
+            float at = (float)beat * 0.25f;
+            add_noise(s, at, 0.075f, 0.24f, 0.22f,
+                      0.004f, 0.06f, 0x6200u + (Uint32)beat * 19u);
+        }
+        break;
     case SFX_REVEAL_TICK:
         if (!begin_sound(audio, effect, 0.052f, 0.12f, 40))
             return false;

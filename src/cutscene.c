@@ -432,7 +432,7 @@ static void sprite_rect(SDL_Renderer *r, float x, float y, float sprite_w,
 }
 
 static void draw_agent(SDL_Renderer *r, float x, float ground_y,
-                       float scale, float time)
+                       float scale, float time, int dir)
 {
     float stride = sinf(time * 12.0f);
     float y = ground_y - 32.0f * scale;
@@ -442,32 +442,32 @@ static void draw_agent(SDL_Renderer *r, float x, float ground_y,
                x + 2.0f * scale, ground_y - 2.0f,
                24.0f * scale, 4.0f);
 
-    sprite_rect(r, x, y + fabsf(stride) * scale, 28.0f, 1, scale,
+    sprite_rect(r, x, y + fabsf(stride) * scale, 28.0f, dir, scale,
                 5 + stride * 1.6f, 21, 7, 11, COL_INK);
-    sprite_rect(r, x, y + (1.0f - fabsf(stride)) * scale, 28.0f, 1, scale,
+    sprite_rect(r, x, y + (1.0f - fabsf(stride)) * scale, 28.0f, dir, scale,
                 15 - stride * 1.6f, 21, 7, 11, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 5, 10, 17, 14, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 7, 11, 13, 12, (SDL_Color){35, 102, 142, 255});
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 8, 12, 4, 9, (SDL_Color){60, 148, 171, 255});
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 8, 20, 11, 2, COL_AMBER);
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 9, 1, 11, 11, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 10, 3, 9, 8, (SDL_Color){210, 154, 105, 255});
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 9, 1, 11, 4, (SDL_Color){70, 38, 28, 255});
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 18, 13, 11, 5, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 19, 14, 10, 3, (SDL_Color){209, 154, 105, 255});
 }
 
 static void draw_terrorist(SDL_Renderer *r, float x, float ground_y,
-                           float scale, float time, float phase)
+                           float scale, float time, float phase, int dir)
 {
     float stride = sinf(time * 9.0f + phase);
     float y = ground_y - 32.0f * scale;
@@ -476,36 +476,36 @@ static void draw_terrorist(SDL_Renderer *r, float x, float ground_y,
     color_rect(r, (SDL_Color){2, 4, 7, 155},
                x + 2.0f * scale, ground_y - 2.0f,
                24.0f * scale, 4.0f);
-    sprite_rect(r, x, y + fabsf(stride) * scale, 28.0f, 1, scale,
+    sprite_rect(r, x, y + fabsf(stride) * scale, 28.0f, dir, scale,
                 4 + stride, 21, 8, 11, COL_INK);
-    sprite_rect(r, x, y + (1.0f - fabsf(stride)) * scale, 28.0f, 1, scale,
+    sprite_rect(r, x, y + (1.0f - fabsf(stride)) * scale, 28.0f, dir, scale,
                 15 - stride, 21, 8, 11, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 4, 10, 19, 14, (SDL_Color){17, 21, 22, 255});
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 7, 12, 13, 9, (SDL_Color){49, 54, 49, 255});
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 7, 16, 13, 3, COL_RUST);
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 8, 1, 12, 11, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 10, 4, 9, 7, (SDL_Color){145, 103, 75, 255});
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 8, 1, 13, 5, (SDL_Color){24, 28, 27, 255});
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 17, 6, 2, 2, COL_RUST);
 
     /* Low-ready rifle makes the captors unmistakable at pixel scale. */
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 17, 13, 13, 4, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 21, 14, 13, 2, (SDL_Color){67, 73, 69, 255});
-    sprite_rect(r, x, y + bob, 28.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 18, 14, 6, 3, (SDL_Color){145, 103, 75, 255});
 }
 
 static void draw_hostage(SDL_Renderer *r, float x, float ground_y,
-                         float scale, float time)
+                         float scale, float time, int dir, bool tied)
 {
     float step = sinf(time * 8.3f + 1.4f);
     float y = ground_y - 34.0f * scale;
@@ -525,74 +525,87 @@ static void draw_hostage(SDL_Renderer *r, float x, float ground_y,
                20.0f * scale, 4.0f);
 
     /* Practical trousers and flat boots, animated with the same restrained step. */
-    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, 1, scale,
+    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, dir, scale,
                 7 + step * 0.7f, 23, 5, 11, COL_INK);
-    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, 1, scale,
+    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, dir, scale,
                 8 + step * 0.7f, 24, 3, 8, trousers);
-    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, 1, scale,
+    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, dir, scale,
                 6 + step * 0.7f, 31, 7, 3, boots);
-    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, 1, scale,
+    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, dir, scale,
                 15 - step * 0.7f, 23, 5, 11, COL_INK);
-    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, 1, scale,
+    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, dir, scale,
                 16 - step * 0.7f, 24, 3, 8, trousers);
-    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, 1, scale,
+    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, dir, scale,
                 14 - step * 0.7f, 31, 7, 3, boots);
 
     /* Shoulder-length hair provides the main readable cue at pixel scale. */
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 7 + hair_sway, 1, 13, 15, COL_INK);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 8 + hair_sway, 2, 11, 13, hair_dark);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 7 - hair_sway, 7, 4, 9, hair_dark);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 8 - hair_sway, 8, 2, 7, hair);
 
     /* Simple profile without makeup accents. */
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 10, 2, 10, 11, COL_INK);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 11, 3, 8, 8, skin);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 12, 10, 7, 2, skin);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 8, 0, 12, 5, hair_dark);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 9, 1, 9, 2, hair);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 8, 3, 4, 8, hair);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 17, 5, 2, 1, COL_INK);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 18, 9, 1, 1, hair_dark);
 
     /* Straight-cut red coat keeps her silhouette distinct but grounded. */
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 12, 11, 5, 4, skin);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 7, 12, 14, 15, COL_INK);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 8, 13, 12, 13, coat);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 9, 14, 4, 10, coat_light);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 13, 14, 2, 12, coat_dark);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 8, 24, 12, 3, coat_dark);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
+    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 11, 13, 6, 2, (SDL_Color){226, 222, 199, 255});
 
-    /* Bent sleeves lead into small hands tied together in front of her. */
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                18, 14, 6, 5, COL_INK);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                19, 15, 5, 3, coat);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                22, 17, 5, 3, skin);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                24, 16, 3, 4, skin);
-    sprite_rect(r, x, y + bob, 26.0f, 1, scale,
-                24, 16, 2, 5, (SDL_Color){68, 75, 72, 255});
+    if (tied)
+    {
+        /* Bent sleeves lead into small hands tied together in front of her. */
+        sprite_rect(r, x, y + bob, 26.0f, dir, scale,
+                    18, 14, 6, 5, COL_INK);
+        sprite_rect(r, x, y + bob, 26.0f, dir, scale,
+                    19, 15, 5, 3, coat);
+        sprite_rect(r, x, y + bob, 26.0f, dir, scale,
+                    22, 17, 5, 3, skin);
+        sprite_rect(r, x, y + bob, 26.0f, dir, scale,
+                    24, 16, 3, 4, skin);
+        sprite_rect(r, x, y + bob, 26.0f, dir, scale,
+                    24, 16, 2, 5, (SDL_Color){68, 75, 72, 255});
+    }
+    else
+    {
+        /* Once safe, her arm rests naturally at her side. */
+        sprite_rect(r, x, y + bob, 26.0f, dir, scale,
+                    18, 14, 6, 12, COL_INK);
+        sprite_rect(r, x, y + bob, 26.0f, dir, scale,
+                    19, 15, 4, 10, coat);
+        sprite_rect(r, x, y + bob, 26.0f, dir, scale,
+                    19, 24, 4, 3, skin);
+    }
 }
 
 static void draw_target_brackets(SDL_Renderer *r, float x, float y,
@@ -743,16 +756,16 @@ void opening_cutscene_render(SDL_Renderer *r,
         float escort_one_x = lerpf(500.0f, 643.0f, group_move);
         float hostage_x = lerpf(525.0f, 668.0f, group_move);
         float escort_two_x = lerpf(550.0f, 693.0f, group_move);
-        draw_terrorist(r, escort_one_x, ground, 1.35f, time, 0.0f);
-        draw_hostage(r, hostage_x, ground, 1.18f, time);
-        draw_terrorist(r, escort_two_x, ground, 1.35f, time, 2.2f);
+        draw_terrorist(r, escort_one_x, ground, 1.35f, time, 0.0f, 1);
+        draw_hostage(r, hostage_x, ground, 1.18f, time, 1, true);
+        draw_terrorist(r, escort_two_x, ground, 1.35f, time, 2.2f, 1);
     }
 
     if (time >= 7.0f && time < 11.05f)
     {
         float run = smoothstep01((time - 7.0f) / 3.75f);
         float agent_x = lerpf(199.0f, 658.0f, run);
-        draw_agent(r, agent_x, ground, 1.48f, time);
+        draw_agent(r, agent_x, ground, 1.48f, time, 1);
     }
 
     render_rain(r, time, win_w, win_h);
@@ -1012,7 +1025,7 @@ static void draw_transition_door_foreground(SDL_Renderer *r,
 }
 
 static void draw_agent_held_fire(SDL_Renderer *r, float x, float ground_y,
-                                 float scale, float time, bool aiming)
+                                 float scale, float time, bool aiming, int dir)
 {
     float y = ground_y - 32.0f * scale;
     float breath = sinf(time * 4.5f) * 0.35f * scale;
@@ -1020,40 +1033,40 @@ static void draw_agent_held_fire(SDL_Renderer *r, float x, float ground_y,
     color_rect(r, (SDL_Color){2, 4, 7, 150},
                x + 2.0f * scale, ground_y - 2.0f,
                28.0f * scale, 4.0f);
-    sprite_rect(r, x, y, 30.0f, 1, scale,
+    sprite_rect(r, x, y, 30.0f, dir, scale,
                 6, 21, 7, 11, COL_INK);
-    sprite_rect(r, x, y, 30.0f, 1, scale,
+    sprite_rect(r, x, y, 30.0f, dir, scale,
                 16, 21, 7, 11, COL_INK);
-    sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                 5, 10, 18, 14, COL_INK);
-    sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                 7, 11, 14, 12, (SDL_Color){35, 102, 142, 255});
-    sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                 8, 12, 4, 9, (SDL_Color){60, 148, 171, 255});
-    sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                 8, 20, 12, 2, COL_AMBER);
-    sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                 9, 1, 11, 11, COL_INK);
-    sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                 10, 3, 9, 8, (SDL_Color){210, 154, 105, 255});
-    sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                 9, 1, 11, 4, (SDL_Color){70, 38, 28, 255});
 
     if (aiming)
     {
-        sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                     18, 12, 13, 4, (SDL_Color){209, 154, 105, 255});
-        sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                     27, 11, 10, 4, COL_INK);
-        sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                     35, 12, 6, 2, (SDL_Color){77, 84, 81, 255});
     }
     else
     {
         /* He lowers the pistol rather than taking the obstructed shot. */
-        sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                     18, 13, 8, 8, (SDL_Color){209, 154, 105, 255});
-        sprite_rect(r, x, y + breath, 30.0f, 1, scale,
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                     23, 19, 5, 9, COL_INK);
     }
 }
@@ -1111,31 +1124,31 @@ void level_transition_render(SDL_Renderer *r,
                        hostage_x + 9.0f, ground_y - 25.0f);
         SDL_RenderLine(r, hostage_x + 25.0f, ground_y - 25.0f,
                        group_x + 73.0f, ground_y - 29.0f);
-        draw_terrorist(r, group_x, ground_y, 1.32f, time, 0.0f);
-        draw_hostage(r, hostage_x, ground_y, 1.18f, time);
+        draw_terrorist(r, group_x, ground_y, 1.32f, time, 0.0f, 1);
+        draw_hostage(r, hostage_x, ground_y, 1.18f, time, 1, true);
         draw_terrorist(r, group_x + 68.0f, ground_y,
-                       1.32f, time, 2.2f);
+                       1.32f, time, 2.2f, 1);
     }
 
     if (time >= 0.95f && time < 2.20f)
     {
         float entry = smoothstep01((time - 0.95f) / 1.25f);
         draw_agent(r, lerpf(-48.0f, 170.0f, entry),
-                   ground_y, 1.48f, time * 1.2f);
+                   ground_y, 1.48f, time * 1.2f, 1);
     }
     else if (time >= 2.20f && time < 3.48f)
     {
-        draw_agent_held_fire(r, 170.0f, ground_y, 1.48f, time, true);
+        draw_agent_held_fire(r, 170.0f, ground_y, 1.48f, time, true, 1);
     }
     else if (time >= 3.48f && time < 3.88f)
     {
-        draw_agent_held_fire(r, 170.0f, ground_y, 1.48f, time, false);
+        draw_agent_held_fire(r, 170.0f, ground_y, 1.48f, time, false, 1);
     }
     else if (time >= 3.88f && time < 8.10f)
     {
         float pursuit = smoothstep01((time - 3.88f) / 4.10f);
         draw_agent(r, lerpf(170.0f, door_x + 112.0f, pursuit),
-                   ground_y, 1.48f, time * 1.42f);
+                   ground_y, 1.48f, time * 1.42f, 1);
     }
 
     draw_transition_door_foreground(r, door_x, ground_y);
@@ -1154,6 +1167,764 @@ void level_transition_render(SDL_Renderer *r,
     {
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
         set_rgba(r, 2, 4, 7, (Uint8)(fade * 255.0f));
+        fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    }
+}
+
+void outro_cutscene_init(OutroCutscene *cutscene)
+{
+    SDL_zerop(cutscene);
+}
+
+void outro_cutscene_update(OutroCutscene *cutscene, float dt,
+                           Uint32 *out_cues)
+{
+    static const float step_a_times[] = {
+        0.78f, 1.34f, 1.90f, 2.46f, 3.02f, 3.58f, 4.14f};
+    static const float step_b_times[] = {
+        1.06f, 1.62f, 2.18f, 2.74f, 3.30f, 3.86f, 4.42f};
+    static const float shot_times[] = {9.95f, 14.55f, 15.45f};
+    static const float down_times[] = {14.70f, 15.60f};
+
+    float previous = cutscene->time;
+    float current = previous + dt;
+    Uint32 cues = 0;
+
+    if (crossed_time(previous, current, 0.34f))
+        cues |= OUTRO_CUE_DOOR;
+    if (crossed_any_time(previous, current, step_a_times,
+                         (int)SDL_arraysize(step_a_times)))
+        cues |= OUTRO_CUE_STEP_A;
+    if (crossed_any_time(previous, current, step_b_times,
+                         (int)SDL_arraysize(step_b_times)))
+        cues |= OUTRO_CUE_STEP_B;
+    if (crossed_time(previous, current, 4.25f))
+        cues |= OUTRO_CUE_HELICOPTER;
+    if (crossed_any_time(previous, current, shot_times,
+                         (int)SDL_arraysize(shot_times)))
+        cues |= OUTRO_CUE_PLAYER_SHOT;
+    if (crossed_any_time(previous, current, down_times,
+                         (int)SDL_arraysize(down_times)))
+        cues |= OUTRO_CUE_ENEMY_DOWN;
+    if (crossed_time(previous, current, 13.35f))
+        cues |= OUTRO_CUE_EXPLOSION;
+    if (crossed_time(previous, current, 19.10f))
+        cues |= OUTRO_CUE_WIN;
+
+    if (current > OUTRO_CUTSCENE_DURATION)
+        current = OUTRO_CUTSCENE_DURATION;
+    cutscene->time = current;
+
+    if (out_cues != NULL)
+        *out_cues = cues;
+}
+
+static void draw_cutscene_text_centered(SDL_Renderer *r, float center_x,
+                                        float y, float scale,
+                                        SDL_Color color, const char *text)
+{
+    float width = (float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE *
+                  scale * (float)SDL_strlen(text);
+    draw_text(r, center_x - width * 0.5f, y, scale, color, text);
+}
+
+static void render_outro_sky(SDL_Renderer *r, float time,
+                             int win_w, int win_h)
+{
+    for (int y = 0; y < win_h; y += 14)
+    {
+        float p = (float)y / (float)win_h;
+        set_rgba(r, (Uint8)(8.0f + p * 8.0f),
+                 (Uint8)(14.0f + p * 10.0f),
+                 (Uint8)(25.0f + p * 14.0f), 255);
+        fill_rect(r, 0.0f, (float)y, (float)win_w, 14.0f);
+    }
+
+    for (unsigned i = 0; i < 92u; ++i)
+    {
+        unsigned h = scene_hash(i + 0x524f4f46u);
+        float x = (float)(h % (unsigned)win_w);
+        float y = 24.0f + (float)((h >> 9) % 245u);
+        float glow = 0.45f + 0.55f *
+                                 sinf(time * (0.42f + (float)(i % 5u) * 0.12f) +
+                                      (float)(h & 63u));
+        SDL_Color star = {(Uint8)(116.0f + glow * 67.0f),
+                          (Uint8)(132.0f + glow * 61.0f),
+                          (Uint8)(146.0f + glow * 62.0f), 255};
+        color_rect(r, star, x, y, i % 13u == 0u ? 2.0f : 1.0f, 1.0f);
+    }
+
+    /* Layered high-rises keep the roof visually tied to Kessler Tower. */
+    for (int i = 0; i < 11; ++i)
+    {
+        float x = (float)(i * 83 - 27);
+        float height = 70.0f + (float)((i * 47) % 112);
+        float top = 407.0f - height;
+        SDL_Color wall = i & 1 ? (SDL_Color){14, 23, 33, 255}
+                               : (SDL_Color){11, 19, 29, 255};
+        color_rect(r, wall, x, top, 67.0f, height);
+        color_rect(r, (SDL_Color){28, 39, 48, 255},
+                   x + 4.0f, top + 4.0f, 3.0f, height - 4.0f);
+        for (int row = 0; row < (int)height - 18; row += 19)
+        {
+            for (int col = 0; col < 3; ++col)
+            {
+                unsigned wh = scene_hash((unsigned)(i * 113 + row * 7 + col));
+                if ((wh & 7u) == 0u)
+                {
+                    SDL_Color light = wh & 8u
+                                          ? (SDL_Color){104, 92, 57, 255}
+                                          : (SDL_Color){42, 79, 88, 255};
+                    color_rect(r, light, x + 13.0f + col * 17.0f,
+                               top + 12.0f + row, 6.0f, 3.0f);
+                }
+            }
+        }
+    }
+}
+
+static void render_rooftop(SDL_Renderer *r, float time, int win_w, int win_h)
+{
+    const float ground = 438.0f;
+
+    color_rect(r, (SDL_Color){74, 80, 78, 255},
+               0.0f, ground - 8.0f, (float)win_w, 8.0f);
+    color_rect(r, (SDL_Color){30, 37, 40, 255},
+               0.0f, ground, (float)win_w, (float)win_h - ground);
+    color_rect(r, (SDL_Color){45, 52, 52, 255},
+               0.0f, ground + 7.0f, (float)win_w, 3.0f);
+    color_rect(r, (SDL_Color){18, 24, 27, 255},
+               0.0f, ground + 50.0f, (float)win_w, 4.0f);
+
+    /* Broken helipad ring and H marking. */
+    for (int row = -54; row <= 54; row += 4)
+    {
+        float half = sqrtf(fmaxf(0.0f, 54.0f * 54.0f -
+                                          (float)(row * row)));
+        if (row < -46 || row > 46)
+            color_rect(r, (SDL_Color){105, 104, 81, 255},
+                       165.0f - half, ground + 35.0f + (float)row,
+                       half * 2.0f, 2.0f);
+    }
+    color_rect(r, (SDL_Color){91, 91, 73, 255},
+               137.0f, ground + 16.0f, 8.0f, 55.0f);
+    color_rect(r, (SDL_Color){91, 91, 73, 255},
+               185.0f, ground + 16.0f, 8.0f, 55.0f);
+    color_rect(r, (SDL_Color){91, 91, 73, 255},
+               137.0f, ground + 39.0f, 56.0f, 8.0f);
+
+    /* Pipes, vents, and warning lights sell the rooftop scale. */
+    color_rect(r, (SDL_Color){23, 29, 31, 255},
+               28.0f, ground - 30.0f, 84.0f, 30.0f);
+    color_rect(r, (SDL_Color){69, 76, 73, 255},
+               24.0f, ground - 35.0f, 92.0f, 7.0f);
+    for (int x = 35; x < 105; x += 13)
+        color_rect(r, (SDL_Color){42, 49, 49, 255},
+                   (float)x, ground - 27.0f, 4.0f, 22.0f);
+
+    color_rect(r, (SDL_Color){62, 67, 63, 255},
+               616.0f, ground - 91.0f, 171.0f, 91.0f);
+    color_rect(r, (SDL_Color){91, 94, 84, 255},
+               608.0f, ground - 98.0f, 187.0f, 8.0f);
+    color_rect(r, (SDL_Color){31, 38, 39, 255},
+               649.0f, ground - 76.0f, 86.0f, 76.0f);
+    color_rect(r, (SDL_Color){7, 12, 16, 255},
+               656.0f, ground - 69.0f, 72.0f, 69.0f);
+    color_rect(r, (SDL_Color){100, 103, 93, 255},
+               649.0f, ground - 76.0f, 86.0f, 5.0f);
+    draw_text(r, 669.0f, ground - 91.0f, 0.75f,
+              (SDL_Color){169, 168, 145, 255}, "ROOF");
+
+    float beacon = 0.38f + 0.62f * (sinf(time * 5.5f) > 0.25f);
+    color_rect(r, (SDL_Color){(Uint8)(COL_RUST.r * beacon),
+                              (Uint8)(COL_RUST.g * beacon),
+                              (Uint8)(COL_RUST.b * beacon), 255},
+               625.0f, ground - 105.0f, 10.0f, 5.0f);
+}
+
+static void rotate_local(float cx, float cy, float lx, float ly, float angle,
+                         float *out_x, float *out_y)
+{
+    float c = cosf(angle);
+    float s = sinf(angle);
+    *out_x = cx + lx * c - ly * s;
+    *out_y = cy + lx * s + ly * c;
+}
+
+static void draw_rotated_box(SDL_Renderer *r, float cx, float cy,
+                             float x, float y, float w, float h,
+                             float angle, SDL_Color color)
+{
+    SDL_FPoint points[4];
+    rotate_local(cx, cy, x, y, angle, &points[0].x, &points[0].y);
+    rotate_local(cx, cy, x + w, y, angle, &points[1].x, &points[1].y);
+    rotate_local(cx, cy, x + w, y + h, angle, &points[2].x, &points[2].y);
+    rotate_local(cx, cy, x, y + h, angle, &points[3].x, &points[3].y);
+
+    SDL_FColor fc = {(float)color.r / 255.0f,
+                     (float)color.g / 255.0f,
+                     (float)color.b / 255.0f,
+                     (float)color.a / 255.0f};
+    SDL_Vertex vertices[4] = {
+        {points[0], fc, {0.0f, 0.0f}},
+        {points[1], fc, {0.0f, 0.0f}},
+        {points[2], fc, {0.0f, 0.0f}},
+        {points[3], fc, {0.0f, 0.0f}}};
+    int indices[6] = {0, 1, 2, 0, 2, 3};
+    SDL_RenderGeometry(r, NULL, vertices, 4, indices, 6);
+}
+
+static void draw_helicopter(SDL_Renderer *r, float x, float y,
+                            float angle, float rotor_angle, float damage)
+{
+    SDL_Color body_dark = {10, 17, 20, 255};
+    SDL_Color body = damage > 0.25f
+                         ? (SDL_Color){50, 52, 47, 255}
+                         : (SDL_Color){38, 69, 72, 255};
+    SDL_Color body_light = damage > 0.25f
+                               ? (SDL_Color){83, 74, 60, 255}
+                               : (SDL_Color){70, 111, 111, 255};
+
+    /* Shadow makes the craft readable against both sky and buildings. */
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    draw_rotated_box(r, x + 4.0f, y + 5.0f, -48.0f, -17.0f,
+                     82.0f, 37.0f, angle, (SDL_Color){2, 4, 7, 120});
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+    draw_rotated_box(r, x, y, -48.0f, -16.0f, 82.0f, 34.0f,
+                     angle, body_dark);
+    draw_rotated_box(r, x, y, -43.0f, -13.0f, 72.0f, 27.0f,
+                     angle, body);
+    draw_rotated_box(r, x, y, -38.0f, -10.0f, 25.0f, 19.0f,
+                     angle, (SDL_Color){15, 35, 43, 255});
+    draw_rotated_box(r, x, y, -35.0f, -8.0f, 18.0f, 14.0f,
+                     angle, (SDL_Color){50, 108, 119, 255});
+    draw_rotated_box(r, x, y, -9.0f, -10.0f, 32.0f, 4.0f,
+                     angle, body_light);
+
+    /* Tail boom, stabilizer, and rear rotor. */
+    draw_rotated_box(r, x, y, 28.0f, -6.0f, 77.0f, 12.0f,
+                     angle, body_dark);
+    draw_rotated_box(r, x, y, 31.0f, -3.0f, 67.0f, 7.0f,
+                     angle, body);
+    draw_rotated_box(r, x, y, 91.0f, -24.0f, 12.0f, 28.0f,
+                     angle, body_dark);
+    draw_rotated_box(r, x, y, 94.0f, -21.0f, 7.0f, 22.0f,
+                     angle, body_light);
+
+    float tail_x = 0.0f, tail_y = 0.0f;
+    rotate_local(x, y, 100.0f, -8.0f, angle, &tail_x, &tail_y);
+    draw_rotated_box(r, tail_x, tail_y, -18.0f, -1.5f, 36.0f, 3.0f,
+                     angle + rotor_angle * 1.7f, COL_INK);
+    draw_rotated_box(r, tail_x, tail_y, -14.0f, -1.5f, 28.0f, 3.0f,
+                     angle + rotor_angle * 1.7f + 1.5708f, COL_INK);
+
+    /* Landing skids and main rotor. */
+    draw_rotated_box(r, x, y, -31.0f, 24.0f, 62.0f, 3.0f,
+                     angle, body_dark);
+    draw_rotated_box(r, x, y, -24.0f, 15.0f, 3.0f, 11.0f,
+                     angle, body_dark);
+    draw_rotated_box(r, x, y, 19.0f, 14.0f, 3.0f, 12.0f,
+                     angle, body_dark);
+    draw_rotated_box(r, x, y, -2.0f, -31.0f, 4.0f, 17.0f,
+                     angle, body_dark);
+
+    float rotor_x = 0.0f, rotor_y = 0.0f;
+    rotate_local(x, y, 0.0f, -31.0f, angle, &rotor_x, &rotor_y);
+    draw_rotated_box(r, rotor_x, rotor_y, -85.0f, -2.0f, 170.0f, 4.0f,
+                     angle + rotor_angle, (SDL_Color){18, 25, 27, 255});
+    draw_rotated_box(r, rotor_x, rotor_y, -56.0f, -1.0f, 112.0f, 2.0f,
+                     angle + rotor_angle + 1.5708f,
+                     (SDL_Color){87, 96, 91, 255});
+
+    if (damage > 0.0f)
+    {
+        float flicker = 0.45f + 0.55f * sinf(damage * 47.0f);
+        draw_rotated_box(r, x, y, -7.0f, -15.0f,
+                         8.0f + flicker * 8.0f,
+                         7.0f + flicker * 7.0f, angle,
+                         (SDL_Color){245, 116, 35, 255});
+        color_rect(r, (SDL_Color){69, 76, 70, 255},
+                   x - 5.0f, y - 38.0f - damage * 18.0f,
+                   11.0f + damage * 12.0f, 7.0f + damage * 8.0f);
+    }
+}
+
+static void draw_outro_agent_sky_aim(SDL_Renderer *r, float x,
+                                     float ground_y, float scale,
+                                     float time)
+{
+    draw_agent_held_fire(r, x, ground_y, scale, time, false, 1);
+
+    float shoulder_x = x + 20.0f * scale;
+    float shoulder_y = ground_y - 20.0f * scale;
+    SDL_Color skin = {209, 154, 105, 255};
+    set_color(r, COL_INK);
+    for (int i = -2; i <= 2; ++i)
+        SDL_RenderLine(r, shoulder_x, shoulder_y + (float)i,
+                       shoulder_x + 20.0f * scale,
+                       shoulder_y - 24.0f * scale + (float)i);
+    set_color(r, skin);
+    SDL_RenderLine(r, shoulder_x + 2.0f, shoulder_y,
+                   shoulder_x + 17.0f * scale,
+                   shoulder_y - 20.0f * scale);
+    set_color(r, (SDL_Color){72, 80, 78, 255});
+    for (int i = -1; i <= 1; ++i)
+        SDL_RenderLine(r, shoulder_x + 17.0f * scale,
+                       shoulder_y - 22.0f * scale + (float)i,
+                       shoulder_x + 28.0f * scale,
+                       shoulder_y - 37.0f * scale + (float)i);
+}
+
+static void draw_muzzle_flash(SDL_Renderer *r, float x, float y,
+                              float angle, float strength)
+{
+    float dx = cosf(angle);
+    float dy = sinf(angle);
+    set_color(r, (SDL_Color){255, 236, 153, 255});
+    SDL_RenderLine(r, x - dy * 5.0f, y + dx * 5.0f,
+                   x + dy * 5.0f, y - dx * 5.0f);
+    set_color(r, (SDL_Color){255, 151, 37, 255});
+    SDL_RenderLine(r, x, y, x + dx * (13.0f * strength),
+                   y + dy * (13.0f * strength));
+}
+
+static void draw_shot_tracer(SDL_Renderer *r, float time, float shot_time,
+                             float from_x, float from_y,
+                             float to_x, float to_y)
+{
+    float age = time - shot_time;
+    if (age < 0.0f || age > 0.16f)
+        return;
+
+    float head = clamp01(age / 0.08f);
+    float tail = clamp01((age - 0.035f) / 0.11f);
+    float hx = lerpf(from_x, to_x, head);
+    float hy = lerpf(from_y, to_y, head);
+    float tx = lerpf(from_x, to_x, tail);
+    float ty = lerpf(from_y, to_y, tail);
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    set_rgba(r, 255, 135, 28, 105);
+    SDL_RenderLine(r, tx, ty + 2.0f, hx, hy + 2.0f);
+    set_rgba(r, 255, 239, 160, 255);
+    SDL_RenderLine(r, tx, ty, hx, hy);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+    if (age < 0.07f)
+        draw_muzzle_flash(r, from_x, from_y,
+                          atan2f(to_y - from_y, to_x - from_x), 1.0f);
+}
+
+static void draw_terrorist_down(SDL_Renderer *r, float x, float ground_y,
+                                bool faces_right)
+{
+    float dir = faces_right ? 1.0f : -1.0f;
+    color_rect(r, (SDL_Color){2, 4, 7, 155},
+               x - 5.0f, ground_y - 3.0f, 57.0f, 5.0f);
+    color_rect(r, COL_INK, x, ground_y - 13.0f, 43.0f, 13.0f);
+    color_rect(r, (SDL_Color){42, 47, 43, 255},
+               x + 5.0f, ground_y - 11.0f, 27.0f, 8.0f);
+    color_rect(r, COL_RUST, x + 13.0f, ground_y - 9.0f, 12.0f, 2.0f);
+    color_rect(r, (SDL_Color){143, 101, 73, 255},
+               x + (faces_right ? 34.0f : -2.0f),
+               ground_y - 12.0f, 10.0f, 9.0f);
+    color_rect(r, (SDL_Color){20, 24, 24, 255},
+               x + 8.0f + dir * 3.0f, ground_y - 20.0f, 9.0f, 10.0f);
+    color_rect(r, COL_INK, x + 30.0f, ground_y - 5.0f, 26.0f, 4.0f);
+}
+
+static void draw_shock_mark(SDL_Renderer *r, float x, float y, float time)
+{
+    float pulse = 0.65f + 0.35f * sinf(time * 13.0f);
+    SDL_Color color = {(Uint8)(COL_AMBER.r * pulse),
+                       (Uint8)(COL_AMBER.g * pulse),
+                       (Uint8)(COL_AMBER.b * pulse), 255};
+    color_rect(r, color, x, y, 4.0f, 14.0f);
+    color_rect(r, color, x, y + 18.0f, 4.0f, 4.0f);
+}
+
+static void draw_explosion(SDL_Renderer *r, float x, float y, float age)
+{
+    if (age < 0.0f || age > 3.2f)
+        return;
+
+    float expand = smoothstep01(age / 0.42f);
+    float fade = 1.0f - clamp01((age - 0.95f) / 2.25f);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+    if (age < 0.85f)
+    {
+        float radius = 18.0f + expand * 78.0f;
+        set_rgba(r, 255, 99, 28, (Uint8)(205.0f * (1.0f - age / 0.85f)));
+        fill_rect(r, x - radius, y - radius * 0.55f,
+                  radius * 2.0f, radius * 1.10f);
+        set_rgba(r, 255, 229, 126,
+                 (Uint8)(240.0f * (1.0f - age / 0.85f)));
+        fill_rect(r, x - radius * 0.45f, y - radius * 0.38f,
+                  radius * 0.90f, radius * 0.72f);
+    }
+
+    for (unsigned i = 0; i < 24u; ++i)
+    {
+        unsigned h = scene_hash(i + 0x4558504cu);
+        float angle = (float)(h % 628u) * 0.01f;
+        float speed = 24.0f + (float)((h >> 8) % 58u);
+        float distance = speed * age;
+        float px = x + cosf(angle) * distance;
+        float py = y + sinf(angle) * distance * 0.55f -
+                   age * (20.0f + (float)(i % 4u) * 5.0f);
+        float size = 5.0f + (float)(i % 5u) * 2.0f + age * 4.0f;
+        SDL_Color smoke = i % 4u == 0u
+                              ? (SDL_Color){103, 76, 52, 255}
+                              : (SDL_Color){49, 55, 54, 255};
+        set_rgba(r, smoke.r, smoke.g, smoke.b,
+                 (Uint8)(fade * (i % 3u == 0u ? 190.0f : 135.0f)));
+        fill_rect(r, px - size * 0.5f, py - size * 0.5f, size, size);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+static void draw_wreckage(SDL_Renderer *r, float x, float ground_y,
+                          float time)
+{
+    color_rect(r, (SDL_Color){4, 7, 9, 160},
+               x - 72.0f, ground_y - 5.0f, 142.0f, 7.0f);
+    color_rect(r, COL_INK, x - 48.0f, ground_y - 23.0f, 82.0f, 20.0f);
+    color_rect(r, (SDL_Color){48, 50, 45, 255},
+               x - 41.0f, ground_y - 19.0f, 67.0f, 12.0f);
+    draw_rotated_box(r, x, ground_y, -91.0f, -5.0f, 150.0f, 4.0f,
+                     -0.15f, (SDL_Color){20, 25, 26, 255});
+    float fire = 0.5f + 0.5f * sinf(time * 17.0f);
+    color_rect(r, (SDL_Color){238, 83, 24, 255},
+               x - 12.0f, ground_y - 28.0f - fire * 8.0f,
+               18.0f, 16.0f + fire * 8.0f);
+    color_rect(r, (SDL_Color){255, 198, 72, 255},
+               x - 7.0f, ground_y - 23.0f - fire * 5.0f,
+               9.0f, 12.0f + fire * 5.0f);
+}
+
+static void draw_pixel_heart(SDL_Renderer *r, float center_x,
+                             float y, float time)
+{
+    static const char *rows[] = {
+        "0110110",
+        "1111111",
+        "1111111",
+        "0111110",
+        "0011100",
+        "0001000"};
+    float pulse = 1.0f + (0.5f + 0.5f * sinf(time * 4.0f)) * 0.10f;
+    float pixel = 3.0f * pulse;
+    float width = 7.0f * pixel;
+    float bob = sinf(time * 2.2f) * 2.0f;
+
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    set_rgba(r, 225, 49, 60, 48);
+    fill_rect(r, center_x - width * 0.5f - 5.0f, y + bob - 5.0f,
+              width + 10.0f, 6.0f * pixel + 10.0f);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+    for (int row = 0; row < 6; ++row)
+    {
+        for (int col = 0; col < 7; ++col)
+        {
+            if (rows[row][col] != '1')
+                continue;
+            SDL_Color color = row < 2
+                                  ? (SDL_Color){247, 83, 91, 255}
+                                  : (SDL_Color){207, 43, 55, 255};
+            color_rect(r, color,
+                       center_x - width * 0.5f + (float)col * pixel,
+                       y + bob + (float)row * pixel,
+                       ceilf(pixel), ceilf(pixel));
+        }
+    }
+}
+
+static void draw_reunion_pair(SDL_Renderer *r, float center_x,
+                              float ground_y, float time)
+{
+    /*
+     * Keep the ending deliberately simple: the two original sprites stand
+     * close and face one another, with no overlapping limbs to muddy them.
+     */
+    draw_agent(r, center_x - 38.0f, ground_y, 1.35f, 0.0f, 1);
+    draw_hostage(r, center_x + 1.0f, ground_y,
+                 1.18f, 0.0f, -1, false);
+    draw_pixel_heart(r, center_x, ground_y - 94.0f, time);
+}
+
+static void render_outro_ui(SDL_Renderer *r, float time,
+                            float hostage_x, int win_w, int win_h)
+{
+    if (time >= 4.35f && time < 7.45f)
+    {
+        float reveal = smoothstep01((time - 4.35f) / 0.35f);
+        draw_text(r, 34.0f, 39.0f, 0.9f,
+                  (SDL_Color){(Uint8)(COL_AMBER.r * reveal),
+                              (Uint8)(COL_AMBER.g * reveal),
+                              (Uint8)(COL_AMBER.b * reveal), 255},
+                  "ROOFTOP // EXTRACTION INBOUND");
+        color_rect(r, COL_AMBER, 34.0f, 54.0f, 105.0f * reveal, 2.0f);
+    }
+
+    if (time >= 6.00f && time < 9.30f)
+    {
+        float pulse = 0.5f + 0.5f * sinf(time * 6.0f);
+        draw_target_brackets(r, hostage_x - 10.0f, 352.0f,
+                             94.0f, 73.0f, pulse);
+        draw_text(r, 34.0f, 78.0f, 0.8f, COL_RUST,
+                  "NO CLEAR SHOT // HOSTAGE IN LINE OF FIRE");
+    }
+
+    if (time >= 9.25f && time < 10.25f)
+    {
+        float reveal = smoothstep01((time - 9.25f) / 0.18f);
+        draw_text(r, 34.0f, 78.0f, 0.9f,
+                  (SDL_Color){(Uint8)(COL_CYAN.r * reveal),
+                              (Uint8)(COL_CYAN.g * reveal),
+                              (Uint8)(COL_CYAN.b * reveal), 255},
+                  "NEW TARGET // ROTORCRAFT");
+    }
+
+    if (time >= 13.35f && time < 16.50f)
+    {
+        float reveal = smoothstep01((time - 13.35f) / 0.22f);
+        draw_text(r, 34.0f, 39.0f, 0.9f,
+                  (SDL_Color){(Uint8)(COL_RUST.r * reveal),
+                              (Uint8)(COL_RUST.g * reveal),
+                              (Uint8)(COL_RUST.b * reveal), 255},
+                  "EXTRACTION DENIED // RESCUE WINDOW OPEN");
+    }
+
+    if (time > 0.85f && time < OUTRO_FINAL_REVEAL_TIME)
+    {
+        float pulse = 0.45f + 0.55f * sinf(time * 2.0f);
+        draw_text(r, (float)win_w - 181.0f, (float)win_h - 31.0f,
+                  0.75f,
+                  (SDL_Color){(Uint8)(101.0f + pulse * 40.0f),
+                              (Uint8)(109.0f + pulse * 40.0f),
+                              (Uint8)(108.0f + pulse * 38.0f), 255},
+                  "SPACE / ENTER: SKIP");
+    }
+}
+
+void outro_cutscene_render(SDL_Renderer *r,
+                           const OutroCutscene *cutscene,
+                           int win_w, int win_h)
+{
+    const float time = cutscene->time;
+    const float ground = 438.0f;
+    const float captor_one_x = 298.0f;
+    const float hostage_x = 344.0f;
+    const float captor_two_x = 390.0f;
+    const float agent_stop_x = 538.0f;
+
+    render_outro_sky(r, time, win_w, win_h);
+    render_rooftop(r, time, win_w, win_h);
+
+    float heli_x = (float)win_w + 155.0f;
+    float heli_y = 126.0f;
+    float heli_angle = 0.0f;
+    float rotor_angle = time * 22.0f;
+    float heli_damage = 0.0f;
+    bool helicopter_visible = time >= 4.20f && time < 13.35f;
+
+    if (time < 10.10f)
+    {
+        float approach = smoothstep01((time - 4.20f) / 5.15f);
+        heli_x = lerpf((float)win_w + 155.0f, 675.0f, approach);
+        heli_y = lerpf(116.0f, 168.0f, approach) +
+                 sinf(time * 3.2f) * 3.0f;
+    }
+    else
+    {
+        float crash = clamp01((time - 10.10f) / 3.25f);
+        heli_x = lerpf(675.0f, 710.0f, crash);
+        heli_y = lerpf(168.0f, 389.0f, crash * crash);
+        heli_angle = crash * 12.9f;
+        rotor_angle = time * lerpf(20.0f, 2.0f, crash);
+        heli_damage = crash;
+    }
+
+    if (helicopter_visible)
+        draw_helicopter(r, heli_x, heli_y, heli_angle,
+                        rotor_angle, heli_damage);
+
+    if (time >= 13.35f)
+    {
+        draw_wreckage(r, 710.0f, ground, time);
+        draw_explosion(r, 710.0f, 379.0f, time - 13.35f);
+    }
+
+    /* Captors and hostage cross the roof first and wait for extraction. */
+    if (time >= 0.45f)
+    {
+        float group_move = smoothstep01((time - 0.45f) / 3.30f);
+        float first_x = lerpf(690.0f, captor_one_x, group_move);
+        float woman_x = lerpf(726.0f, hostage_x, group_move);
+        float second_x = lerpf(765.0f, captor_two_x, group_move);
+        int group_dir = time < 3.75f ? -1 : 1;
+
+        if (time < 14.70f)
+        {
+            float shake = time >= 13.35f
+                              ? sinf(time * 36.0f) * 2.5f
+                              : 0.0f;
+            draw_terrorist(r, first_x + shake, ground,
+                           1.34f, time < 3.75f ? time : 0.0f,
+                           0.0f, group_dir);
+            if (time >= 13.35f)
+                draw_shock_mark(r, first_x + 17.0f, ground - 78.0f, time);
+        }
+        else if (time < 15.60f)
+        {
+            draw_terrorist(r, first_x, ground,
+                           1.34f, 0.0f, 0.0f, 1);
+        }
+        else
+        {
+            draw_terrorist_down(r, first_x, ground, false);
+        }
+
+        if (time < 14.70f)
+        {
+            float shake = time >= 13.35f
+                              ? sinf(time * 33.0f + 1.2f) * 2.5f
+                              : 0.0f;
+            draw_terrorist(r, second_x + shake, ground,
+                           1.34f, time < 3.75f ? time : 0.0f,
+                           2.2f, group_dir);
+            if (time >= 13.35f)
+                draw_shock_mark(r, second_x + 17.0f,
+                                ground - 78.0f, time + 0.3f);
+        }
+        else
+        {
+            draw_terrorist_down(r, second_x, ground, true);
+        }
+
+        if (time < 16.45f)
+        {
+            draw_hostage(r, woman_x, ground, 1.18f,
+                         time < 3.75f ? time : 0.0f, group_dir, true);
+        }
+        else if (time < 18.35f)
+        {
+            float reunion = smoothstep01((time - 16.45f) / 1.75f);
+            draw_hostage(r, lerpf(woman_x, 452.0f, reunion),
+                         ground, 1.18f, time * 1.4f, 1, false);
+        }
+    }
+
+    /* Chuck follows, holds his fire, then pivots toward the helicopter. */
+    if (time >= 2.35f && time < 5.05f)
+    {
+        float entry = smoothstep01((time - 2.35f) / 2.55f);
+        draw_agent(r, lerpf(704.0f, agent_stop_x, entry),
+                   ground, 1.48f, time * 1.25f, -1);
+    }
+    else if (time >= 5.05f && time < 9.25f)
+    {
+        bool aiming = time < 8.55f;
+        draw_agent_held_fire(r, agent_stop_x, ground,
+                             1.48f, time, aiming, -1);
+    }
+    else if (time >= 9.25f && time < 10.45f)
+    {
+        draw_outro_agent_sky_aim(r, agent_stop_x, ground, 1.48f, time);
+    }
+    else if (time >= 10.45f && time < 14.20f)
+    {
+        draw_agent_held_fire(r, agent_stop_x, ground,
+                             1.48f, time, false, 1);
+    }
+    else if (time >= 14.20f && time < 16.40f)
+    {
+        draw_agent_held_fire(r, agent_stop_x, ground,
+                             1.48f, time, true, -1);
+    }
+    else if (time >= 16.40f && time < 18.35f)
+    {
+        float reunion = smoothstep01((time - 16.40f) / 1.75f);
+        draw_agent(r, lerpf(agent_stop_x, 430.0f, reunion),
+                   ground, 1.48f, time * 1.35f, -1);
+    }
+    else if (time >= 18.35f && time < OUTRO_FINAL_REVEAL_TIME)
+    {
+        draw_reunion_pair(r, 451.0f, ground, time);
+    }
+
+    /* Three deliberate shots tell the turn-and-rescue beat without gameplay. */
+    draw_shot_tracer(r, time, 9.95f,
+                     agent_stop_x + 58.0f, ground - 91.0f,
+                     heli_x - 8.0f, heli_y + 2.0f);
+    draw_shot_tracer(r, time, 14.55f,
+                     agent_stop_x - 16.0f, ground - 30.0f,
+                     captor_two_x + 17.0f, ground - 28.0f);
+    draw_shot_tracer(r, time, 15.45f,
+                     agent_stop_x - 16.0f, ground - 30.0f,
+                     captor_one_x + 17.0f, ground - 28.0f);
+
+    render_outro_ui(r, time, hostage_x, win_w, win_h);
+
+    color_rect(r, (SDL_Color){3, 5, 8, 255},
+               0.0f, 0.0f, (float)win_w, 19.0f);
+    color_rect(r, (SDL_Color){3, 5, 8, 255},
+               0.0f, (float)win_h - 19.0f, (float)win_w, 19.0f);
+
+    if (time >= OUTRO_FINAL_REVEAL_TIME)
+    {
+        float reveal = smoothstep01(
+            (time - OUTRO_FINAL_REVEAL_TIME) / 1.0f);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        set_rgba(r, 3, 7, 11, (Uint8)(190.0f * reveal));
+        fill_rect(r, 0.0f, 19.0f, (float)win_w,
+                  (float)win_h - 38.0f);
+        set_rgba(r, COL_CYAN.r, COL_CYAN.g, COL_CYAN.b,
+                 (Uint8)(70.0f * reveal));
+        fill_rect(r, 0.0f, 99.0f, (float)win_w, 2.0f);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+        draw_reunion_pair(r, 400.0f, 438.0f, time);
+        draw_cutscene_text_centered(
+            r, (float)win_w * 0.5f, 69.0f, 2.2f,
+            (SDL_Color){(Uint8)(91.0f * reveal),
+                        (Uint8)(237.0f * reveal),
+                        (Uint8)(169.0f * reveal), 255},
+            "SHE'S SAFE");
+        draw_cutscene_text_centered(
+            r, (float)win_w * 0.5f, 122.0f, 1.55f,
+            (SDL_Color){(Uint8)(226.0f * reveal),
+                        (Uint8)(222.0f * reveal),
+                        (Uint8)(199.0f * reveal), 255},
+            "THANK YOU FOR PLAYING");
+        draw_cutscene_text_centered(
+            r, (float)win_w * 0.5f, 151.0f, 0.85f,
+            (SDL_Color){(Uint8)(128.0f * reveal),
+                        (Uint8)(145.0f * reveal),
+                        (Uint8)(143.0f * reveal), 255},
+            "CHUCK BROUGHT HER HOME");
+
+        if (time >= 21.0f)
+        {
+            float pulse = 0.55f + 0.45f * sinf(time * 2.4f);
+            draw_cutscene_text_centered(
+                r, (float)win_w * 0.5f, 505.0f, 0.85f,
+                (SDL_Color){(Uint8)(130.0f + pulse * 48.0f),
+                            (Uint8)(139.0f + pulse * 48.0f),
+                            (Uint8)(136.0f + pulse * 45.0f), 255},
+                "PRESS R TO REPLAY THE RESCUE");
+        }
+    }
+
+    float fade_in = 1.0f - smoothstep01(time / 0.62f);
+    if (fade_in > 0.0f)
+    {
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        set_rgba(r, 2, 4, 7, (Uint8)(fade_in * 255.0f));
         fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }

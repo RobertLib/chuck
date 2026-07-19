@@ -52,7 +52,8 @@ void game_handle_event(Game *game, const SDL_Event *event)
 
     if ((game->state == STATE_INTRO ||
          game->state == STATE_OPENING_CUTSCENE ||
-         game->state == STATE_LEVEL_TRANSITION) &&
+         game->state == STATE_LEVEL_TRANSITION ||
+         game->state == STATE_OUTRO) &&
         (key == SDLK_SPACE || key == SDLK_RETURN || key == SDLK_KP_ENTER))
     {
       game->input.confirm = true;
@@ -90,12 +91,11 @@ void game_handle_event(Game *game, const SDL_Event *event)
       game->input.use_door = true;
     }
     if (key == SDLK_R &&
-        (game->state == STATE_GAME_OVER || game->state == STATE_WIN))
+        (game->state == STATE_GAME_OVER || game->state == STATE_WIN ||
+         (game->state == STATE_OUTRO &&
+          game->outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)))
     {
-      /* Restart logic lives in game.c; set a flag by reusing input.jump
-       * edge so caller can respond. Simpler: call restart directly is
-       * intrusive here so we keep input semantics. */
-      game->input.jump = true; /* consumer in game_update must handle this case */
+      game->input.restart = true;
     }
   }
 }

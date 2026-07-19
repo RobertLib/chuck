@@ -38,6 +38,7 @@ typedef enum
     STATE_PLAYING,
     STATE_LEVEL_TRANSITION,
     STATE_LEVEL_CLEARED,
+    STATE_OUTRO,
     STATE_GAME_OVER,
     STATE_WIN
 } GameState;
@@ -104,6 +105,9 @@ typedef struct
 
     /* Results report and continuing hostage pursuit shown between levels. */
     LevelTransition level_transition;
+
+    /* Final rooftop rescue and happy ending after the last level. */
+    OutroCutscene outro_cutscene;
 
     /* Title-screen state (field-operations briefing shown before STATE_LEVEL_START) */
     Intro intro;

@@ -15,6 +15,7 @@ typedef struct
     bool use_door; /* edge-triggered: enter a door (down-key press while on ground) */
     bool interact; /* held: operate the active terminal */
     bool confirm;  /* edge-triggered: accept/start (space, enter, or a menu click) */
+    bool restart;  /* edge-triggered: replay after an ending */
 } Input;
 
 typedef struct
