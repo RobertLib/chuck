@@ -78,12 +78,29 @@ static void enemy_update_talking(Enemy *enemy, Level *level, float dt)
                false);
 }
 
-static void enemy_update_climbing(Enemy *enemy, Level *level, float dt)
+static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
+                                  bool pursuing, float target_x,
+                                  float target_y)
 {
+    float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
+    if (pursuing &&
+        fabsf(target_y - enemy_center_y) > TILE_SIZE * 0.6f)
+    {
+        int desired_climb_dir = target_y < enemy_center_y ? -1 : 1;
+        int probe_row =
+            desired_climb_dir < 0
+                ? (int)floorf((enemy->y - 1.0f) / TILE_SIZE)
+                : (int)floorf((enemy->y + ENEMY_H + 1.0f) / TILE_SIZE);
+        if (level_is_ladder(level, enemy->ladder_col, probe_row))
+            enemy->climb_dir = desired_climb_dir;
+    }
+
     /* Smoothly slide toward the ladder column centre instead of hard-snapping,
        to avoid a one-frame position jump when climbing starts. */
-    float target_x = enemy->ladder_col * (float)TILE_SIZE + (TILE_SIZE - ENEMY_W) * 0.5f;
-    enemy->vx = (target_x - enemy->x) * 10.0f;
+    float ladder_x =
+        enemy->ladder_col * (float)TILE_SIZE +
+        (TILE_SIZE - ENEMY_W) * 0.5f;
+    enemy->vx = (ladder_x - enemy->x) * 10.0f;
     enemy->vy = (float)enemy->climb_dir * ENEMY_CLIMB_SPEED;
 
     bool ladder_ahead;
@@ -118,13 +135,30 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt)
     bool can_right = right_clear && level_is_solid(level, enemy->ladder_col + 1, bot_row + 1);
     bool floor_beside = can_left || can_right;
 
-    if (!ladder_ahead || (floor_beside && SDL_rand(100) < 4))
+    bool reached_target_floor =
+        pursuing &&
+        fabsf(target_y - enemy_center_y) <= TILE_SIZE * 0.75f;
+    bool leave_ladder =
+        !ladder_ahead ||
+        (floor_beside &&
+         (pursuing ? reached_target_floor : SDL_rand(100) < 4));
+    if (leave_ladder)
     {
         enemy->climbing = false;
         enemy->vy = 0.0f;
         enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
         if (can_left && can_right)
-            enemy->dir = (SDL_rand(2) == 0) ? -1 : 1;
+        {
+            if (pursuing)
+            {
+                float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
+                enemy->dir = target_x < enemy_center_x ? -1 : 1;
+            }
+            else
+            {
+                enemy->dir = (SDL_rand(2) == 0) ? -1 : 1;
+            }
+        }
         else if (can_left)
             enemy->dir = -1;
         else if (can_right)
@@ -139,7 +173,9 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt)
                false);
 }
 
-static void enemy_update_walking(Enemy *enemy, Level *level, float dt)
+static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
+                                 bool pursuing, float target_x,
+                                 float target_y)
 {
     enemy->vy += GRAVITY * dt;
     if (enemy->vy > MAX_FALL_SPEED)
@@ -164,6 +200,13 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt)
     else if (enemy->hp < ENEMY_HP - 1)
         speed = ENEMY_WALK_SPEED * ENEMY_SPEED_HP1;
 
+    if (pursuing)
+    {
+        float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
+        if (fabsf(target_x - enemy_center_x) > 2.0f)
+            enemy->dir = target_x < enemy_center_x ? -1 : 1;
+    }
+
     enemy->vx = (float)enemy->dir * speed;
 
     if (enemy->on_ground)
@@ -182,18 +225,36 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt)
             enemy->vx = (float)enemy->dir * ENEMY_WALK_SPEED;
         }
 
-        /* Maybe use a ladder we are standing over. */
+        /* Patrols use ladders occasionally. During an alarm, take a usable
+         * ladder immediately when it leads toward the player's floor. */
         enemy->climb_cooldown -= dt;
         bool ladder_here = level_is_ladder(level, center_col, center_row);
-        if (ladder_here && enemy->climb_cooldown <= 0.0f)
+        if (ladder_here &&
+            (pursuing || enemy->climb_cooldown <= 0.0f))
         {
             bool up_ok = level_is_ladder(level, center_col, center_row - 1);
             bool down_ok = level_is_ladder(level, center_col, center_row + 1);
-            if ((up_ok || down_ok) && SDL_rand(100) < ENEMY_CLIMB_CHANCE)
+            float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
+            int desired_climb_dir =
+                target_y < enemy_center_y ? -1 : 1;
+            bool ladder_toward_target =
+                desired_climb_dir < 0 ? up_ok : down_ok;
+            bool start_climbing =
+                pursuing
+                    ? (fabsf(target_y - enemy_center_y) >
+                           TILE_SIZE * 0.75f &&
+                       ladder_toward_target)
+                    : ((up_ok || down_ok) &&
+                       SDL_rand(100) < ENEMY_CLIMB_CHANCE);
+            if (start_climbing)
             {
                 enemy->climbing = true;
                 enemy->ladder_col = center_col;
-                if (up_ok && down_ok)
+                if (pursuing)
+                {
+                    enemy->climb_dir = desired_climb_dir;
+                }
+                else if (up_ok && down_ok)
                 {
                     enemy->climb_dir = (SDL_rand(2) == 0) ? -1 : 1;
                 }
@@ -212,7 +273,8 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt)
                false);
 }
 
-void enemy_update(Enemy *enemy, Level *level, float dt)
+void enemy_update(Enemy *enemy, Level *level, float dt,
+                  bool pursuing, float target_x, float target_y)
 {
     /* Conversation cooldown must advance in every AI state, including walking
      * and climbing, so enemies eventually become eligible to talk again. */
@@ -237,17 +299,25 @@ void enemy_update(Enemy *enemy, Level *level, float dt)
     else
         enemy->anim_time += dt;
 
-    if (enemy->talking)
+    if (enemy->talking && !pursuing)
     {
         enemy_update_talking(enemy, level, dt);
         return;
     }
+    if (pursuing && enemy->talking)
+    {
+        enemy->talking = false;
+        enemy->talk_timer = 0.0f;
+        enemy->talk_cooldown = ENEMY_TALK_COOLDOWN;
+    }
     if (enemy->climbing)
     {
-        enemy_update_climbing(enemy, level, dt);
+        enemy_update_climbing(enemy, level, dt,
+                              pursuing, target_x, target_y);
     }
     else
     {
-        enemy_update_walking(enemy, level, dt);
+        enemy_update_walking(enemy, level, dt,
+                             pursuing, target_x, target_y);
     }
 }

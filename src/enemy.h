@@ -59,7 +59,8 @@ typedef struct
 } Dog;
 
 void enemy_init(Enemy *enemy, float x, float y);
-void enemy_update(Enemy *enemy, Level *level, float dt);
+void enemy_update(Enemy *enemy, Level *level, float dt,
+                  bool pursuing, float target_x, float target_y);
 void dog_init(Dog *dog, float x, float y, int owner);
 
 #endif /* CHUCK_ENEMY_H */

@@ -592,6 +592,110 @@ static void spawn_dog_for_enemy(Game *game, int enemy_index)
     dog_init(&game->dogs[slot], sx, sy, enemy_index);
 }
 
+static bool spawn_enemy_from_door(Game *game, int door_index)
+{
+    if (door_index < 0 || door_index >= game->level.door_count)
+        return false;
+
+    const Door *door = &game->level.doors[door_index];
+    float door_x = door->col * (float)TILE_SIZE;
+    float door_y = door->row * (float)TILE_SIZE;
+    float player_h =
+        game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+
+    /* A delayed spawn is retried instead of placing a guard on the player. */
+    if (boxes_overlap(game->player.x, game->player.y,
+                      PLAYER_W, player_h,
+                      door_x, door_y,
+                      (float)TILE_SIZE, (float)TILE_SIZE))
+    {
+        return false;
+    }
+
+    float spawn_x =
+        door_x + (TILE_SIZE - ENEMY_W) * 0.5f;
+    float spawn_y =
+        (door->row + 1) * (float)TILE_SIZE - ENEMY_H;
+    for (int i = 0; i < game->enemy_count; ++i)
+    {
+        const Enemy *enemy = &game->enemies[i];
+        if (!enemy->dead &&
+            boxes_overlap(spawn_x, spawn_y, ENEMY_W, ENEMY_H,
+                          enemy->x, enemy->y, ENEMY_W, ENEMY_H))
+        {
+            return false;
+        }
+    }
+
+    int slot = find_enemy_slot(game);
+    if (slot < 0)
+        return false;
+
+    enemy_init(&game->enemies[slot], spawn_x, spawn_y);
+    if (SDL_rand(100) < DOG_DOOR_HANDLER_CHANCE)
+        spawn_dog_for_enemy(game, slot);
+    play_world_sound(game, SFX_DOOR,
+                     spawn_x + ENEMY_W * 0.5f,
+                     spawn_y + ENEMY_H * 0.5f);
+    return true;
+}
+
+static float random_reinforcement_delay(float minimum, float maximum)
+{
+    float unit = (float)SDL_rand(10001) / 10000.0f;
+    return minimum + (maximum - minimum) * unit;
+}
+
+static void update_terminal_reinforcements(Game *game, float dt)
+{
+    if (game->terminal_alarm_timer <= 0.0f ||
+        game->terminal_reinforcements_pending <= 0 ||
+        game->level.door_count <= 0)
+    {
+        return;
+    }
+
+    game->terminal_reinforcement_timer -= dt;
+    if (game->terminal_reinforcement_timer > 0.0f)
+        return;
+
+    /* Start at a random door, then try the others if that one is occupied.
+     * This keeps both arrival time and entry point unpredictable. */
+    int first_door = SDL_rand(game->level.door_count);
+    bool spawned = false;
+    for (int offset = 0; offset < game->level.door_count; ++offset)
+    {
+        int door_index =
+            (first_door + offset) % game->level.door_count;
+        if (spawn_enemy_from_door(game, door_index))
+        {
+            spawned = true;
+            break;
+        }
+    }
+
+    if (!spawned)
+    {
+        /* All doors may be occupied or the enemy array may be full. */
+        game->terminal_reinforcement_timer =
+            0.35f + SDL_rand(46) * 0.01f;
+        return;
+    }
+
+    game->terminal_reinforcements_pending--;
+    if (game->terminal_reinforcements_pending > 0)
+    {
+        game->terminal_reinforcement_timer =
+            random_reinforcement_delay(
+                TERMINAL_REINFORCEMENT_GAP_MIN,
+                TERMINAL_REINFORCEMENT_GAP_MAX);
+    }
+    else
+    {
+        game->terminal_reinforcement_timer = 0.0f;
+    }
+}
+
 static float dog_anchor_x(const Dog *dog, const Enemy *handler)
 {
     if (!handler)
@@ -648,7 +752,7 @@ static void dog_update_ai(Game *game, Dog *dog, float dt)
     }
 
     bool sees_player = dog_sees_player(game, dog);
-    if (sees_player)
+    if (sees_player || game->terminal_alarm_timer > 0.0f)
     {
         dog->state = DOG_CHASE;
         dog->lost_timer = DOG_LOST_TIME;
@@ -808,6 +912,9 @@ static bool load_level(Game *game, int index)
     game->terminal_hack_tick_timer = 0.0f;
     game->terminal_in_range = false;
     game->terminal_hacking = false;
+    game->terminal_alarm_timer = 0.0f;
+    game->terminal_reinforcement_timer = 0.0f;
+    game->terminal_reinforcements_pending = 0;
     SDL_memset(game->fall_platform_sounded, 0,
                sizeof(game->fall_platform_sounded));
 
@@ -945,6 +1052,9 @@ static void hit_player(Game *game)
     game->terminal_hack_tick_timer = 0.0f;
     game->terminal_in_range = false;
     game->terminal_hacking = false;
+    game->terminal_alarm_timer = 0.0f;
+    game->terminal_reinforcement_timer = 0.0f;
+    game->terminal_reinforcements_pending = 0;
 
     float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
     float cx = game->player.x + PLAYER_W * 0.5f;
@@ -1317,6 +1427,36 @@ void game_update(Game *game, float dt)
     {
         game->terminal_hack_progress = 0.0f;
         game->terminal_hack_tick_timer = 0.0f;
+    }
+    bool terminal_alarm_started =
+        game->terminal_hacking &&
+        game->terminal_alarm_timer <= 0.0f;
+    if (game->terminal_hacking)
+    {
+        game->terminal_alarm_timer = TERMINAL_ALARM_TIME;
+        if (terminal_alarm_started && game->level.door_count > 0)
+        {
+            int count_range =
+                TERMINAL_REINFORCEMENT_MAX_COUNT -
+                TERMINAL_REINFORCEMENT_MIN_COUNT + 1;
+            game->terminal_reinforcements_pending =
+                TERMINAL_REINFORCEMENT_MIN_COUNT +
+                SDL_rand(count_range);
+            game->terminal_reinforcement_timer =
+                random_reinforcement_delay(
+                    TERMINAL_REINFORCEMENT_FIRST_MIN,
+                    TERMINAL_REINFORCEMENT_FIRST_MAX);
+        }
+    }
+    else if (game->terminal_alarm_timer > 0.0f)
+    {
+        game->terminal_alarm_timer -= dt;
+        if (game->terminal_alarm_timer <= 0.0f)
+        {
+            game->terminal_alarm_timer = 0.0f;
+            game->terminal_reinforcement_timer = 0.0f;
+            game->terminal_reinforcements_pending = 0;
+        }
     }
 
     bool player_was_grounded = game->player.on_ground;
@@ -1693,6 +1833,10 @@ void game_update(Game *game, float dt)
     }
     game->input.use_door = false;
 
+    /* A terminal alarm adds its own small, irregular reinforcement wave.
+     * It is independent of the level's normal scripted door spawns. */
+    update_terminal_reinforcements(game, dt);
+
     /* --- Door enemy spawning --- */
     for (int d = 0; d < game->level.door_count; ++d)
     {
@@ -1702,37 +1846,14 @@ void game_update(Game *game, float dt)
         if (game->door_timers[d] > 0.0f)
             continue;
 
-        /* Don't spawn on top of the player */
-        const Door *door = &game->level.doors[d];
-        float dx = door->col * (float)TILE_SIZE;
-        float dy = door->row * (float)TILE_SIZE;
+        if (spawn_enemy_from_door(game, d))
         {
-            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
-            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
-                              dx, dy, (float)TILE_SIZE, (float)TILE_SIZE))
-            {
-                game->door_timers[d] = 0.5f; /* retry soon */
-                continue;
-            }
-        }
-
-        int slot = find_enemy_slot(game);
-        if (slot >= 0)
-        {
-            float sx = door->col * TILE_SIZE + (TILE_SIZE - ENEMY_W) * 0.5f;
-            float sy = (door->row + 1) * TILE_SIZE - ENEMY_H;
-            enemy_init(&game->enemies[slot], sx, sy);
-            if (SDL_rand(100) < DOG_DOOR_HANDLER_CHANCE)
-                spawn_dog_for_enemy(game, slot);
-            play_world_sound(game, SFX_DOOR,
-                             sx + ENEMY_W * 0.5f,
-                             sy + ENEMY_H * 0.5f);
             game->door_spawns[d]--;
             game->door_timers[d] = DOOR_SPAWN_INTERVAL * (0.8f + SDL_rand(40) * 0.01f);
         }
         else
         {
-            game->door_timers[d] = 1.0f; /* no free slot, retry later */
+            game->door_timers[d] = 0.5f; /* occupied door/full array: retry */
         }
     }
 
@@ -1821,7 +1942,16 @@ void game_update(Game *game, float dt)
         {
             float prev_enemy_x = game->enemies[i].x;
             float prev_enemy_y = game->enemies[i].y;
-            enemy_update(&game->enemies[i], &game->level, dt);
+            float target_x =
+                game->player.x + PLAYER_W * 0.5f;
+            float player_h =
+                game->player.crawling
+                    ? (float)PLAYER_CRAWL_H
+                    : (float)PLAYER_H;
+            float target_y = game->player.y + player_h * 0.5f;
+            enemy_update(&game->enemies[i], &game->level, dt,
+                         game->terminal_alarm_timer > 0.0f,
+                         target_x, target_y);
             resolve_enemy_crates(game, &game->enemies[i], prev_enemy_x, prev_enemy_y);
         }
     }
@@ -1883,7 +2013,10 @@ void game_update(Game *game, float dt)
     /* Enemy conversations: pair-only logic. Two nearby, grounded enemies may
      * stop and chat with some chance. They are nudged apart slightly to stand
      * facing each other; a partner link prevents third parties joining. */
-    for (int i = 0; i < game->enemy_count; ++i)
+    for (int i = 0;
+         game->terminal_alarm_timer <= 0.0f &&
+         i < game->enemy_count;
+         ++i)
     {
         Enemy *a = &game->enemies[i];
         if (a->dead || a->talking || a->climbing || !a->on_ground || a->talk_partner != -1 || a->talk_cooldown > 0.0f)

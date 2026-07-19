@@ -132,6 +132,9 @@ typedef struct
     float terminal_hack_tick_timer;
     bool terminal_in_range;
     bool terminal_hacking;
+    float terminal_alarm_timer;
+    float terminal_reinforcement_timer;
+    int terminal_reinforcements_pending;
 } Game;
 
 bool game_init(Game *game);

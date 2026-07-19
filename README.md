@@ -37,7 +37,10 @@ route, or bypassed by crawling, timing movement, and using cover.
 The game rewards careful movement as much as combat. Each sector contains
 several terminals, but only the brightly lit active terminal can be hacked.
 Holding position while breaching it takes several seconds and leaves Chuck
-exposed, making it a risky alternative to finding the correct key card.
+exposed; the noise alerts guards and dogs, who pursue Chuck during the hack
+and for a short time afterward. It can also bring one or two reinforcements
+through randomly selected doors after varied delays. This makes breaching a
+risky alternative to finding the correct key card.
 The active terminal is always selected away from the level entrance.
 Ammunition is limited, grenades are powerful but risky, and hazards such as
 mines, spikes, falling platforms, and moving platforms make the building
