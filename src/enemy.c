@@ -175,7 +175,7 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
 
 static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                                  bool pursuing, float target_x,
-                                 float target_y)
+                                 float target_y, bool hemmed_in)
 {
     enemy->vy += GRAVITY * dt;
     if (enemy->vy > MAX_FALL_SPEED)
@@ -200,14 +200,17 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
     else if (enemy->hp < ENEMY_HP - 1)
         speed = ENEMY_WALK_SPEED * ENEMY_SPEED_HP1;
 
-    if (pursuing)
+    /* Keep the last facing direction while there is no horizontal escape.
+     * Reversing at either obstruction in this state would make the sprite
+     * alternate left/right every frame. */
+    if (pursuing && !hemmed_in)
     {
         float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
         if (fabsf(target_x - enemy_center_x) > 2.0f)
             enemy->dir = target_x < enemy_center_x ? -1 : 1;
     }
 
-    enemy->vx = (float)enemy->dir * speed;
+    enemy->vx = hemmed_in ? 0.0f : (float)enemy->dir * speed;
 
     if (enemy->on_ground)
     {
@@ -219,7 +222,8 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         int ahead_col = (enemy->dir > 0)
                             ? (int)floorf((enemy->x + ENEMY_W + 1.0f) / TILE_SIZE)
                             : (int)floorf((enemy->x - 1.0f) / TILE_SIZE);
-        if (level_is_solid(level, ahead_col, foot_row))
+        if (!hemmed_in &&
+            level_is_solid(level, ahead_col, foot_row))
         {
             enemy->dir = -enemy->dir;
             enemy->vx = (float)enemy->dir * ENEMY_WALK_SPEED;
@@ -274,7 +278,8 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
 }
 
 void enemy_update(Enemy *enemy, Level *level, float dt,
-                  bool pursuing, float target_x, float target_y)
+                  bool pursuing, float target_x, float target_y,
+                  bool hemmed_in)
 {
     /* Conversation cooldown must advance in every AI state, including walking
      * and climbing, so enemies eventually become eligible to talk again. */
@@ -318,6 +323,7 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
     else
     {
         enemy_update_walking(enemy, level, dt,
-                             pursuing, target_x, target_y);
+                             pursuing, target_x, target_y,
+                             hemmed_in);
     }
 }

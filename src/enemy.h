@@ -60,7 +60,8 @@ typedef struct
 
 void enemy_init(Enemy *enemy, float x, float y);
 void enemy_update(Enemy *enemy, Level *level, float dt,
-                  bool pursuing, float target_x, float target_y);
+                  bool pursuing, float target_x, float target_y,
+                  bool hemmed_in);
 void dog_init(Dog *dog, float x, float y, int owner);
 
 #endif /* CHUCK_ENEMY_H */

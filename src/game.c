@@ -15,6 +15,66 @@ static bool boxes_overlap(float ax, float ay, float aw, float ah,
            ay < by + bh && ay + ah > by;
 }
 
+static bool box_tiles_clear(const Game *game, float x, float y,
+                            float w, float h);
+
+/*
+ * Probe far enough to cover an enemy's largest possible horizontal step.
+ * The main loop caps dt at 0.05 s, so the undamaged patrol speed can move a
+ * little over three pixels in one update.
+ */
+#define ENEMY_SIDE_PROBE 4.0f
+
+static bool enemy_side_blocked(const Game *game, int enemy_index, int dir)
+{
+    const Enemy *enemy = &game->enemies[enemy_index];
+    float probe_x =
+        dir < 0 ? enemy->x - ENEMY_SIDE_PROBE : enemy->x + ENEMY_W;
+    float probe_y = enemy->y + 1.0f;
+    float probe_h = ENEMY_H - 2.0f;
+
+    if (!box_tiles_clear(game, probe_x, probe_y,
+                         ENEMY_SIDE_PROBE, probe_h))
+    {
+        return true;
+    }
+
+    for (int i = 0; i < game->level.crate_count; ++i)
+    {
+        const Crate *crate = &game->level.crates[i];
+        if (crate->active &&
+            boxes_overlap(probe_x, probe_y, ENEMY_SIDE_PROBE, probe_h,
+                          crate->x, crate->y, CRATE_W, CRATE_H))
+        {
+            return true;
+        }
+    }
+
+    for (int i = 0; i < game->dog_count; ++i)
+    {
+        const Dog *dog = &game->dogs[i];
+        if (!dog->dead &&
+            boxes_overlap(probe_x, probe_y, ENEMY_SIDE_PROBE, probe_h,
+                          dog->x, dog->y, DOG_W, DOG_H))
+        {
+            return true;
+        }
+    }
+
+    for (int i = 0; i < game->enemy_count; ++i)
+    {
+        const Enemy *other = &game->enemies[i];
+        if (i != enemy_index && !other->dead &&
+            boxes_overlap(probe_x, probe_y, ENEMY_SIDE_PROBE, probe_h,
+                          other->x, other->y, ENEMY_W, ENEMY_H))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 static void play_world_sound(Game *game, SoundEffect effect,
                              float source_x, float source_y)
 {
@@ -1949,9 +2009,12 @@ void game_update(Game *game, float dt)
                     ? (float)PLAYER_CRAWL_H
                     : (float)PLAYER_H;
             float target_y = game->player.y + player_h * 0.5f;
+            bool hemmed_in =
+                enemy_side_blocked(game, i, -1) &&
+                enemy_side_blocked(game, i, 1);
             enemy_update(&game->enemies[i], &game->level, dt,
                          game->terminal_alarm_timer > 0.0f,
-                         target_x, target_y);
+                         target_x, target_y, hemmed_in);
             resolve_enemy_crates(game, &game->enemies[i], prev_enemy_x, prev_enemy_y);
         }
     }
