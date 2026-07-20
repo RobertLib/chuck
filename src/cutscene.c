@@ -246,7 +246,9 @@ static void render_tower(SDL_Renderer *r, float time, int win_w)
     color_rect(r, (SDL_Color){20, 28, 36, 255},
                x + 7.0f, y + 8.0f, w - 14.0f, ground - y - 8.0f);
 
-    for (int row = 0; row < 10; ++row)
+    /* Leave the stone-clad street level windowless; a tenth row here would
+       be partly covered by the facade and look visibly cut off. */
+    for (int row = 0; row < 9; ++row)
     {
         float wy = y + 20.0f + row * 34.0f;
         color_rect(r, (SDL_Color){51, 61, 66, 255},

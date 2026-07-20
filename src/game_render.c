@@ -644,6 +644,26 @@ static void draw_walking_arm(SDL_Renderer *r, float x, float y, float sprite_w,
                       elbow_x, elbow_y, hand_x, hand_y, lower);
 }
 
+static void draw_climbing_arm(SDL_Renderer *r, float x, float y, float sprite_w,
+                              int dir, float shoulder_x, float shoulder_y,
+                              float rail_x, float hand_y,
+                              SDL_Color sleeve, SDL_Color skin)
+{
+  float elbow_x = shoulder_x + (rail_x - shoulder_x) * 0.72f;
+  float elbow_y = shoulder_y + (hand_y - shoulder_y) * 0.48f;
+
+  sprite_limb_segment(r, x, y, sprite_w, dir,
+                      shoulder_x, shoulder_y, elbow_x, elbow_y, sleeve);
+  sprite_limb_segment(r, x, y, sprite_w, dir,
+                      elbow_x, elbow_y, rail_x, hand_y, skin);
+
+  /* Broad, outlined fists stay readable against the amber ladder rungs. */
+  sprite_rect(r, x, y, sprite_w, dir,
+              rail_x - 2.5f, hand_y - 2.0f, 5.0f, 5.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, sprite_w, dir,
+              rail_x - 1.5f, hand_y - 1.0f, 3.0f, 3.0f, skin);
+}
+
 static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, float y)
 {
   int dir = p->facing;
@@ -692,18 +712,22 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy)
   float phase = p->anim_time * 3.0f;
   bool moving = fabsf(p->vx) > 2.0f;
   bool climbing = p->on_ladder;
+  /* A back-facing ladder pose must not inherit or mirror the last walk direction. */
+  if (climbing)
+    dir = 1;
   bool airborne = !p->on_ground && !climbing;
   bool firing = p->action_timer > 0.0f;
   float step = moving && p->on_ground ? sinf(phase) : 0.0f;
   float bob = moving && p->on_ground ? fabsf(step) * 0.55f
                                      : sinf(p->anim_time * 2.0f) * 0.35f;
   float arm_swing = -step;
+  float climb = 0.0f;
 
   color_rect(r, (SDL_Color){3, 6, 10, 125}, x + 3.0f, y + 30.0f, 20.0f, 3.0f);
 
   if (climbing)
   {
-    float climb = sinf(phase) * 4.0f;
+    climb = sinf(phase) * 4.0f;
     sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
     sprite_rect(r, x, y, PLAYER_W, dir, 13.0f, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
     sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 14.0f - climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
@@ -749,19 +773,54 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy)
   /* Torso, webbing and shoulder. */
   sprite_rect(r, x, y, PLAYER_W, dir, 6.0f, 10.0f + bob, 15.0f, 14.0f, COL_OUTLINE);
   sprite_rect(r, x, y, PLAYER_W, dir, 7.0f, 11.0f + bob, 13.0f, 12.0f, (SDL_Color){35, 102, 142, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 12.0f + bob, 4.0f, 9.0f, (SDL_Color){60, 148, 171, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 12.0f, 12.0f + bob, 2.0f, 11.0f, (SDL_Color){21, 54, 76, 255});
+  if (climbing)
+  {
+    sprite_rect(r, x, y, PLAYER_W, dir, 7.0f, 12.0f + bob, 4.0f, 8.0f, (SDL_Color){48, 125, 157, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 12.0f + bob, 4.0f, 8.0f, (SDL_Color){48, 125, 157, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 12.0f, 12.0f + bob, 3.0f, 11.0f, (SDL_Color){21, 54, 76, 255});
+  }
+  else
+  {
+    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 12.0f + bob, 4.0f, 9.0f, (SDL_Color){60, 148, 171, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 12.0f, 12.0f + bob, 2.0f, 11.0f, (SDL_Color){21, 54, 76, 255});
+  }
   sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 20.0f + bob, 11.0f, 2.0f, COL_AMBER);
 
-  /* Head, hair and signature red headband. */
-  sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 1.0f + bob, 10.0f, 11.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, PLAYER_W, dir, 10.0f, 2.0f + bob, 8.0f, 9.0f, (SDL_Color){210, 154, 105, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 1.0f + bob, 10.0f, 4.0f, (SDL_Color){70, 38, 28, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 12.0f, 0.0f + bob, 7.0f, 2.0f, (SDL_Color){91, 48, 31, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 5.0f + bob, 2.0f, 2.0f, (SDL_Color){230, 242, 216, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 17.0f, 7.0f + bob, 2.0f, 1.0f, (SDL_Color){83, 40, 27, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 4.0f + bob, 12.0f, 2.0f, COL_RED);
-  sprite_rect(r, x, y, PLAYER_W, dir, 5.0f, 5.0f + bob, 4.0f, 2.0f, (SDL_Color){166, 38, 42, 255});
+  if (climbing)
+  {
+    /* Both shoulders face the ladder and share one visual plane. */
+    draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                      8.0f, 14.0f + bob, 4.5f, 5.0f - climb,
+                      (SDL_Color){42, 118, 153, 255},
+                      (SDL_Color){209, 154, 105, 255});
+    draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                      18.0f, 14.0f + bob, 21.5f, 5.0f + climb,
+                      (SDL_Color){42, 118, 153, 255},
+                      (SDL_Color){209, 154, 105, 255});
+  }
+
+  /* Face the ladder while climbing; otherwise keep the normal side profile. */
+  if (climbing)
+  {
+    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 1.0f + bob, 10.0f, 11.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 10.0f, 2.0f + bob, 8.0f, 9.0f, (SDL_Color){210, 154, 105, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 1.0f + bob, 10.0f, 8.0f, (SDL_Color){70, 38, 28, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 12.0f, 0.0f + bob, 6.0f, 3.0f, (SDL_Color){91, 48, 31, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 10.0f, 7.0f + bob, 2.0f, 2.0f, (SDL_Color){91, 48, 31, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 7.0f + bob, 2.0f, 2.0f, (SDL_Color){91, 48, 31, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 4.0f + bob, 12.0f, 2.0f, COL_RED);
+  }
+  else
+  {
+    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 1.0f + bob, 10.0f, 11.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 10.0f, 2.0f + bob, 8.0f, 9.0f, (SDL_Color){210, 154, 105, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 1.0f + bob, 10.0f, 4.0f, (SDL_Color){70, 38, 28, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 12.0f, 0.0f + bob, 7.0f, 2.0f, (SDL_Color){91, 48, 31, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 5.0f + bob, 2.0f, 2.0f, (SDL_Color){230, 242, 216, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 17.0f, 7.0f + bob, 2.0f, 1.0f, (SDL_Color){83, 40, 27, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 4.0f + bob, 12.0f, 2.0f, COL_RED);
+    sprite_rect(r, x, y, PLAYER_W, dir, 5.0f, 5.0f + bob, 4.0f, 2.0f, (SDL_Color){166, 38, 42, 255});
+  }
 
   if (!climbing)
   {
@@ -798,11 +857,15 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
   float x = e->x - cam_x;
   float y = e->y + oy;
   int dir = e->dir;
+  /* The ladder pose faces away from the camera, so left/right mirroring is invalid. */
+  if (e->climbing)
+    dir = 1;
   bool aiming = e->aim_timer > 0.0f || e->recoil_timer > 0.0f;
   bool moving = fabsf(e->vx) > 2.0f && !aiming && !e->talking;
   float phase = e->anim_time * 3.0f;
   float step = moving ? sinf(phase) : 0.0f;
   float bob = moving ? fabsf(step) * 0.5f : sinf(e->anim_time * 1.8f) * 0.3f;
+  float climb = e->climbing ? sinf(phase) * 4.0f : 0.0f;
   SDL_Color uniform = e->hp >= ENEMY_HP ? (SDL_Color){76, 91, 69, 255}
                                            : e->hp == 2 ? (SDL_Color){103, 83, 54, 255}
                                                         : (SDL_Color){101, 65, 49, 255};
@@ -813,13 +876,13 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
 
   if (e->climbing)
   {
-    float climb = sinf(phase) * 4.0f;
     sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
     sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
     sprite_rect(r, x, y, ENEMY_W, dir, 9.0f, 14.0f - climb, 3.0f, 8.0f, uniform);
     sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 14.0f + climb, 3.0f, 8.0f, uniform);
     sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 23.0f + climb, 5.0f, 8.0f, COL_OUTLINE);
     sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 23.0f - climb, 5.0f, 8.0f, COL_OUTLINE);
+    bob = fabsf(sinf(phase)) * 0.7f;
   }
   else
   {
@@ -854,18 +917,45 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
 
   sprite_rect(r, x, y, ENEMY_W, dir, 6.0f, 10.0f + bob, 15.0f, 14.0f, COL_OUTLINE);
   sprite_rect(r, x, y, ENEMY_W, dir, 7.0f, 11.0f + bob, 13.0f, 12.0f, uniform);
-  sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 12.0f + bob, 4.0f, 8.0f, light);
-  sprite_rect(r, x, y, ENEMY_W, dir, 11.0f, 12.0f + bob, 3.0f, 11.0f, (SDL_Color){38, 45, 39, 255});
-  sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob, 4.0f, 5.0f, (SDL_Color){30, 35, 31, 255});
+  if (e->climbing)
+  {
+    sprite_rect(r, x, y, ENEMY_W, dir, 7.0f, 12.0f + bob, 4.0f, 8.0f, light);
+    sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 12.0f + bob, 4.0f, 8.0f, light);
+    sprite_rect(r, x, y, ENEMY_W, dir, 12.0f, 12.0f + bob, 3.0f, 11.0f, (SDL_Color){38, 45, 39, 255});
+  }
+  else
+  {
+    sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 12.0f + bob, 4.0f, 8.0f, light);
+    sprite_rect(r, x, y, ENEMY_W, dir, 11.0f, 12.0f + bob, 3.0f, 11.0f, (SDL_Color){38, 45, 39, 255});
+    sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob, 4.0f, 5.0f, (SDL_Color){30, 35, 31, 255});
+  }
   sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 20.0f + bob, 11.0f, 2.0f, (SDL_Color){31, 37, 31, 255});
 
-  /* Helmeted head, red visor/insignia for immediate enemy readability. */
-  sprite_rect(r, x, y, ENEMY_W, dir, 9.0f, 2.0f + bob, 10.0f, 10.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 4.0f + bob, 8.0f, 7.0f, (SDL_Color){183, 132, 91, 255});
-  sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 1.0f + bob, 12.0f, 5.0f, (SDL_Color){47, 57, 43, 255});
-  sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 2.0f + bob, 8.0f, 2.0f, light);
-  sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 6.0f + bob, 3.0f, 2.0f, COL_RED);
-  sprite_rect(r, x, y, ENEMY_W, dir, 17.0f, 9.0f + bob, 2.0f, 1.0f, (SDL_Color){70, 34, 27, 255});
+  if (e->climbing)
+  {
+    draw_climbing_arm(r, x, y, ENEMY_W, dir,
+                      8.0f, 14.0f + bob, 4.5f, 5.0f - climb,
+                      uniform, (SDL_Color){183, 132, 91, 255});
+    draw_climbing_arm(r, x, y, ENEMY_W, dir,
+                      18.0f, 14.0f + bob, 21.5f, 5.0f + climb,
+                      uniform, (SDL_Color){183, 132, 91, 255});
+
+    /* Back of the helmet: no side-facing face or visor while on a ladder. */
+    sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 1.0f + bob, 12.0f, 11.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, ENEMY_W, dir, 9.0f, 2.0f + bob, 10.0f, 9.0f, (SDL_Color){47, 57, 43, 255});
+    sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 2.0f + bob, 8.0f, 2.0f, light);
+    sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 10.0f + bob, 8.0f, 2.0f, (SDL_Color){30, 35, 31, 255});
+  }
+  else
+  {
+    /* Helmeted head, red visor/insignia for immediate enemy readability. */
+    sprite_rect(r, x, y, ENEMY_W, dir, 9.0f, 2.0f + bob, 10.0f, 10.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 4.0f + bob, 8.0f, 7.0f, (SDL_Color){183, 132, 91, 255});
+    sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 1.0f + bob, 12.0f, 5.0f, (SDL_Color){47, 57, 43, 255});
+    sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 2.0f + bob, 8.0f, 2.0f, light);
+    sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 6.0f + bob, 3.0f, 2.0f, COL_RED);
+    sprite_rect(r, x, y, ENEMY_W, dir, 17.0f, 9.0f + bob, 2.0f, 1.0f, (SDL_Color){70, 34, 27, 255});
+  }
 
   if (aiming && !e->climbing)
   {

@@ -151,7 +151,11 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
     /* Advance a local clock from the actual locomotion state.  Rendering can
      * use this for unsynchronised, state-driven procedural animation. */
     if (player->on_ladder)
-        player->anim_time += dt * (2.6f + fabsf(player->vy) * 0.018f);
+    {
+        /* Hold the current grip and pose when the player stops on a ladder. */
+        if (fabsf(player->vy) > 1.0f)
+            player->anim_time += dt * (2.6f + fabsf(player->vy) * 0.018f);
+    }
     else if (player->crawling && fabsf(player->vx) > 1.0f)
         player->anim_time += dt * (2.2f + fabsf(player->vx) * 0.020f);
     else if (player->on_ground && fabsf(player->vx) > 1.0f)
