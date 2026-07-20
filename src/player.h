@@ -32,6 +32,7 @@ typedef struct
     bool crawling; /* true while player is crawling (lower) */
     float anim_time;    /* local visual animation clock */
     float action_timer; /* short recoil/throw follow-through timer */
+    int shot_vertical;  /* -1 = last shot went up, +1 = down, 0 = horizontal */
 } Player;
 
 void player_reset(Player *player, const Level *level);

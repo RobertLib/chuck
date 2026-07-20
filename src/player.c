@@ -18,6 +18,7 @@ void player_reset(Player *player, const Level *level)
     player->crawling = false;
     player->anim_time = 0.0f;
     player->action_timer = 0.0f;
+    player->shot_vertical = 0;
 }
 
 /* True when the player box overlaps a ladder near its center or feet. */

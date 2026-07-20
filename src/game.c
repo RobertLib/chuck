@@ -1995,6 +1995,7 @@ void game_update(Game *game, float dt)
                     g->vy = -vy_mag;
                 }
                 game->player.grenades = 0;
+                game->player.shot_vertical = 0;
                 game->player.action_timer = 0.18f;
                 audio_play(&game->audio, SFX_GRENADE_THROW);
             }
@@ -2007,22 +2008,47 @@ void game_update(Game *game, float dt)
                 {
                     Bullet *b = &game->bullets[i];
                     b->active = true;
+                    int vertical_dir = 0;
+                    if (game->player.on_ladder)
                     {
-                        float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
-                        b->y = game->player.y + ph * 0.35f;
-                        b->vy = 0.0f;
+                        if (game->input.up && !game->input.down)
+                            vertical_dir = -1;
+                        else if (game->input.down && !game->input.up)
+                            vertical_dir = 1;
                     }
-                    if (game->player.facing > 0)
+
+                    if (vertical_dir != 0)
                     {
-                        b->x = game->player.x + PLAYER_W;
-                        b->vx = BULLET_SPEED;
+                        float vertical_bullet_w = (float)BULLET_H;
+                        float vertical_bullet_h = (float)BULLET_W;
+                        b->x = game->player.x +
+                               (PLAYER_W - vertical_bullet_w) * 0.5f;
+                        b->y = vertical_dir < 0
+                                   ? game->player.y - vertical_bullet_h
+                                   : game->player.y + PLAYER_H;
+                        b->vx = 0.0f;
+                        b->vy = vertical_dir * BULLET_SPEED;
                     }
                     else
                     {
-                        b->x = game->player.x - BULLET_W;
-                        b->vx = -BULLET_SPEED;
+                        float ph = game->player.crawling
+                                       ? (float)PLAYER_CRAWL_H
+                                       : (float)PLAYER_H;
+                        b->y = game->player.y + ph * 0.35f;
+                        b->vy = 0.0f;
+                        if (game->player.facing > 0)
+                        {
+                            b->x = game->player.x + PLAYER_W;
+                            b->vx = BULLET_SPEED;
+                        }
+                        else
+                        {
+                            b->x = game->player.x - BULLET_W;
+                            b->vx = -BULLET_SPEED;
+                        }
                     }
                     game->player.bullets--;
+                    game->player.shot_vertical = vertical_dir;
                     game->player.action_timer = 0.12f;
                     audio_play(&game->audio, SFX_PLAYER_SHOT);
                     break;
@@ -2354,22 +2380,39 @@ void game_update(Game *game, float dt)
         b->x += b->vx * dt;
         b->y += b->vy * dt;
 
+        bool vertical = fabsf(b->vy) > fabsf(b->vx);
+        float bullet_w = vertical ? (float)BULLET_H : (float)BULLET_W;
+        float bullet_h = vertical ? (float)BULLET_W : (float)BULLET_H;
+
         /* Off-screen */
-        if (b->x + BULLET_W < 0.0f || b->x > game->level.width * (float)TILE_SIZE)
+        if (b->x + bullet_w < 0.0f ||
+            b->x > game->level.width * (float)TILE_SIZE ||
+            b->y + bullet_h < 0.0f ||
+            b->y > game->level.height * (float)TILE_SIZE)
         {
             b->active = false;
             continue;
         }
 
         /* Wall collision */
-        int col = (int)floorf((b->x + (b->vx > 0 ? BULLET_W - 1 : 0)) / TILE_SIZE);
-        int row = (int)floorf((b->y + BULLET_H * 0.5f) / TILE_SIZE);
+        float leading_x = b->x + bullet_w * 0.5f;
+        float leading_y = b->y + bullet_h * 0.5f;
+        if (b->vx > 0.0f)
+            leading_x = b->x + bullet_w - 1.0f;
+        else if (b->vx < 0.0f)
+            leading_x = b->x;
+        if (b->vy > 0.0f)
+            leading_y = b->y + bullet_h - 1.0f;
+        else if (b->vy < 0.0f)
+            leading_y = b->y;
+        int col = (int)floorf(leading_x / TILE_SIZE);
+        int row = (int)floorf(leading_y / TILE_SIZE);
         if (level_is_solid(&game->level, col, row))
         {
             b->active = false;
             play_world_sound(game, SFX_BULLET_IMPACT,
-                             b->x + BULLET_W * 0.5f,
-                             b->y + BULLET_H * 0.5f);
+                             b->x + bullet_w * 0.5f,
+                             b->y + bullet_h * 0.5f);
             continue;
         }
 
@@ -2379,7 +2422,7 @@ void game_update(Game *game, float dt)
             Crate *crate = &game->level.crates[j];
             if (!crate->active)
                 continue;
-            if (boxes_overlap(b->x, b->y, BULLET_W, BULLET_H,
+            if (boxes_overlap(b->x, b->y, bullet_w, bullet_h,
                               crate->x, crate->y, CRATE_W, CRATE_H))
             {
                 b->active = false;
@@ -2396,7 +2439,7 @@ void game_update(Game *game, float dt)
             Dog *dog = &game->dogs[j];
             if (dog->dead)
                 continue;
-            if (boxes_overlap(b->x, b->y, BULLET_W, BULLET_H,
+            if (boxes_overlap(b->x, b->y, bullet_w, bullet_h,
                               dog->x, dog->y, DOG_W, DOG_H))
             {
                 b->active = false;
@@ -2430,7 +2473,7 @@ void game_update(Game *game, float dt)
             Enemy *e = &game->enemies[j];
             if (e->dead)
                 continue;
-            if (boxes_overlap(b->x, b->y, BULLET_W, BULLET_H,
+            if (boxes_overlap(b->x, b->y, bullet_w, bullet_h,
                               e->x, e->y, ENEMY_W, ENEMY_H))
             {
                 b->active = false;

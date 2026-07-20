@@ -788,15 +788,43 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy)
 
   if (climbing)
   {
-    /* Both shoulders face the ladder and share one visual plane. */
+    /* Keep one hand on the ladder while the other operates the sidearm. */
     draw_climbing_arm(r, x, y, PLAYER_W, dir,
                       8.0f, 14.0f + bob, 4.5f, 5.0f - climb,
                       (SDL_Color){42, 118, 153, 255},
                       (SDL_Color){209, 154, 105, 255});
-    draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                      18.0f, 14.0f + bob, 21.5f, 5.0f + climb,
-                      (SDL_Color){42, 118, 153, 255},
-                      (SDL_Color){209, 154, 105, 255});
+    if (firing && p->shot_vertical != 0)
+    {
+      float hand_y = p->shot_vertical < 0 ? 8.0f : 20.0f;
+      float gun_y = p->shot_vertical < 0 ? 1.0f : 18.0f;
+      sprite_limb_segment(r, x, y, PLAYER_W, dir,
+                          18.0f, 14.0f + bob, 21.0f, hand_y,
+                          (SDL_Color){42, 118, 153, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir,
+                  19.0f, hand_y - 2.0f, 5.0f, 5.0f, COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, dir,
+                  20.0f, hand_y - 1.0f, 3.0f, 3.0f,
+                  (SDL_Color){209, 154, 105, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir,
+                  19.0f, gun_y, 5.0f, 8.0f, (SDL_Color){31, 38, 43, 255});
+      if (p->action_timer > 0.055f)
+      {
+        float flash_y = p->shot_vertical < 0 ? -5.0f : 26.0f;
+        sprite_rect(r, x, y, PLAYER_W, dir,
+                    18.0f, flash_y, 7.0f, 5.0f, COL_AMBER);
+        sprite_rect(r, x, y, PLAYER_W, dir,
+                    20.0f,
+                    p->shot_vertical < 0 ? flash_y - 3.0f : flash_y + 5.0f,
+                    3.0f, 3.0f, (SDL_Color){255, 242, 184, 255});
+      }
+    }
+    else
+    {
+      draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                        18.0f, 14.0f + bob, 21.5f, 5.0f + climb,
+                        (SDL_Color){42, 118, 153, 255},
+                        (SDL_Color){209, 154, 105, 255});
+    }
   }
 
   /* Face the ladder while climbing; otherwise keep the normal side profile. */
@@ -1245,11 +1273,20 @@ static void render_world(Game *game)
       continue;
     float x = b->x - cam_x;
     float y = b->y + oy;
-    fx_glow(r, x + BULLET_W * 0.5f, y + BULLET_H * 0.5f, 11.0f,
+    bool vertical = fabsf(b->vy) > fabsf(b->vx);
+    float bullet_w = vertical ? (float)BULLET_H : (float)BULLET_W;
+    float bullet_h = vertical ? (float)BULLET_W : (float)BULLET_H;
+    fx_glow(r, x + bullet_w * 0.5f, y + bullet_h * 0.5f, 11.0f,
             (SDL_Color){255, 200, 90, 255}, 110);
     set_rgba(r, 255, 183, 38, 75);
-    fill_rect(r, x - (b->vx > 0.0f ? 8.0f : -8.0f), y + 1.0f, 12.0f, 2.0f);
-    color_rect(r, (SDL_Color){255, 243, 170, 255}, x, y, BULLET_W, BULLET_H);
+    if (vertical)
+      fill_rect(r, x + 1.0f,
+                y - (b->vy > 0.0f ? 8.0f : -8.0f), 2.0f, 12.0f);
+    else
+      fill_rect(r, x - (b->vx > 0.0f ? 8.0f : -8.0f),
+                y + 1.0f, 12.0f, 2.0f);
+    color_rect(r, (SDL_Color){255, 243, 170, 255},
+               x, y, bullet_w, bullet_h);
   }
   for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
   {

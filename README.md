@@ -52,6 +52,7 @@ creating shortcuts, ambushes, or escape routes depending on how you use them.
 - Move: arrow keys or `WASD`
 - Jump: `Up` or `W` when on the ground
 - Climb: `Up` / `Down` or `W` / `S` on ladders
+- Shoot vertically from a ladder: hold `Up` / `W` or `Down` / `S` and press `Space`
 - Crawl: hold `Down` or `S` while on the ground
 - Shoot or throw a grenade: `Space`
 - Hack the active terminal: hold `E` while standing nearby
