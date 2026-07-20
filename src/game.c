@@ -548,6 +548,19 @@ static bool horizontal_los_clear(const Game *game, float ax, float bx, float y)
     return !crate_blocks_row(game, ax, bx, row);
 }
 
+static bool terminal_alarm_target(const Game *game,
+                                  float *target_x, float *target_y)
+{
+    int index = game->level.active_terminal_index;
+    if (index < 0 || index >= game->level.terminal_count)
+        return false;
+
+    const Terminal *terminal = &game->level.terminals[index];
+    *target_x = (terminal->col + 0.5f) * (float)TILE_SIZE;
+    *target_y = (terminal->row + 0.5f) * (float)TILE_SIZE;
+    return true;
+}
+
 static bool dog_has_floor_ahead(const Game *game, const Dog *dog, int dir)
 {
     float probe_x = (dir > 0) ? dog->x + DOG_W + 3.0f : dog->x - 3.0f;
@@ -812,16 +825,43 @@ static void dog_update_ai(Game *game, Dog *dog, float dt)
     }
 
     bool sees_player = dog_sees_player(game, dog);
-    if (sees_player || game->terminal_alarm_timer > 0.0f)
+    if (sees_player)
     {
+        dog->chase_target_x =
+            game->player.x + PLAYER_W * 0.5f;
+        dog->has_chase_target = true;
         dog->state = DOG_CHASE;
         dog->lost_timer = DOG_LOST_TIME;
+    }
+    else if (game->terminal_alarm_timer > 0.0f)
+    {
+        if (!dog->has_chase_target)
+        {
+            float ignored_y;
+            if (terminal_alarm_target(
+                    game, &dog->chase_target_x, &ignored_y))
+            {
+                dog->has_chase_target = true;
+            }
+        }
+        if (dog->has_chase_target)
+        {
+            dog->state = DOG_CHASE;
+            dog->lost_timer = DOG_LOST_TIME;
+        }
     }
     else if (dog->state == DOG_CHASE)
     {
         dog->lost_timer -= dt;
         if (dog->lost_timer <= 0.0f)
+        {
             dog->state = DOG_RETURN;
+            dog->has_chase_target = false;
+        }
+    }
+    else
+    {
+        dog->has_chase_target = false;
     }
 
     dog->vy += GRAVITY * dt;
@@ -834,7 +874,7 @@ static void dog_update_ai(Game *game, Dog *dog, float dt)
 
     if (dog->state == DOG_CHASE)
     {
-        target_x = game->player.x + PLAYER_W * 0.5f - DOG_W * 0.5f;
+        target_x = dog->chase_target_x - DOG_W * 0.5f;
         speed = DOG_CHASE_SPEED;
         wants_move = fabsf(target_x - dog->x) > DOG_BITE_RANGE * 0.6f;
     }
@@ -2000,22 +2040,44 @@ void game_update(Game *game, float dt)
     {
         if (!game->enemies[i].dead)
         {
-            float prev_enemy_x = game->enemies[i].x;
-            float prev_enemy_y = game->enemies[i].y;
-            float target_x =
-                game->player.x + PLAYER_W * 0.5f;
-            float player_h =
-                game->player.crawling
-                    ? (float)PLAYER_CRAWL_H
-                    : (float)PLAYER_H;
-            float target_y = game->player.y + player_h * 0.5f;
+            Enemy *enemy = &game->enemies[i];
+            float prev_enemy_x = enemy->x;
+            float prev_enemy_y = enemy->y;
+            bool pursuing = game->terminal_alarm_timer > 0.0f;
+            if (pursuing && enemy_has_los(game, enemy))
+            {
+                float player_h =
+                    game->player.crawling
+                        ? (float)PLAYER_CRAWL_H
+                        : (float)PLAYER_H;
+                enemy->pursuit_target_x =
+                    game->player.x + PLAYER_W * 0.5f;
+                enemy->pursuit_target_y =
+                    game->player.y + player_h * 0.5f;
+                enemy->has_pursuit_target = true;
+            }
+            else if (pursuing && !enemy->has_pursuit_target)
+            {
+                enemy->has_pursuit_target =
+                    terminal_alarm_target(
+                        game,
+                        &enemy->pursuit_target_x,
+                        &enemy->pursuit_target_y);
+            }
+            else if (!pursuing)
+            {
+                enemy->has_pursuit_target = false;
+            }
+            pursuing = pursuing && enemy->has_pursuit_target;
             bool hemmed_in =
                 enemy_side_blocked(game, i, -1) &&
                 enemy_side_blocked(game, i, 1);
-            enemy_update(&game->enemies[i], &game->level, dt,
-                         game->terminal_alarm_timer > 0.0f,
-                         target_x, target_y, hemmed_in);
-            resolve_enemy_crates(game, &game->enemies[i], prev_enemy_x, prev_enemy_y);
+            enemy_update(enemy, &game->level, dt,
+                         pursuing,
+                         enemy->pursuit_target_x,
+                         enemy->pursuit_target_y,
+                         hemmed_in);
+            resolve_enemy_crates(game, enemy, prev_enemy_x, prev_enemy_y);
         }
     }
 
@@ -2639,6 +2701,9 @@ void game_update(Game *game, float dt)
                 dog->attack_timer = 0.18f;
                 dog->state = DOG_CHASE;
                 dog->lost_timer = DOG_LOST_TIME;
+                dog->chase_target_x =
+                    game->player.x + PLAYER_W * 0.5f;
+                dog->has_chase_target = true;
                 play_world_sound(game, SFX_DOG_BITE,
                                  dog->x + DOG_W * 0.5f,
                                  dog->y + DOG_H * 0.5f);

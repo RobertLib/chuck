@@ -21,6 +21,11 @@ typedef struct
     /* Stored target coordinates captured when aiming starts. */
     float aim_target_x;
     float aim_target_y;
+    /* Last position the guard could actually see (or the alarm source).
+     * Keeping this snapshot prevents tracking the live player through floors. */
+    float pursuit_target_x;
+    float pursuit_target_y;
+    bool has_pursuit_target;
     bool talking;        /* true while chatting with another enemy */
     float talk_timer;    /* seconds remaining while talking */
     float talk_cooldown; /* seconds remaining before eligible to talk again */
@@ -50,6 +55,10 @@ typedef struct
     float state_timer;
     float bite_cooldown;
     float lost_timer;
+    /* Dogs keep running to the last visible/alarm position, not to the
+     * player's live position after line of sight has been lost. */
+    float chase_target_x;
+    bool has_chase_target;
     float guard_x;
     float guard_y;
     float roam_target_x;

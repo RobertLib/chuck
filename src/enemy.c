@@ -21,6 +21,9 @@ void enemy_init(Enemy *enemy, float x, float y)
     enemy->aim_timer = 0.0f;
     enemy->aim_target_x = 0.0f;
     enemy->aim_target_y = 0.0f;
+    enemy->pursuit_target_x = x + ENEMY_W * 0.5f;
+    enemy->pursuit_target_y = y + ENEMY_H * 0.5f;
+    enemy->has_pursuit_target = false;
     enemy->talking = false;
     enemy->talk_timer = 0.0f;
     enemy->talk_partner = -1;
@@ -44,6 +47,8 @@ void dog_init(Dog *dog, float x, float y, int owner)
     dog->state_timer = 0.4f + SDL_rand(120) * 0.01f;
     dog->bite_cooldown = 0.0f;
     dog->lost_timer = 0.0f;
+    dog->chase_target_x = x + DOG_W * 0.5f;
+    dog->has_chase_target = false;
     dog->guard_x = x;
     dog->guard_y = y;
     dog->roam_target_x = x;
