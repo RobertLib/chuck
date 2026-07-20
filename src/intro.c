@@ -451,14 +451,14 @@ static void draw_agent(SDL_Renderer *r, float x, float y, float scale,
                24.0f * scale, 3.0f * scale);
 
     sprite_rect(r, x, y + fabsf(stride) * 0.8f, 28.0f, dir, scale,
-                5 + stride * 0.7f, 21, 7, 11, COL_INK);
+                7 + stride * 0.45f, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y + fabsf(stride) * 0.8f, 28.0f, dir, scale,
-                6 + stride * 0.7f, 22, 5, 8,
+                8 + stride * 0.45f, 22, 4, 8,
                 (SDL_Color){28, 63, 92, 255});
     sprite_rect(r, x, y + (1.0f - fabsf(stride)) * 0.8f, 28.0f, dir, scale,
-                15 - stride * 0.7f, 21, 7, 11, COL_INK);
+                14 - stride * 0.45f, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y + (1.0f - fabsf(stride)) * 0.8f, 28.0f, dir, scale,
-                16 - stride * 0.7f, 22, 5, 8,
+                15 - stride * 0.45f, 22, 4, 8,
                 (SDL_Color){35, 78, 105, 255});
 
     sprite_rect(r, x, y + bob, 28.0f, dir, scale, 5, 10, 17, 14, COL_INK);
@@ -496,14 +496,14 @@ static void draw_guard(SDL_Renderer *r, float x, float y, float scale,
                23.0f * scale, 3.0f * scale);
 
     sprite_rect(r, x, y + fabsf(stride) * 0.5f, 27.0f, dir, scale,
-                5 + stride * 0.6f, 21, 7, 11, COL_INK);
+                7 + stride * 0.4f, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y + fabsf(stride) * 0.5f, 27.0f, dir, scale,
-                6 + stride * 0.6f, 22, 5, 8,
+                8 + stride * 0.4f, 22, 4, 8,
                 (SDL_Color){42, 49, 39, 255});
     sprite_rect(r, x, y + (1.0f - fabsf(stride)) * 0.5f, 27.0f, dir, scale,
-                15 - stride * 0.6f, 21, 7, 11, COL_INK);
+                14 - stride * 0.4f, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y + (1.0f - fabsf(stride)) * 0.5f, 27.0f, dir, scale,
-                16 - stride * 0.6f, 22, 5, 8,
+                15 - stride * 0.4f, 22, 4, 8,
                 (SDL_Color){42, 49, 39, 255});
 
     sprite_rect(r, x, y + bob, 27.0f, dir, scale, 5, 10, 17, 14, COL_INK);

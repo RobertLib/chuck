@@ -454,9 +454,9 @@ static void draw_agent(SDL_Renderer *r, float x, float ground_y,
                24.0f * scale, 4.0f);
 
     sprite_rect(r, x, y + fabsf(stride) * scale, 28.0f, dir, scale,
-                5 + stride * 1.6f, 21, 7, 11, COL_INK);
+                7 + stride * 0.75f, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y + (1.0f - fabsf(stride)) * scale, 28.0f, dir, scale,
-                15 - stride * 1.6f, 21, 7, 11, COL_INK);
+                14 - stride * 0.75f, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 5, 10, 17, 14, COL_INK);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
@@ -488,9 +488,9 @@ static void draw_terrorist(SDL_Renderer *r, float x, float ground_y,
                x + 2.0f * scale, ground_y - 2.0f,
                24.0f * scale, 4.0f);
     sprite_rect(r, x, y + fabsf(stride) * scale, 28.0f, dir, scale,
-                4 + stride, 21, 8, 11, COL_INK);
+                7 + stride * 0.6f, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y + (1.0f - fabsf(stride)) * scale, 28.0f, dir, scale,
-                15 - stride, 21, 8, 11, COL_INK);
+                14 - stride * 0.6f, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 4, 10, 19, 14, (SDL_Color){17, 21, 22, 255});
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
@@ -537,17 +537,17 @@ static void draw_hostage(SDL_Renderer *r, float x, float ground_y,
 
     /* Practical trousers and flat boots, animated with the same restrained step. */
     sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, dir, scale,
-                7 + step * 0.7f, 23, 5, 11, COL_INK);
+                8 + step * 0.45f, 23, 5, 11, COL_INK);
     sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, dir, scale,
-                8 + step * 0.7f, 24, 3, 8, trousers);
+                9 + step * 0.45f, 24, 3, 8, trousers);
     sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, dir, scale,
-                6 + step * 0.7f, 31, 7, 3, boots);
+                7 + step * 0.45f, 31, 7, 3, boots);
     sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, dir, scale,
-                15 - step * 0.7f, 23, 5, 11, COL_INK);
+                14 - step * 0.45f, 23, 5, 11, COL_INK);
     sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, dir, scale,
-                16 - step * 0.7f, 24, 3, 8, trousers);
+                15 - step * 0.45f, 24, 3, 8, trousers);
     sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, dir, scale,
-                14 - step * 0.7f, 31, 7, 3, boots);
+                13 - step * 0.45f, 31, 7, 3, boots);
 
     /* Shoulder-length hair provides the main readable cue at pixel scale. */
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
@@ -1062,9 +1062,9 @@ static void draw_agent_held_fire(SDL_Renderer *r, float x, float ground_y,
                x + 2.0f * scale, ground_y - 2.0f,
                28.0f * scale, 4.0f);
     sprite_rect(r, x, y, 30.0f, dir, scale,
-                6, 21, 7, 11, COL_INK);
+                8, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y, 30.0f, dir, scale,
-                16, 21, 7, 11, COL_INK);
+                15, 21, 6, 11, COL_INK);
     sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                 5, 10, 18, 14, COL_INK);
     sprite_rect(r, x, y + breath, 30.0f, dir, scale,

@@ -609,12 +609,12 @@ static void draw_walking_leg(SDL_Renderer *r, float x, float y, float sprite_w,
                              int dir, float hip_x, float hip_y, float stride,
                              SDL_Color trouser, SDL_Color boot)
 {
-  /* The forward leg lifts while the rear leg remains planted.  Moving the
-     knee and ankle horizontally makes the step readable at 26x32 pixels. */
+  /* Keep the gait mostly under the torso.  The lift and knee bend carry the
+     animation; a restrained horizontal reach avoids a wide cowboy stance. */
   float lift = fmaxf(0.0f, stride) * 0.48f;
-  float knee_x = hip_x + stride * 0.42f;
+  float knee_x = hip_x + stride * 0.30f;
   float knee_y = 26.0f - lift * 0.25f;
-  float ankle_x = hip_x + stride * 0.90f;
+  float ankle_x = hip_x + stride * 0.62f;
   float ankle_y = 30.0f - lift;
 
   sprite_limb_segment(r, x, y, sprite_w, dir,
@@ -622,9 +622,9 @@ static void draw_walking_leg(SDL_Renderer *r, float x, float y, float sprite_w,
   sprite_limb_segment(r, x, y, sprite_w, dir,
                       knee_x, knee_y, ankle_x, ankle_y, trouser);
   sprite_rect(r, x, y, sprite_w, dir,
-              ankle_x - 2.0f, ankle_y - 1.0f, 8.0f, 3.0f, COL_OUTLINE);
+              ankle_x - 1.5f, ankle_y - 1.0f, 7.0f, 3.0f, COL_OUTLINE);
   sprite_rect(r, x, y, sprite_w, dir,
-              ankle_x - 1.0f, ankle_y, 6.0f, 2.0f, boot);
+              ankle_x - 0.5f, ankle_y, 5.0f, 2.0f, boot);
 }
 
 static void draw_walking_arm(SDL_Renderer *r, float x, float y, float sprite_w,
@@ -704,12 +704,12 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy)
   if (climbing)
   {
     float climb = sinf(phase) * 4.0f;
-    sprite_rect(r, x, y, PLAYER_W, dir, 5.0f, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 6.0f, 14.0f - climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 17.0f, 14.0f + climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 7.0f, 23.0f + climb, 5.0f, 8.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 15.0f, 23.0f - climb, 5.0f, 8.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 13.0f, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 14.0f - climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 14.0f, 14.0f + climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 23.0f + climb, 5.0f, 8.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 13.0f, 23.0f - climb, 5.0f, 8.0f, COL_OUTLINE);
     bob = fabsf(sinf(phase)) * 0.7f;
   }
   else
@@ -717,10 +717,10 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy)
     if (moving && p->on_ground)
     {
       draw_walking_leg(r, x, y, PLAYER_W, dir, 12.0f, 21.0f + bob,
-                       -step * 5.0f, (SDL_Color){25, 57, 82, 255},
+                       -step * 3.4f, (SDL_Color){25, 57, 82, 255},
                        (SDL_Color){12, 20, 30, 255});
       draw_walking_leg(r, x, y, PLAYER_W, dir, 14.0f, 21.0f + bob,
-                       step * 5.0f, (SDL_Color){38, 82, 111, 255},
+                       step * 3.4f, (SDL_Color){38, 82, 111, 255},
                        (SDL_Color){18, 28, 39, 255});
     }
     else
@@ -729,12 +729,12 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy)
       float leg_b_y = airborne ? 21.0f : 22.0f;
       float leg_a_h = airborne ? 7.0f : 10.0f;
       float leg_b_h = airborne ? 7.0f : 10.0f;
-      sprite_rect(r, x, y, PLAYER_W, dir, 6.0f, leg_a_y, 6.0f, leg_a_h, COL_OUTLINE);
-      sprite_rect(r, x, y, PLAYER_W, dir, 15.0f, leg_b_y, 6.0f, leg_b_h, COL_OUTLINE);
-      sprite_rect(r, x, y, PLAYER_W, dir, 7.0f, leg_a_y, 4.0f, fmaxf(3.0f, leg_a_h - 2.0f), (SDL_Color){28, 63, 92, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, leg_b_y, 4.0f, fmaxf(3.0f, leg_b_h - 2.0f), (SDL_Color){35, 78, 105, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir, 5.0f, leg_a_y + leg_a_h - 3.0f, 8.0f, 3.0f, (SDL_Color){15, 24, 35, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir, 14.0f, leg_b_y + leg_b_h - 3.0f, 8.0f, 3.0f, (SDL_Color){15, 24, 35, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, leg_a_y, 6.0f, leg_a_h, COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, dir, 13.0f, leg_b_y, 6.0f, leg_b_h, COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, leg_a_y, 4.0f, fmaxf(3.0f, leg_a_h - 2.0f), (SDL_Color){28, 63, 92, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir, 14.0f, leg_b_y, 4.0f, fmaxf(3.0f, leg_b_h - 2.0f), (SDL_Color){35, 78, 105, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir, 7.0f, leg_a_y + leg_a_h - 3.0f, 7.0f, 3.0f, (SDL_Color){15, 24, 35, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir, 13.0f, leg_b_y + leg_b_h - 3.0f, 7.0f, 3.0f, (SDL_Color){15, 24, 35, 255});
     }
   }
 
@@ -814,31 +814,31 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
   if (e->climbing)
   {
     float climb = sinf(phase) * 4.0f;
-    sprite_rect(r, x, y, ENEMY_W, dir, 4.0f, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, ENEMY_W, dir, 17.0f, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, ENEMY_W, dir, 5.0f, 14.0f - climb, 3.0f, 8.0f, uniform);
-    sprite_rect(r, x, y, ENEMY_W, dir, 18.0f, 14.0f + climb, 3.0f, 8.0f, uniform);
-    sprite_rect(r, x, y, ENEMY_W, dir, 6.0f, 23.0f + climb, 6.0f, 8.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 23.0f - climb, 6.0f, 8.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, ENEMY_W, dir, 9.0f, 14.0f - climb, 3.0f, 8.0f, uniform);
+    sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 14.0f + climb, 3.0f, 8.0f, uniform);
+    sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 23.0f + climb, 5.0f, 8.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 23.0f - climb, 5.0f, 8.0f, COL_OUTLINE);
   }
   else
   {
     if (moving)
     {
       draw_walking_leg(r, x, y, ENEMY_W, dir, 12.0f, 21.0f + bob,
-                       -step * 4.5f, (SDL_Color){43, 50, 40, 255}, COL_INK);
+                       -step * 3.2f, (SDL_Color){43, 50, 40, 255}, COL_INK);
       draw_walking_leg(r, x, y, ENEMY_W, dir, 14.0f, 21.0f + bob,
-                       step * 4.5f, (SDL_Color){67, 77, 57, 255},
+                       step * 3.2f, (SDL_Color){67, 77, 57, 255},
                        (SDL_Color){12, 15, 14, 255});
     }
     else
     {
-      sprite_rect(r, x, y, ENEMY_W, dir, 6.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
-      sprite_rect(r, x, y, ENEMY_W, dir, 15.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
-      sprite_rect(r, x, y, ENEMY_W, dir, 7.0f, 22.0f, 4.0f, 7.0f, (SDL_Color){42, 49, 39, 255});
-      sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 22.0f, 4.0f, 7.0f, (SDL_Color){42, 49, 39, 255});
-      sprite_rect(r, x, y, ENEMY_W, dir, 4.0f, 29.0f, 9.0f, 3.0f, COL_INK);
-      sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 29.0f, 9.0f, 3.0f, COL_INK);
+      sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
+      sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
+      sprite_rect(r, x, y, ENEMY_W, dir, 9.0f, 22.0f, 4.0f, 7.0f, (SDL_Color){42, 49, 39, 255});
+      sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 22.0f, 4.0f, 7.0f, (SDL_Color){42, 49, 39, 255});
+      sprite_rect(r, x, y, ENEMY_W, dir, 7.0f, 29.0f, 7.0f, 3.0f, COL_INK);
+      sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 29.0f, 7.0f, 3.0f, COL_INK);
     }
   }
 
