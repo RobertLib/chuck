@@ -85,6 +85,64 @@ static void play_world_sound(Game *game, SoundEffect effect,
                   game->player.y + player_height * 0.5f);
 }
 
+/*
+ * Being shot immediately ends a guard conversation. Both participants turn
+ * toward the player and aim, so a surviving guard always retaliates instead
+ * of continuing to ignore the attacker outside the normal notice radius.
+ */
+static void alert_conversation_pair(Game *game, int enemy_index)
+{
+    if (enemy_index < 0 || enemy_index >= game->enemy_count)
+        return;
+
+    Enemy *attacked = &game->enemies[enemy_index];
+    if (!attacked->talking)
+        return;
+
+    int participants[2] = {enemy_index, attacked->talk_partner};
+    float target_x = game->player.x + PLAYER_W * 0.5f;
+    float target_y =
+        game->player.y +
+        (game->player.crawling
+             ? (float)PLAYER_CRAWL_H * 0.45f
+             : (float)PLAYER_H * 0.15f);
+    Enemy *alert_source = NULL;
+
+    for (int i = 0; i < 2; ++i)
+    {
+        int index = participants[i];
+        if (index < 0 || index >= game->enemy_count ||
+            (i > 0 && index == participants[0]))
+        {
+            continue;
+        }
+
+        Enemy *enemy = &game->enemies[index];
+        enemy->talking = false;
+        enemy->talk_timer = 0.0f;
+        enemy->talk_partner = -1;
+        enemy->talk_cooldown = ENEMY_TALK_COOLDOWN;
+
+        if (enemy->dead)
+            continue;
+
+        float enemy_x = enemy->x + ENEMY_W * 0.5f;
+        enemy->dir = target_x < enemy_x ? -1 : 1;
+        enemy->aim_target_x = target_x;
+        enemy->aim_target_y = target_y;
+        enemy->aim_timer = ENEMY_AIM_TIME;
+        if (alert_source == NULL)
+            alert_source = enemy;
+    }
+
+    if (alert_source != NULL)
+    {
+        play_world_sound(game, SFX_ENEMY_ALERT,
+                         alert_source->x + ENEMY_W * 0.5f,
+                         alert_source->y + ENEMY_H * 0.5f);
+    }
+}
+
 static bool crate_position_clear(const Game *game, int crate_index, float x, float y)
 {
     int left = (int)floorf(x / TILE_SIZE);
@@ -2494,6 +2552,7 @@ void game_update(Game *game, float dt)
                     play_world_sound(game, SFX_ENEMY_HIT,
                                      e->x + ENEMY_W * 0.5f,
                                      e->y + ENEMY_H * 0.5f);
+                alert_conversation_pair(game, j);
                 break;
             }
         }
