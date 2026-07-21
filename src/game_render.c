@@ -527,6 +527,82 @@ static void draw_spike_strip(SDL_Renderer *r, float x, float y)
   }
 }
 
+static void draw_fan_segment(SDL_Renderer *r, float x1, float y1,
+                             float x2, float y2, int thickness,
+                             SDL_Color color)
+{
+  float dx = x2 - x1;
+  float dy = y2 - y1;
+  float length = sqrtf(dx * dx + dy * dy);
+  float nx = length > 0.001f ? -dy / length : 0.0f;
+  float ny = length > 0.001f ? dx / length : 0.0f;
+  float half = (float)(thickness - 1) * 0.5f;
+
+  set_color(r, color);
+  for (int i = 0; i < thickness; ++i)
+  {
+    float offset = (float)i - half;
+    SDL_RenderLine(r, x1 + nx * offset, y1 + ny * offset,
+                   x2 + nx * offset, y2 + ny * offset);
+  }
+}
+
+static void draw_ceiling_fan_blades(SDL_Renderer *r, float cx, float cy,
+                                    float angle, bool front)
+{
+  for (int blade = 0; blade < 4; ++blade)
+  {
+    float a = angle + (float)blade * 1.57079633f;
+    float projection = cosf(a);
+    float depth = sinf(a);
+    if ((depth >= 0.0f) != front)
+      continue;
+
+    /* A horizontal rotor seen edge-on: depth changes the apparent blade
+       length and only nudges it vertically for a hint of perspective. */
+    float inner_x = cx + projection * 4.0f;
+    float inner_y = cy + depth * 0.4f;
+    float outer_x = cx + projection * CEILING_FAN_BLADE_LENGTH;
+    float outer_y = cy + depth * 2.0f;
+    SDL_Color blade_color = front
+                                ? (SDL_Color){177, 191, 187, 255}
+                                : (SDL_Color){82, 94, 95, 255};
+    draw_fan_segment(r, inner_x, inner_y, outer_x, outer_y, 7, COL_OUTLINE);
+    draw_fan_segment(r, inner_x, inner_y, outer_x, outer_y, 3, blade_color);
+  }
+}
+
+static void draw_ceiling_fan(SDL_Renderer *r, const CeilingFan *fan,
+                             float cam_x, float oy, float world_t,
+                             int index)
+{
+  float cx = fan->x - cam_x;
+  float cy = fan->y + oy;
+  float angle = world_t * 9.0f + (float)index * 0.83f;
+
+  /* Side-view mount: ceiling plate, vertical shaft, and motor housing. */
+  color_rect(r, COL_OUTLINE, cx - 8.0f, cy - 11.0f, 16.0f, 5.0f);
+  color_rect(r, (SDL_Color){107, 120, 121, 255},
+             cx - 6.0f, cy - 10.0f, 12.0f, 3.0f);
+  color_rect(r, COL_OUTLINE, cx - 3.0f, cy - 8.0f, 6.0f, 8.0f);
+  color_rect(r, (SDL_Color){139, 151, 148, 255},
+             cx - 1.0f, cy - 7.0f, 2.0f, 7.0f);
+
+  draw_ceiling_fan_blades(r, cx, cy + 2.0f, angle, false);
+
+  color_rect(r, COL_OUTLINE, cx - 7.0f, cy - 5.0f, 14.0f, 9.0f);
+  color_rect(r, (SDL_Color){72, 84, 85, 255},
+             cx - 5.0f, cy - 3.0f, 10.0f, 5.0f);
+  color_rect(r, (SDL_Color){139, 151, 148, 255},
+             cx - 4.0f, cy - 2.0f, 8.0f, 2.0f);
+
+  draw_ceiling_fan_blades(r, cx, cy + 2.0f, angle, true);
+
+  color_rect(r, COL_OUTLINE, cx - 3.0f, cy, 6.0f, 6.0f);
+  color_rect(r, (SDL_Color){235, 86, 65, 255},
+             cx - 1.0f, cy + 2.0f, 2.0f, 2.0f);
+}
+
 static void draw_crate(SDL_Renderer *r, const Crate *crate, float cam_x, float oy)
 {
   float x = crate->x - cam_x;
@@ -1337,6 +1413,9 @@ static void render_world(Game *game)
   for (int i = 0; i < lvl->spike_count; ++i)
     draw_spike_strip(r, lvl->spike_spawns[i].x - cam_x,
                      lvl->spike_spawns[i].y + oy);
+
+  for (int i = 0; i < lvl->ceiling_fan_count; ++i)
+    draw_ceiling_fan(r, &lvl->ceiling_fans[i], cam_x, oy, world_t, i);
 
   for (int i = 0; i < lvl->crate_count; ++i)
     if (lvl->crates[i].active)

@@ -2428,13 +2428,27 @@ void game_update(Game *game, float dt)
         }
     }
 
-    /* Spikes: instant hazard — if player overlaps a spike tile they take a hit. */
+    /* Ceiling fans and spikes are lethal environmental hazards. */
     if (game->invuln_timer <= 0.0f)
     {
+        float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+        for (int i = 0; i < game->level.ceiling_fan_count; ++i)
+        {
+            const CeilingFan *fan = &game->level.ceiling_fans[i];
+            if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
+                              fan->x - CEILING_FAN_BLADE_LENGTH,
+                              fan->y - CEILING_FAN_HIT_HEIGHT * 0.25f,
+                              CEILING_FAN_BLADE_LENGTH * 2.0f,
+                              CEILING_FAN_HIT_HEIGHT))
+            {
+                hit_player(game);
+                break;
+            }
+        }
+
         for (int i = 0; i < game->level.spike_count; ++i)
         {
             const SpikeSpawn *s = &game->level.spike_spawns[i];
-            float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
             if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
                               s->x, s->y, (float)SPIKE_W, (float)SPIKE_H))
             {

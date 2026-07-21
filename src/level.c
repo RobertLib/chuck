@@ -52,6 +52,15 @@ static void place_spike(Level *level, int col, int row)
     s->y = row * TILE_SIZE;
 }
 
+static void place_ceiling_fan(Level *level, int col, int row)
+{
+    if (level->ceiling_fan_count >= MAX_CEILING_FANS)
+        return;
+    CeilingFan *fan = &level->ceiling_fans[level->ceiling_fan_count++];
+    fan->x = col * TILE_SIZE + TILE_SIZE * 0.5f;
+    fan->y = row * TILE_SIZE + CEILING_FAN_CENTER_Y;
+}
+
 static void place_crate(Level *level, int col, int row)
 {
     if (level->crate_count >= MAX_CRATES)
@@ -171,6 +180,10 @@ bool level_load(Level *level, const char *path)
         case '^':
             level->tiles[row][col] = TILE_EMPTY;
             place_spike(level, col, row);
+            break;
+        case 'O':
+            level->tiles[row][col] = TILE_EMPTY;
+            place_ceiling_fan(level, col, row);
             break;
         case 'B':
             level->tiles[row][col] = TILE_EMPTY;

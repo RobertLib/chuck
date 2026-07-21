@@ -43,8 +43,8 @@ through randomly selected doors after varied delays. This makes breaching a
 risky alternative to finding the correct key card.
 The active terminal is always selected away from the level entrance.
 Ammunition is limited, grenades are powerful but risky, and hazards such as
-mines, spikes, falling platforms, and moving platforms make the building
-itself part of the challenge. Some doors connect distant parts of a level,
+mines, spikes, ceiling fans, falling platforms, and moving platforms make the
+building itself part of the challenge. Some doors connect distant parts of a level,
 creating shortcuts, ambushes, or escape routes depending on how you use them.
 
 ## Controls

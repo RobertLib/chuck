@@ -90,6 +90,11 @@ typedef struct
 
 typedef struct
 {
+    float x, y; /* world-space centre of the rotating blades */
+} CeilingFan;
+
+typedef struct
+{
     float x, y;
     float vx, vy;
     bool active;
@@ -125,6 +130,8 @@ typedef struct
     int mine_count;
     SpikeSpawn spike_spawns[MAX_SPIKES];
     int spike_count;
+    CeilingFan ceiling_fans[MAX_CEILING_FANS];
+    int ceiling_fan_count;
     Crate crates[MAX_CRATES];
     int crate_count;
 

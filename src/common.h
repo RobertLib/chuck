@@ -165,4 +165,10 @@
 #define SPIKE_W TILE_SIZE
 #define SPIKE_H TILE_SIZE
 
+/* Ceiling fans (lethal rotating hazards) */
+#define MAX_CEILING_FANS 64
+#define CEILING_FAN_BLADE_LENGTH 23.0f
+#define CEILING_FAN_HIT_HEIGHT 8.0f
+#define CEILING_FAN_CENTER_Y 10.0f
+
 #endif /* CHUCK_COMMON_H */

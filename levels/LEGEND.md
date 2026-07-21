@@ -13,6 +13,7 @@ This file describes the meaning of characters used in the level text files.
 - `W` : Enemy spawn with a guard dog.
 - `X` : Mine (places an explosive mine).
 - `^` : Spike / hazard (instant damage when stepped on).
+- `O` : Rotating ceiling fan (lethal on contact with the blades).
 - `B` : Pushable crate (can be shoved or destroyed by shots/explosions).
 - `T` : Access terminal. One randomly selected terminal is active; the rest are decorative.
 - `S` : Player start position.
