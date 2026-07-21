@@ -1584,6 +1584,18 @@ void game_update(Game *game, float dt)
         game->input.interact &&
         game->player.on_ground &&
         !game->player.on_ladder;
+    if (game->terminal_hacking)
+    {
+        /* The interaction is shown head-on: centre Chuck in front of the
+         * wall terminal so the camera sees his back and both hands reach the
+         * keypad.  Terminal tiles are non-solid, so this remains a valid
+         * player position after the interaction ends. */
+        int terminal_index = game->level.active_terminal_index;
+        const Terminal *terminal = &game->level.terminals[terminal_index];
+        game->player.x =
+            terminal->col * (float)TILE_SIZE +
+            ((float)TILE_SIZE - PLAYER_W) * 0.5f;
+    }
     if (!game->terminal_hacking)
     {
         game->terminal_hack_progress = 0.0f;

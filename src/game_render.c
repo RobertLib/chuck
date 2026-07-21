@@ -701,11 +701,104 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
   }
 }
 
-static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy)
+static void draw_player_hacking(SDL_Renderer *r, float x, float y,
+                                float hack_time)
+{
+  const SDL_Color shirt = {35, 102, 142, 255};
+  const SDL_Color shirt_light = {60, 148, 171, 255};
+  const SDL_Color trousers = {28, 63, 92, 255};
+  const SDL_Color boots = {15, 24, 35, 255};
+  const SDL_Color skin = {209, 154, 106, 255};
+  float type_phase = hack_time * 15.0f;
+  float tap_a = sinf(type_phase) * 1.2f;
+  float tap_b = sinf(type_phase + 3.14159265f) * 1.2f;
+  float bob = sinf(hack_time * 5.0f) * 0.25f;
+
+  /* Rear view: Chuck faces the wall-mounted terminal, so the camera sees
+     the back of his head, shoulders and torso. */
+  color_rect(r, (SDL_Color){3, 6, 10, 125},
+             x + 3.0f, y + 30.0f, 22.0f, 3.0f);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              7.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              8.0f, 23.0f, 4.0f, 7.0f, trousers);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              6.0f, 29.0f, 8.0f, 3.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              7.0f, 30.0f, 7.0f, 2.0f, boots);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              13.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              14.0f, 23.0f, 4.0f, 7.0f, (SDL_Color){35, 78, 105, 255});
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              13.0f, 29.0f, 8.0f, 3.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              14.0f, 30.0f, 7.0f, 2.0f, boots);
+
+  /* Seen from behind, elbows flare outward and both forearms reach forward
+     again to the terminal's lower keypad. */
+  sprite_limb_segment(r, x, y, PLAYER_W, 1,
+                      8.0f, 14.0f + bob, 3.5f, 17.0f + bob,
+                      shirt);
+  sprite_limb_segment(r, x, y, PLAYER_W, 1,
+                      3.5f, 17.0f + bob, 8.5f, 21.0f + tap_a,
+                      skin);
+  sprite_limb_segment(r, x, y, PLAYER_W, 1,
+                      18.0f, 14.0f + bob, 22.5f, 17.0f + bob,
+                      shirt_light);
+  sprite_limb_segment(r, x, y, PLAYER_W, 1,
+                      22.5f, 17.0f + bob, 17.5f, 21.0f + tap_b,
+                      skin);
+
+  /* Broad, symmetrical back with shoulder panels and central webbing. */
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              7.0f, 10.0f + bob, 15.0f, 14.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              8.0f, 11.0f + bob, 13.0f, 12.0f, shirt);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              8.0f, 12.0f + bob, 4.0f, 8.0f, shirt_light);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              17.0f, 12.0f + bob, 4.0f, 8.0f, shirt_light);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              13.0f, 12.0f + bob, 3.0f, 11.0f,
+              (SDL_Color){21, 54, 76, 255});
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              9.0f, 20.0f + bob, 11.0f, 2.0f, COL_AMBER);
+
+  /* Back of the head: no face or eye is visible from this angle. */
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              9.0f, 1.0f + bob, 10.0f, 11.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              10.0f, 2.0f + bob, 8.0f, 9.0f,
+              (SDL_Color){70, 38, 28, 255});
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              12.0f, 0.0f + bob, 6.0f, 3.0f,
+              (SDL_Color){91, 48, 31, 255});
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              8.0f, 4.0f + bob, 12.0f, 2.0f, COL_RED);
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              9.0f, 7.0f + bob, 2.0f, 2.0f,
+              (SDL_Color){91, 48, 31, 255});
+  sprite_rect(r, x, y, PLAYER_W, 1,
+              17.0f, 7.0f + bob, 2.0f, 2.0f,
+              (SDL_Color){91, 48, 31, 255});
+
+  /* His hands are between his body and the terminal, so they are hidden
+     from this rear angle; only the alternating elbow motion is visible. */
+}
+
+static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
+                        bool hacking, float hacking_time)
 {
   float x = p->x - cam_x;
   float y = p->y + oy;
   int dir = p->facing;
+
+  if (hacking)
+  {
+    draw_player_hacking(r, x, y, hacking_time);
+    return;
+  }
 
   if (p->crawling)
   {
@@ -1315,7 +1408,9 @@ static void render_world(Game *game)
     bool blink = game->invuln_timer > 0.0f &&
                  ((int)(game->invuln_timer * 12.0f) % 2 == 0);
     if (!blink)
-      draw_player(r, &game->player, cam_x, oy);
+      draw_player(r, &game->player, cam_x, oy,
+                  game->terminal_hacking,
+                  game->terminal_hack_progress);
   }
   else
   {
