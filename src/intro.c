@@ -541,6 +541,115 @@ static void draw_crate(SDL_Renderer *r, float x, float y)
     SDL_RenderLine(r, x + 25.0f, y + 7.0f, x + 7.0f, y + 25.0f);
 }
 
+static void draw_office_desk(SDL_Renderer *r, float x, float floor_y,
+                             float time)
+{
+    /* A wider title-screen version of the in-game computer workstation. */
+    color_rect(r, (SDL_Color){3, 5, 9, 255},
+               x, floor_y - 2.0f, 58.0f, 3.0f);
+
+    color_rect(r, COL_INK, x + 15.0f, floor_y - 52.0f, 29.0f, 21.0f);
+    color_rect(r, (SDL_Color){42, 55, 65, 255},
+               x + 17.0f, floor_y - 50.0f, 25.0f, 17.0f);
+    color_rect(r, (SDL_Color){36, 112, 119, 255},
+               x + 19.0f, floor_y - 48.0f, 21.0f, 13.0f);
+    float scan = fmodf(time * 7.0f, 9.0f);
+    color_rect(r, (SDL_Color){92, 206, 197, 255},
+               x + 21.0f, floor_y - 46.0f + scan, 15.0f, 1.0f);
+    color_rect(r, (SDL_Color){18, 67, 73, 255},
+               x + 21.0f, floor_y - 43.0f, 17.0f, 2.0f);
+    color_rect(r, (SDL_Color){104, 116, 119, 255},
+               x + 27.0f, floor_y - 31.0f, 6.0f, 5.0f);
+
+    color_rect(r, COL_INK, x, floor_y - 27.0f, 58.0f, 8.0f);
+    color_rect(r, (SDL_Color){92, 69, 48, 255},
+               x + 2.0f, floor_y - 25.0f, 54.0f, 5.0f);
+    color_rect(r, (SDL_Color){153, 112, 66, 255},
+               x + 3.0f, floor_y - 25.0f, 52.0f, 2.0f);
+    color_rect(r, (SDL_Color){28, 34, 39, 255},
+               x + 39.0f, floor_y - 30.0f, 14.0f, 3.0f);
+    color_rect(r, (SDL_Color){106, 114, 111, 255},
+               x + 41.0f, floor_y - 29.0f, 10.0f, 1.0f);
+
+    color_rect(r, COL_INK, x + 5.0f, floor_y - 20.0f, 7.0f, 20.0f);
+    color_rect(r, (SDL_Color){69, 53, 42, 255},
+               x + 7.0f, floor_y - 20.0f, 3.0f, 19.0f);
+    color_rect(r, COL_INK, x + 47.0f, floor_y - 20.0f, 7.0f, 20.0f);
+    color_rect(r, (SDL_Color){69, 53, 42, 255},
+               x + 49.0f, floor_y - 20.0f, 3.0f, 19.0f);
+}
+
+static void draw_office_chair(SDL_Renderer *r, float x, float floor_y)
+{
+    color_rect(r, (SDL_Color){3, 5, 9, 255},
+               x + 1.0f, floor_y - 2.0f, 34.0f, 3.0f);
+    color_rect(r, COL_INK, x + 2.0f, floor_y - 43.0f, 24.0f, 25.0f);
+    color_rect(r, (SDL_Color){43, 57, 69, 255},
+               x + 5.0f, floor_y - 40.0f, 18.0f, 19.0f);
+    color_rect(r, (SDL_Color){74, 91, 102, 255},
+               x + 6.0f, floor_y - 39.0f, 16.0f, 3.0f);
+    color_rect(r, (SDL_Color){27, 37, 47, 255},
+               x + 6.0f, floor_y - 24.0f, 16.0f, 3.0f);
+
+    color_rect(r, COL_INK, x + 4.0f, floor_y - 21.0f, 30.0f, 8.0f);
+    color_rect(r, (SDL_Color){63, 79, 90, 255},
+               x + 7.0f, floor_y - 19.0f, 24.0f, 4.0f);
+    color_rect(r, (SDL_Color){98, 112, 119, 255},
+               x + 8.0f, floor_y - 19.0f, 22.0f, 1.0f);
+    color_rect(r, (SDL_Color){84, 98, 105, 255},
+               x + 17.0f, floor_y - 13.0f, 4.0f, 10.0f);
+    color_rect(r, COL_INK, x + 7.0f, floor_y - 5.0f, 25.0f, 4.0f);
+    color_rect(r, COL_INK, x + 4.0f, floor_y - 2.0f, 7.0f, 3.0f);
+    color_rect(r, COL_INK, x + 29.0f, floor_y - 2.0f, 7.0f, 3.0f);
+}
+
+static void draw_office_printer(SDL_Renderer *r, float x, float floor_y,
+                                float time)
+{
+    color_rect(r, (SDL_Color){3, 5, 9, 255},
+               x, floor_y - 2.0f, 47.0f, 3.0f);
+    color_rect(r, COL_INK, x + 2.0f, floor_y - 35.0f, 43.0f, 35.0f);
+    color_rect(r, (SDL_Color){73, 82, 83, 255},
+               x + 5.0f, floor_y - 32.0f, 37.0f, 31.0f);
+    color_rect(r, COL_INK, x + 8.0f, floor_y - 47.0f, 31.0f, 18.0f);
+    color_rect(r, (SDL_Color){113, 120, 116, 255},
+               x + 11.0f, floor_y - 44.0f, 25.0f, 12.0f);
+    color_rect(r, (SDL_Color){36, 47, 50, 255},
+               x + 7.0f, floor_y - 27.0f, 33.0f, 9.0f);
+    color_rect(r, COL_CREAM, x + 13.0f, floor_y - 23.0f, 21.0f, 10.0f);
+    color_rect(r, (SDL_Color){151, 158, 147, 255},
+               x + 15.0f, floor_y - 21.0f, 17.0f, 2.0f);
+    SDL_Color led = ((int)(time * 2.5f) & 1) == 0
+                        ? (SDL_Color){67, 226, 165, 255}
+                        : (SDL_Color){35, 83, 69, 255};
+    color_rect(r, led, x + 36.0f, floor_y - 31.0f, 3.0f, 3.0f);
+    color_rect(r, (SDL_Color){34, 42, 43, 255},
+               x + 10.0f, floor_y - 9.0f, 27.0f, 3.0f);
+}
+
+static void draw_filing_cabinet(SDL_Renderer *r, float x, float floor_y)
+{
+    color_rect(r, (SDL_Color){3, 5, 9, 255},
+               x, floor_y - 2.0f, 36.0f, 3.0f);
+    color_rect(r, COL_INK, x + 1.0f, floor_y - 58.0f, 34.0f, 58.0f);
+    color_rect(r, (SDL_Color){60, 72, 78, 255},
+               x + 4.0f, floor_y - 55.0f, 28.0f, 54.0f);
+    color_rect(r, (SDL_Color){102, 113, 114, 255},
+               x + 5.0f, floor_y - 54.0f, 26.0f, 3.0f);
+    for (int drawer = 0; drawer < 3; ++drawer)
+    {
+        float dy = floor_y - 48.0f + drawer * 16.0f;
+        color_rect(r, (SDL_Color){33, 43, 49, 255},
+                   x + 6.0f, dy, 24.0f, 13.0f);
+        color_rect(r, (SDL_Color){77, 89, 92, 255},
+                   x + 8.0f, dy + 2.0f, 20.0f, 9.0f);
+        color_rect(r, (SDL_Color){20, 27, 31, 255},
+                   x + 13.0f, dy + 4.0f, 10.0f, 3.0f);
+        color_rect(r, (SDL_Color){146, 152, 139, 255},
+                   x + 16.0f, dy + 4.0f, 4.0f, 1.0f);
+    }
+}
+
 static void draw_keycard(SDL_Renderer *r, float x, float y, float time)
 {
     float glow = 0.5f + 0.5f * sinf(time * 3.0f);
@@ -692,6 +801,12 @@ static void render_building(SDL_Renderer *r, const Intro *intro, int win_w)
               (SDL_Color){92, 105, 104, 255}, "02");
     draw_text(r, x + 19.0f, lower_floor - 19.0f, 0.75f,
               (SDL_Color){92, 105, 104, 255}, "01");
+
+    /* A few office props echo the level decor without crowding the tableau. */
+    draw_office_desk(r, x + 85.0f, upper_floor, intro->time);
+    draw_office_chair(r, x + 151.0f, upper_floor);
+    draw_office_printer(r, x + 530.0f, lower_floor, intro->time);
+    draw_filing_cabinet(r, x + 659.0f, lower_floor);
 
     /* The route through the facility is readable without explaining itself. */
     draw_ladder(r, x + 354.0f, upper_floor + 10.0f,

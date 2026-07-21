@@ -458,6 +458,122 @@ static void draw_terminal(SDL_Renderer *r, float x, float y,
             active ? (hacked ? "OPEN" : "LIVE") : "OFF");
 }
 
+static void draw_office_chair(SDL_Renderer *r, float x, float y)
+{
+  /* Low-backed swivel chair, kept cool and subdued so actors read over it. */
+  color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 4.0f, y + 29.0f, 25.0f, 2.0f);
+
+  color_rect(r, COL_INK, x + 5.0f, y + 4.0f, 17.0f, 15.0f);
+  color_rect(r, (SDL_Color){43, 56, 68, 255}, x + 7.0f, y + 6.0f, 13.0f, 11.0f);
+  color_rect(r, (SDL_Color){67, 84, 96, 255}, x + 8.0f, y + 7.0f, 11.0f, 2.0f);
+  color_rect(r, (SDL_Color){28, 37, 48, 255}, x + 8.0f, y + 15.0f, 11.0f, 2.0f);
+
+  color_rect(r, COL_INK, x + 7.0f, y + 17.0f, 20.0f, 6.0f);
+  color_rect(r, (SDL_Color){61, 77, 88, 255}, x + 9.0f, y + 18.0f, 16.0f, 3.0f);
+  color_rect(r, (SDL_Color){93, 108, 116, 255}, x + 10.0f, y + 18.0f, 14.0f, 1.0f);
+
+  color_rect(r, (SDL_Color){18, 25, 34, 255}, x + 15.0f, y + 22.0f, 4.0f, 7.0f);
+  color_rect(r, (SDL_Color){87, 101, 108, 255}, x + 16.0f, y + 22.0f, 2.0f, 6.0f);
+  color_rect(r, COL_INK, x + 8.0f, y + 27.0f, 18.0f, 3.0f);
+  color_rect(r, (SDL_Color){76, 88, 94, 255}, x + 10.0f, y + 27.0f, 14.0f, 1.0f);
+  color_rect(r, COL_INK, x + 7.0f, y + 29.0f, 5.0f, 3.0f);
+  color_rect(r, COL_INK, x + 23.0f, y + 29.0f, 5.0f, 3.0f);
+}
+
+static void draw_office_desk(SDL_Renderer *r, float x, float y)
+{
+  /* Compact workstation: desk, drawer, monitor and keyboard in one tile. */
+  color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 1.0f, y + 30.0f, 31.0f, 2.0f);
+
+  color_rect(r, COL_INK, x + 8.0f, y + 1.0f, 19.0f, 14.0f);
+  color_rect(r, (SDL_Color){37, 51, 61, 255}, x + 10.0f, y + 3.0f, 15.0f, 10.0f);
+  color_rect(r, (SDL_Color){41, 119, 124, 255}, x + 11.0f, y + 4.0f, 13.0f, 8.0f);
+  color_rect(r, (SDL_Color){92, 196, 190, 255}, x + 12.0f, y + 5.0f, 7.0f, 1.0f);
+  color_rect(r, (SDL_Color){21, 74, 80, 255}, x + 12.0f, y + 8.0f, 10.0f, 1.0f);
+  color_rect(r, (SDL_Color){21, 74, 80, 255}, x + 12.0f, y + 10.0f, 6.0f, 1.0f);
+  color_rect(r, (SDL_Color){91, 104, 108, 255}, x + 16.0f, y + 14.0f, 4.0f, 3.0f);
+
+  color_rect(r, COL_INK, x, y + 16.0f, 32.0f, 6.0f);
+  color_rect(r, (SDL_Color){91, 69, 49, 255}, x + 1.0f, y + 17.0f, 30.0f, 4.0f);
+  color_rect(r, (SDL_Color){150, 111, 66, 255}, x + 2.0f, y + 17.0f, 28.0f, 1.0f);
+  color_rect(r, (SDL_Color){25, 32, 38, 255}, x + 20.0f, y + 14.0f, 9.0f, 2.0f);
+  color_rect(r, (SDL_Color){99, 109, 108, 255}, x + 21.0f, y + 14.0f, 7.0f, 1.0f);
+
+  color_rect(r, COL_INK, x + 3.0f, y + 21.0f, 5.0f, 11.0f);
+  color_rect(r, (SDL_Color){70, 54, 43, 255}, x + 4.0f, y + 21.0f, 3.0f, 10.0f);
+  color_rect(r, COL_INK, x + 25.0f, y + 21.0f, 5.0f, 11.0f);
+  color_rect(r, (SDL_Color){70, 54, 43, 255}, x + 26.0f, y + 21.0f, 3.0f, 10.0f);
+  color_rect(r, (SDL_Color){45, 49, 49, 255}, x + 21.0f, y + 22.0f, 7.0f, 6.0f);
+  color_rect(r, (SDL_Color){93, 101, 98, 255}, x + 23.0f, y + 24.0f, 3.0f, 1.0f);
+}
+
+static void draw_office_equipment(SDL_Renderer *r, float x, float y,
+                                  unsigned variant, float world_t)
+{
+  color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 3.0f, y + 30.0f, 27.0f, 2.0f);
+
+  if (variant == 0u)
+  {
+    /* Filing cabinet with alternating label holders and recessed handles. */
+    color_rect(r, COL_INK, x + 5.0f, y + 2.0f, 23.0f, 30.0f);
+    color_rect(r, (SDL_Color){61, 72, 78, 255}, x + 7.0f, y + 4.0f, 19.0f, 27.0f);
+    color_rect(r, (SDL_Color){100, 112, 113, 255}, x + 8.0f, y + 5.0f, 17.0f, 2.0f);
+    for (int drawer = 0; drawer < 3; ++drawer)
+    {
+      float dy = y + 7.0f + drawer * 8.0f;
+      color_rect(r, (SDL_Color){34, 43, 49, 255}, x + 8.0f, dy, 17.0f, 7.0f);
+      color_rect(r, (SDL_Color){76, 88, 91, 255}, x + 9.0f, dy + 1.0f, 15.0f, 5.0f);
+      color_rect(r, (SDL_Color){20, 27, 31, 255}, x + 13.0f, dy + 2.0f, 7.0f, 2.0f);
+      color_rect(r, (SDL_Color){145, 151, 137, 255}, x + 15.0f, dy + 2.0f, 3.0f, 1.0f);
+    }
+  }
+  else if (variant == 1u)
+  {
+    /* Floor-standing copier/printer with a sheet left in the output tray. */
+    color_rect(r, COL_INK, x + 3.0f, y + 12.0f, 27.0f, 20.0f);
+    color_rect(r, (SDL_Color){75, 83, 83, 255}, x + 5.0f, y + 14.0f, 23.0f, 17.0f);
+    color_rect(r, COL_INK, x + 7.0f, y + 7.0f, 20.0f, 9.0f);
+    color_rect(r, (SDL_Color){113, 119, 114, 255}, x + 9.0f, y + 8.0f, 16.0f, 6.0f);
+    color_rect(r, (SDL_Color){37, 48, 52, 255}, x + 6.0f, y + 17.0f, 21.0f, 5.0f);
+    color_rect(r, (SDL_Color){204, 207, 187, 255}, x + 10.0f, y + 19.0f, 13.0f, 5.0f);
+    color_rect(r, (SDL_Color){150, 157, 145, 255}, x + 11.0f, y + 20.0f, 11.0f, 1.0f);
+    color_rect(r, (SDL_Color){50, 189, 155, 255}, x + 24.0f, y + 15.0f, 2.0f, 2.0f);
+    color_rect(r, (SDL_Color){35, 42, 43, 255}, x + 8.0f, y + 27.0f, 17.0f, 2.0f);
+  }
+  else
+  {
+    /* Small office server/network rack with asynchronous status lights. */
+    color_rect(r, COL_INK, x + 5.0f, y + 1.0f, 23.0f, 31.0f);
+    color_rect(r, (SDL_Color){39, 49, 58, 255}, x + 7.0f, y + 3.0f, 19.0f, 28.0f);
+    color_rect(r, (SDL_Color){83, 96, 103, 255}, x + 8.0f, y + 4.0f, 17.0f, 2.0f);
+    for (int unit = 0; unit < 4; ++unit)
+    {
+      float uy = y + 7.0f + unit * 6.0f;
+      color_rect(r, (SDL_Color){15, 22, 29, 255}, x + 9.0f, uy, 15.0f, 4.0f);
+      color_rect(r, (SDL_Color){49, 66, 73, 255}, x + 10.0f, uy + 1.0f, 8.0f, 1.0f);
+      bool blink = ((int)(world_t * (2.0f + unit * 0.31f)) + unit) % 3 != 0;
+      SDL_Color led = blink ? (SDL_Color){61, 226, 161, 255}
+                            : (SDL_Color){35, 76, 65, 255};
+      color_rect(r, led, x + 20.0f, uy + 1.0f, 2.0f, 2.0f);
+    }
+  }
+}
+
+static void draw_decoration(SDL_Renderer *r, const Decoration *decoration,
+                            float cam_x, float oy, float world_t)
+{
+  float x = decoration->col * (float)TILE_SIZE - cam_x;
+  float y = decoration->row * (float)TILE_SIZE + oy;
+  if (decoration->type == DECOR_OFFICE_CHAIR)
+    draw_office_chair(r, x, y);
+  else if (decoration->type == DECOR_OFFICE_DESK)
+    draw_office_desk(r, x, y);
+  else
+    draw_office_equipment(r, x, y,
+                          tile_hash(decoration->col, decoration->row) % 3u,
+                          world_t);
+}
+
 static void draw_card(SDL_Renderer *r, float x, float y, Uint8 alpha, bool active)
 {
   SDL_Color glow = active ? (SDL_Color){71, 255, 225, 255}
@@ -1357,6 +1473,16 @@ static void render_world(Game *game)
     const MovingPlatform *mp = &lvl->moving_platforms[i];
     draw_platform(r, mp->x - cam_x, mp->row * (float)TILE_SIZE + oy,
                   (SDL_Color){84, 187, 216, 255}, false);
+  }
+
+  /* Furniture stays behind every interactive object and actor. */
+  for (int i = 0; i < lvl->decoration_count; ++i)
+  {
+    const Decoration *decoration = &lvl->decorations[i];
+    float x = decoration->col * (float)TILE_SIZE - cam_x;
+    if (x + TILE_SIZE < 0.0f || x > (float)win_w)
+      continue;
+    draw_decoration(r, decoration, cam_x, oy, world_t);
   }
 
   for (int d = 0; d < lvl->door_count; ++d)

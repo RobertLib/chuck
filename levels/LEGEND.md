@@ -16,6 +16,9 @@ This file describes the meaning of characters used in the level text files.
 - `O` : Rotating ceiling fan (lethal on contact with the blades).
 - `B` : Pushable crate (can be shoved or destroyed by shots/explosions).
 - `T` : Access terminal. One randomly selected terminal is active; the rest are decorative.
+- `c` : Decorative office chair (non-solid).
+- `d` : Decorative office desk with a computer (non-solid).
+- `i` : Decorative office equipment; its visual variant is selected from a filing cabinet, printer, or server rack (non-solid).
 - `S` : Player start position.
 - `E` : Exit / level end.
 - `D` : Door tile (`TILE_DOOR`).
@@ -25,6 +28,8 @@ This file describes the meaning of characters used in the level text files.
 
 Notes:
 
+- Office decorations are loaded only when placed directly above a static `#`
+  wall tile; unsupported decorations are ignored so they cannot float in air.
 - Hold `E` near the visibly active terminal to hack it and unlock the exit.
 - A `SPAWNS n0 n1 ...` line may appear after the grid. When present, it must
   contain exactly one spawn count for every door, in the order the doors

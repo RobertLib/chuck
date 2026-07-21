@@ -1,18 +1,18 @@
 #########################
 #  H   B   H    O  H    #
-#S H   G   H   C   HT D #
+#S H d G c H   C   HT Di#
 ###H#######H#######H#####
 #  H   O   H  V    H    #
-#  H D     H  V T  H    #
+#  H D     Hi V T  Hd   #
 ###H#######H##V####H#####
 #  H       H  V    H    #
-#  H   C   H  V    H  D #
+#  H d C c H  V    H  D #
 ###H#######H##V####H#####
 #  H       H  V    H    #
-#  H   C T H  V G  H    #
+#  H   C T Hi V G  H d c#
 ###H#######H#######H#####
 #  H       H    O  H    #
-#  H D W ^ H B K   H  E #
+#  H D W ^ H B K i H  E #
 #########################
 
 SPAWNS 0 3 0 2

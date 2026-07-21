@@ -56,6 +56,20 @@ typedef struct
     int col, row;
 } Terminal;
 
+/* Background props are visual only and never participate in collision. */
+typedef enum
+{
+    DECOR_OFFICE_CHAIR = 0,
+    DECOR_OFFICE_DESK,
+    DECOR_OFFICE_EQUIPMENT
+} DecorationType;
+
+typedef struct
+{
+    int col, row;
+    DecorationType type;
+} Decoration;
+
 typedef enum
 {
     ITEM_CARD = 0,
@@ -123,6 +137,9 @@ typedef struct
     int terminal_count;
     int active_terminal_index; /* index into terminals[], chosen at level load */
     bool terminal_hacked;
+
+    Decoration decorations[MAX_DECORATIONS];
+    int decoration_count;
 
     EnemySpawn enemy_spawns[MAX_ENEMIES];
     int enemy_count;

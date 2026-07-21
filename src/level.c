@@ -83,6 +83,17 @@ static void place_terminal(Level *level, int col, int row)
     terminal->row = row;
 }
 
+static void place_decoration(Level *level, int col, int row,
+                             DecorationType type)
+{
+    if (level->decoration_count >= MAX_DECORATIONS)
+        return;
+    Decoration *decoration = &level->decorations[level->decoration_count++];
+    decoration->col = col;
+    decoration->row = row;
+    decoration->type = type;
+}
+
 bool level_load(Level *level, const char *path)
 {
     size_t size = 0;
@@ -193,6 +204,18 @@ bool level_load(Level *level, const char *path)
             level->tiles[row][col] = TILE_EMPTY;
             place_terminal(level, col, row);
             break;
+        case 'c':
+            level->tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_OFFICE_CHAIR);
+            break;
+        case 'd':
+            level->tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_OFFICE_DESK);
+            break;
+        case 'i':
+            level->tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_OFFICE_EQUIPMENT);
+            break;
         case 'S':
             level->tiles[row][col] = TILE_EMPTY;
             start_count++;
@@ -263,6 +286,24 @@ bool level_load(Level *level, const char *path)
 
     level->width = max_width;
     level->height = row;
+
+    /* Office props are floor-standing and visual only. Keep them off ladders,
+     * shafts, falling/moving platforms and open air so they can never be left
+     * hovering after level geometry moves. */
+    int supported_decoration_count = 0;
+    for (int i = 0; i < level->decoration_count; ++i)
+    {
+        Decoration *decoration = &level->decorations[i];
+        int floor_row = decoration->row + 1;
+        if (floor_row >= level->height ||
+            level->tiles[floor_row][decoration->col] != TILE_WALL)
+        {
+            continue;
+        }
+        level->decorations[supported_decoration_count++] = *decoration;
+    }
+    level->decoration_count = supported_decoration_count;
+
     level->card_count = 0;
     for (int i = 0; i < level->item_count; ++i)
     {

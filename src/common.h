@@ -16,6 +16,9 @@
 /* Seconds before ammo/grenade pickups reappear after being collected */
 #define ITEM_RESPAWN_TIME 10.0f
 
+/* Non-interactive office furniture and equipment placed by level maps. */
+#define MAX_DECORATIONS 192
+
 /* Mines */
 #define MAX_MINES 32
 #define MINE_W 16
