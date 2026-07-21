@@ -10,8 +10,6 @@
 #include "cutscene.h"
 #include "audio.h"
 
-#define LEVEL_COUNT 2
-
 typedef struct
 {
     float x, y; /* world-space position (top-left) */

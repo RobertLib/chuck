@@ -1,12 +1,9 @@
 #include "game.h"
+#include "embedded_levels.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <time.h>
-
-static const char *LEVEL_FILES[LEVEL_COUNT] = {
-    "levels/level1.txt",
-    "levels/level2.txt"};
 
 static bool boxes_overlap(float ax, float ay, float aw, float ah,
                           float bx, float by, float bw, float bh)
@@ -1020,7 +1017,15 @@ static void dog_update_ai(Game *game, Dog *dog, float dt)
 
 static bool load_level(Game *game, int index)
 {
-    if (!level_load(&game->level, LEVEL_FILES[index]))
+    if (index < 0 || (size_t)index >= EMBEDDED_LEVEL_COUNT)
+    {
+        SDL_Log("Level index %d is out of range", index);
+        return false;
+    }
+
+    const EmbeddedLevelData *source = &EMBEDDED_LEVELS[index];
+    if (!level_load_data(&game->level, source->name,
+                         source->data, source->size))
     {
         return false;
     }
@@ -1229,7 +1234,7 @@ static void hit_player(Game *game)
 
 static void advance_level(Game *game)
 {
-    if (game->current_level + 1 < LEVEL_COUNT)
+    if ((size_t)(game->current_level + 1) < EMBEDDED_LEVEL_COUNT)
     {
         load_level(game, game->current_level + 1);
     }
@@ -2856,7 +2861,7 @@ void game_update(Game *game, float dt)
             if (boxes_overlap(game->player.x, game->player.y, PLAYER_W, ph,
                               ex, ey, TILE_SIZE, TILE_SIZE))
             {
-                if (game->current_level + 1 < LEVEL_COUNT)
+                if ((size_t)(game->current_level + 1) < EMBEDDED_LEVEL_COUNT)
                 {
                     int hostiles_neutralized = 0;
                     for (int i = 0; i < game->enemy_count; ++i)

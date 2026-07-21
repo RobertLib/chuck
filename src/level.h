@@ -3,6 +3,8 @@
 
 #include "common.h"
 
+#include <stddef.h>
+
 typedef enum
 {
     TILE_EMPTY = 0,
@@ -176,8 +178,9 @@ typedef struct
     bool reveal_done;      /* true when full reveal finished */
 } Level;
 
-/* Load a level from a text file. Returns true on success. */
-bool level_load(Level *level, const char *path);
+/* Parse a level from data embedded in the executable. Returns true on success. */
+bool level_load_data(Level *level, const char *name,
+                     const char *data, size_t size);
 
 /* Tile queries. Out-of-bounds is treated as solid wall. */
 TileType level_tile(const Level *level, int col, int row);

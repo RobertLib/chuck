@@ -94,13 +94,12 @@ static void place_decoration(Level *level, int col, int row,
     decoration->type = type;
 }
 
-bool level_load(Level *level, const char *path)
+bool level_load_data(Level *level, const char *name,
+                     const char *data, size_t size)
 {
-    size_t size = 0;
-    char *data = (char *)SDL_LoadFile(path, &size);
     if (data == NULL)
     {
-        SDL_Log("Failed to load level '%s': %s", path, SDL_GetError());
+        SDL_Log("Embedded level '%s' has no data", name);
         return false;
     }
 
@@ -516,46 +515,44 @@ bool level_load(Level *level, const char *path)
         }
     }
 
-    SDL_free(data);
-
     if (level->width <= 0 || level->height <= 0)
     {
-        SDL_Log("Level '%s' is empty", path);
+        SDL_Log("Level '%s' is empty", name);
         return false;
     }
     if (too_wide)
     {
-        SDL_Log("Level '%s' exceeds max width of %d tiles", path, MAX_LEVEL_WIDTH);
+        SDL_Log("Level '%s' exceeds max width of %d tiles", name, MAX_LEVEL_WIDTH);
         return false;
     }
     if (too_tall)
     {
-        SDL_Log("Level '%s' exceeds max height of %d tiles", path, MAX_LEVEL_HEIGHT);
+        SDL_Log("Level '%s' exceeds max height of %d tiles", name, MAX_LEVEL_HEIGHT);
         return false;
     }
     if (start_count != 1)
     {
         SDL_Log("Level '%s' must contain exactly one player start 'S' (found %d)",
-                path, start_count);
+                name, start_count);
         return false;
     }
     if (exit_count != 1)
     {
         SDL_Log("Level '%s' must contain exactly one exit 'E' (found %d)",
-                path, exit_count);
+                name, exit_count);
         return false;
     }
     if ((level->door_count % 2) != 0)
     {
         SDL_Log("Level '%s' has an unpaired door (found %d doors)",
-                path, level->door_count);
+                name, level->door_count);
         return false;
     }
     if (invalid_spawn_metadata)
     {
         SDL_Log("Level '%s' has invalid SPAWNS metadata "
                 "(expected %d values, found %d)",
-                path, level->door_count, spawn_value_count);
+                name, level->door_count, spawn_value_count);
         return false;
     }
     return true;

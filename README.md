@@ -86,6 +86,11 @@ make clean
 
 SDL3 development files must be available through `pkg-config`.
 
+Level maps remain editable as `levels/level*.txt`. During every build they are
+converted into C arrays and linked into the `chuck` executable. The executable
+therefore does not need the `levels` directory (or any other runtime asset
+files) when it is distributed.
+
 ## Assets
 
 All visuals are generated procedurally at runtime with SDL draw calls. Sound
