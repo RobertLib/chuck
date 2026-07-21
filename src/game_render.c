@@ -646,22 +646,26 @@ static void draw_walking_arm(SDL_Renderer *r, float x, float y, float sprite_w,
 
 static void draw_climbing_arm(SDL_Renderer *r, float x, float y, float sprite_w,
                               int dir, float shoulder_x, float shoulder_y,
-                              float rail_x, float hand_y,
+                              float grip_x, float hand_y,
                               SDL_Color sleeve, SDL_Color skin)
 {
-  float elbow_x = shoulder_x + (rail_x - shoulder_x) * 0.72f;
-  float elbow_y = shoulder_y + (hand_y - shoulder_y) * 0.48f;
+  /* Seen from behind, a climber's elbows flare outside the shoulders while
+     the forearms turn back in toward the rung.  Bending the arm this way is
+     what distinguishes the ladder pose from two straight raised arms. */
+  float side = grip_x < shoulder_x ? -1.0f : 1.0f;
+  float elbow_x = shoulder_x + side * 5.0f;
+  float elbow_y = shoulder_y + (hand_y - shoulder_y) * 0.52f;
 
   sprite_limb_segment(r, x, y, sprite_w, dir,
                       shoulder_x, shoulder_y, elbow_x, elbow_y, sleeve);
   sprite_limb_segment(r, x, y, sprite_w, dir,
-                      elbow_x, elbow_y, rail_x, hand_y, skin);
+                      elbow_x, elbow_y, grip_x, hand_y, skin);
 
-  /* Broad, outlined fists stay readable against the amber ladder rungs. */
+  /* Compact palms sit just inside the rails, wrapped around a rung. */
   sprite_rect(r, x, y, sprite_w, dir,
-              rail_x - 2.5f, hand_y - 2.0f, 5.0f, 5.0f, COL_OUTLINE);
+              grip_x - 2.5f, hand_y - 1.5f, 5.0f, 4.0f, COL_OUTLINE);
   sprite_rect(r, x, y, sprite_w, dir,
-              rail_x - 1.5f, hand_y - 1.0f, 3.0f, 3.0f, skin);
+              grip_x - 1.5f, hand_y - 0.5f, 3.0f, 2.0f, skin);
 }
 
 static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, float y)
@@ -790,7 +794,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy)
   {
     /* Keep one hand on the ladder while the other operates the sidearm. */
     draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                      8.0f, 14.0f + bob, 4.5f, 5.0f - climb,
+                      8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
                       (SDL_Color){42, 118, 153, 255},
                       (SDL_Color){209, 154, 105, 255});
     if (firing && p->shot_vertical != 0)
@@ -821,7 +825,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy)
     else
     {
       draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                        18.0f, 14.0f + bob, 21.5f, 5.0f + climb,
+                        18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
                         (SDL_Color){42, 118, 153, 255},
                         (SDL_Color){209, 154, 105, 255});
     }
@@ -962,10 +966,10 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
   if (e->climbing)
   {
     draw_climbing_arm(r, x, y, ENEMY_W, dir,
-                      8.0f, 14.0f + bob, 4.5f, 5.0f - climb,
+                      8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
                       uniform, (SDL_Color){183, 132, 91, 255});
     draw_climbing_arm(r, x, y, ENEMY_W, dir,
-                      18.0f, 14.0f + bob, 21.5f, 5.0f + climb,
+                      18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
                       uniform, (SDL_Color){183, 132, 91, 255});
 
     /* Back of the helmet: no side-facing face or visor while on a ladder. */
