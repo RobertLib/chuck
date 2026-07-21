@@ -89,17 +89,11 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
                                   float target_y)
 {
     float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
-    if (pursuing &&
-        fabsf(target_y - enemy_center_y) > TILE_SIZE * 0.6f)
-    {
-        int desired_climb_dir = target_y < enemy_center_y ? -1 : 1;
-        int probe_row =
-            desired_climb_dir < 0
-                ? (int)floorf((enemy->y - 1.0f) / TILE_SIZE)
-                : (int)floorf((enemy->y + ENEMY_H + 1.0f) / TILE_SIZE);
-        if (level_is_ladder(level, enemy->ladder_col, probe_row))
-            enemy->climb_dir = desired_climb_dir;
-    }
+
+    /* Finish the chosen climb direction before making another routing
+       decision. Re-evaluating it from target_y on every frame can reverse the
+       enemy just after it passes the target height, trapping it in a short
+       up/down loop when a side exit is not yet available. */
 
     /* Smoothly slide toward the ladder column centre instead of hard-snapping,
        to avoid a one-frame position jump when climbing starts. */
@@ -173,9 +167,12 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
             enemy->dir = (SDL_rand(2) == 0) ? -1 : 1;
     }
 
-    bool ignored_ground = false;
+    /* Do not carry the grounded state from before the climb. In particular,
+       an enemy leaving a ladder must land before the walking AI is allowed to
+       activate that same ladder again. */
+    enemy->on_ground = false;
     level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
-               ENEMY_W, ENEMY_H, dt, true, &ignored_ground,
+               ENEMY_W, ENEMY_H, dt, enemy->climbing, &enemy->on_ground,
                false);
 }
 
@@ -206,17 +203,29 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
     else if (enemy->hp < ENEMY_HP - 1)
         speed = ENEMY_WALK_SPEED * ENEMY_SPEED_HP1;
 
-    /* Keep the last facing direction while there is no horizontal escape.
-     * Reversing at either obstruction in this state would make the sprite
-     * alternate left/right every frame. */
-    if (pursuing && !hemmed_in)
+    float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
+    float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
+    float target_dx = target_x - enemy_center_x;
+    bool target_on_same_floor =
+        fabsf(target_y - enemy_center_y) <= TILE_SIZE * 0.75f;
+    bool reached_target_x = false;
+
+    /* Only follow the target's X position once the enemy is on its floor.
+     * Otherwise, crossing that X position makes the direction flip every
+     * frame and prevents the enemy from continuing along the platform to a
+     * ladder. Keeping the current patrol direction lets the ladder logic
+     * below find a route between floors. */
+    if (pursuing && !hemmed_in && target_on_same_floor)
     {
-        float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
-        if (fabsf(target_x - enemy_center_x) > 2.0f)
-            enemy->dir = target_x < enemy_center_x ? -1 : 1;
+        if (fabsf(target_dx) > 2.0f)
+            enemy->dir = target_dx < 0.0f ? -1 : 1;
+        else
+            reached_target_x = true;
     }
 
-    enemy->vx = hemmed_in ? 0.0f : (float)enemy->dir * speed;
+    enemy->vx = (hemmed_in || reached_target_x)
+                    ? 0.0f
+                    : (float)enemy->dir * speed;
 
     if (enemy->on_ground)
     {
@@ -228,11 +237,11 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         int ahead_col = (enemy->dir > 0)
                             ? (int)floorf((enemy->x + ENEMY_W + 1.0f) / TILE_SIZE)
                             : (int)floorf((enemy->x - 1.0f) / TILE_SIZE);
-        if (!hemmed_in &&
+        if (!hemmed_in && enemy->vx != 0.0f &&
             level_is_solid(level, ahead_col, foot_row))
         {
             enemy->dir = -enemy->dir;
-            enemy->vx = (float)enemy->dir * ENEMY_WALK_SPEED;
+            enemy->vx = (float)enemy->dir * speed;
         }
 
         /* Patrols use ladders occasionally. During an alarm, take a usable
@@ -259,6 +268,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             if (start_climbing)
             {
                 enemy->climbing = true;
+                enemy->on_ground = false;
                 enemy->ladder_col = center_col;
                 if (pursuing)
                 {
