@@ -86,19 +86,18 @@ static void play_world_sound(Game *game, SoundEffect effect,
 }
 
 /*
- * Being shot immediately ends a guard conversation. Both participants turn
- * toward the player and aim, so a surviving guard always retaliates instead
- * of continuing to ignore the attacker outside the normal notice radius.
+ * Being shot provokes a surviving guard regardless of distance. The guard
+ * immediately tries a return shot, then keeps pursuing the position from
+ * which the player attacked until normal line of sight lets it track them.
+ * If the guard was talking, its partner is alerted as well.
  */
-static void alert_conversation_pair(Game *game, int enemy_index)
+static void provoke_enemy_after_hit(Game *game, int enemy_index)
 {
     if (enemy_index < 0 || enemy_index >= game->enemy_count)
         return;
 
     Enemy *attacked = &game->enemies[enemy_index];
-    if (!attacked->talking)
-        return;
-
+    int participant_count = attacked->talking ? 2 : 1;
     int participants[2] = {enemy_index, attacked->talk_partner};
     float target_x = game->player.x + PLAYER_W * 0.5f;
     float target_y =
@@ -108,7 +107,7 @@ static void alert_conversation_pair(Game *game, int enemy_index)
              : (float)PLAYER_H * 0.15f);
     Enemy *alert_source = NULL;
 
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; i < participant_count; ++i)
     {
         int index = participants[i];
         if (index < 0 || index >= game->enemy_count ||
@@ -127,6 +126,10 @@ static void alert_conversation_pair(Game *game, int enemy_index)
             continue;
 
         float enemy_x = enemy->x + ENEMY_W * 0.5f;
+        enemy->provoked = true;
+        enemy->pursuit_target_x = target_x;
+        enemy->pursuit_target_y = target_y;
+        enemy->has_pursuit_target = true;
         enemy->dir = target_x < enemy_x ? -1 : 1;
         enemy->aim_target_x = target_x;
         enemy->aim_target_y = target_y;
@@ -2127,7 +2130,8 @@ void game_update(Game *game, float dt)
             Enemy *enemy = &game->enemies[i];
             float prev_enemy_x = enemy->x;
             float prev_enemy_y = enemy->y;
-            bool pursuing = game->terminal_alarm_timer > 0.0f;
+            bool terminal_pursuit = game->terminal_alarm_timer > 0.0f;
+            bool pursuing = terminal_pursuit || enemy->provoked;
             if (pursuing && enemy_has_los(game, enemy))
             {
                 float player_h =
@@ -2140,7 +2144,7 @@ void game_update(Game *game, float dt)
                     game->player.y + player_h * 0.5f;
                 enemy->has_pursuit_target = true;
             }
-            else if (pursuing && !enemy->has_pursuit_target)
+            else if (terminal_pursuit && !enemy->has_pursuit_target)
             {
                 enemy->has_pursuit_target =
                     terminal_alarm_target(
@@ -2228,12 +2232,12 @@ void game_update(Game *game, float dt)
          ++i)
     {
         Enemy *a = &game->enemies[i];
-        if (a->dead || a->talking || a->climbing || !a->on_ground || a->talk_partner != -1 || a->talk_cooldown > 0.0f)
+        if (a->dead || a->provoked || a->talking || a->climbing || !a->on_ground || a->talk_partner != -1 || a->talk_cooldown > 0.0f)
             continue;
         for (int j = i + 1; j < game->enemy_count; ++j)
         {
             Enemy *b = &game->enemies[j];
-            if (b->dead || b->talking || b->climbing || !b->on_ground || b->talk_partner != -1 || b->talk_cooldown > 0.0f)
+            if (b->dead || b->provoked || b->talking || b->climbing || !b->on_ground || b->talk_partner != -1 || b->talk_cooldown > 0.0f)
                 continue;
 
             /* Must be approximately same vertical level */
@@ -2552,7 +2556,7 @@ void game_update(Game *game, float dt)
                     play_world_sound(game, SFX_ENEMY_HIT,
                                      e->x + ENEMY_W * 0.5f,
                                      e->y + ENEMY_H * 0.5f);
-                alert_conversation_pair(game, j);
+                provoke_enemy_after_hit(game, j);
                 break;
             }
         }

@@ -24,6 +24,7 @@ void enemy_init(Enemy *enemy, float x, float y)
     enemy->pursuit_target_x = x + ENEMY_W * 0.5f;
     enemy->pursuit_target_y = y + ENEMY_H * 0.5f;
     enemy->has_pursuit_target = false;
+    enemy->provoked = false;
     enemy->talking = false;
     enemy->talk_timer = 0.0f;
     enemy->talk_partner = -1;

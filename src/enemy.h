@@ -26,6 +26,10 @@ typedef struct
     float pursuit_target_x;
     float pursuit_target_y;
     bool has_pursuit_target;
+    /* A guard that survives a player bullet keeps hunting the shooter even
+     * when the terminal alarm is inactive or the player is initially outside
+     * the guard's normal sight and shooting range. */
+    bool provoked;
     bool talking;        /* true while chatting with another enemy */
     float talk_timer;    /* seconds remaining while talking */
     float talk_cooldown; /* seconds remaining before eligible to talk again */
