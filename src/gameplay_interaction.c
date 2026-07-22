@@ -17,12 +17,20 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
                               input->interact &&
                               state->player.on_ground &&
                               !state->player.on_ladder;
+    bool alarm_started = state->terminal_hacking &&
+                         state->terminal_alarm_timer <= 0.0f;
     if (state->terminal_hacking)
     {
         const Terminal *terminal =
             &state->level.map.terminals[state->level.runtime.active_terminal_index];
         state->player.x = terminal->col * (float)TILE_SIZE +
                           ((float)TILE_SIZE - PLAYER_W) * 0.5f;
+        if (alarm_started)
+        {
+            gameplay_world_sound(state, SFX_TERMINAL_ALARM,
+                                 (terminal->col + 0.5f) * TILE_SIZE,
+                                 (terminal->row + 0.5f) * TILE_SIZE);
+        }
     }
     else
     {
@@ -30,8 +38,6 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
         state->terminal_hack_tick_timer = 0.0f;
     }
 
-    bool alarm_started = state->terminal_hacking &&
-                         state->terminal_alarm_timer <= 0.0f;
     if (state->terminal_hacking)
     {
         state->terminal_alarm_timer = TERMINAL_ALARM_TIME;

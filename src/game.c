@@ -593,6 +593,8 @@ static void update_playing(Game *game, float dt)
         game->gameplay.player.on_ground;
     float player_fall_speed = game->gameplay.player.vy;
     int previous_elevator = game->gameplay.player_on_elevator;
+    int previous_moving_platform =
+        game->gameplay.player_on_moving_platform;
 
     /* --- Elevator: pre-carry (upward), player physics, update platforms, snap --- */
     {
@@ -713,6 +715,17 @@ static void update_playing(Game *game, float dt)
     }
     if (game->gameplay.player_on_elevator >= 0 && previous_elevator < 0)
         game_events_sound(&game->gameplay.events, SFX_ELEVATOR);
+    if (game->gameplay.player_on_moving_platform >= 0 &&
+        previous_moving_platform < 0)
+    {
+        const MovingPlatform *platform =
+            &game->gameplay.level.runtime.moving_platforms[
+                game->gameplay.player_on_moving_platform];
+        gameplay_world_sound(
+            &game->gameplay, SFX_MOVING_PLATFORM,
+            platform->x + TILE_SIZE * 0.5f,
+            platform->row * (float)TILE_SIZE + MOVING_PLATFORM_H * 0.5f);
+    }
 
     if (game->gameplay.player.on_ladder && fabsf(game->gameplay.player.vy) > 1.0f)
     {

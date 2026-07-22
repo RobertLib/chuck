@@ -20,6 +20,7 @@ typedef struct
     float vx, vy;
     bool active;
     float timer;
+    float fuse_sound_timer;
     bool grounded;
 } Grenade;
 

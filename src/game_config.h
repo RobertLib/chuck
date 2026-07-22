@@ -38,6 +38,7 @@
 #define CRATE_H 28
 #define CRATE_PUSH_SPEED 95.0f
 #define CRATE_FRICTION 8.0f
+#define CRATE_LAND_SOUND_SPEED 90.0f
 
 /* Exit-access terminals */
 #define MAX_TERMINALS 16

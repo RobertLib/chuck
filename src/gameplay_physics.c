@@ -72,14 +72,16 @@ static float move_crate_y(GameplayState *state, int crate_index, float dy)
     return moved;
 }
 
-static void resolve_falling_crate_hits(GameplayState *state,
+static bool resolve_falling_crate_hits(GameplayState *state,
                                        CampaignState *campaign,
                                        const Crate *crate, float previous_y)
 {
     float previous_bottom = previous_y + CRATE_H;
     float current_bottom = crate->y + CRATE_H;
     if (current_bottom <= previous_bottom)
-        return;
+        return false;
+
+    bool hit_something = false;
 
     for (int i = 0; i < state->enemy_count; ++i)
     {
@@ -90,6 +92,7 @@ static void resolve_falling_crate_hits(GameplayState *state,
             previous_bottom <= enemy->y && current_bottom >= enemy->y)
         {
             gameplay_kill_enemy_with_crate(state, campaign, enemy);
+            hit_something = true;
         }
     }
     for (int i = 0; i < state->dog_count; ++i)
@@ -101,8 +104,10 @@ static void resolve_falling_crate_hits(GameplayState *state,
             previous_bottom <= dog->y && current_bottom >= dog->y)
         {
             gameplay_kill_dog_with_crate(state, campaign, dog);
+            hit_something = true;
         }
     }
+    return hit_something;
 }
 
 void gameplay_update_crates(GameplayState *state, CampaignState *campaign,
@@ -122,16 +127,28 @@ void gameplay_update_crates(GameplayState *state, CampaignState *campaign,
         if (fabsf(moved_x - desired_x) > 0.01f)
             crate->vx = 0.0f;
 
+        bool was_grounded = crate->on_ground;
+        float impact_speed = crate->vy;
         crate->on_ground = false;
         float previous_y = crate->y;
         float desired_y = crate->vy * dt;
         float moved_y = move_crate_y(state, i, desired_y);
-        resolve_falling_crate_hits(state, campaign, crate, previous_y);
+        bool crushed_hostile =
+            resolve_falling_crate_hits(state, campaign, crate, previous_y);
         if (fabsf(moved_y - desired_y) > 0.01f)
         {
             if (desired_y > 0.0f)
                 crate->on_ground = true;
             crate->vy = 0.0f;
+        }
+
+        if (crushed_hostile ||
+            (!was_grounded && crate->on_ground &&
+             impact_speed >= CRATE_LAND_SOUND_SPEED))
+        {
+            gameplay_world_sound(state, SFX_CRATE_LAND,
+                                 crate->x + CRATE_W * 0.5f,
+                                 crate->y + CRATE_H * 0.5f);
         }
 
         if (crate->on_ground && crate->vx != 0.0f)
@@ -189,13 +206,22 @@ void gameplay_resolve_player_crates(GameplayState *state,
         if ((direction > 0 && player->vx > 0.0f) ||
             (direction < 0 && player->vx < 0.0f))
         {
+            bool started_push = fabsf(crate->vx) < 1.0f;
             float penetration = direction > 0
                                     ? player->x + PLAYER_W - crate->x
                                     : crate->x + CRATE_W - player->x;
             float moved = move_crate_x(state, i,
                                        direction * (penetration + 0.5f));
             if (fabsf(moved) > 0.0f)
+            {
                 crate->vx = (float)direction * CRATE_PUSH_SPEED;
+                if (started_push)
+                {
+                    gameplay_world_sound(state, SFX_CRATE_PUSH,
+                                         crate->x + CRATE_W * 0.5f,
+                                         crate->y + CRATE_H * 0.5f);
+                }
+            }
         }
 
         if (gameplay_boxes_overlap(player->x, player->y, PLAYER_W, height,

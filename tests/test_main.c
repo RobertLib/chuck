@@ -3,6 +3,7 @@
 #include "gameplay_ai.h"
 #include "gameplay_combat.h"
 #include "gameplay_interaction.h"
+#include "gameplay_physics.h"
 #include "gameplay_state.h"
 #include "level.h"
 #include "rng.h"
@@ -23,6 +24,18 @@ static int failures;
             failures++;                                                        \
         }                                                                      \
     } while (0)
+
+static bool events_have_sound(const GameEventBuffer *events,
+                              GameEventType type, SoundEffect effect)
+{
+    for (int i = 0; i < events->count; ++i)
+    {
+        if (events->items[i].type == type &&
+            events->items[i].data.sound.effect == effect)
+            return true;
+    }
+    return false;
+}
 
 static void test_rng_is_reproducible(void)
 {
@@ -190,6 +203,8 @@ static void test_terminal_unlocks_deterministically(void)
 
     gameplay_prepare_terminal(&state, &input, 0.0f);
     CHECK(state.terminal_hacking);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_TERMINAL_ALARM));
     CHECK(gameplay_advance_terminal(&state, &campaign,
                                     TERMINAL_HACK_TIME));
     CHECK(state.level.runtime.exit_unlocked);
@@ -250,6 +265,98 @@ static void test_mine_damage_emits_feedback(void)
     }
     CHECK(found_explosion);
     CHECK(found_shake);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_EXPLOSION));
+}
+
+static void test_grenade_fuse_and_explosion_emit_sounds(void)
+{
+    static const char data[] =
+        "########\n"
+        "#S    E#\n"
+        "########\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 34);
+    CHECK(level_load_data(&state.level, "grenade", data, strlen(data),
+                          &state.rng));
+    state.grenade_count = 1;
+    state.grenades[0] = (Grenade){
+        .x = 96.0f,
+        .y = TILE_SIZE + 4.0f,
+        .active = true,
+        .timer = 0.25f,
+        .fuse_sound_timer = 0.01f};
+
+    gameplay_combat_update_explosives(&state, &campaign, 0.02f);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_GRENADE_FUSE));
+
+    gameplay_combat_update_explosives(&state, &campaign, 0.30f);
+    CHECK(!state.grenades[0].active);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_EXPLOSION));
+}
+
+static void test_crate_movement_emits_sounds(void)
+{
+    static const char data[] =
+        "########\n"
+        "#  B   #\n"
+        "#      #\n"
+        "#S M  E#\n"
+        "########\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 87);
+    CHECK(level_load_data(&state.level, "crate", data, strlen(data),
+                          &state.rng));
+    CHECK(state.level.runtime.crate_count == 1);
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    Crate *crate = &state.level.runtime.crates[0];
+
+    for (int i = 0; i < 240 && !state.enemies[0].dead; ++i)
+        gameplay_update_crates(&state, &campaign, 1.0f / 120.0f);
+    CHECK(state.enemies[0].dead);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_ENEMY_DOWN));
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_CRATE_LAND));
+
+    for (int i = 0; i < 240 && !crate->on_ground; ++i)
+        gameplay_update_crates(&state, &campaign, 1.0f / 120.0f);
+    CHECK(crate->on_ground);
+
+    game_events_clear(&state.events);
+    state.player.x = crate->x - PLAYER_W + 4.0f;
+    state.player.y = 4.0f * TILE_SIZE - PLAYER_H;
+    state.player.vx = PLAYER_WALK_SPEED;
+    gameplay_resolve_player_crates(&state,
+                                   crate->x - PLAYER_W,
+                                   state.player.y, PLAYER_H);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_CRATE_PUSH));
+}
+
+static void test_hazards_emit_specific_impact_sounds(void)
+{
+    GameplayState state = {0};
+    state.player.facing = 1;
+    state.level.map.ceiling_fan_count = 1;
+    state.level.map.ceiling_fans[0] = (CeilingFan){.x = 13.0f, .y = 1.0f};
+
+    gameplay_combat_update_hazards(&state);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_FAN_HIT));
+
+    state = (GameplayState){0};
+    state.player.facing = 1;
+    state.level.map.spike_count = 1;
+    state.level.map.spike_spawns[0] = (SpikeSpawn){.x = 0.0f, .y = 0.0f};
+    gameplay_combat_update_hazards(&state);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_SPIKE_HIT));
 }
 
 static void test_enemy_spawn_uses_seeded_rng(void)
@@ -320,6 +427,9 @@ int main(void)
     test_terminal_unlocks_deterministically();
     test_key_cards_keep_scoring_and_unlock_rules();
     test_mine_damage_emits_feedback();
+    test_grenade_fuse_and_explosion_emit_sounds();
+    test_crate_movement_emits_sounds();
+    test_hazards_emit_specific_impact_sounds();
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();
 

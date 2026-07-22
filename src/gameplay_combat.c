@@ -159,7 +159,15 @@ void gameplay_combat_update_explosives(GameplayState *state,
                                      grenade->x + GRENADE_W * 0.5f,
                                      grenade->y + GRENADE_H * 0.5f);
         }
+        grenade->fuse_sound_timer -= dt;
         grenade->timer -= dt;
+        if (grenade->timer > 0.0f && grenade->fuse_sound_timer <= 0.0f)
+        {
+            gameplay_world_sound(state, SFX_GRENADE_FUSE,
+                                 grenade->x + GRENADE_W * 0.5f,
+                                 grenade->y + GRENADE_H * 0.5f);
+            grenade->fuse_sound_timer = grenade->timer > 0.65f ? 0.30f : 0.14f;
+        }
         if (grenade->timer <= 0.0f)
             explode_grenade(state, campaign, grenade);
     }
@@ -181,6 +189,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             Grenade *grenade = &state->grenades[slot];
             grenade->active = true;
             grenade->timer = GRENADE_FUSE_TIME;
+            grenade->fuse_sound_timer = 0.22f;
             grenade->grounded = false;
             grenade->y = state->player.y + player_height(state) * 0.45f;
             float speed = GRENADE_THROW_SPEED * 0.9f;
@@ -264,6 +273,7 @@ void gameplay_combat_update_hazards(GameplayState *state)
                                    CEILING_FAN_BLADE_LENGTH * 2.0f,
                                    CEILING_FAN_HIT_HEIGHT))
         {
+            gameplay_world_sound(state, SFX_FAN_HIT, fan->x, fan->y);
             gameplay_hit_player(state);
             return;
         }
@@ -275,6 +285,9 @@ void gameplay_combat_update_hazards(GameplayState *state)
                                    PLAYER_W, height,
                                    spike->x, spike->y, SPIKE_W, SPIKE_H))
         {
+            gameplay_world_sound(state, SFX_SPIKE_HIT,
+                                 spike->x + SPIKE_W * 0.5f,
+                                 spike->y + SPIKE_H * 0.5f);
             gameplay_hit_player(state);
             return;
         }

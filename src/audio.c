@@ -735,6 +735,16 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.00f, 0.16f, 440.0f, 660.0f, 0.46f, WAVE_TRIANGLE, 0.005f, 0.08f);
         add_tone(s, 0.13f, 0.29f, 880.0f, 882.0f, 0.32f, WAVE_TRIANGLE, 0.008f, 0.22f);
         break;
+    case SFX_TERMINAL_ALARM:
+        if (!begin_sound(audio, effect, 0.72f, 0.37f, 500))
+            return false;
+        add_tone(s, 0.00f, 0.30f, 620.0f, 910.0f, 0.43f,
+                 WAVE_TRIANGLE, 0.008f, 0.10f);
+        add_tone(s, 0.28f, 0.32f, 910.0f, 620.0f, 0.43f,
+                 WAVE_TRIANGLE, 0.006f, 0.13f);
+        add_tone(s, 0.54f, 0.18f, 1140.0f, 780.0f, 0.24f,
+                 WAVE_SQUARE, 0.004f, 0.14f);
+        break;
     case SFX_JUMP:
         if (!begin_sound(audio, effect, 0.20f, 0.30f, 80))
             return false;
@@ -776,6 +786,16 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.00f, 0.62f, 64.0f, 76.0f, 0.50f, WAVE_SAW, 0.05f, 0.12f);
         add_tone(s, 0.00f, 0.62f, 128.0f, 152.0f, 0.18f, WAVE_SINE, 0.05f, 0.12f);
         add_noise(s, 0.00f, 0.62f, 0.16f, 0.025f, 0.06f, 0.12f, 0x4e11u);
+        break;
+    case SFX_MOVING_PLATFORM:
+        if (!begin_sound(audio, effect, 0.43f, 0.27f, 420))
+            return false;
+        add_tone(s, 0.00f, 0.43f, 72.0f, 88.0f, 0.46f,
+                 WAVE_SAW, 0.018f, 0.12f);
+        add_noise(s, 0.00f, 0.16f, 0.38f, 0.19f,
+                  0.003f, 0.13f, 0x6d71u);
+        add_tone(s, 0.27f, 0.14f, 245.0f, 96.0f, 0.25f,
+                 WAVE_TRIANGLE, 0.003f, 0.11f);
         break;
     case SFX_PLATFORM_CRACK:
         if (!begin_sound(audio, effect, 0.31f, 0.34f, 190))
@@ -916,6 +936,16 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_noise(s, 0.00f, 0.20f, 0.52f, 0.10f, 0.002f, 0.14f, 0x18d4u);
         add_tone(s, 0.00f, 0.16f, 280.0f, 115.0f, 0.42f, WAVE_TRIANGLE, 0.002f, 0.11f);
         break;
+    case SFX_GRENADE_FUSE:
+        if (!begin_sound(audio, effect, 0.095f, 0.25f, 90))
+            return false;
+        add_tone(s, 0.00f, 0.055f, 1180.0f, 920.0f, 0.48f,
+                 WAVE_SQUARE, 0.002f, 0.042f);
+        add_noise(s, 0.00f, 0.045f, 0.24f, 0.71f,
+                  0.002f, 0.036f, 0xf053u);
+        add_tone(s, 0.047f, 0.048f, 740.0f, 510.0f, 0.28f,
+                 WAVE_TRIANGLE, 0.002f, 0.039f);
+        break;
     case SFX_GRENADE_BOUNCE:
         if (!begin_sound(audio, effect, 0.13f, 0.22f, 90))
             return false;
@@ -935,11 +965,47 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.00f, 0.12f, 900.0f, 900.0f, 0.46f, WAVE_TRIANGLE, 0.006f, 0.08f);
         add_tone(s, 0.18f, 0.16f, 1160.0f, 1160.0f, 0.50f, WAVE_TRIANGLE, 0.006f, 0.11f);
         break;
+    case SFX_CRATE_PUSH:
+        if (!begin_sound(audio, effect, 0.31f, 0.25f, 240))
+            return false;
+        add_noise(s, 0.00f, 0.31f, 0.66f, 0.045f,
+                  0.012f, 0.11f, 0x9c42u);
+        add_tone(s, 0.00f, 0.29f, 118.0f, 73.0f, 0.31f,
+                 WAVE_SAW, 0.012f, 0.10f);
+        break;
+    case SFX_CRATE_LAND:
+        if (!begin_sound(audio, effect, 0.36f, 0.42f, 180))
+            return false;
+        add_noise(s, 0.00f, 0.27f, 0.83f, 0.10f,
+                  0.003f, 0.24f, 0x1a6du);
+        add_tone(s, 0.00f, 0.31f, 112.0f, 35.0f, 0.68f,
+                 WAVE_TRIANGLE, 0.003f, 0.27f);
+        add_noise(s, 0.12f, 0.24f, 0.34f, 0.31f,
+                  0.004f, 0.22f, 0x7b18u);
+        break;
     case SFX_CRATE_BREAK:
         if (!begin_sound(audio, effect, 0.40f, 0.36f, 95))
             return false;
         add_noise(s, 0.00f, 0.34f, 0.80f, 0.20f, 0.004f, 0.31f, 0xc2a7u);
         add_tone(s, 0.00f, 0.24f, 145.0f, 42.0f, 0.38f, WAVE_TRIANGLE, 0.004f, 0.20f);
+        break;
+    case SFX_FAN_HIT:
+        if (!begin_sound(audio, effect, 0.32f, 0.43f, 260))
+            return false;
+        add_noise(s, 0.00f, 0.22f, 0.72f, 0.54f,
+                  0.002f, 0.19f, 0xfa31u);
+        add_tone(s, 0.00f, 0.28f, 760.0f, 185.0f, 0.43f,
+                 WAVE_SAW, 0.002f, 0.23f);
+        add_tone(s, 0.08f, 0.24f, 132.0f, 54.0f, 0.40f,
+                 WAVE_TRIANGLE, 0.003f, 0.21f);
+        break;
+    case SFX_SPIKE_HIT:
+        if (!begin_sound(audio, effect, 0.24f, 0.39f, 260))
+            return false;
+        add_noise(s, 0.00f, 0.11f, 0.68f, 0.68f,
+                  0.002f, 0.09f, 0x5b17u);
+        add_tone(s, 0.00f, 0.23f, 1280.0f, 210.0f, 0.44f,
+                 WAVE_TRIANGLE, 0.002f, 0.19f);
         break;
     case SFX_PICKUP_AMMO:
         if (!begin_sound(audio, effect, 0.24f, 0.34f, 80))
@@ -1218,20 +1284,38 @@ void audio_play(AudioSystem *audio, SoundEffect effect)
     play_scaled(audio, effect, 1.0f);
 }
 
+static bool sound_is_critical_feedback(SoundEffect effect)
+{
+    switch (effect)
+    {
+    case SFX_EXPLOSION:
+    case SFX_CRATE_LAND:
+    case SFX_CRATE_BREAK:
+    case SFX_ENEMY_DOWN:
+    case SFX_DOG_YELP:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void audio_play_at(AudioSystem *audio, SoundEffect effect,
                    float source_x, float source_y,
                    float listener_x, float listener_y)
 {
     const float full_volume_distance = 2.0f * TILE_SIZE;
-    const float max_audible_distance = 16.0f * TILE_SIZE;
+    bool critical_feedback = sound_is_critical_feedback(effect);
+    float max_audible_distance =
+        (critical_feedback ? 24.0f : 16.0f) * TILE_SIZE;
     float dx = source_x - listener_x;
     float dy = source_y - listener_y;
     float distance = sqrtf(dx * dx + dy * dy);
 
     /*
-     * Nearby events remain crisp. Beyond two tiles the amplitude falls off
-     * smoothly and reaches silence at sixteen tiles, so off-screen action
-     * does not occupy an audio voice or mask useful local cues.
+     * Nearby events remain crisp. Routine action falls off quickly so
+     * off-screen chatter does not mask local cues. Outcome-defining impacts
+     * carry farther and use a gentler curve: a crate kill or explosion below
+     * the player still provides audible confirmation.
      */
     if (distance >= max_audible_distance)
         return;
@@ -1241,7 +1325,7 @@ void audio_play_at(AudioSystem *audio, SoundEffect effect,
                    (max_audible_distance - full_volume_distance),
                0.0f, 1.0f);
     float proximity = 1.0f - normalized;
-    float scale = proximity * proximity;
+    float scale = critical_feedback ? proximity : proximity * proximity;
     play_scaled(audio, effect, scale);
 }
 
