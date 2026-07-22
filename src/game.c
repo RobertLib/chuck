@@ -82,6 +82,41 @@ static void play_world_sound(Game *game, SoundEffect effect,
                   game->player.y + player_height * 0.5f);
 }
 
+static void start_camera_shake(Game *game, float strength, float duration)
+{
+    game->camera_shake_strength = strength;
+    game->camera_shake_duration = duration;
+    game->camera_shake_timer = duration;
+}
+
+static void update_camera_shake(Game *game, float dt)
+{
+    if (game->camera_shake_timer <= 0.0f ||
+        game->camera_shake_duration <= 0.0f)
+    {
+        game->camera_shake_timer = 0.0f;
+        game->camera_shake_x = 0.0f;
+        game->camera_shake_y = 0.0f;
+        return;
+    }
+
+    game->camera_shake_timer -= dt;
+    if (game->camera_shake_timer <= 0.0f)
+    {
+        game->camera_shake_timer = 0.0f;
+        game->camera_shake_x = 0.0f;
+        game->camera_shake_y = 0.0f;
+        return;
+    }
+
+    float fade = game->camera_shake_timer / game->camera_shake_duration;
+    float amplitude = game->camera_shake_strength * fade * fade;
+    float random_x = (float)SDL_rand(2001) / 1000.0f - 1.0f;
+    float random_y = (float)SDL_rand(2001) / 1000.0f - 1.0f;
+    game->camera_shake_x = roundf(random_x * amplitude);
+    game->camera_shake_y = roundf(random_y * amplitude);
+}
+
 /*
  * Being shot provokes a surviving guard regardless of distance. The guard
  * immediately tries a return shot, then keeps pursuing the position from
@@ -1046,6 +1081,11 @@ static bool load_level(Game *game, int index)
     game->exit_unlocked_timer = 0.0f;
     game->level_elapsed_time = 0.0f;
     game->level_start_score = game->score;
+    game->camera_shake_timer = 0.0f;
+    game->camera_shake_duration = 0.0f;
+    game->camera_shake_strength = 0.0f;
+    game->camera_shake_x = 0.0f;
+    game->camera_shake_y = 0.0f;
     game->state = STATE_LEVEL_START;
     level_reveal_init(&game->level);
 
@@ -1844,6 +1884,7 @@ void game_update(Game *game, float dt)
                 float cy = m->y + MINE_H * 0.5f;
                 particle_system_explosion(&game->particles, cx, cy, 48);
                 play_world_sound(game, SFX_EXPLOSION, cx, cy);
+                start_camera_shake(game, 5.0f, 0.24f);
                 for (int j = 0; j < game->level.crate_count; ++j)
                 {
                     Crate *crate = &game->level.crates[j];
@@ -1912,6 +1953,7 @@ void game_update(Game *game, float dt)
             float cy = g->y + GRENADE_H * 0.5f;
             particle_system_explosion(&game->particles, cx, cy, 64);
             play_world_sound(game, SFX_EXPLOSION, cx, cy);
+            start_camera_shake(game, 7.0f, 0.30f);
             /* Kill enemies in radius */
             for (int j = 0; j < game->enemy_count; ++j)
             {
@@ -2897,6 +2939,7 @@ void game_update(Game *game, float dt)
 
     /* Update particle system every frame so non-player-triggered effects animate. */
     particle_system_update(&game->particles, dt);
+    update_camera_shake(game, dt);
 
     /* Camera: follow player horizontally, clamped to level bounds */
     {

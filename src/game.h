@@ -115,6 +115,13 @@ typedef struct
     GameState state;
     Uint64 last_tick;
     float cam_x; /* world x of left edge of the viewport */
+    /* Short, decaying render offset used by gameplay explosions. The HUD is
+     * rendered separately and therefore stays readable while the world shakes. */
+    float camera_shake_timer;
+    float camera_shake_duration;
+    float camera_shake_strength;
+    float camera_shake_x;
+    float camera_shake_y;
     /* Key-card intro animation state (used between reveal and playing) */
     int card_anim_current;     /* current highlighted position */
     int card_anim_step;        /* steps advanced in animation */

@@ -1373,10 +1373,10 @@ static void render_world(Game *game)
 {
   SDL_Renderer *r = game->renderer;
   const Level *lvl = &game->level;
-  const float oy = HUD_HEIGHT;
+  const float oy = HUD_HEIGHT + game->camera_shake_y;
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
-  const float cam_x = game->cam_x;
+  const float cam_x = game->cam_x - game->camera_shake_x;
   float world_t = (float)SDL_GetTicksNS() * 1.0e-9f;
 
   render_background(game, win_w, win_h);
