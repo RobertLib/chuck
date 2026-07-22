@@ -1,8 +1,10 @@
 #ifndef CHUCK_PLAYER_H
 #define CHUCK_PLAYER_H
 
-#include "common.h"
+#include "game_config.h"
 #include "level.h"
+
+#include <stdbool.h>
 
 typedef struct
 {

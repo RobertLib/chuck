@@ -2,13 +2,13 @@
 
 #include <math.h>
 
-void enemy_init(Enemy *enemy, float x, float y)
+void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
 {
     enemy->x = x;
     enemy->y = y;
     enemy->vx = 0.0f;
     enemy->vy = 0.0f;
-    enemy->dir = (SDL_rand(2) == 0) ? -1 : 1;
+    enemy->dir = rng_range(rng, 2) == 0 ? -1 : 1;
     enemy->on_ground = false;
     enemy->climbing = false;
     enemy->climb_dir = -1;
@@ -17,7 +17,7 @@ void enemy_init(Enemy *enemy, float x, float y)
     enemy->hp = ENEMY_HP;
     enemy->dead = false;
     /* Stagger initial shoot time so enemies don't all fire at once */
-    enemy->shoot_cooldown = 1.0f + SDL_rand(250) * 0.01f;
+    enemy->shoot_cooldown = 1.0f + rng_range(rng, 250) * 0.01f;
     enemy->aim_timer = 0.0f;
     enemy->aim_target_x = 0.0f;
     enemy->aim_target_y = 0.0f;
@@ -29,23 +29,23 @@ void enemy_init(Enemy *enemy, float x, float y)
     enemy->talk_timer = 0.0f;
     enemy->talk_partner = -1;
     enemy->talk_cooldown = 0.0f;
-    enemy->anim_time = (float)SDL_rand(628) * 0.01f;
+    enemy->anim_time = (float)rng_range(rng, 628) * 0.01f;
     enemy->recoil_timer = 0.0f;
 }
 
-void dog_init(Dog *dog, float x, float y, int owner)
+void dog_init(Dog *dog, float x, float y, int owner, Rng *rng)
 {
     dog->x = x;
     dog->y = y;
     dog->vx = 0.0f;
     dog->vy = 0.0f;
-    dog->dir = (SDL_rand(2) == 0) ? -1 : 1;
+    dog->dir = rng_range(rng, 2) == 0 ? -1 : 1;
     dog->on_ground = false;
     dog->hp = DOG_HP;
     dog->dead = false;
     dog->owner = owner;
     dog->state = DOG_GUARD;
-    dog->state_timer = 0.4f + SDL_rand(120) * 0.01f;
+    dog->state_timer = 0.4f + rng_range(rng, 120) * 0.01f;
     dog->bite_cooldown = 0.0f;
     dog->lost_timer = 0.0f;
     dog->chase_target_x = x + DOG_W * 0.5f;
@@ -53,8 +53,8 @@ void dog_init(Dog *dog, float x, float y, int owner)
     dog->guard_x = x;
     dog->guard_y = y;
     dog->roam_target_x = x;
-    dog->vocal_timer = 0.8f + SDL_rand(150) * 0.01f;
-    dog->anim_time = (float)SDL_rand(628) * 0.01f;
+    dog->vocal_timer = 0.8f + rng_range(rng, 150) * 0.01f;
+    dog->anim_time = (float)rng_range(rng, 628) * 0.01f;
     dog->attack_timer = 0.0f;
 }
 
@@ -86,7 +86,7 @@ static void enemy_update_talking(Enemy *enemy, Level *level, float dt)
 
 static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
                                   bool pursuing, float target_x,
-                                  float target_y)
+                                  float target_y, Rng *rng)
 {
     float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
 
@@ -141,7 +141,7 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
     bool leave_ladder =
         !ladder_ahead ||
         (floor_beside &&
-         (pursuing ? reached_target_floor : SDL_rand(100) < 4));
+         (pursuing ? reached_target_floor : rng_range(rng, 100) < 4));
     if (leave_ladder)
     {
         enemy->climbing = false;
@@ -156,7 +156,7 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
             }
             else
             {
-                enemy->dir = (SDL_rand(2) == 0) ? -1 : 1;
+                enemy->dir = rng_range(rng, 2) == 0 ? -1 : 1;
             }
         }
         else if (can_left)
@@ -164,7 +164,7 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
         else if (can_right)
             enemy->dir = 1;
         else
-            enemy->dir = (SDL_rand(2) == 0) ? -1 : 1;
+            enemy->dir = rng_range(rng, 2) == 0 ? -1 : 1;
     }
 
     /* Do not carry the grounded state from before the climb. In particular,
@@ -178,7 +178,7 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
 
 static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                                  bool pursuing, float target_x,
-                                 float target_y, bool hemmed_in)
+                                 float target_y, bool hemmed_in, Rng *rng)
 {
     enemy->vy += GRAVITY * dt;
     if (enemy->vy > MAX_FALL_SPEED)
@@ -264,7 +264,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                            TILE_SIZE * 0.75f &&
                        ladder_toward_target)
                     : ((up_ok || down_ok) &&
-                       SDL_rand(100) < ENEMY_CLIMB_CHANCE);
+                       rng_range(rng, 100) < ENEMY_CLIMB_CHANCE);
             if (start_climbing)
             {
                 enemy->climbing = true;
@@ -276,7 +276,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                 }
                 else if (up_ok && down_ok)
                 {
-                    enemy->climb_dir = (SDL_rand(2) == 0) ? -1 : 1;
+                    enemy->climb_dir = rng_range(rng, 2) == 0 ? -1 : 1;
                 }
                 else
                 {
@@ -295,7 +295,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
 
 void enemy_update(Enemy *enemy, Level *level, float dt,
                   bool pursuing, float target_x, float target_y,
-                  bool hemmed_in)
+                  bool hemmed_in, Rng *rng)
 {
     /* Conversation cooldown must advance in every AI state, including walking
      * and climbing, so enemies eventually become eligible to talk again. */
@@ -334,12 +334,12 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
     if (enemy->climbing)
     {
         enemy_update_climbing(enemy, level, dt,
-                              pursuing, target_x, target_y);
+                              pursuing, target_x, target_y, rng);
     }
     else
     {
         enemy_update_walking(enemy, level, dt,
                              pursuing, target_x, target_y,
-                             hemmed_in);
+                             hemmed_in, rng);
     }
 }

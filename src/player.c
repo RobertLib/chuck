@@ -4,8 +4,8 @@
 
 void player_reset(Player *player, const Level *level)
 {
-    player->x = level->start_x;
-    player->y = level->start_y;
+    player->x = level->map.start_x;
+    player->y = level->map.start_y;
     player->vx = 0.0f;
     player->vy = 0.0f;
     player->on_ground = false;

@@ -20,8 +20,8 @@ void game_handle_event(Game *game, const SDL_Event *event)
       game->state == STATE_INTRO)
   {
     float mx = 0.0f, my = 0.0f;
-    SDL_RenderCoordinatesFromWindow(game->renderer, event->button.x, event->button.y, &mx, &my);
-    if (intro_hit_start_button(&game->intro, mx, my))
+    SDL_RenderCoordinatesFromWindow(game->platform.renderer, event->button.x, event->button.y, &mx, &my);
+    if (intro_hit_start_button(&game->presentation.intro, mx, my))
     {
       game->input.confirm = true;
     }
@@ -38,10 +38,10 @@ void game_handle_event(Game *game, const SDL_Event *event)
     if (sc == SDL_SCANCODE_F ||
         (sc == SDL_SCANCODE_RETURN && (event->key.mod & SDL_KMOD_ALT) != 0))
     {
-      bool target = !game->fullscreen;
-      if (SDL_SetWindowFullscreen(game->window, target))
+      bool target = !game->platform.fullscreen;
+      if (SDL_SetWindowFullscreen(game->platform.window, target))
       {
-        game->fullscreen = target;
+        game->platform.fullscreen = target;
       }
       else
       {
@@ -61,7 +61,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
     }
     if (sc == SDL_SCANCODE_M)
     {
-      audio_toggle_mute(&game->audio);
+      audio_toggle_mute(&game->platform.audio);
       return;
     }
     /* Shoot on Space only */
@@ -75,13 +75,13 @@ void game_handle_event(Game *game, const SDL_Event *event)
     if (key == SDLK_UP || event->key.scancode == SDL_SCANCODE_W)
     {
       /* Determine whether player box overlaps a ladder near center/feet */
-      int col = (int)floorf((game->player.x + PLAYER_W * 0.5f) / TILE_SIZE);
-      float ph = game->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
-      int row_center = (int)floorf((game->player.y + ph * 0.5f) / TILE_SIZE);
-      int row_feet = (int)floorf((game->player.y + ph - 1.0f) / TILE_SIZE);
-      bool over_ladder = level_is_ladder(&game->level, col, row_center) ||
-                         level_is_ladder(&game->level, col, row_feet);
-      if (!over_ladder && !game->player.on_ladder && game->player.on_ground)
+      int col = (int)floorf((game->gameplay.player.x + PLAYER_W * 0.5f) / TILE_SIZE);
+      float ph = game->gameplay.player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+      int row_center = (int)floorf((game->gameplay.player.y + ph * 0.5f) / TILE_SIZE);
+      int row_feet = (int)floorf((game->gameplay.player.y + ph - 1.0f) / TILE_SIZE);
+      bool over_ladder = level_is_ladder(&game->gameplay.level, col, row_center) ||
+                         level_is_ladder(&game->gameplay.level, col, row_feet);
+      if (!over_ladder && !game->gameplay.player.on_ladder && game->gameplay.player.on_ground)
       {
         game->input.jump = true;
       }
@@ -91,9 +91,9 @@ void game_handle_event(Game *game, const SDL_Event *event)
       game->input.use_door = true;
     }
     if (key == SDLK_R &&
-        (game->state == STATE_GAME_OVER || game->state == STATE_WIN ||
+        (game->state == STATE_GAME_OVER ||
          (game->state == STATE_OUTRO &&
-          game->outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)))
+          game->presentation.outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)))
     {
       game->input.restart = true;
     }

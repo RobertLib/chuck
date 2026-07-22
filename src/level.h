@@ -1,8 +1,10 @@
 #ifndef CHUCK_LEVEL_H
 #define CHUCK_LEVEL_H
 
-#include "common.h"
+#include "game_config.h"
+#include "rng.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 
 typedef enum
@@ -122,27 +124,13 @@ typedef struct
     int width;
     int height;
     TileType tiles[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
-
-    float start_x, start_y; /* player spawn (top-left of player box) */
-
+    float start_x, start_y;
     bool has_exit;
     int exit_col, exit_row;
-    bool exit_unlocked; /* granted by either the active card or terminal hack */
-
-    Item items[MAX_ITEMS];
-    int item_count;
-    int card_count;        /* items of type ITEM_CARD */
-    int active_card_index; /* index into items[] of the randomly chosen key card */
-    int items_remaining;   /* 1 = key card not yet found, 0 = key card collected */
-
     Terminal terminals[MAX_TERMINALS];
     int terminal_count;
-    int active_terminal_index; /* index into terminals[], chosen at level load */
-    bool terminal_hacked;
-
     Decoration decorations[MAX_DECORATIONS];
     int decoration_count;
-
     EnemySpawn enemy_spawns[MAX_ENEMIES];
     int enemy_count;
     MineSpawn mine_spawns[MAX_MINES];
@@ -151,36 +139,52 @@ typedef struct
     int spike_count;
     CeilingFan ceiling_fans[MAX_CEILING_FANS];
     int ceiling_fan_count;
+    Door doors[MAX_DOORS];
+    int door_count;
+    int door_spawn_counts[MAX_DOORS];
+} LevelMap;
+
+typedef struct
+{
+    bool exit_unlocked;
+    Item items[MAX_ITEMS];
+    int item_count;
+    int card_count;
+    int active_card_index;
+    int items_remaining;
+    int active_terminal_index;
+    bool terminal_hacked;
     Crate crates[MAX_CRATES];
     int crate_count;
 
-    Door doors[MAX_DOORS];
-    int door_count;
-    int door_spawn_counts[MAX_DOORS]; /* enemies queued to spawn from each door */
-
     Elevator elevators[MAX_ELEVATORS];
     int elevator_count;
-
     FallPlatform fall_platforms[MAX_FALL_PLATFORMS];
     int fall_platform_count;
-    /* Horizontally moving platforms */
     MovingPlatform moving_platforms[MAX_MOVING_PLATFORMS];
     int moving_platform_count;
+} LevelRuntime;
 
-    /* Reveal/intro animation state: whether each tile has been revealed yet.
-     * At level start we animate tiles appearing; items/enemies are shown after
-     * the reveal completes. */
+typedef struct
+{
     bool tiles_visible[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
-    int reveal_next_row;   /* next tile row to reveal */
-    int reveal_next_col;   /* next tile col to reveal */
-    float reveal_timer;    /* accumulator for reveal timing */
-    float reveal_interval; /* seconds between revealing individual tiles */
-    bool reveal_done;      /* true when full reveal finished */
+    int next_row;
+    int next_col;
+    float timer;
+    float interval;
+    bool done;
+} LevelReveal;
+
+typedef struct
+{
+    LevelMap map;
+    LevelRuntime runtime;
+    LevelReveal reveal;
 } Level;
 
 /* Parse a level from data embedded in the executable. Returns true on success. */
 bool level_load_data(Level *level, const char *name,
-                     const char *data, size_t size);
+                     const char *data, size_t size, Rng *rng);
 
 /* Tile queries. Out-of-bounds is treated as solid wall. */
 TileType level_tile(const Level *level, int col, int row);

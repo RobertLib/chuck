@@ -1,8 +1,11 @@
 #ifndef CHUCK_ENEMY_H
 #define CHUCK_ENEMY_H
 
-#include "common.h"
+#include "game_config.h"
 #include "level.h"
+#include "rng.h"
+
+#include <stdbool.h>
 
 typedef struct
 {
@@ -71,10 +74,10 @@ typedef struct
     float attack_timer; /* bite/lunge follow-through */
 } Dog;
 
-void enemy_init(Enemy *enemy, float x, float y);
+void enemy_init(Enemy *enemy, float x, float y, Rng *rng);
 void enemy_update(Enemy *enemy, Level *level, float dt,
                   bool pursuing, float target_x, float target_y,
-                  bool hemmed_in);
-void dog_init(Dog *dog, float x, float y, int owner);
+                  bool hemmed_in, Rng *rng);
+void dog_init(Dog *dog, float x, float y, int owner, Rng *rng);
 
 #endif /* CHUCK_ENEMY_H */

@@ -52,8 +52,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     Game *game = (Game *)appstate;
 
     Uint64 now = SDL_GetTicksNS();
-    float dt = (float)(now - game->last_tick) / 1.0e9f;
-    game->last_tick = now;
+    float dt = (float)(now - game->platform.last_tick) / 1.0e9f;
+    game->platform.last_tick = now;
     if (dt > 0.05f)
     {
         dt = 0.05f;

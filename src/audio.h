@@ -2,6 +2,7 @@
 #define CHUCK_AUDIO_H
 
 #include "common.h"
+#include "sound_id.h"
 
 #define AUDIO_VOICE_COUNT 16
 
@@ -12,62 +13,6 @@ typedef enum
     MUSIC_LEVEL_TWO,
     MUSIC_TRACK_COUNT
 } MusicTrack;
-
-/*
- * Every effect is synthesised once during audio_init() and kept as a PCM
- * buffer. Playing an effect only queues the cached buffer on a free voice.
- */
-typedef enum
-{
-    SFX_MENU_START = 0,
-    SFX_MENU_BACK,
-    SFX_OPENING_RAIN,
-    SFX_OPENING_SUV_ENGINE,
-    SFX_OPENING_CAR_ENGINE,
-    SFX_OPENING_BRAKE,
-    SFX_OPENING_CAR_DOOR,
-    SFX_OUTRO_HELICOPTER,
-    SFX_REVEAL_TICK,
-    SFX_CARD_SCAN,
-    SFX_CARD_TARGET,
-    SFX_JUMP,
-    SFX_LAND,
-    SFX_STEP_A,
-    SFX_STEP_B,
-    SFX_LADDER,
-    SFX_DOOR,
-    SFX_ELEVATOR,
-    SFX_PLATFORM_CRACK,
-    SFX_PLAYER_SHOT,
-    SFX_EMPTY_CLICK,
-    SFX_ENEMY_ALERT,
-    SFX_ENEMY_SHOT,
-    SFX_BULLET_IMPACT,
-    SFX_ENEMY_HIT,
-    SFX_ENEMY_DOWN,
-    SFX_GUARD_TALK,
-    SFX_DOG_BARK,
-    SFX_DOG_BARK_ALT,
-    SFX_DOG_GROWL,
-    SFX_DOG_BITE,
-    SFX_DOG_YELP,
-    SFX_GRENADE_THROW,
-    SFX_GRENADE_BOUNCE,
-    SFX_EXPLOSION,
-    SFX_MINE_ARM,
-    SFX_CRATE_BREAK,
-    SFX_PICKUP_AMMO,
-    SFX_PICKUP_GRENADE,
-    SFX_PICKUP_HEALTH,
-    SFX_CARD_WRONG,
-    SFX_EXIT_UNLOCKED,
-    SFX_PLAYER_HIT,
-    SFX_RESPAWN,
-    SFX_LEVEL_CLEAR,
-    SFX_GAME_OVER,
-    SFX_WIN,
-    SFX_COUNT
-} SoundEffect;
 
 typedef struct
 {

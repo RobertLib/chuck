@@ -78,6 +78,19 @@ To build without starting the game:
 make
 ```
 
+Run the deterministic core test suite with:
+
+```sh
+make test
+```
+
+Build the complete game and run the core tests with AddressSanitizer and
+UndefinedBehaviorSanitizer enabled:
+
+```sh
+make sanitize
+```
+
 To remove build outputs:
 
 ```sh
@@ -90,6 +103,28 @@ Level maps remain editable as `levels/level*.txt`. During every build they are
 converted into C arrays and linked into the `chuck` executable. The executable
 therefore does not need the `levels` directory (or any other runtime asset
 files) when it is distributed.
+
+## Architecture
+
+The SDL-facing application shell lives in `game.c`, `game_input.c`, and
+`game_render.c`. `Game` composes four explicit areas of state: platform
+resources, campaign progress, current gameplay simulation, and presentation.
+Scene changes go through one state-transition function and loading a level
+uses one simulation reset path.
+
+Gameplay rules are split by responsibility under `src/gameplay_*.c`: AI,
+combat, interactions, physics, and shared world operations. These modules do
+not depend on SDL or on the top-level `Game`, which keeps them deterministic
+and directly testable. They report sounds, particles, and camera shake through
+a small event buffer that the application shell translates into presentation
+effects.
+
+`Level` separates immutable parsed map data (`LevelMap`), mutable per-run data
+(`LevelRuntime`), and reveal-animation state (`LevelReveal`). Random gameplay
+choices use an explicitly seeded `Rng`; the SDL random generator is reserved
+for visual effects. The core tests cover seeded behavior, parsing every
+embedded level, collision, resets, interactions, AI spawning, and combat
+feedback.
 
 ## Assets
 

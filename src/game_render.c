@@ -24,13 +24,13 @@ void game_get_view_size(Game *game, int *out_w, int *out_h)
 {
   int lw = 0, lh = 0;
   SDL_RendererLogicalPresentation mode;
-  if (SDL_GetRenderLogicalPresentation(game->renderer, &lw, &lh, &mode) && lw > 0 && lh > 0)
+  if (SDL_GetRenderLogicalPresentation(game->platform.renderer, &lw, &lh, &mode) && lw > 0 && lh > 0)
   {
     *out_w = lw;
     *out_h = lh;
     return;
   }
-  SDL_GetWindowSize(game->window, out_w, out_h);
+  SDL_GetWindowSize(game->platform.window, out_w, out_h);
 }
 
 static void set_color(SDL_Renderer *r, SDL_Color c)
@@ -72,7 +72,7 @@ static void draw_text_centered(Game *game, float center_y, float scale,
   (void)win_h;
   float text_w = (float)SDL_strlen(text) * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
   float text_h = (float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
-  draw_text(game->renderer, ((float)win_w - text_w) * 0.5f,
+  draw_text(game->platform.renderer, ((float)win_w - text_w) * 0.5f,
             center_y - text_h * 0.5f, scale, cr, cg, cb, text);
 }
 
@@ -95,7 +95,7 @@ static void draw_soft_glow(SDL_Renderer *r, float x, float y, float w, float h,
 
 static void render_background(Game *game, int win_w, int win_h)
 {
-  SDL_Renderer *r = game->renderer;
+  SDL_Renderer *r = game->platform.renderer;
   const float oy = HUD_HEIGHT;
   const float fh = (float)win_h - oy;
   float t = (float)SDL_GetTicksNS() * 1.0e-9f;
@@ -108,13 +108,13 @@ static void render_background(Game *game, int win_w, int win_h)
            (SDL_Color){20, 30, 42, 255}, 255);
 
   /* Farthest layer: hulking silhouettes of plant machinery, barely lit. */
-  float far_shift = fmodf(-game->cam_x * 0.10f, 224.0f);
+  float far_shift = fmodf(-game->presentation.cam_x * 0.10f, 224.0f);
   if (far_shift > 0.0f)
     far_shift -= 224.0f;
   for (float x = far_shift - 48.0f; x < (float)win_w + 224.0f; x += 224.0f)
   {
-    unsigned seed = (unsigned)((int)(x + game->cam_x * 0.10f) / 224);
-    unsigned h = fx_hash(seed * 31u + (unsigned)game->current_level * 7u);
+    unsigned seed = (unsigned)((int)(x + game->presentation.cam_x * 0.10f) / 224);
+    unsigned h = fx_hash(seed * 31u + (unsigned)game->campaign.current_level * 7u);
     float tank_h = 96.0f + (float)(h % 60u);
     color_rect(r, (SDL_Color){13, 18, 29, 255},
                x + 24.0f, oy + fh - tank_h, 74.0f, tank_h);
@@ -131,7 +131,7 @@ static void render_background(Game *game, int win_w, int win_h)
   }
 
   /* Mid layer: service bays with pilasters, pipe runs and dim windows. */
-  float mid_shift = fmodf(-game->cam_x * 0.18f, 192.0f);
+  float mid_shift = fmodf(-game->presentation.cam_x * 0.18f, 192.0f);
   if (mid_shift > 0.0f)
     mid_shift -= 192.0f;
   for (float x = mid_shift - 32.0f; x < (float)win_w + 192.0f; x += 192.0f)
@@ -156,8 +156,8 @@ static void render_background(Game *game, int win_w, int win_h)
     /* Dim equipment lights; the warm ones flicker very rarely. */
     for (int lamp = 0; lamp < 4; ++lamp)
     {
-      unsigned h = tile_hash((int)(x + game->cam_x * 0.18f) / 8 + lamp,
-                             game->current_level + 7);
+      unsigned h = tile_hash((int)(x + game->presentation.cam_x * 0.18f) / 8 + lamp,
+                             game->campaign.current_level + 7);
       bool warm = (h & 1u) != 0u;
       float flicker = warm && ((h >> 3) & 7u) == 0u &&
                               fmodf(t * 1.7f + (float)lamp, 4.0f) < 0.09f
@@ -171,7 +171,7 @@ static void render_background(Game *game, int win_w, int win_h)
   }
 
   /* Slow volumetric light shafts falling between the far bays. */
-  float shaft_shift = fmodf(-game->cam_x * 0.22f, 384.0f);
+  float shaft_shift = fmodf(-game->presentation.cam_x * 0.22f, 384.0f);
   if (shaft_shift > 0.0f)
     shaft_shift -= 384.0f;
   for (float x = shaft_shift - 96.0f; x < (float)win_w + 384.0f; x += 384.0f)
@@ -182,7 +182,7 @@ static void render_background(Game *game, int win_w, int win_h)
   }
 
   /* Near layer: wall seams and conduit shadows at a faster parallax. */
-  float near_shift = fmodf(-game->cam_x * 0.30f, 96.0f);
+  float near_shift = fmodf(-game->presentation.cam_x * 0.30f, 96.0f);
   if (near_shift > 0.0f)
     near_shift -= 96.0f;
   for (float x = near_shift; x < (float)win_w + 96.0f; x += 96.0f)
@@ -197,7 +197,7 @@ static void render_background(Game *game, int win_w, int win_h)
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   for (int i = 0; i < 26; ++i)
   {
-    unsigned h = tile_hash(i + game->current_level * 29, 91);
+    unsigned h = tile_hash(i + game->campaign.current_level * 29, 91);
     float x = fmodf((float)(h % (unsigned)(win_w + 80)) + t * (4.0f + (float)(i % 5)), (float)(win_w + 80)) - 40.0f;
     float y = oy + 18.0f + (float)((h >> 8) % (unsigned)(win_h - HUD_HEIGHT - 36)) +
               sinf(t * 0.8f + (float)i) * 2.0f;
@@ -389,7 +389,7 @@ static void draw_door(SDL_Renderer *r, float x, float y, int index)
 
 static void draw_exit(SDL_Renderer *r, const Game *game, float x, float y)
 {
-  bool unlocked = game->level.exit_unlocked;
+  bool unlocked = game->gameplay.level.runtime.exit_unlocked;
   SDL_Color signal = unlocked ? (SDL_Color){64, 238, 145, 255}
                               : (SDL_Color){230, 75, 61, 255};
   if (unlocked)
@@ -1371,26 +1371,26 @@ static void draw_dog(SDL_Renderer *r, const Dog *dog, float cam_x, float oy)
 
 static void render_world(Game *game)
 {
-  SDL_Renderer *r = game->renderer;
-  const Level *lvl = &game->level;
-  const float oy = HUD_HEIGHT + game->camera_shake_y;
+  SDL_Renderer *r = game->platform.renderer;
+  const Level *lvl = &game->gameplay.level;
+  const float oy = HUD_HEIGHT + game->presentation.camera_shake_y;
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
-  const float cam_x = game->cam_x - game->camera_shake_x;
+  const float cam_x = game->presentation.cam_x - game->presentation.camera_shake_x;
   float world_t = (float)SDL_GetTicksNS() * 1.0e-9f;
 
   render_background(game, win_w, win_h);
 
   /* Structural tile layer. */
-  for (int row = 0; row < lvl->height; ++row)
+  for (int row = 0; row < lvl->map.height; ++row)
   {
-    for (int col = 0; col < lvl->width; ++col)
+    for (int col = 0; col < lvl->map.width; ++col)
     {
       float x = col * (float)TILE_SIZE - cam_x;
       float y = row * (float)TILE_SIZE + oy;
-      if (x + TILE_SIZE < 0.0f || x > (float)win_w || !lvl->tiles_visible[row][col])
+      if (x + TILE_SIZE < 0.0f || x > (float)win_w || !lvl->reveal.tiles_visible[row][col])
         continue;
-      TileType tile = lvl->tiles[row][col];
+      TileType tile = lvl->map.tiles[row][col];
       if (tile == TILE_WALL)
         draw_wall_tile(r, lvl, col, row, x, y);
       else if (tile == TILE_LADDER)
@@ -1400,7 +1400,7 @@ static void render_world(Game *game)
     }
   }
 
-  if (!lvl->reveal_done)
+  if (!lvl->reveal.done)
     return;
 
   /* Lighting pass derived from the tile grid: soft contact shadows under
@@ -1411,14 +1411,14 @@ static void render_world(Game *game)
     if (first_col < 0)
       first_col = 0;
     int last_col = first_col + win_w / TILE_SIZE + 3;
-    if (last_col > lvl->width)
-      last_col = lvl->width;
-    for (int row = 0; row < lvl->height; ++row)
+    if (last_col > lvl->map.width)
+      last_col = lvl->map.width;
+    for (int row = 0; row < lvl->map.height; ++row)
     {
       for (int col = first_col; col < last_col; ++col)
       {
-        if (lvl->tiles[row][col] != TILE_EMPTY &&
-            lvl->tiles[row][col] != TILE_LADDER)
+        if (lvl->map.tiles[row][col] != TILE_EMPTY &&
+            lvl->map.tiles[row][col] != TILE_LADDER)
           continue;
         if (!level_is_solid(lvl, col, row - 1))
           continue;
@@ -1430,7 +1430,7 @@ static void render_world(Game *game)
         bool long_ceiling = level_is_solid(lvl, col - 1, row - 1) &&
                             level_is_solid(lvl, col + 1, row - 1);
         if ((h % 7u) == 0u && long_ceiling &&
-            lvl->tiles[row][col] == TILE_EMPTY)
+            lvl->map.tiles[row][col] == TILE_EMPTY)
         {
           float cx = x + TILE_SIZE * 0.5f;
           float flicker = ((h >> 5) % 9u) == 0u &&
@@ -1450,67 +1450,67 @@ static void render_world(Game *game)
   }
 
   /* A soft cool pool of light keeps the hero readable in dark rooms. */
-  if (!game->player.dying)
-    fx_glow(r, game->player.x + PLAYER_W * 0.5f - cam_x,
-            game->player.y + PLAYER_H * 0.5f + oy,
+  if (!game->gameplay.player.dying)
+    fx_glow(r, game->gameplay.player.x + PLAYER_W * 0.5f - cam_x,
+            game->gameplay.player.y + PLAYER_H * 0.5f + oy,
             120.0f, (SDL_Color){134, 196, 214, 255}, 26);
 
-  for (int i = 0; i < lvl->elevator_count; ++i)
+  for (int i = 0; i < lvl->runtime.elevator_count; ++i)
   {
-    const Elevator *el = &lvl->elevators[i];
+    const Elevator *el = &lvl->runtime.elevators[i];
     draw_platform(r, el->col * (float)TILE_SIZE - cam_x, el->y + oy,
                   (SDL_Color){78, 218, 208, 255}, false);
   }
-  for (int i = 0; i < lvl->fall_platform_count; ++i)
+  for (int i = 0; i < lvl->runtime.fall_platform_count; ++i)
   {
-    const FallPlatform *fp = &lvl->fall_platforms[i];
+    const FallPlatform *fp = &lvl->runtime.fall_platforms[i];
     if (!fp->removed)
       draw_platform(r, fp->col * (float)TILE_SIZE - cam_x, fp->y + oy,
                     fp->triggered ? COL_RED : COL_AMBER, true);
   }
-  for (int i = 0; i < lvl->moving_platform_count; ++i)
+  for (int i = 0; i < lvl->runtime.moving_platform_count; ++i)
   {
-    const MovingPlatform *mp = &lvl->moving_platforms[i];
+    const MovingPlatform *mp = &lvl->runtime.moving_platforms[i];
     draw_platform(r, mp->x - cam_x, mp->row * (float)TILE_SIZE + oy,
                   (SDL_Color){84, 187, 216, 255}, false);
   }
 
   /* Furniture stays behind every interactive object and actor. */
-  for (int i = 0; i < lvl->decoration_count; ++i)
+  for (int i = 0; i < lvl->map.decoration_count; ++i)
   {
-    const Decoration *decoration = &lvl->decorations[i];
+    const Decoration *decoration = &lvl->map.decorations[i];
     float x = decoration->col * (float)TILE_SIZE - cam_x;
     if (x + TILE_SIZE < 0.0f || x > (float)win_w)
       continue;
     draw_decoration(r, decoration, cam_x, oy, world_t);
   }
 
-  for (int d = 0; d < lvl->door_count; ++d)
+  for (int d = 0; d < lvl->map.door_count; ++d)
   {
-    float x = lvl->doors[d].col * (float)TILE_SIZE - cam_x;
-    float y = lvl->doors[d].row * (float)TILE_SIZE + oy;
+    float x = lvl->map.doors[d].col * (float)TILE_SIZE - cam_x;
+    float y = lvl->map.doors[d].row * (float)TILE_SIZE + oy;
     draw_door(r, x, y, d);
   }
-  if (lvl->has_exit)
+  if (lvl->map.has_exit)
   {
-    float x = lvl->exit_col * (float)TILE_SIZE - cam_x;
-    float y = lvl->exit_row * (float)TILE_SIZE + oy;
+    float x = lvl->map.exit_col * (float)TILE_SIZE - cam_x;
+    float y = lvl->map.exit_row * (float)TILE_SIZE + oy;
     draw_exit(r, game, x, y);
   }
-  for (int i = 0; i < lvl->terminal_count; ++i)
+  for (int i = 0; i < lvl->map.terminal_count; ++i)
   {
-    float x = lvl->terminals[i].col * (float)TILE_SIZE - cam_x;
-    float y = lvl->terminals[i].row * (float)TILE_SIZE + oy;
-    bool active = i == lvl->active_terminal_index;
+    float x = lvl->map.terminals[i].col * (float)TILE_SIZE - cam_x;
+    float y = lvl->map.terminals[i].row * (float)TILE_SIZE + oy;
+    bool active = i == lvl->runtime.active_terminal_index;
     draw_terminal(r, x, y, active,
-                  active && lvl->terminal_hacked, world_t);
+                  active && lvl->runtime.terminal_hacked, world_t);
   }
 
   /* Pickups bob independently and cast restrained color-coded glows. */
   int card_pos = 0;
-  for (int i = 0; i < lvl->item_count; ++i)
+  for (int i = 0; i < lvl->runtime.item_count; ++i)
   {
-    const Item *it = &lvl->items[i];
+    const Item *it = &lvl->runtime.items[i];
     if (it->collected)
       continue;
     float bob = sinf(world_t * 3.14159265f + (float)i * 0.7f) * 3.0f;
@@ -1522,7 +1522,7 @@ static void render_world(Game *game)
       bool active = true;
       if (game->state == STATE_SHOW_KEYCARD)
       {
-        active = card_pos == game->card_anim_current;
+        active = card_pos == game->presentation.card_anim_current;
         alpha = active ? 255 : 80;
       }
       draw_card(r, x, y, alpha, active);
@@ -1536,32 +1536,32 @@ static void render_world(Game *game)
       draw_medkit(r, x, y);
   }
 
-  for (int i = 0; i < lvl->spike_count; ++i)
-    draw_spike_strip(r, lvl->spike_spawns[i].x - cam_x,
-                     lvl->spike_spawns[i].y + oy);
+  for (int i = 0; i < lvl->map.spike_count; ++i)
+    draw_spike_strip(r, lvl->map.spike_spawns[i].x - cam_x,
+                     lvl->map.spike_spawns[i].y + oy);
 
-  for (int i = 0; i < lvl->ceiling_fan_count; ++i)
-    draw_ceiling_fan(r, &lvl->ceiling_fans[i], cam_x, oy, world_t, i);
+  for (int i = 0; i < lvl->map.ceiling_fan_count; ++i)
+    draw_ceiling_fan(r, &lvl->map.ceiling_fans[i], cam_x, oy, world_t, i);
 
-  for (int i = 0; i < lvl->crate_count; ++i)
-    if (lvl->crates[i].active)
-      draw_crate(r, &lvl->crates[i], cam_x, oy);
+  for (int i = 0; i < lvl->runtime.crate_count; ++i)
+    if (lvl->runtime.crates[i].active)
+      draw_crate(r, &lvl->runtime.crates[i], cam_x, oy);
 
-  for (int i = 0; i < game->mine_count; ++i)
-    if (game->mines[i].active)
-      draw_mine(r, &game->mines[i], cam_x, oy);
+  for (int i = 0; i < game->gameplay.mine_count; ++i)
+    if (game->gameplay.mines[i].active)
+      draw_mine(r, &game->gameplay.mines[i], cam_x, oy);
 
-  for (int i = 0; i < game->dog_count; ++i)
-    if (!game->dogs[i].dead)
-      draw_dog(r, &game->dogs[i], cam_x, oy);
+  for (int i = 0; i < game->gameplay.dog_count; ++i)
+    if (!game->gameplay.dogs[i].dead)
+      draw_dog(r, &game->gameplay.dogs[i], cam_x, oy);
 
-  for (int i = 0; i < game->enemy_count; ++i)
-    if (!game->enemies[i].dead)
-      draw_enemy(r, &game->enemies[i], cam_x, oy);
+  for (int i = 0; i < game->gameplay.enemy_count; ++i)
+    if (!game->gameplay.enemies[i].dead)
+      draw_enemy(r, &game->gameplay.enemies[i], cam_x, oy);
 
-  for (int i = 0; i < game->grenade_count; ++i)
+  for (int i = 0; i < game->gameplay.grenade_count; ++i)
   {
-    const Grenade *g = &game->grenades[i];
+    const Grenade *g = &game->gameplay.grenades[i];
     if (g->active)
       draw_grenade(r, g->x - cam_x, g->y + oy, g->timer);
   }
@@ -1570,7 +1570,7 @@ static void render_world(Game *game)
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   for (int i = 0; i < MAX_BULLETS; ++i)
   {
-    const Bullet *b = &game->bullets[i];
+    const Bullet *b = &game->gameplay.bullets[i];
     if (!b->active)
       continue;
     float x = b->x - cam_x;
@@ -1592,7 +1592,7 @@ static void render_world(Game *game)
   }
   for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
   {
-    const Bullet *b = &game->enemy_bullets[i];
+    const Bullet *b = &game->gameplay.enemy_bullets[i];
     if (!b->active)
       continue;
     float x = b->x - cam_x;
@@ -1606,20 +1606,20 @@ static void render_world(Game *game)
   }
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-  particle_system_render(&game->particles, r, oy, cam_x);
+  particle_system_render(&game->presentation.particles, r, oy, cam_x);
 
-  if (!game->player.dying)
+  if (!game->gameplay.player.dying)
   {
-    bool blink = game->invuln_timer > 0.0f &&
-                 ((int)(game->invuln_timer * 12.0f) % 2 == 0);
+    bool blink = game->gameplay.invuln_timer > 0.0f &&
+                 ((int)(game->gameplay.invuln_timer * 12.0f) % 2 == 0);
     if (!blink)
-      draw_player(r, &game->player, cam_x, oy,
-                  game->terminal_hacking,
-                  game->terminal_hack_progress);
+      draw_player(r, &game->gameplay.player, cam_x, oy,
+                  game->gameplay.terminal_hacking,
+                  game->gameplay.terminal_hack_progress);
   }
   else
   {
-    const Particle *spark = &game->particles.particles[0];
+    const Particle *spark = &game->presentation.particles.particles[0];
     if (spark->active && spark->life > 0.0f)
     {
       color_rect(r, (SDL_Color){68, 17, 19, 255},
@@ -1657,7 +1657,7 @@ static void draw_hud_heart(SDL_Renderer *r, float x, float y, bool filled)
 
 static void render_hud(Game *game)
 {
-  SDL_Renderer *r = game->renderer;
+  SDL_Renderer *r = game->platform.renderer;
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
   (void)win_h;
@@ -1682,11 +1682,11 @@ static void render_hud(Game *game)
   /* Lives as pixel hearts, with empty slots so the max is always visible. */
   draw_text(r, 99.0f, 8.0f, 0.7f, label_r, label_g, label_b, "VITAL");
   for (int i = 0; i < 5; ++i)
-    draw_hud_heart(r, 99.0f + i * 14.0f, 19.0f, i < game->lives);
-  if (game->lives > 5)
+    draw_hud_heart(r, 99.0f + i * 14.0f, 19.0f, i < game->campaign.lives);
+  if (game->campaign.lives > 5)
   {
     char life_buf[8];
-    SDL_snprintf(life_buf, sizeof(life_buf), "+%d", game->lives - 5);
+    SDL_snprintf(life_buf, sizeof(life_buf), "+%d", game->campaign.lives - 5);
     draw_text(r, 168.0f, 20.0f, 0.9f, 246, 110, 96, life_buf);
   }
   draw_hud_separator(r, 190.0f);
@@ -1696,7 +1696,7 @@ static void render_hud(Game *game)
   for (int i = 0; i < MAX_AMMO; ++i)
   {
     float ammo_x = 202.0f + i * 7.0f;
-    if (i < game->player.bullets)
+    if (i < game->gameplay.player.bullets)
     {
       color_rect(r, (SDL_Color){255, 236, 170, 255}, ammo_x, 19.0f, 3.0f, 3.0f);
       color_rect(r, (SDL_Color){222, 172, 84, 255}, ammo_x, 22.0f, 3.0f, 8.0f);
@@ -1708,13 +1708,13 @@ static void render_hud(Game *game)
     }
     color_rect(r, (SDL_Color){70, 84, 99, 255}, ammo_x - 1.0f, 30.0f, 5.0f, 2.0f);
   }
-  if (game->player.grenades > 0)
+  if (game->gameplay.player.grenades > 0)
     draw_grenade(r, 252.0f, 19.0f, 0.0f);
   draw_hud_separator(r, 276.0f);
 
   /* Access status chip with a live LED. */
   draw_text(r, 287.0f, 8.0f, 0.7f, label_r, label_g, label_b, "ACCESS");
-  bool unlocked = game->level.exit_unlocked;
+  bool unlocked = game->gameplay.level.runtime.exit_unlocked;
   float blink = 0.5f + 0.5f * sinf((float)SDL_GetTicksNS() * 1.0e-9f * 4.0f);
   if (unlocked)
   {
@@ -1734,14 +1734,14 @@ static void render_hud(Game *game)
   draw_hud_separator(r, 371.0f);
 
   char level_buf[32];
-  SDL_snprintf(level_buf, sizeof(level_buf), "%02d", game->current_level + 1);
+  SDL_snprintf(level_buf, sizeof(level_buf), "%02d", game->campaign.current_level + 1);
   draw_text(r, 382.0f, 8.0f, 0.7f, label_r, label_g, label_b, "SECTOR");
   draw_text(r, 382.0f, 19.0f, 1.5f, 226, 232, 220, level_buf);
   draw_hud_separator(r, 440.0f);
 
   /* Score keeps its leading zeros, but only the live digits glow. */
   char score_buf[16];
-  SDL_snprintf(score_buf, sizeof(score_buf), "%07d", game->score);
+  SDL_snprintf(score_buf, sizeof(score_buf), "%07d", game->campaign.score);
   draw_text(r, 451.0f, 8.0f, 0.7f, label_r, label_g, label_b, "SCORE");
   int first_digit = 0;
   while (first_digit < 6 && score_buf[first_digit] == '0')
@@ -1768,18 +1768,18 @@ static void render_hud(Game *game)
 static void render_terminal_interaction(Game *game, int win_w, int win_h)
 {
   if (game->state != STATE_PLAYING ||
-      !game->terminal_in_range ||
-      game->level.exit_unlocked)
+      !game->gameplay.terminal_in_range ||
+      game->gameplay.level.runtime.exit_unlocked)
   {
     return;
   }
 
-  SDL_Renderer *r = game->renderer;
+  SDL_Renderer *r = game->platform.renderer;
   float panel_w = 330.0f;
   float panel_h = 45.0f;
   float x = ((float)win_w - panel_w) * 0.5f;
   float y = (float)win_h - panel_h - 12.0f;
-  float progress = game->terminal_hack_progress / TERMINAL_HACK_TIME;
+  float progress = game->gameplay.terminal_hack_progress / TERMINAL_HACK_TIME;
   if (progress < 0.0f)
     progress = 0.0f;
   if (progress > 1.0f)
@@ -1808,7 +1808,7 @@ static void render_terminal_interaction(Game *game, int win_w, int win_h)
   fill_rect(r, x + panel_w - 2.0f, y + panel_h - tick, 2.0f, tick);
 
   char label[64];
-  if (game->terminal_hacking)
+  if (game->gameplay.terminal_hacking)
   {
     int percent = (int)(progress * 100.0f);
     SDL_snprintf(label, sizeof(label), "BREACHING SECURITY... %d%%", percent);
@@ -1838,7 +1838,7 @@ static void render_terminal_interaction(Game *game, int win_w, int win_h)
 static void draw_overlay_panel(Game *game, float y, SDL_Color accent,
                                const char *title, const char *subtitle)
 {
-  SDL_Renderer *r = game->renderer;
+  SDL_Renderer *r = game->platform.renderer;
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
 
@@ -1864,7 +1864,7 @@ static void draw_overlay_panel(Game *game, float y, SDL_Color accent,
 
 void game_render(Game *game)
 {
-  SDL_Renderer *r = game->renderer;
+  SDL_Renderer *r = game->platform.renderer;
   SDL_SetRenderDrawColor(r, 8, 11, 17, 255);
   SDL_RenderClear(r);
 
@@ -1873,28 +1873,28 @@ void game_render(Game *game)
 
   if (game->state == STATE_OPENING_CUTSCENE)
   {
-    opening_cutscene_render(r, &game->opening_cutscene, win_w, win_h);
+    opening_cutscene_render(r, &game->presentation.opening_cutscene, win_w, win_h);
     SDL_RenderPresent(r);
     return;
   }
 
   if (game->state == STATE_INTRO)
   {
-    intro_render(r, &game->intro, win_w, win_h);
+    intro_render(r, &game->presentation.intro, win_w, win_h);
     SDL_RenderPresent(r);
     return;
   }
 
   if (game->state == STATE_LEVEL_TRANSITION)
   {
-    level_transition_render(r, &game->level_transition, win_w, win_h);
+    level_transition_render(r, &game->presentation.level_transition, win_w, win_h);
     SDL_RenderPresent(r);
     return;
   }
 
   if (game->state == STATE_OUTRO)
   {
-    outro_cutscene_render(r, &game->outro_cutscene, win_w, win_h);
+    outro_cutscene_render(r, &game->presentation.outro_cutscene, win_w, win_h);
     SDL_RenderPresent(r);
     return;
   }
@@ -1903,14 +1903,14 @@ void game_render(Game *game)
   render_hud(game);
   render_terminal_interaction(game, win_w, win_h);
 
-  if (game->exit_unlocked_timer > 0.0f)
+  if (game->presentation.exit_unlocked_timer > 0.0f)
   {
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     set_rgba(r, 7, 20, 20, 215);
     fill_rect(r, 226.0f, 47.0f, 348.0f, 31.0f);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     draw_text_centered(game, 63.0f, 2.2f, 94, 255, 201, "PURSUIT ROUTE OPEN");
-    float exit_screen = game->level.exit_col * (float)TILE_SIZE - game->cam_x;
+    float exit_screen = game->gameplay.level.map.exit_col * (float)TILE_SIZE - game->presentation.cam_x;
     if (exit_screen + TILE_SIZE < 0.0f)
       draw_text(r, 199.0f, 52.0f, 2.2f, 226, 216, 94, "<");
     else if (exit_screen > (float)win_w)
@@ -1923,10 +1923,6 @@ void game_render(Game *game)
   else if (game->state == STATE_GAME_OVER)
     draw_overlay_panel(game, 225.0f, (SDL_Color){235, 72, 65, 255},
                        "THE TRAIL WENT COLD", "PRESS R TO RESTART THE PURSUIT");
-  else if (game->state == STATE_WIN)
-    draw_overlay_panel(game, 225.0f, (SDL_Color){91, 237, 169, 255},
-                       "SHE'S SAFE", "PRESS R TO REPLAY THE RESCUE");
-
   /* One shared finishing pass keeps every frame looking like the same film:
    * gentle scanlines for texture and a vignette that focuses the action. */
   fx_vignette(r, win_w, win_h, 58);

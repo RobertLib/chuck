@@ -2,15 +2,17 @@
 
 #include <limits.h>
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 static void place_item(Level *level, int col, int row, ItemType type)
 {
-    if (level->item_count >= MAX_ITEMS)
+    if (level->runtime.item_count >= MAX_ITEMS)
     {
         return;
     }
-    Item *it = &level->items[level->item_count++];
+    Item *it = &level->runtime.items[level->runtime.item_count++];
     it->x = col * TILE_SIZE + TILE_SIZE * 0.5f;
     it->y = row * TILE_SIZE + TILE_SIZE * 0.5f;
     it->collected = false;
@@ -20,11 +22,11 @@ static void place_item(Level *level, int col, int row, ItemType type)
 
 static void place_enemy(Level *level, int col, int row, bool has_dog)
 {
-    if (level->enemy_count >= MAX_ENEMIES)
+    if (level->map.enemy_count >= MAX_ENEMIES)
     {
         return;
     }
-    EnemySpawn *e = &level->enemy_spawns[level->enemy_count++];
+    EnemySpawn *e = &level->map.enemy_spawns[level->map.enemy_count++];
     /* Stand the enemy on top of the floor tile directly below this cell. */
     e->x = col * TILE_SIZE + (TILE_SIZE - ENEMY_W) * 0.5f;
     e->y = (row + 1) * TILE_SIZE - ENEMY_H;
@@ -33,11 +35,11 @@ static void place_enemy(Level *level, int col, int row, bool has_dog)
 
 static void place_mine(Level *level, int col, int row)
 {
-    if (level->mine_count >= MAX_MINES)
+    if (level->map.mine_count >= MAX_MINES)
     {
         return;
     }
-    MineSpawn *m = &level->mine_spawns[level->mine_count++];
+    MineSpawn *m = &level->map.mine_spawns[level->map.mine_count++];
     /* Place the mine resting on the floor of the tile */
     m->x = col * TILE_SIZE + (TILE_SIZE - MINE_W) * 0.5f;
     m->y = (row + 1) * TILE_SIZE - MINE_H;
@@ -45,27 +47,27 @@ static void place_mine(Level *level, int col, int row)
 
 static void place_spike(Level *level, int col, int row)
 {
-    if (level->spike_count >= MAX_SPIKES)
+    if (level->map.spike_count >= MAX_SPIKES)
         return;
-    SpikeSpawn *s = &level->spike_spawns[level->spike_count++];
+    SpikeSpawn *s = &level->map.spike_spawns[level->map.spike_count++];
     s->x = col * TILE_SIZE;
     s->y = row * TILE_SIZE;
 }
 
 static void place_ceiling_fan(Level *level, int col, int row)
 {
-    if (level->ceiling_fan_count >= MAX_CEILING_FANS)
+    if (level->map.ceiling_fan_count >= MAX_CEILING_FANS)
         return;
-    CeilingFan *fan = &level->ceiling_fans[level->ceiling_fan_count++];
+    CeilingFan *fan = &level->map.ceiling_fans[level->map.ceiling_fan_count++];
     fan->x = col * TILE_SIZE + TILE_SIZE * 0.5f;
     fan->y = row * TILE_SIZE + CEILING_FAN_CENTER_Y;
 }
 
 static void place_crate(Level *level, int col, int row)
 {
-    if (level->crate_count >= MAX_CRATES)
+    if (level->runtime.crate_count >= MAX_CRATES)
         return;
-    Crate *crate = &level->crates[level->crate_count++];
+    Crate *crate = &level->runtime.crates[level->runtime.crate_count++];
     crate->x = col * TILE_SIZE + (TILE_SIZE - CRATE_W) * 0.5f;
     crate->y = (row + 1) * TILE_SIZE - CRATE_H;
     crate->vx = 0.0f;
@@ -76,9 +78,9 @@ static void place_crate(Level *level, int col, int row)
 
 static void place_terminal(Level *level, int col, int row)
 {
-    if (level->terminal_count >= MAX_TERMINALS)
+    if (level->map.terminal_count >= MAX_TERMINALS)
         return;
-    Terminal *terminal = &level->terminals[level->terminal_count++];
+    Terminal *terminal = &level->map.terminals[level->map.terminal_count++];
     terminal->col = col;
     terminal->row = row;
 }
@@ -86,24 +88,24 @@ static void place_terminal(Level *level, int col, int row)
 static void place_decoration(Level *level, int col, int row,
                              DecorationType type)
 {
-    if (level->decoration_count >= MAX_DECORATIONS)
+    if (level->map.decoration_count >= MAX_DECORATIONS)
         return;
-    Decoration *decoration = &level->decorations[level->decoration_count++];
+    Decoration *decoration = &level->map.decorations[level->map.decoration_count++];
     decoration->col = col;
     decoration->row = row;
     decoration->type = type;
 }
 
 bool level_load_data(Level *level, const char *name,
-                     const char *data, size_t size)
+                     const char *data, size_t size, Rng *rng)
 {
     if (data == NULL)
     {
-        SDL_Log("Embedded level '%s' has no data", name);
+        fprintf(stderr, "Embedded level '%s' has no data\n", name);
         return false;
     }
 
-    SDL_zerop(level);
+    memset(level, 0, sizeof(*level));
 
     int row = 0;
     int col = 0;
@@ -154,97 +156,97 @@ bool level_load_data(Level *level, const char *name,
         switch (c)
         {
         case '#':
-            level->tiles[row][col] = TILE_WALL;
+            level->map.tiles[row][col] = TILE_WALL;
             break;
         case 'H':
-            level->tiles[row][col] = TILE_LADDER;
+            level->map.tiles[row][col] = TILE_LADDER;
             break;
         case 'C':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_item(level, col, row, ITEM_CARD);
             break;
         case 'G':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_item(level, col, row, ITEM_GUN);
             break;
         case 'N':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_item(level, col, row, ITEM_GRENADE);
             break;
         case 'K':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_item(level, col, row, ITEM_MEDKIT);
             break;
         case 'M':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_enemy(level, col, row, false);
             break;
         case 'W':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_enemy(level, col, row, true);
             break;
         case 'X':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_mine(level, col, row);
             break;
         case '^':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_spike(level, col, row);
             break;
         case 'O':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_ceiling_fan(level, col, row);
             break;
         case 'B':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_crate(level, col, row);
             break;
         case 'T':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_terminal(level, col, row);
             break;
         case 'c':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_OFFICE_CHAIR);
             break;
         case 'd':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_OFFICE_DESK);
             break;
         case 'i':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_OFFICE_EQUIPMENT);
             break;
         case 'S':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             start_count++;
-            level->start_x = col * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
-            level->start_y = (row + 1) * TILE_SIZE - PLAYER_H;
+            level->map.start_x = col * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+            level->map.start_y = (row + 1) * TILE_SIZE - PLAYER_H;
             break;
         case 'E':
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             exit_count++;
-            level->has_exit = true;
-            level->exit_col = col;
-            level->exit_row = row;
+            level->map.has_exit = true;
+            level->map.exit_col = col;
+            level->map.exit_row = row;
             break;
         case 'D':
-            level->tiles[row][col] = TILE_DOOR;
-            if (level->door_count < MAX_DOORS)
+            level->map.tiles[row][col] = TILE_DOOR;
+            if (level->map.door_count < MAX_DOORS)
             {
-                level->doors[level->door_count].col = col;
-                level->doors[level->door_count].row = row;
-                level->door_count++;
+                level->map.doors[level->map.door_count].col = col;
+                level->map.doors[level->map.door_count].row = row;
+                level->map.door_count++;
             }
             break;
         case 'V':
-            level->tiles[row][col] = TILE_ELEVATOR_SHAFT;
+            level->map.tiles[row][col] = TILE_ELEVATOR_SHAFT;
             break;
         case 'F':
-            level->tiles[row][col] = TILE_EMPTY;
-            if (level->fall_platform_count < MAX_FALL_PLATFORMS)
+            level->map.tiles[row][col] = TILE_EMPTY;
+            if (level->runtime.fall_platform_count < MAX_FALL_PLATFORMS)
             {
-                FallPlatform *fp = &level->fall_platforms[level->fall_platform_count++];
+                FallPlatform *fp = &level->runtime.fall_platforms[level->runtime.fall_platform_count++];
                 fp->col = col;
                 fp->row = row;
                 fp->y = row * (float)TILE_SIZE;
@@ -255,10 +257,10 @@ bool level_load_data(Level *level, const char *name,
             }
             break;
         case 'P':
-            level->tiles[row][col] = TILE_EMPTY;
-            if (level->moving_platform_count < MAX_MOVING_PLATFORMS)
+            level->map.tiles[row][col] = TILE_EMPTY;
+            if (level->runtime.moving_platform_count < MAX_MOVING_PLATFORMS)
             {
-                MovingPlatform *mp = &level->moving_platforms[level->moving_platform_count++];
+                MovingPlatform *mp = &level->runtime.moving_platforms[level->runtime.moving_platform_count++];
                 mp->row = row;
                 mp->x = col * (float)TILE_SIZE;
                 mp->left_limit = mp->x;
@@ -267,7 +269,7 @@ bool level_load_data(Level *level, const char *name,
             }
             break;
         default:
-            level->tiles[row][col] = TILE_EMPTY;
+            level->map.tiles[row][col] = TILE_EMPTY;
             break;
         }
         col += 1;
@@ -283,71 +285,71 @@ bool level_load_data(Level *level, const char *name,
         row += 1;
     }
 
-    level->width = max_width;
-    level->height = row;
+    level->map.width = max_width;
+    level->map.height = row;
 
     /* Office props are floor-standing and visual only. Keep them off ladders,
      * shafts, falling/moving platforms and open air so they can never be left
      * hovering after level geometry moves. */
     int supported_decoration_count = 0;
-    for (int i = 0; i < level->decoration_count; ++i)
+    for (int i = 0; i < level->map.decoration_count; ++i)
     {
-        Decoration *decoration = &level->decorations[i];
+        Decoration *decoration = &level->map.decorations[i];
         int floor_row = decoration->row + 1;
-        if (floor_row >= level->height ||
-            level->tiles[floor_row][decoration->col] != TILE_WALL)
+        if (floor_row >= level->map.height ||
+            level->map.tiles[floor_row][decoration->col] != TILE_WALL)
         {
             continue;
         }
-        level->decorations[supported_decoration_count++] = *decoration;
+        level->map.decorations[supported_decoration_count++] = *decoration;
     }
-    level->decoration_count = supported_decoration_count;
+    level->map.decoration_count = supported_decoration_count;
 
-    level->card_count = 0;
-    for (int i = 0; i < level->item_count; ++i)
+    level->runtime.card_count = 0;
+    for (int i = 0; i < level->runtime.item_count; ++i)
     {
-        if (level->items[i].type == ITEM_CARD)
-            level->card_count++;
+        if (level->runtime.items[i].type == ITEM_CARD)
+            level->runtime.card_count++;
     }
     /* Randomly pick one card as the active key card that opens the exit */
-    level->active_card_index = -1;
-    if (level->card_count > 0)
+    level->runtime.active_card_index = -1;
+    if (level->runtime.card_count > 0)
     {
-        int pick = (int)((unsigned)rand() % (unsigned)level->card_count);
+        int pick = rng_range(rng, level->runtime.card_count);
         int found = 0;
-        for (int i = 0; i < level->item_count; ++i)
+        for (int i = 0; i < level->runtime.item_count; ++i)
         {
-            if (level->items[i].type == ITEM_CARD)
+            if (level->runtime.items[i].type == ITEM_CARD)
             {
                 if (found == pick)
                 {
-                    level->active_card_index = i;
+                    level->runtime.active_card_index = i;
                     break;
                 }
                 found++;
             }
         }
-        level->items_remaining = 1;
+        level->runtime.items_remaining = 1;
     }
     else
     {
-        level->items_remaining = 0;
+        level->runtime.items_remaining = 0;
     }
 
     /* Only one of the visually identical terminals is connected to security.
      * Prefer terminals well away from the player spawn so the alternative
      * route still requires infiltrating a meaningful part of the level. */
-    level->active_terminal_index = -1;
-    if (level->terminal_count > 0)
+    level->runtime.active_terminal_index = -1;
+    if (level->map.terminal_count > 0)
     {
         int start_col =
-            (int)floorf((level->start_x + PLAYER_W * 0.5f) / TILE_SIZE);
+            (int)floorf((level->map.start_x + PLAYER_W * 0.5f) / TILE_SIZE);
         int start_row =
-            (int)floorf((level->start_y + PLAYER_H * 0.5f) / TILE_SIZE);
+            (int)floorf((level->map.start_y + PLAYER_H * 0.5f) / TILE_SIZE);
         int eligible_count = 0;
-        for (int i = 0; i < level->terminal_count; ++i)
+        for (int i = 0; i < level->map.terminal_count; ++i)
         {
-            const Terminal *terminal = &level->terminals[i];
+            const Terminal *terminal = &level->map.terminals[i];
             int tile_distance =
                 abs(terminal->col - start_col) +
                 abs(terminal->row - start_row);
@@ -357,10 +359,10 @@ bool level_load_data(Level *level, const char *name,
 
         if (eligible_count > 0)
         {
-            int pick = (int)((unsigned)rand() % (unsigned)eligible_count);
-            for (int i = 0; i < level->terminal_count; ++i)
+            int pick = rng_range(rng, eligible_count);
+            for (int i = 0; i < level->map.terminal_count; ++i)
             {
-                const Terminal *terminal = &level->terminals[i];
+                const Terminal *terminal = &level->map.terminals[i];
                 int tile_distance =
                     abs(terminal->col - start_col) +
                     abs(terminal->row - start_row);
@@ -368,7 +370,7 @@ bool level_load_data(Level *level, const char *name,
                     continue;
                 if (pick-- == 0)
                 {
-                    level->active_terminal_index = i;
+                    level->runtime.active_terminal_index = i;
                     break;
                 }
             }
@@ -376,31 +378,31 @@ bool level_load_data(Level *level, const char *name,
         else
         {
             /* Keep custom maps playable even if all their terminals are close. */
-            level->active_terminal_index =
-                (int)((unsigned)rand() % (unsigned)level->terminal_count);
+            level->runtime.active_terminal_index =
+                rng_range(rng, level->map.terminal_count);
         }
     }
-    level->terminal_hacked = false;
+    level->runtime.terminal_hacked = false;
     /* Preserve the old behavior for maps with neither an access card nor a
      * terminal. Maps containing either route start with a locked exit. */
-    level->exit_unlocked =
-        level->card_count == 0 && level->terminal_count == 0;
+    level->runtime.exit_unlocked =
+        level->runtime.card_count == 0 && level->map.terminal_count == 0;
 
     /* Discover elevator shafts: scan each column for consecutive TILE_ELEVATOR_SHAFT runs. */
-    for (int c = 0; c < level->width && level->elevator_count < MAX_ELEVATORS; ++c)
+    for (int c = 0; c < level->map.width && level->runtime.elevator_count < MAX_ELEVATORS; ++c)
     {
         int r = 0;
-        while (r < level->height)
+        while (r < level->map.height)
         {
-            if (level->tiles[r][c] == TILE_ELEVATOR_SHAFT)
+            if (level->map.tiles[r][c] == TILE_ELEVATOR_SHAFT)
             {
                 int first = r;
-                while (r < level->height && level->tiles[r][c] == TILE_ELEVATOR_SHAFT)
+                while (r < level->map.height && level->map.tiles[r][c] == TILE_ELEVATOR_SHAFT)
                     r++;
                 int last = r - 1;
-                if (last > first && level->elevator_count < MAX_ELEVATORS)
+                if (last > first && level->runtime.elevator_count < MAX_ELEVATORS)
                 {
-                    Elevator *el = &level->elevators[level->elevator_count++];
+                    Elevator *el = &level->runtime.elevators[level->runtime.elevator_count++];
                     el->col = c;
                     el->top_limit = first * (float)TILE_SIZE;
                     el->bot_limit = (last + 1) * (float)TILE_SIZE - ELEVATOR_PLAT_H;
@@ -418,23 +420,23 @@ bool level_load_data(Level *level, const char *name,
     /* Initialise moving platforms' left/right limits by scanning the row for
      * non-solid tiles. Platforms patrol between the leftmost and rightmost
      * contiguous empty tiles around their spawn column. */
-    for (int i = 0; i < level->moving_platform_count; ++i)
+    for (int i = 0; i < level->runtime.moving_platform_count; ++i)
     {
-        MovingPlatform *mp = &level->moving_platforms[i];
+        MovingPlatform *mp = &level->runtime.moving_platforms[i];
         int col = (int)floorf(mp->x / TILE_SIZE);
         int row_mp = mp->row;
         int lc = col;
         while (lc - 1 >= 0)
         {
-            TileType t = level->tiles[row_mp][lc - 1];
+            TileType t = level->map.tiles[row_mp][lc - 1];
             if (t == TILE_WALL || t == TILE_DOOR || t == TILE_ELEVATOR_SHAFT)
                 break;
             lc--;
         }
         int rc = col;
-        while (rc + 1 < level->width)
+        while (rc + 1 < level->map.width)
         {
-            TileType t = level->tiles[row_mp][rc + 1];
+            TileType t = level->map.tiles[row_mp][rc + 1];
             if (t == TILE_WALL || t == TILE_DOOR || t == TILE_ELEVATOR_SHAFT)
                 break;
             rc++;
@@ -459,7 +461,7 @@ bool level_load_data(Level *level, const char *name,
                 size_t j = k + 1;
                 if (j < size && data[j] == '\r')
                     j++;
-                if (j + 7 <= size && SDL_strncmp(data + j, "SPAWNS ", 7) == 0)
+                if (j + 7 <= size && strncmp(data + j, "SPAWNS ", 7) == 0)
                 {
                     sp = data + j + 7;
                     break;
@@ -505,54 +507,59 @@ bool level_load_data(Level *level, const char *name,
                     break;
                 }
 
-                if (spawn_value_count < level->door_count)
-                    level->door_spawn_counts[spawn_value_count] = n;
+                if (spawn_value_count < level->map.door_count)
+                    level->map.door_spawn_counts[spawn_value_count] = n;
                 spawn_value_count++;
             }
 
-            if (spawn_value_count != level->door_count)
+            if (spawn_value_count != level->map.door_count)
                 invalid_spawn_metadata = true;
         }
     }
 
-    if (level->width <= 0 || level->height <= 0)
+    if (level->map.width <= 0 || level->map.height <= 0)
     {
-        SDL_Log("Level '%s' is empty", name);
+        fprintf(stderr, "Level '%s' is empty\n", name);
         return false;
     }
     if (too_wide)
     {
-        SDL_Log("Level '%s' exceeds max width of %d tiles", name, MAX_LEVEL_WIDTH);
+        fprintf(stderr, "Level '%s' exceeds max width of %d tiles\n",
+                name, MAX_LEVEL_WIDTH);
         return false;
     }
     if (too_tall)
     {
-        SDL_Log("Level '%s' exceeds max height of %d tiles", name, MAX_LEVEL_HEIGHT);
+        fprintf(stderr, "Level '%s' exceeds max height of %d tiles\n",
+                name, MAX_LEVEL_HEIGHT);
         return false;
     }
     if (start_count != 1)
     {
-        SDL_Log("Level '%s' must contain exactly one player start 'S' (found %d)",
+        fprintf(stderr,
+                "Level '%s' must contain exactly one player start 'S' (found %d)\n",
                 name, start_count);
         return false;
     }
     if (exit_count != 1)
     {
-        SDL_Log("Level '%s' must contain exactly one exit 'E' (found %d)",
+        fprintf(stderr,
+                "Level '%s' must contain exactly one exit 'E' (found %d)\n",
                 name, exit_count);
         return false;
     }
-    if ((level->door_count % 2) != 0)
+    if ((level->map.door_count % 2) != 0)
     {
-        SDL_Log("Level '%s' has an unpaired door (found %d doors)",
-                name, level->door_count);
+        fprintf(stderr, "Level '%s' has an unpaired door (found %d doors)\n",
+                name, level->map.door_count);
         return false;
     }
     if (invalid_spawn_metadata)
     {
-        SDL_Log("Level '%s' has invalid SPAWNS metadata "
-                "(expected %d values, found %d)",
-                name, level->door_count, spawn_value_count);
+        fprintf(stderr,
+                "Level '%s' has invalid SPAWNS metadata "
+                "(expected %d values, found %d)\n",
+                name, level->map.door_count, spawn_value_count);
         return false;
     }
     return true;
@@ -560,11 +567,11 @@ bool level_load_data(Level *level, const char *name,
 
 TileType level_tile(const Level *level, int col, int row)
 {
-    if (col < 0 || col >= level->width || row < 0 || row >= level->height)
+    if (col < 0 || col >= level->map.width || row < 0 || row >= level->map.height)
     {
         return TILE_WALL;
     }
-    return level->tiles[row][col];
+    return level->map.tiles[row][col];
 }
 
 bool level_is_solid(const Level *level, int col, int row)
@@ -574,11 +581,11 @@ bool level_is_solid(const Level *level, int col, int row)
 
 bool level_is_ladder(const Level *level, int col, int row)
 {
-    if (col < 0 || col >= level->width || row < 0 || row >= level->height)
+    if (col < 0 || col >= level->map.width || row < 0 || row >= level->map.height)
     {
         return false;
     }
-    return level->tiles[row][col] == TILE_LADDER;
+    return level->map.tiles[row][col] == TILE_LADDER;
 }
 
 void level_move(Level *level, float *x, float *y, float *vx, float *vy,
@@ -655,9 +662,9 @@ void level_move(Level *level, float *x, float *y, float *vx, float *vy,
                     }
                 }
                 /* Falling platforms: treat as one-way platforms that can be triggered. */
-                for (int p = 0; p < level->fall_platform_count; ++p)
+                for (int p = 0; p < level->runtime.fall_platform_count; ++p)
                 {
-                    FallPlatform *fp = &level->fall_platforms[p];
+                    FallPlatform *fp = &level->runtime.fall_platforms[p];
                     if (fp->removed)
                         continue;
                     if (fp->col != c)
@@ -679,9 +686,9 @@ void level_move(Level *level, float *x, float *y, float *vx, float *vy,
                     }
                 }
                 /* Moving platforms: treat like one-way platforms that patrol horizontally. */
-                for (int m = 0; m < level->moving_platform_count; ++m)
+                for (int m = 0; m < level->runtime.moving_platform_count; ++m)
                 {
-                    MovingPlatform *mp = &level->moving_platforms[m];
+                    MovingPlatform *mp = &level->runtime.moving_platforms[m];
                     if (mp->row != row)
                         continue;
                     int plat_col = (int)floorf(mp->x / TILE_SIZE);
@@ -717,9 +724,9 @@ void level_move(Level *level, float *x, float *y, float *vx, float *vy,
 
 void level_update_falling_platforms(Level *level, float dt)
 {
-    for (int i = 0; i < level->fall_platform_count; ++i)
+    for (int i = 0; i < level->runtime.fall_platform_count; ++i)
     {
-        FallPlatform *fp = &level->fall_platforms[i];
+        FallPlatform *fp = &level->runtime.fall_platforms[i];
         if (fp->removed || !fp->triggered)
             continue;
         fp->timer += dt;
@@ -738,9 +745,9 @@ void level_update_falling_platforms(Level *level, float dt)
 
 void level_update_elevators(Level *level, float dt)
 {
-    for (int i = 0; i < level->elevator_count; ++i)
+    for (int i = 0; i < level->runtime.elevator_count; ++i)
     {
-        Elevator *el = &level->elevators[i];
+        Elevator *el = &level->runtime.elevators[i];
         el->y += el->vy * dt;
         if (el->vy < 0.0f && el->y <= el->top_limit)
         {
@@ -757,9 +764,9 @@ void level_update_elevators(Level *level, float dt)
 
 void level_update_moving_platforms(Level *level, float dt)
 {
-    for (int i = 0; i < level->moving_platform_count; ++i)
+    for (int i = 0; i < level->runtime.moving_platform_count; ++i)
     {
-        MovingPlatform *mp = &level->moving_platforms[i];
+        MovingPlatform *mp = &level->runtime.moving_platforms[i];
         mp->x += mp->vx * dt;
         if (mp->vx > 0.0f && mp->x >= mp->right_limit)
         {
@@ -780,45 +787,45 @@ void level_reveal_init(Level *level)
     for (int r = 0; r < MAX_LEVEL_HEIGHT; ++r)
     {
         for (int c = 0; c < MAX_LEVEL_WIDTH; ++c)
-            level->tiles_visible[r][c] = false;
+            level->reveal.tiles_visible[r][c] = false;
     }
-    level->reveal_next_row = 0;
-    level->reveal_next_col = 0;
-    level->reveal_timer = 0.0f;
+    level->reveal.next_row = 0;
+    level->reveal.next_col = 0;
+    level->reveal.timer = 0.0f;
     /* Reduced interval and larger batch to make reveal noticeably faster. */
-    level->reveal_interval = 0.004f; /* smaller delay between reveal steps */
-    level->reveal_done = false;
+    level->reveal.interval = 0.004f; /* smaller delay between reveal steps */
+    level->reveal.done = false;
 }
 
 bool level_reveal_step(Level *level, float dt)
 {
-    if (level->reveal_done)
+    if (level->reveal.done)
         return false;
 
-    level->reveal_timer += dt;
+    level->reveal.timer += dt;
     const int batch = 12; /* reveal this many tiles per interval (larger = faster) */
     bool just_finished = false;
-    while (level->reveal_timer >= level->reveal_interval && !level->reveal_done)
+    while (level->reveal.timer >= level->reveal.interval && !level->reveal.done)
     {
-        level->reveal_timer -= level->reveal_interval;
-        for (int b = 0; b < batch && !level->reveal_done; ++b)
+        level->reveal.timer -= level->reveal.interval;
+        for (int b = 0; b < batch && !level->reveal.done; ++b)
         {
-            if (level->reveal_next_row >= level->height)
+            if (level->reveal.next_row >= level->map.height)
             {
-                level->reveal_done = true;
+                level->reveal.done = true;
                 just_finished = true;
                 break;
             }
             /* Only iterate up to the level width for each row. */
-            if (level->reveal_next_col < level->width)
+            if (level->reveal.next_col < level->map.width)
             {
-                level->tiles_visible[level->reveal_next_row][level->reveal_next_col] = true;
+                level->reveal.tiles_visible[level->reveal.next_row][level->reveal.next_col] = true;
             }
-            level->reveal_next_col++;
-            if (level->reveal_next_col >= level->width)
+            level->reveal.next_col++;
+            if (level->reveal.next_col >= level->map.width)
             {
-                level->reveal_next_col = 0;
-                level->reveal_next_row++;
+                level->reveal.next_col = 0;
+                level->reveal.next_row++;
             }
         }
     }

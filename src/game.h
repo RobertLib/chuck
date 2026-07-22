@@ -1,31 +1,12 @@
 #ifndef CHUCK_GAME_H
 #define CHUCK_GAME_H
 
-#include "common.h"
-#include "level.h"
-#include "player.h"
-#include "enemy.h"
-#include "particle.h"
-#include "intro.h"
-#include "cutscene.h"
 #include "audio.h"
-
-typedef struct
-{
-    float x, y; /* world-space position (top-left) */
-    float vx;   /* horizontal velocity, no gravity */
-    float vy;   /* vertical velocity for aimed bullets */
-    bool active;
-} Bullet;
-
-typedef struct
-{
-    float x, y;    /* top-left of grenade box */
-    float vx, vy;  /* full physics (gravity) */
-    bool active;   /* true until exploded */
-    float timer;   /* countdown until explosion */
-    bool grounded; /* true when resting on floor */
-} Grenade;
+#include "common.h"
+#include "cutscene.h"
+#include "gameplay_state.h"
+#include "intro.h"
+#include "particle.h"
 
 typedef enum
 {
@@ -37,62 +18,25 @@ typedef enum
     STATE_LEVEL_TRANSITION,
     STATE_LEVEL_CLEARED,
     STATE_OUTRO,
-    STATE_GAME_OVER,
-    STATE_WIN
+    STATE_GAME_OVER
 } GameState;
-
-typedef struct
-{
-    float x, y;     /* top-left of mine box */
-    bool active;    /* not yet exploded */
-    bool triggered; /* player stepped on it */
-    float timer;    /* countdown until explosion */
-} Mine;
 
 typedef struct
 {
     SDL_Window *window;
     SDL_Renderer *renderer;
+    AudioSystem audio;
+    bool fullscreen;
+    Uint64 last_tick;
+} PlatformState;
 
-    Level level;
-    Player player;
-    Enemy enemies[MAX_ENEMIES];
-    int enemy_count;
-    Dog dogs[MAX_DOGS];
-    int dog_count;
-
-    Mine mines[MAX_MINES];
-    int mine_count;
-
-    Grenade grenades[MAX_GRENADES];
-    int grenade_count;
-
-    Bullet bullets[MAX_BULLETS];             /* fired by player */
-    Bullet enemy_bullets[MAX_ENEMY_BULLETS]; /* fired by enemies */
-
-    Input input;
-
-    int current_level; /* 0-based index */
-    int lives;
-    int score;
-    float invuln_timer;
-    float message_timer; /* pause before advancing on level cleared */
-    float level_elapsed_time;
-    int level_start_score;
-
-    /* Door state (per door, indexed same as level.doors[]) */
-    int door_spawns[MAX_DOORS];   /* enemies still to spawn from each door */
-    float door_timers[MAX_DOORS]; /* seconds until next spawn from each door */
-    float teleport_cooldown;      /* seconds before player can teleport again */
-
-    int player_on_elevator;        /* index into level.elevators[], or -1 */
-    int player_on_moving_platform; /* index into level.moving_platforms[], or -1 */
+typedef struct
+{
+    float message_timer;
 
     /* Particle system for effects */
     ParticleSystem particles;
 
-    /* Procedurally generated, memory-cached sound effects and voice pool. */
-    AudioSystem audio;
     float footstep_audio_timer;
     float ladder_audio_timer;
     bool footstep_alternate;
@@ -110,10 +54,6 @@ typedef struct
     /* Title-screen state (field-operations briefing shown before STATE_LEVEL_START) */
     Intro intro;
 
-    bool fullscreen; /* true when window is fullscreen */
-
-    GameState state;
-    Uint64 last_tick;
     float cam_x; /* world x of left edge of the viewport */
     /* Short, decaying render offset used by gameplay explosions. The HUD is
      * rendered separately and therefore stays readable while the world shakes. */
@@ -130,19 +70,20 @@ typedef struct
     float card_anim_interval;  /* seconds between highlight steps */
     float card_anim_timer;     /* accumulator for highlight timing */
     float exit_unlocked_timer; /* seconds to show "EXIT UNLOCKED" overlay */
+} PresentationState;
 
-    /* Active-terminal interaction. Progress requires holding interact while
-     * stationary and resets if the player lets go or leaves its range. */
-    float terminal_hack_progress;
-    float terminal_hack_tick_timer;
-    bool terminal_in_range;
-    bool terminal_hacking;
-    float terminal_alarm_timer;
-    float terminal_reinforcement_timer;
-    int terminal_reinforcements_pending;
+typedef struct
+{
+    PlatformState platform;
+    CampaignState campaign;
+    GameplayState gameplay;
+    PresentationState presentation;
+    Input input;
+    GameState state;
 } Game;
 
 bool game_init(Game *game);
+bool game_init_seeded(Game *game, uint64_t seed);
 void game_handle_event(Game *game, const SDL_Event *event);
 void game_update(Game *game, float dt);
 void game_render(Game *game);
