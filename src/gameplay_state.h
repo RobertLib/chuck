@@ -31,6 +31,34 @@ typedef struct
     float timer;
 } Mine;
 
+typedef enum
+{
+    JANITOR_WALK,
+    JANITOR_MOP,
+    JANITOR_PAUSE
+} JanitorActivity;
+
+typedef struct
+{
+    float x, y;
+    float life;
+    bool active;
+} JanitorWetSpot;
+
+typedef struct
+{
+    float x, y;
+    float vx, vy;
+    int dir;
+    bool on_ground;
+    JanitorActivity activity;
+    float activity_timer;
+    float anim_time;
+    float wet_timer;
+    int next_wet_spot;
+    JanitorWetSpot wet_spots[JANITOR_WET_SPOTS];
+} Janitor;
+
 typedef struct
 {
     int current_level;
@@ -51,6 +79,8 @@ typedef struct
     int enemy_count;
     Dog dogs[MAX_DOGS];
     int dog_count;
+    Janitor janitors[MAX_JANITORS];
+    int janitor_count;
     Mine mines[MAX_MINES];
     int mine_count;
     Grenade grenades[MAX_GRENADES];

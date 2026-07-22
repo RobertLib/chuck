@@ -10,6 +10,10 @@ or breach the security terminal that opens the way deeper inside, and decide
 when to fight, when to sneak past, and when to use the environment to your
 advantage.
 
+Ambient janitors patrol some corridors with cleaning carts, pause to mop, and
+leave short-lived wet streaks. They are visual-only NPCs: attacks, collisions,
+alarms, pickups, and scoring ignore them completely.
+
 ## Story
 
 Chuck arrives at the building just as a group of kidnappers drags his fiancée

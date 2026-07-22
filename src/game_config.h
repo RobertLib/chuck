@@ -14,6 +14,16 @@
 
 #define MAX_DECORATIONS 192
 
+/* Ambient janitors are visual-only NPCs. They collide with the static level
+ * geometry so their patrols stay grounded, but never participate in combat,
+ * player collision, pickups, alarms, or scoring. */
+#define MAX_JANITORS 8
+#define JANITOR_W 26
+#define JANITOR_H 32
+#define JANITOR_WALK_SPEED 34.0f
+#define JANITOR_WET_SPOTS 6
+#define JANITOR_WET_LIFETIME 7.0f
+
 /* Mines */
 #define MAX_MINES 32
 #define MINE_W 16

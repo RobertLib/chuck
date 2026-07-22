@@ -88,6 +88,7 @@ static void test_gameplay_reset_preserves_rng_only(void)
     rng_seed(&state.rng, 4567);
     Rng expected = state.rng;
     state.enemy_count = 3;
+    state.janitor_count = 2;
     state.grenade_count = 2;
     state.terminal_hacking = true;
     state.events.count = 4;
@@ -98,6 +99,7 @@ static void test_gameplay_reset_preserves_rng_only(void)
 
     CHECK(state.rng.state == expected.state);
     CHECK(state.enemy_count == 0);
+    CHECK(state.janitor_count == 0);
     CHECK(state.grenade_count == 0);
     CHECK(!state.terminal_hacking);
     CHECK(state.events.count == 0);
@@ -273,6 +275,39 @@ static void test_enemy_spawn_uses_seeded_rng(void)
                 second.enemies[0].shoot_cooldown) < 0.0001f);
 }
 
+static void test_janitor_ai_is_seeded_and_visual_only(void)
+{
+    static const char data[] =
+        "############\n"
+        "#S J     E #\n"
+        "############\n";
+    GameplayState first = {0};
+    GameplayState second = {0};
+    rng_seed(&first.rng, 2468);
+    rng_seed(&second.rng, 2468);
+    CHECK(level_load_data(&first.level, "janitor", data, strlen(data),
+                          &first.rng));
+    CHECK(level_load_data(&second.level, "janitor", data, strlen(data),
+                          &second.rng));
+    CHECK(first.level.map.janitor_count == 1);
+    gameplay_ai_spawn_level_entities(&first);
+    gameplay_ai_spawn_level_entities(&second);
+    CHECK(first.janitor_count == 1);
+    CHECK(second.janitor_count == 1);
+    CHECK(first.janitors[0].dir == second.janitors[0].dir);
+    CHECK(first.janitors[0].activity == JANITOR_MOP);
+    CHECK(fabsf(first.janitors[0].activity_timer -
+                second.janitors[0].activity_timer) < 0.0001f);
+
+    first.player.x = 71.0f;
+    first.player.y = 19.0f;
+    gameplay_ai_update_movement(&first, 0.1f);
+    CHECK(first.player.x == 71.0f);
+    CHECK(first.player.y == 19.0f);
+    CHECK(first.events.count == 0);
+    CHECK(first.janitors[0].wet_spots[0].active);
+}
+
 int main(void)
 {
     test_rng_is_reproducible();
@@ -286,6 +321,7 @@ int main(void)
     test_key_cards_keep_scoring_and_unlock_rules();
     test_mine_damage_emits_feedback();
     test_enemy_spawn_uses_seeded_rng();
+    test_janitor_ai_is_seeded_and_visual_only();
 
     if (failures != 0)
     {

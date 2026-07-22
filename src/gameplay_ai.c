@@ -130,6 +130,160 @@ static void spawn_dog_for_enemy(GameplayState *state, int enemy_index)
     dog_init(&state->dogs[slot], x, y, enemy_index, &state->rng);
 }
 
+static void janitor_set_activity(Janitor *janitor,
+                                  JanitorActivity activity, Rng *rng)
+{
+    janitor->activity = activity;
+    janitor->vx = 0.0f;
+    switch (activity)
+    {
+    case JANITOR_WALK:
+        janitor->activity_timer =
+            3.5f + (float)rng_range(rng, 351) * 0.01f;
+        break;
+    case JANITOR_MOP:
+        janitor->activity_timer =
+            2.8f + (float)rng_range(rng, 241) * 0.01f;
+        janitor->wet_timer = 0.0f;
+        break;
+    case JANITOR_PAUSE:
+        janitor->activity_timer =
+            0.6f + (float)rng_range(rng, 91) * 0.01f;
+        break;
+    }
+}
+
+static void janitor_init(Janitor *janitor, float x, float y,
+                         bool starts_mopping, Rng *rng)
+{
+    *janitor = (Janitor){0};
+    janitor->x = x;
+    janitor->y = y;
+    janitor->dir = rng_range(rng, 2) == 0 ? -1 : 1;
+    janitor->anim_time = (float)rng_range(rng, 628) * 0.01f;
+    janitor_set_activity(janitor,
+                          starts_mopping ? JANITOR_MOP : JANITOR_WALK, rng);
+}
+
+static bool janitor_has_floor_ahead(const GameplayState *state,
+                                    const Janitor *janitor)
+{
+    float probe_x = janitor->dir > 0
+                        ? janitor->x + JANITOR_W + 7.0f
+                        : janitor->x - 7.0f;
+    int col = (int)floorf(probe_x / TILE_SIZE);
+    int row = (int)floorf((janitor->y + JANITOR_H + 3.0f) / TILE_SIZE);
+    return level_is_solid(&state->level, col, row) ||
+           level_is_ladder(&state->level, col, row);
+}
+
+static bool janitor_side_blocked(const GameplayState *state,
+                                 const Janitor *janitor)
+{
+    float probe_x = janitor->dir > 0
+                        ? janitor->x + JANITOR_W + 2.0f
+                        : janitor->x - 2.0f;
+    int col = (int)floorf(probe_x / TILE_SIZE);
+    int top = (int)floorf((janitor->y + 1.0f) / TILE_SIZE);
+    int bottom = (int)floorf((janitor->y + JANITOR_H - 1.0f) / TILE_SIZE);
+    for (int row = top; row <= bottom; ++row)
+    {
+        TileType tile = level_tile(&state->level, col, row);
+        if (tile == TILE_WALL || tile == TILE_DOOR)
+            return true;
+    }
+    return false;
+}
+
+static void janitor_leave_wet_spot(Janitor *janitor)
+{
+    JanitorWetSpot *spot =
+        &janitor->wet_spots[janitor->next_wet_spot];
+    float sweep = sinf(janitor->anim_time * 4.5f) * 9.0f;
+    spot->x = janitor->x + JANITOR_W * 0.5f +
+              janitor->dir * (16.0f + sweep);
+    spot->y = janitor->y + JANITOR_H - 1.0f;
+    spot->life = JANITOR_WET_LIFETIME;
+    spot->active = true;
+    janitor->next_wet_spot =
+        (janitor->next_wet_spot + 1) % JANITOR_WET_SPOTS;
+}
+
+static void update_janitor(GameplayState *state, Janitor *janitor, float dt)
+{
+    for (int i = 0; i < JANITOR_WET_SPOTS; ++i)
+    {
+        JanitorWetSpot *spot = &janitor->wet_spots[i];
+        if (!spot->active)
+            continue;
+        spot->life -= dt;
+        if (spot->life <= 0.0f)
+        {
+            spot->life = 0.0f;
+            spot->active = false;
+        }
+    }
+
+    janitor->activity_timer -= dt;
+    if (janitor->activity_timer <= 0.0f)
+    {
+        if (janitor->activity == JANITOR_WALK)
+            janitor_set_activity(janitor, JANITOR_MOP, &state->rng);
+        else if (janitor->activity == JANITOR_MOP)
+            janitor_set_activity(janitor, JANITOR_PAUSE, &state->rng);
+        else
+        {
+            if (rng_range(&state->rng, 100) < 35)
+                janitor->dir = -janitor->dir;
+            janitor_set_activity(janitor, JANITOR_WALK, &state->rng);
+        }
+    }
+
+    if (janitor->activity == JANITOR_WALK)
+    {
+        if (janitor->on_ground &&
+            (!janitor_has_floor_ahead(state, janitor) ||
+             janitor_side_blocked(state, janitor)))
+        {
+            janitor->dir = -janitor->dir;
+            janitor_set_activity(janitor, JANITOR_PAUSE, &state->rng);
+        }
+        else
+            janitor->vx = janitor->dir * JANITOR_WALK_SPEED;
+        janitor->anim_time += dt * 2.2f;
+    }
+    else if (janitor->activity == JANITOR_MOP)
+    {
+        janitor->vx = 0.0f;
+        janitor->anim_time += dt * 2.8f;
+        janitor->wet_timer -= dt;
+        if (janitor->wet_timer <= 0.0f)
+        {
+            janitor_leave_wet_spot(janitor);
+            janitor->wet_timer = 0.34f;
+        }
+    }
+    else
+    {
+        janitor->vx = 0.0f;
+        janitor->anim_time += dt * 0.8f;
+    }
+
+    janitor->vy += GRAVITY * dt;
+    if (janitor->vy > MAX_FALL_SPEED)
+        janitor->vy = MAX_FALL_SPEED;
+    float intended_vx = janitor->vx;
+    level_move(&state->level, &janitor->x, &janitor->y,
+               &janitor->vx, &janitor->vy, JANITOR_W, JANITOR_H,
+               dt, false, &janitor->on_ground, false);
+    if (janitor->activity == JANITOR_WALK && intended_vx != 0.0f &&
+        janitor->vx == 0.0f)
+    {
+        janitor->dir = -janitor->dir;
+        janitor_set_activity(janitor, JANITOR_PAUSE, &state->rng);
+    }
+}
+
 static bool spawn_enemy_from_door(GameplayState *state, int door_index)
 {
     if (door_index < 0 || door_index >= state->level.map.door_count)
@@ -175,6 +329,12 @@ void gameplay_ai_spawn_level_entities(GameplayState *state)
         if (state->level.map.enemy_spawns[i].has_dog)
             spawn_dog_for_enemy(state, i);
     }
+    state->janitor_count = state->level.map.janitor_count;
+    for (int i = 0; i < state->janitor_count; ++i)
+        janitor_init(&state->janitors[i],
+                     state->level.map.janitor_spawns[i].x,
+                     state->level.map.janitor_spawns[i].y,
+                     (i & 1) == 0, &state->rng);
     state->mine_count = state->level.map.mine_count;
     for (int i = 0; i < state->mine_count; ++i)
     {
@@ -572,6 +732,9 @@ static void update_conversations(GameplayState *state)
 
 void gameplay_ai_update_movement(GameplayState *state, float dt)
 {
+    for (int i = 0; i < state->janitor_count; ++i)
+        update_janitor(state, &state->janitors[i], dt);
+
     for (int i = 0; i < state->enemy_count; ++i)
     {
         Enemy *enemy = &state->enemies[i];

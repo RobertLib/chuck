@@ -98,6 +98,11 @@ typedef struct
 
 typedef struct
 {
+    float x, y; /* spawn position (top-left of the visual-only NPC box) */
+} JanitorSpawn;
+
+typedef struct
+{
     float x, y; /* spawn position (top-left of mine box) */
 } MineSpawn;
 
@@ -133,6 +138,8 @@ typedef struct
     int decoration_count;
     EnemySpawn enemy_spawns[MAX_ENEMIES];
     int enemy_count;
+    JanitorSpawn janitor_spawns[MAX_JANITORS];
+    int janitor_count;
     MineSpawn mine_spawns[MAX_MINES];
     int mine_count;
     SpikeSpawn spike_spawns[MAX_SPIKES];

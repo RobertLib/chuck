@@ -1169,6 +1169,163 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
   }
 }
 
+static void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
+                         float cam_x, float oy)
+{
+  float x = janitor->x - cam_x;
+  float y = janitor->y + oy;
+  int dir = janitor->dir;
+  bool walking = janitor->activity == JANITOR_WALK &&
+                 fabsf(janitor->vx) > 2.0f;
+  bool mopping = janitor->activity == JANITOR_MOP;
+  float phase = janitor->anim_time * 2.2f;
+  float step = walking ? sinf(phase) : 0.0f;
+  float bob = walking ? fabsf(step) * 0.45f
+                      : sinf(janitor->anim_time * 1.6f) * 0.25f;
+  float sweep = mopping ? sinf(janitor->anim_time * 4.5f) * 8.0f : 0.0f;
+  SDL_Color uniform = {38, 78, 82, 255};
+  SDL_Color uniform_hi = {50, 102, 105, 255};
+  SDL_Color skin = {136, 101, 79, 255};
+
+  /* The translucent streaks are presentation-only state owned by this NPC.
+   * They fade out without changing friction or any other gameplay rule. */
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  for (int i = 0; i < JANITOR_WET_SPOTS; ++i)
+  {
+    const JanitorWetSpot *spot = &janitor->wet_spots[i];
+    if (!spot->active)
+      continue;
+    float fade = spot->life / JANITOR_WET_LIFETIME;
+    Uint8 alpha = (Uint8)(10.0f + fade * 38.0f);
+    set_rgba(r, 63, 135, 142, alpha);
+    fill_rect(r, spot->x - cam_x - 10.0f, spot->y + oy - 1.0f,
+              20.0f, 3.0f);
+    set_rgba(r, 118, 164, 164, (Uint8)(alpha * 0.55f));
+    fill_rect(r, spot->x - cam_x - 5.0f, spot->y + oy - 1.0f,
+              7.0f, 1.0f);
+  }
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+  /* Compact housekeeping cart, trailing behind the walking direction. */
+  float cart_x = dir > 0 ? x - 25.0f : x + JANITOR_W + 3.0f;
+  float cart_y = y + 7.0f;
+  /* Short contact shadows keep the two silhouettes grounded without joining
+   * them into one long, high-contrast stripe. */
+  color_rect(r, (SDL_Color){6, 9, 13, 255},
+             x + 4.0f, y + 30.0f, 18.0f, 2.0f);
+  color_rect(r, (SDL_Color){6, 9, 13, 255},
+             cart_x + 2.0f, y + 30.0f, 19.0f, 2.0f);
+  color_rect(r, COL_OUTLINE, cart_x, cart_y + 4.0f, 23.0f, 18.0f);
+  color_rect(r, (SDL_Color){52, 59, 62, 255},
+             cart_x + 2.0f, cart_y + 6.0f, 19.0f, 14.0f);
+  color_rect(r, (SDL_Color){142, 112, 54, 255},
+             cart_x + 3.0f, cart_y + 7.0f, 17.0f, 4.0f);
+  color_rect(r, (SDL_Color){43, 79, 91, 255},
+             cart_x + 4.0f, cart_y + 12.0f, 15.0f, 7.0f);
+  color_rect(r, (SDL_Color){60, 108, 116, 255},
+             cart_x + 6.0f, cart_y + 12.0f, 11.0f, 2.0f);
+  color_rect(r, (SDL_Color){23, 29, 33, 255},
+             cart_x + 2.0f, cart_y + 21.0f, 6.0f, 4.0f);
+  color_rect(r, (SDL_Color){23, 29, 33, 255},
+             cart_x + 16.0f, cart_y + 21.0f, 6.0f, 4.0f);
+  color_rect(r, (SDL_Color){88, 96, 96, 255},
+             cart_x + 4.0f, cart_y + 22.0f, 2.0f, 2.0f);
+  color_rect(r, (SDL_Color){88, 96, 96, 255},
+             cart_x + 18.0f, cart_y + 22.0f, 2.0f, 2.0f);
+  set_color(r, (SDL_Color){82, 91, 92, 255});
+  SDL_RenderLine(r, cart_x + (dir > 0 ? 20.0f : 3.0f), cart_y + 5.0f,
+                 cart_x + (dir > 0 ? 24.0f : -1.0f), cart_y - 1.0f);
+
+  /* The mop is clipped to the cart during a patrol and swept in a broad arc
+   * while the janitor is working. */
+  if (mopping)
+  {
+    sprite_segment(r, x, y, JANITOR_W, dir,
+                   16.0f, 15.0f + bob, 28.0f + sweep, 30.0f,
+                   4, COL_OUTLINE);
+    sprite_segment(r, x, y, JANITOR_W, dir,
+                   16.0f, 15.0f + bob, 28.0f + sweep, 30.0f,
+                   2, (SDL_Color){130, 112, 82, 255});
+    sprite_rect(r, x, y, JANITOR_W, dir,
+                22.0f + sweep, 29.0f, 13.0f, 3.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, JANITOR_W, dir,
+                23.0f + sweep, 30.0f, 11.0f, 2.0f,
+                (SDL_Color){97, 132, 130, 255});
+  }
+  else
+  {
+    set_color(r, COL_OUTLINE);
+    SDL_RenderLine(r, cart_x + 5.0f, cart_y + 5.0f,
+                   cart_x + 9.0f, cart_y - 13.0f);
+    set_color(r, (SDL_Color){130, 112, 82, 255});
+    SDL_RenderLine(r, cart_x + 6.0f, cart_y + 5.0f,
+                   cart_x + 10.0f, cart_y - 13.0f);
+    color_rect(r, (SDL_Color){97, 132, 130, 255},
+               cart_x + 5.0f, cart_y + 3.0f, 9.0f, 3.0f);
+  }
+
+  if (walking)
+  {
+    draw_walking_leg(r, x, y, JANITOR_W, dir, 12.0f, 21.0f + bob,
+                     -step * 2.8f, (SDL_Color){30, 57, 60, 255}, COL_INK);
+    draw_walking_leg(r, x, y, JANITOR_W, dir, 14.0f, 21.0f + bob,
+                     step * 2.8f, (SDL_Color){36, 68, 70, 255}, COL_INK);
+  }
+  else
+  {
+    sprite_rect(r, x, y, JANITOR_W, dir,
+                8.0f, 22.0f, 6.0f, 9.0f, (SDL_Color){30, 57, 60, 255});
+    sprite_rect(r, x, y, JANITOR_W, dir,
+                14.0f, 22.0f, 6.0f, 9.0f, (SDL_Color){36, 68, 70, 255});
+    sprite_rect(r, x, y, JANITOR_W, dir,
+                7.0f, 29.0f, 7.0f, 3.0f, COL_INK);
+    sprite_rect(r, x, y, JANITOR_W, dir,
+                14.0f, 29.0f, 7.0f, 3.0f, COL_INK);
+  }
+
+  sprite_rect(r, x, y, JANITOR_W, dir,
+              6.0f, 10.0f + bob, 15.0f, 14.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, JANITOR_W, dir,
+              7.0f, 11.0f + bob, 13.0f, 12.0f, uniform);
+  sprite_rect(r, x, y, JANITOR_W, dir,
+              8.0f, 12.0f + bob, 4.0f, 9.0f, uniform_hi);
+  /* A muted service vest keeps the role legible without competing with
+   * pickups, enemies, or the player's brighter silhouette. */
+  sprite_rect(r, x, y, JANITOR_W, dir,
+              11.0f, 11.0f + bob, 3.0f, 12.0f,
+              (SDL_Color){139, 118, 63, 255});
+  sprite_rect(r, x, y, JANITOR_W, dir,
+              8.0f, 20.0f + bob, 12.0f, 2.0f,
+              (SDL_Color){139, 118, 63, 255});
+
+  sprite_rect(r, x, y, JANITOR_W, dir,
+              9.0f, 2.0f + bob, 10.0f, 10.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, JANITOR_W, dir,
+              10.0f, 4.0f + bob, 8.0f, 7.0f, skin);
+  sprite_rect(r, x, y, JANITOR_W, dir,
+              8.0f, 1.0f + bob, 12.0f, 5.0f,
+              (SDL_Color){42, 87, 91, 255});
+  sprite_rect(r, x, y, JANITOR_W, dir,
+              15.0f, 6.0f + bob, 2.0f, 2.0f,
+              (SDL_Color){17, 28, 29, 255});
+
+  if (mopping)
+  {
+    sprite_limb_segment(r, x, y, JANITOR_W, dir,
+                        8.0f, 14.0f + bob, 16.0f, 17.0f + bob, uniform_hi);
+    sprite_limb_segment(r, x, y, JANITOR_W, dir,
+                        18.0f, 14.0f + bob, 18.0f, 20.0f + bob, uniform);
+    sprite_rect(r, x, y, JANITOR_W, dir,
+                14.0f, 16.0f + bob, 4.0f, 4.0f, skin);
+  }
+  else
+  {
+    float arm_swing = walking ? -step : 0.0f;
+    draw_walking_arm(r, x, y, JANITOR_W, dir,
+                     17.0f, 13.0f + bob, arm_swing, uniform, skin);
+  }
+}
+
 static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
 {
   float x = e->x - cam_x;
@@ -1485,6 +1642,8 @@ static void render_world(Game *game)
     draw_decoration(r, decoration, cam_x, oy, world_t);
   }
 
+  /* Doors and other wall-mounted fixtures belong behind anyone walking along
+   * the corridor floor. */
   for (int d = 0; d < lvl->map.door_count; ++d)
   {
     float x = lvl->map.doors[d].col * (float)TILE_SIZE - cam_x;
@@ -1504,6 +1663,28 @@ static void render_world(Game *game)
     bool active = i == lvl->runtime.active_terminal_index;
     draw_terminal(r, x, y, active,
                   active && lvl->runtime.terminal_hacked, world_t);
+  }
+
+  /* Ambient staff remain subdued, but correctly stand in front of the back
+   * wall and its fixtures. Floor props and gameplay actors render later. */
+  for (int i = 0; i < game->gameplay.janitor_count; ++i)
+    draw_janitor(r, &game->gameplay.janitors[i], cam_x, oy);
+
+  /* Redraw ladders as a middle layer so ambient janitors pass behind their
+   * rails and rungs. Interactive actors are rendered later and remain in
+   * front, preserving the usual climbing readability. */
+  for (int row = 0; row < lvl->map.height; ++row)
+  {
+    for (int col = 0; col < lvl->map.width; ++col)
+    {
+      if (lvl->map.tiles[row][col] != TILE_LADDER)
+        continue;
+      float x = col * (float)TILE_SIZE - cam_x;
+      if (x + TILE_SIZE < 0.0f || x > (float)win_w)
+        continue;
+      float y = row * (float)TILE_SIZE + oy;
+      draw_ladder_tile(r, x, y, row);
+    }
   }
 
   /* Pickups bob independently and cast restrained color-coded glows. */

@@ -11,6 +11,7 @@ This file describes the meaning of characters used in the level text files.
 - `K` : Medkit item (`ITEM_MEDKIT`).
 - `M` : Enemy spawn (enemy is placed here).
 - `W` : Enemy spawn with a guard dog.
+- `J` : Ambient janitor with a cleaning cart and mop (visual-only NPC).
 - `X` : Mine (places an explosive mine).
 - `^` : Spike / hazard (instant damage when stepped on).
 - `O` : Rotating ceiling fan (lethal on contact with the blades).

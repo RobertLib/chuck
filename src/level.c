@@ -33,6 +33,16 @@ static void place_enemy(Level *level, int col, int row, bool has_dog)
     e->has_dog = has_dog;
 }
 
+static void place_janitor(Level *level, int col, int row)
+{
+    if (level->map.janitor_count >= MAX_JANITORS)
+        return;
+    JanitorSpawn *janitor =
+        &level->map.janitor_spawns[level->map.janitor_count++];
+    janitor->x = col * TILE_SIZE + (TILE_SIZE - JANITOR_W) * 0.5f;
+    janitor->y = (row + 1) * TILE_SIZE - JANITOR_H;
+}
+
 static void place_mine(Level *level, int col, int row)
 {
     if (level->map.mine_count >= MAX_MINES)
@@ -184,6 +194,10 @@ bool level_load_data(Level *level, const char *name,
         case 'W':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_enemy(level, col, row, true);
+            break;
+        case 'J':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_janitor(level, col, row);
             break;
         case 'X':
             level->map.tiles[row][col] = TILE_EMPTY;
