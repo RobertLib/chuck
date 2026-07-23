@@ -185,6 +185,7 @@ void gameplay_provoke_enemy(GameplayState *state, int enemy_index)
         enemy->pursuit_target_y = target_y;
         enemy->has_pursuit_target = true;
         enemy->dir = target_x < enemy_x ? -1 : 1;
+        enemy->aim_vdir = 0;
         enemy->aim_target_x = target_x;
         enemy->aim_target_y = target_y;
         enemy->aim_timer = ENEMY_AIM_TIME *
@@ -200,6 +201,33 @@ void gameplay_provoke_enemy(GameplayState *state, int enemy_index)
         gameplay_world_sound(state, SFX_ENEMY_ALERT,
                              alert_source->x + ENEMY_W * 0.5f,
                              alert_source->y + ENEMY_H * 0.5f);
+    }
+}
+
+void gameplay_alert_enemies_to_noise(GameplayState *state, float x, float y,
+                                     float radius)
+{
+    for (int i = 0; i < state->enemy_count; ++i)
+    {
+        Enemy *enemy = &state->enemies[i];
+        if (enemy->dead || enemy->raising_alarm || enemy->provoked)
+            continue;
+        float ex = enemy->x + ENEMY_W * 0.5f;
+        float ey = enemy->y + ENEMY_H * 0.5f;
+        float dx = x - ex;
+        float dy = y - ey;
+        if (dx * dx + dy * dy > radius * radius)
+            continue;
+        /* Break off a conversation and turn toward the sound. */
+        enemy->talking = false;
+        enemy->talk_timer = 0.0f;
+        if (enemy->talk_cooldown <= 0.0f)
+            enemy->talk_cooldown = ENEMY_TALK_COOLDOWN;
+        enemy->investigate_x = x;
+        enemy->investigate_y = y;
+        enemy->investigate_timer = ENEMY_INVESTIGATE_TIME;
+        enemy->investigate_scan_timer = ENEMY_INVESTIGATE_SCAN_FLIP;
+        enemy->dir = dx < 0.0f ? -1 : 1;
     }
 }
 

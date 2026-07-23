@@ -16,6 +16,11 @@ void gameplay_hit_player(GameplayState *state);
 void gameplay_unlock_exit(GameplayState *state);
 bool gameplay_player_near_active_terminal(const GameplayState *state);
 void gameplay_provoke_enemy(GameplayState *state, int enemy_index);
+/* A loud disturbance (gunfire, an explosion) draws nearby calm guards to walk
+ * over and investigate its origin. Guards already fighting or raising the alarm
+ * are unaffected. */
+void gameplay_alert_enemies_to_noise(GameplayState *state, float x, float y,
+                                     float radius);
 void gameplay_destroy_crate(GameplayState *state, CampaignState *campaign,
                             Crate *crate);
 void gameplay_kill_enemy_with_crate(GameplayState *state,

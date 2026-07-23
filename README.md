@@ -36,9 +36,16 @@ Your goal is to keep the kidnappers in reach. In each level, survive the guards,
 collect the right key card, and pass through the secured exit before the trail
 goes cold. Guards patrol the building, climb between floors, and react to first
 contact by attacking or running for one of the wall-mounted alarm switches.
-A triggered alarm bathes the sector in red warning light and mobilizes every
-guard and dog. Guards move, aim, and fire faster while sweeping around Chuck's
-last known position; the alarm shuts itself off after he stays out of sight long enough.
+They see through a forward vision cone that walls, floors, and crates block, so
+they can spot Chuck diagonally or up a ladder shaft and fire straight up or down
+that shaft; a crawling Chuck is noticed only from closer in. Guards also have
+ears and memory: gunfire and explosions draw nearby guards over to investigate,
+a guard who finds a fallen comrade often sprints for the alarm, and a suspicious
+guard walks to the disturbance, scans, and returns to its patrol if the coast is
+clear. A triggered alarm bathes the sector in red warning light and mobilizes
+every guard and dog. Guards move, aim, and fire faster, lead a running target,
+hop small gaps to keep up, and fan out to sweep around Chuck's last known
+position; the alarm shuts itself off after he stays out of sight long enough.
 Guards can be eliminated with weapons, avoided by taking another route, or
 bypassed by crawling, timing movement, and using cover.
 

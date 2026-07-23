@@ -1004,6 +1004,176 @@ static void test_janitor_ai_is_seeded_and_visual_only(void)
     CHECK(first.janitors[0].wet_spots[0].active);
 }
 
+static void test_enemy_vision_cone_stealth_and_walls(void)
+{
+    /* Open corridor: a standing Chuck five tiles ahead is spotted and aimed at;
+     * the same spot while crawling is beyond the reduced detection range. */
+    static const char open_data[] =
+        "############\n"
+        "#S     M  E#\n"
+        "############\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 321);
+    CHECK(level_load_data(&state.level, "sight", open_data, strlen(open_data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    Enemy *guard = &state.enemies[0];
+    guard->dir = -1;
+    guard->on_ground = true;
+    guard->shoot_cooldown = 0.0f;
+    guard->encounter_decided = true; /* isolate the aim decision from alarms */
+    state.player.y = guard->y;
+    state.player.x = guard->x - 5.0f * TILE_SIZE;
+
+    state.player.crawling = false;
+    gameplay_ai_update_combat(&state, 0.016f);
+    CHECK(guard->aim_timer > 0.0f);
+
+    guard->aim_timer = 0.0f;
+    guard->shoot_cooldown = 0.0f;
+    state.player.crawling = true;
+    gameplay_ai_update_combat(&state, 0.016f);
+    CHECK(guard->aim_timer == 0.0f);
+
+    /* A pillar between guard and Chuck blocks the ray-cast line of sight. */
+    static const char wall_data[] =
+        "#############\n"
+        "#S  #    M E#\n"
+        "#############\n";
+    GameplayState walled = {0};
+    rng_seed(&walled.rng, 321);
+    CHECK(level_load_data(&walled.level, "wall", wall_data, strlen(wall_data),
+                          &walled.rng));
+    gameplay_ai_spawn_level_entities(&walled);
+    Enemy *wguard = &walled.enemies[0];
+    wguard->dir = -1;
+    wguard->on_ground = true;
+    wguard->shoot_cooldown = 0.0f;
+    wguard->encounter_decided = true;
+    walled.player.y = wguard->y;
+    walled.player.x = wguard->x - 6.0f * TILE_SIZE;
+    walled.player.crawling = false;
+    gameplay_ai_update_combat(&walled, 0.016f);
+    CHECK(wguard->aim_timer == 0.0f);
+}
+
+static void test_enemy_fires_vertical_shot_up_a_shaft(void)
+{
+    static const char data[] =
+        "#S   #\n"
+        "#    #\n"
+        "#    #\n"
+        "#M  E#\n"
+        "######\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 77);
+    CHECK(level_load_data(&state.level, "shaft", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    Enemy *guard = &state.enemies[0];
+    guard->on_ground = true;
+    guard->shoot_cooldown = 0.0f;
+    guard->encounter_decided = true;
+    /* Chuck is directly above the guard, three tiles up the shaft. */
+    state.player.x = guard->x;
+    state.player.y = guard->y - 3.0f * TILE_SIZE;
+
+    gameplay_ai_update_combat(&state, 0.016f);
+    CHECK(guard->aim_timer > 0.0f);
+    CHECK(guard->aim_vdir == -1);
+
+    gameplay_ai_update_combat(&state, guard->aim_timer + 0.001f);
+    bool fired_up = false;
+    for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
+    {
+        const Bullet *bullet = &state.enemy_bullets[i];
+        if (bullet->active && bullet->vx == 0.0f && bullet->vy < 0.0f)
+            fired_up = true;
+    }
+    CHECK(fired_up);
+}
+
+static void test_noise_draws_guards_to_investigate(void)
+{
+    static const char data[] =
+        "##############\n"
+        "#S  M        E#\n"
+        "##############\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 4242);
+    CHECK(level_load_data(&state.level, "noise", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    Enemy *guard = &state.enemies[0];
+    guard->on_ground = true;
+    guard->dir = -1; /* start facing away from the disturbance */
+
+    float noise_x = guard->x + ENEMY_W * 0.5f + 4.0f * TILE_SIZE;
+    float noise_y = guard->y + ENEMY_H * 0.5f;
+    gameplay_alert_enemies_to_noise(&state, noise_x, noise_y,
+                                    ENEMY_HEAR_RADIUS_SHOT);
+    CHECK(guard->investigate_timer > 0.0f);
+    CHECK(guard->dir == 1); /* turned toward the sound */
+
+    float previous_x = guard->x;
+    gameplay_ai_update_movement(&state, 0.1f);
+    CHECK(guard->x > previous_x); /* walked toward the disturbance */
+}
+
+static void test_guard_investigates_fallen_comrade(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S M M  E#\n"
+        "##########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 88);
+    CHECK(level_load_data(&state.level, "body", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 2);
+    Enemy *witness = &state.enemies[0];
+    witness->on_ground = true;
+    witness->dir = 1; /* face the neighbouring guard, away from Chuck */
+    state.enemies[1].dead = true; /* the comrade lies dead nearby */
+
+    gameplay_ai_update_combat(&state, 0.016f);
+    CHECK(witness->alerted_by_body);
+    CHECK(witness->investigate_timer > 0.0f || witness->raising_alarm);
+}
+
+static void test_pursuing_guard_hops_small_gap(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S       #\n"
+        "#M      E#\n"
+        "##  ######\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 55);
+    CHECK(level_load_data(&state.level, "gap", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    Enemy *guard = &state.enemies[0];
+    guard->on_ground = true;
+    guard->dir = 1;
+    guard->provoked = true;
+    guard->obstacle_avoid_timer = 0.0f;
+    guard->pursuit_target_x = 6.0f * TILE_SIZE + TILE_SIZE * 0.5f;
+    guard->pursuit_target_y = guard->y + ENEMY_H * 0.5f;
+    guard->has_pursuit_target = true;
+    state.player.x = 5000.0f; /* keep Chuck out of sight for this test */
+    state.player.y = 5000.0f;
+
+    gameplay_ai_update_movement(&state, 0.016f);
+    CHECK(!guard->on_ground);
+    CHECK(guard->vy < 0.0f); /* leapt the gap instead of stalling at the edge */
+}
+
 int main(void)
 {
     test_rng_is_reproducible();
@@ -1033,6 +1203,11 @@ int main(void)
     test_hazards_emit_specific_impact_sounds();
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();
+    test_enemy_vision_cone_stealth_and_walls();
+    test_enemy_fires_vertical_shot_up_a_shaft();
+    test_noise_draws_guards_to_investigate();
+    test_guard_investigates_fallen_comrade();
+    test_pursuing_guard_hops_small_gap();
 
     if (failures != 0)
     {

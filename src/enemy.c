@@ -31,6 +31,12 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->raising_alarm = false;
     enemy->alarm_switch_index = -1;
     enemy->alarm_use_timer = 0.0f;
+    enemy->investigate_timer = 0.0f;
+    enemy->investigate_x = x + ENEMY_W * 0.5f;
+    enemy->investigate_y = y + ENEMY_H * 0.5f;
+    enemy->investigate_scan_timer = 0.0f;
+    enemy->alerted_by_body = false;
+    enemy->aim_vdir = 0;
     enemy->talking = false;
     enemy->talk_timer = 0.0f;
     enemy->talk_partner = -1;
@@ -204,6 +210,50 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
                false);
 }
 
+static bool enemy_box_tiles_clear(const Level *level, float x, float y,
+                                  float w, float h)
+{
+    int left = (int)floorf(x / TILE_SIZE);
+    int right = (int)floorf((x + w - 1.0f) / TILE_SIZE);
+    int top = (int)floorf(y / TILE_SIZE);
+    int bottom = (int)floorf((y + h - 1.0f) / TILE_SIZE);
+    for (int r = top; r <= bottom; ++r)
+        for (int c = left; c <= right; ++c)
+            if (level_is_solid(level, c, r))
+                return false;
+    return true;
+}
+
+static bool enemy_floor_ahead(const Level *level, const Enemy *enemy, int dir)
+{
+    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f : enemy->x - 3.0f;
+    int col = (int)floorf(probe_x / TILE_SIZE);
+    int row = (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
+    return level_is_solid(level, col, row) || level_is_ladder(level, col, row);
+}
+
+/* Is there a landing within jump range across a gap in the given direction? */
+static bool enemy_can_jump_gap(const Level *level, const Enemy *enemy, int dir)
+{
+    int row = (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
+    int front = dir > 0
+                    ? (int)floorf((enemy->x + ENEMY_W + 3.0f) / TILE_SIZE)
+                    : (int)floorf((enemy->x - 3.0f) / TILE_SIZE);
+    for (int gap = 1; gap <= ENEMY_JUMP_MAX_GAP_TILES; ++gap)
+    {
+        int col = front + dir * gap;
+        if (!level_is_solid(level, col, row) &&
+            !level_is_ladder(level, col, row))
+            continue;
+        float x = col * (float)TILE_SIZE + (TILE_SIZE - ENEMY_W) * 0.5f;
+        if (enemy_box_tiles_clear(level, x, enemy->y, ENEMY_W, ENEMY_H) &&
+            enemy_box_tiles_clear(level, x, enemy->y - TILE_SIZE * 0.8f,
+                                  ENEMY_W, ENEMY_H))
+            return true;
+    }
+    return false;
+}
+
 static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                                  bool pursuing, bool alarmed, float target_x,
                                  float target_y, bool hemmed_in, Rng *rng)
@@ -275,6 +325,21 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         {
             enemy->dir = -enemy->dir;
             enemy->vx = (float)enemy->dir * speed;
+        }
+
+        /* While chasing, hop a short gap rather than stalling at its edge,
+         * but only when the target lies ahead and not below it (a lower target
+         * is still reached by walking off the ledge, as before). */
+        if (following_target && !hemmed_in && enemy->vx != 0.0f &&
+            !enemy_floor_ahead(level, enemy, enemy->dir) &&
+            target_dx * (float)enemy->dir > 0.0f &&
+            target_y < enemy_center_y + TILE_SIZE * 0.75f &&
+            enemy_can_jump_gap(level, enemy, enemy->dir))
+        {
+            enemy->vy = -ENEMY_JUMP_SPEED;
+            if (fabsf(enemy->vx) < ENEMY_JUMP_MIN_SPEED)
+                enemy->vx = (float)enemy->dir * ENEMY_JUMP_MIN_SPEED;
+            enemy->on_ground = false;
         }
 
         /* Patrols use ladders occasionally. During an alarm, take a usable

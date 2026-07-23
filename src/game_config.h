@@ -114,6 +114,46 @@
 #define ENEMY_CLIMB_CHANCE 3
 #define ENEMY_OBSTACLE_AVOID_TIME 1.25f
 #define ENEMY_HP 3
+
+/* Perception. Guards no longer see only along their exact floor row: they have
+ * a forward vision cone (wide field of view, diagonal sight up and down) with a
+ * ray-cast line of sight that walls, floors, and crates block. A short
+ * peripheral radius lets a guard notice something right next to or behind it. */
+#define ENEMY_VIEW_RANGE (7 * TILE_SIZE)
+/* cos of the cone half-angle. 0.34 => ~70deg half-angle (~140deg total FOV). */
+#define ENEMY_VIEW_CONE_COS 0.34f
+#define ENEMY_PERIPHERAL_RANGE (1.6f * TILE_SIZE)
+/* A crawling player is stealthier: spotted only at closer range. */
+#define ENEMY_CRAWL_VIEW_FACTOR 0.55f
+#define ENEMY_LOS_STEP 6.0f
+
+/* Hearing: gunfire and explosions draw nearby guards to investigate. */
+#define ENEMY_HEAR_RADIUS_SHOT (7.0f * TILE_SIZE)
+#define ENEMY_HEAR_RADIUS_BLAST (11.0f * TILE_SIZE)
+
+/* Suspicion / investigation: a soft alert short of a full building alarm. A
+ * guard walks warily to the disturbance, scans, then resumes its patrol. */
+#define ENEMY_INVESTIGATE_TIME 5.0f
+#define ENEMY_INVESTIGATE_LOOK_TIME 1.2f
+#define ENEMY_INVESTIGATE_REACH 20.0f
+#define ENEMY_INVESTIGATE_SCAN_FLIP 0.55f
+/* Discovering a fallen comrade is a strong signal to raise the alarm. */
+#define ENEMY_BODY_NOTICE_RANGE (3.0f * TILE_SIZE)
+#define GUARD_BODY_ALARM_CHANCE 65
+
+/* Combat tactics */
+#define ENEMY_AIM_LEAD 0.26f /* seconds of target velocity to lead a shot */
+#define ENEMY_VERTICAL_SHOOT_RANGE (4 * TILE_SIZE)
+#define ENEMY_VERTICAL_SHOOT_HALF_W (TILE_SIZE * 0.55f)
+/* Posted-up guards hold and fire from range instead of crowding into melee. */
+#define ENEMY_KEEP_DISTANCE (3.2f * TILE_SIZE)
+
+/* Pursuit movement: guards hop small gaps while chasing (patrol is unchanged). */
+#define ENEMY_JUMP_SPEED 300.0f
+#define ENEMY_JUMP_MIN_SPEED 120.0f
+#define ENEMY_JUMP_MAX_GAP_TILES 2
+/* A search party fans out around the last sighting instead of clustering. */
+#define ENEMY_SEARCH_FAN 1.5f
 #define ENEMY_ALARM_SPEED_MULTIPLIER 1.28f
 #define ENEMY_ALARM_AIM_MULTIPLIER 0.62f
 #define ENEMY_ALARM_COOLDOWN_MULTIPLIER 0.55f

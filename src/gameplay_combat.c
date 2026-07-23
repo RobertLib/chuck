@@ -144,6 +144,7 @@ static void explode_gas_canister(GameplayState *state,
     game_events_explosion(&state->events, x, y, 72);
     gameplay_world_sound(state, SFX_EXPLOSION, x, y);
     game_events_camera_shake(&state->events, 8.0f, 0.32f);
+    gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
 
     for (int i = 0; i < state->enemy_count; ++i)
     {
@@ -207,6 +208,7 @@ static void explode_grenade(GameplayState *state, CampaignState *campaign,
     game_events_explosion(&state->events, x, y, 64);
     gameplay_world_sound(state, SFX_EXPLOSION, x, y);
     game_events_camera_shake(&state->events, 7.0f, 0.30f);
+    gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
 
     for (int i = 0; i < state->enemy_count; ++i)
     {
@@ -262,6 +264,7 @@ static void explode_rocket(GameplayState *state, CampaignState *campaign,
     game_events_explosion(&state->events, x, y, 88);
     gameplay_world_sound(state, SFX_EXPLOSION, x, y);
     game_events_camera_shake(&state->events, 10.0f, 0.38f);
+    gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
 
     for (int i = 0; i < state->enemy_count; ++i)
     {
@@ -359,6 +362,7 @@ void gameplay_combat_update_explosives(GameplayState *state,
         game_events_explosion(&state->events, x, y, 48);
         gameplay_world_sound(state, SFX_EXPLOSION, x, y);
         game_events_camera_shake(&state->events, 5.0f, 0.24f);
+        gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
         damage_crates_in_radius(state, campaign, x, y, MINE_RADIUS);
         if (state->invuln_timer <= 0.0f &&
             within_radius(state->player.x + PLAYER_W * 0.5f,
@@ -507,6 +511,10 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             state->player.bazooka_firing = false;
             state->player.action_timer = 0.12f;
             game_events_sound(&state->events, SFX_PLAYER_SHOT);
+            gameplay_alert_enemies_to_noise(
+                state, state->player.x + PLAYER_W * 0.5f,
+                state->player.y + player_height(state) * 0.5f,
+                ENEMY_HEAR_RADIUS_SHOT);
             break;
         }
     }
@@ -780,16 +788,23 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt)
         bullet->y += bullet->vy * dt;
         if (bullet->x + BULLET_W < 0.0f ||
             bullet->x > state->level.map.width * (float)TILE_SIZE ||
-            bullet->y + BULLET_H < 0.0f)
+            bullet->y + BULLET_H < 0.0f ||
+            bullet->y > state->level.map.height * (float)TILE_SIZE)
         {
             bullet->active = false;
             continue;
         }
 
-        int col = (int)floorf((bullet->x +
-                               (bullet->vx > 0.0f ? BULLET_W - 1 : 0)) /
+        int col = (int)floorf((bullet->x + BULLET_W * 0.5f +
+                               (bullet->vx > 0.0f    ? BULLET_W * 0.5f - 1.0f
+                                : bullet->vx < 0.0f  ? -(BULLET_W * 0.5f)
+                                                     : 0.0f)) /
                               TILE_SIZE);
-        int row = (int)floorf((bullet->y + BULLET_H * 0.5f) / TILE_SIZE);
+        int row = (int)floorf((bullet->y + BULLET_H * 0.5f +
+                               (bullet->vy > 0.0f    ? BULLET_H * 0.5f - 1.0f
+                                : bullet->vy < 0.0f  ? -(BULLET_H * 0.5f)
+                                                     : 0.0f)) /
+                              TILE_SIZE);
         if (level_is_solid(&state->level, col, row))
         {
             bullet->active = false;

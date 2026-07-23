@@ -44,6 +44,18 @@ typedef struct
     bool raising_alarm;
     int alarm_switch_index;
     float alarm_use_timer;
+    /* Suspicion state: a guard walks to a heard/seen disturbance, scans, and
+     * returns to patrol. Escalates to real pursuit the moment it sees Chuck. */
+    float investigate_timer;
+    float investigate_x;
+    float investigate_y;
+    float investigate_scan_timer;
+    /* Latched once a guard has reacted to a fallen comrade, so it does not keep
+     * re-triggering while standing next to the same body. */
+    bool alerted_by_body;
+    /* Vertical firing direction for the pending shot: 0 = horizontal,
+     * -1 = straight up, +1 = straight down. */
+    int aim_vdir;
     bool talking;        /* true while chatting with another enemy */
     float talk_timer;    /* seconds remaining while talking */
     float talk_cooldown; /* seconds remaining before eligible to talk again */

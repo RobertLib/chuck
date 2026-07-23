@@ -79,27 +79,133 @@ static bool horizontal_los_clear(const GameplayState *state,
     return !gameplay_crate_blocks_row(state, ax, bx, row);
 }
 
+static bool point_in_active_crate(const GameplayState *state,
+                                  float px, float py)
+{
+    for (int i = 0; i < state->level.runtime.crate_count; ++i)
+    {
+        const Crate *crate = &state->level.runtime.crates[i];
+        if (crate->active &&
+            px >= crate->x && px < crate->x + CRATE_W &&
+            py >= crate->y && py < crate->y + CRATE_H)
+            return true;
+    }
+    return false;
+}
+
+/* Sample the segment between two world points and report whether solid tiles
+ * or crates block the sight line. Ladders and elevator shafts are transparent
+ * (level_is_solid already treats them as non-solid), so a guard can see through
+ * a ladder but not through a floor. Endpoints are skipped: both entity centres
+ * sit inside empty tiles and must not count as self-occlusion. */
+static bool los_clear(const GameplayState *state,
+                      float ax, float ay, float bx, float by)
+{
+    float dx = bx - ax;
+    float dy = by - ay;
+    float dist = sqrtf(dx * dx + dy * dy);
+    int steps = (int)(dist / ENEMY_LOS_STEP) + 1;
+    for (int s = 1; s < steps; ++s)
+    {
+        float t = (float)s / (float)steps;
+        float px = ax + dx * t;
+        float py = ay + dy * t;
+        if (level_is_solid(&state->level, (int)floorf(px / TILE_SIZE),
+                           (int)floorf(py / TILE_SIZE)))
+            return false;
+        if (point_in_active_crate(state, px, py))
+            return false;
+    }
+    return true;
+}
+
+/* Can the guard see the given world point? Combines a range limit, a forward
+ * vision cone, a close-range peripheral radius, and a ray-cast line of sight. */
+static bool enemy_sees_point(const GameplayState *state, const Enemy *enemy,
+                             float tx, float ty, float range, float peripheral)
+{
+    float ex = enemy->x + ENEMY_W * 0.5f;
+    float ey = enemy->y + ENEMY_H * 0.5f;
+    float dx = tx - ex;
+    float dy = ty - ey;
+    float dist2 = dx * dx + dy * dy;
+    if (dist2 <= peripheral * peripheral)
+        return los_clear(state, ex, ey, tx, ty);
+    if (dist2 > range * range)
+        return false;
+    float dist = sqrtf(dist2);
+    /* Facing is horizontal (enemy->dir, 0). The dot product with the unit
+     * direction to the target is the cosine of the angle between them. */
+    if (dx * (float)enemy->dir / dist < ENEMY_VIEW_CONE_COS)
+        return false;
+    return los_clear(state, ex, ey, tx, ty);
+}
+
 static bool enemy_has_los(const GameplayState *state, const Enemy *enemy)
 {
-    float enemy_x = enemy->x + ENEMY_W * 0.5f;
-    float enemy_y = enemy->y + ENEMY_H * 0.5f;
     float player_x = state->player.x + PLAYER_W * 0.5f;
     float player_h = state->player.crawling
                          ? (float)PLAYER_CRAWL_H
                          : (float)PLAYER_H;
     float player_y = state->player.y + player_h * 0.5f;
-    if (enemy->talking &&
-        (fabsf(player_x - enemy_x) > ENEMY_TALK_NOTICE_RADIUS ||
-         fabsf(player_y - enemy_y) > ENEMY_TALK_NOTICE_RADIUS))
+    float range = ENEMY_VIEW_RANGE;
+    float peripheral = ENEMY_PERIPHERAL_RANGE;
+    /* Crawling shrinks both cone reach and the behind-the-back radius, so a
+     * low, slow Chuck can slip closer and past a guard before being noticed. */
+    if (state->player.crawling)
+    {
+        range *= ENEMY_CRAWL_VIEW_FACTOR;
+        peripheral *= ENEMY_CRAWL_VIEW_FACTOR;
+    }
+    /* A guard mid-conversation is distracted and only notices Chuck up close. */
+    if (enemy->talking && range > ENEMY_TALK_NOTICE_RADIUS)
+        range = ENEMY_TALK_NOTICE_RADIUS;
+    if (enemy_sees_point(state, enemy, player_x, player_y, range, peripheral))
+        return true;
+    /* Vertical awareness lane: a guard covers its own column, so it notices
+     * Chuck climbing a ladder directly above or dropping in below within a
+     * limited range even though that lies outside the forward cone. */
+    float ex = enemy->x + ENEMY_W * 0.5f;
+    float ey = enemy->y + ENEMY_H * 0.5f;
+    return fabsf(player_x - ex) <= ENEMY_VERTICAL_SHOOT_HALF_W &&
+           fabsf(player_y - ey) <= ENEMY_VERTICAL_SHOOT_RANGE &&
+           los_clear(state, ex, ey, player_x, player_y);
+}
+
+/* Decide whether a guard that can see Chuck also has a clean firing solution,
+ * and along which axis. Returns 0 for no shot; otherwise fills *vdir with
+ * 0 (horizontal), -1 (up), or +1 (down). Horizontal fire is preferred. */
+static bool enemy_shot_solution(const GameplayState *state, const Enemy *enemy,
+                                int *vdir)
+{
+    if (!enemy_has_los(state, enemy))
         return false;
-    if (fabsf(player_x - enemy_x) > ENEMY_SHOOT_RANGE ||
-        fabsf(player_y - enemy_y) > TILE_SIZE * 1.2f)
-        return false;
-    float dx = player_x - enemy_x;
-    if ((dx > 0.0f && enemy->dir < 0) ||
-        (dx < 0.0f && enemy->dir > 0))
-        return false;
-    return horizontal_los_clear(state, enemy_x, player_x, enemy_y);
+    float ex = enemy->x + ENEMY_W * 0.5f;
+    float ey = enemy->y + ENEMY_H * 0.5f;
+    float player_x = state->player.x + PLAYER_W * 0.5f;
+    float player_h = state->player.crawling
+                         ? (float)PLAYER_CRAWL_H
+                         : (float)PLAYER_H;
+    float player_y = state->player.y + player_h * 0.5f;
+    float dx = player_x - ex;
+    float dy = player_y - ey;
+
+    bool facing_player = !((dx > 0.0f && enemy->dir < 0) ||
+                           (dx < 0.0f && enemy->dir > 0));
+    if (facing_player && fabsf(dx) <= ENEMY_SHOOT_RANGE &&
+        fabsf(dy) <= TILE_SIZE * 1.2f &&
+        horizontal_los_clear(state, ex, player_x, ey))
+    {
+        *vdir = 0;
+        return true;
+    }
+    if (fabsf(dx) <= ENEMY_VERTICAL_SHOOT_HALF_W &&
+        fabsf(dy) <= ENEMY_VERTICAL_SHOOT_RANGE)
+    {
+        *vdir = dy < 0.0f ? -1 : 1;
+        return true;
+    }
+    return false;
 }
 
 static bool alarm_target(const GameplayState *state,
@@ -852,21 +958,80 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
             }
         }
 
-        bool pursuing = alarm_pursuit || enemy->provoked || switch_pursuit;
+        /* Suspicion. When not already alarmed or committed to a switch, a guard
+         * that heard a noise or found a body walks to the disturbance, scans,
+         * then drops back to patrol. Seeing Chuck escalates it to real pursuit
+         * via the combat/encounter passes. */
+        bool investigating = false;
+        if (!alarm_pursuit && !switch_pursuit && !enemy->provoked &&
+            enemy->investigate_timer > 0.0f)
+        {
+            enemy->investigate_timer -= dt;
+            if (enemy->investigate_timer < 0.0f)
+                enemy->investigate_timer = 0.0f;
+            if (enemy->investigate_timer > 0.0f)
+            {
+                investigating = true;
+                enemy->pursuit_target_x = enemy->investigate_x;
+                enemy->pursuit_target_y = enemy->investigate_y;
+                enemy->has_pursuit_target = true;
+                float ex = enemy->x + ENEMY_W * 0.5f;
+                float ey = enemy->y + ENEMY_H * 0.5f;
+                if (enemy->on_ground &&
+                    fabsf(enemy->investigate_x - ex) <=
+                        ENEMY_INVESTIGATE_REACH &&
+                    fabsf(enemy->investigate_y - ey) <= TILE_SIZE * 0.75f)
+                {
+                    /* Arrived: shorten to a brief scan and turn on the spot. */
+                    if (enemy->investigate_timer > ENEMY_INVESTIGATE_LOOK_TIME)
+                        enemy->investigate_timer = ENEMY_INVESTIGATE_LOOK_TIME;
+                    enemy->investigate_scan_timer -= dt;
+                    if (enemy->investigate_scan_timer <= 0.0f)
+                    {
+                        enemy->dir = -enemy->dir;
+                        enemy->investigate_scan_timer =
+                            ENEMY_INVESTIGATE_SCAN_FLIP;
+                    }
+                }
+            }
+        }
+
+        bool pursuing = alarm_pursuit || enemy->provoked || switch_pursuit ||
+                        investigating;
         bool sees_player = pursuing && enemy_has_los(state, enemy);
         if (sees_player)
         {
+            float height = state->player.crawling
+                               ? (float)PLAYER_CRAWL_H
+                               : (float)PLAYER_H;
+            float player_cx = state->player.x + PLAYER_W * 0.5f;
+            float player_cy = state->player.y + height * 0.5f;
             if (!switch_pursuit)
             {
-                float height = state->player.crawling
-                                   ? (float)PLAYER_CRAWL_H
-                                   : (float)PLAYER_H;
-                enemy->pursuit_target_x = state->player.x + PLAYER_W * 0.5f;
-                enemy->pursuit_target_y = state->player.y + height * 0.5f;
+                float target_x = player_cx;
+                /* Posted-up tactics: with a clean horizontal shot already in
+                 * range, hold position and fire instead of crowding into
+                 * melee. Out of range, keep closing the distance. */
+                int shot_vdir = 0;
+                float enemy_cx = enemy->x + ENEMY_W * 0.5f;
+                if (enemy_shot_solution(state, enemy, &shot_vdir) &&
+                    shot_vdir == 0 &&
+                    fabsf(player_cx - enemy_cx) <= ENEMY_KEEP_DISTANCE)
+                    target_x = enemy_cx;
+                enemy->pursuit_target_x = target_x;
+                enemy->pursuit_target_y = player_cy;
                 enemy->has_pursuit_target = true;
             }
             if (alarm_pursuit)
                 gameplay_refresh_alarm_from_player(state);
+            /* A suspicious guard that actually sees Chuck keeps chasing the
+             * live position and stays alert for a while after losing sight. */
+            if (investigating)
+            {
+                enemy->investigate_x = player_cx;
+                enemy->investigate_y = player_cy;
+                enemy->investigate_timer = ENEMY_INVESTIGATE_TIME;
+            }
         }
         else if (alarm_pursuit)
         {
@@ -876,18 +1041,24 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
             {
                 float enemy_x = enemy->x + ENEMY_W * 0.5f;
                 float enemy_y = enemy->y + ENEMY_H * 0.5f;
-                bool near_last_sighting =
-                    fabsf(target_x - enemy_x) <=
+                /* Fan the search party out around the last sighting so guards
+                 * cover different ground instead of stacking on one pixel. */
+                float search_x = target_x +
+                                 (float)((i % 3) - 1) *
+                                     ENEMY_ALARM_SEARCH_RADIUS *
+                                     ENEMY_SEARCH_FAN;
+                bool near_search_point =
+                    fabsf(search_x - enemy_x) <=
                         ENEMY_ALARM_SEARCH_NEAR_RADIUS &&
                     fabsf(target_y - enemy_y) <= TILE_SIZE * 0.75f;
-                if (near_last_sighting)
+                if (near_search_point)
                 {
-                    /* Once at the last known position, sweep both sides of
-                     * the corridor instead of standing on one exact pixel. */
+                    /* Once at its search point, sweep both sides of the
+                     * corridor instead of standing on one exact pixel. */
                     float phase = enemy->anim_time * 0.45f + (float)i * 1.7f;
-                    target_x += sinf(phase) * ENEMY_ALARM_SEARCH_RADIUS;
+                    search_x += sinf(phase) * ENEMY_ALARM_SEARCH_RADIUS;
                 }
-                enemy->pursuit_target_x = target_x;
+                enemy->pursuit_target_x = search_x;
                 enemy->pursuit_target_y = target_y;
                 enemy->has_pursuit_target = true;
             }
@@ -976,6 +1147,7 @@ static void update_enemy_reactions(GameplayState *state)
         if (rng_range(&state->rng, 100) < ENEMY_RETALIATE_CHANCE)
         {
             enemy->dir = dx > 0.0f ? 1 : -1;
+            enemy->aim_vdir = 0;
             enemy->aim_target_x = player_x;
             enemy->aim_target_y = state->player.y + PLAYER_H * 0.15f;
             enemy->aim_timer = ENEMY_AIM_TIME *
@@ -1027,6 +1199,76 @@ static void update_guard_encounters(GameplayState *state, float dt)
     }
 }
 
+/* A calm guard that sees a fallen comrade nearby becomes suspicious, walks over
+ * to investigate, and often sprints to raise the building alarm. Latched per
+ * guard so it reacts once, not every frame it stands beside the body. */
+static void update_body_discovery(GameplayState *state)
+{
+    if (gameplay_alarm_active(state))
+        return;
+    for (int i = 0; i < state->enemy_count; ++i)
+    {
+        Enemy *enemy = &state->enemies[i];
+        if (enemy->dead || enemy->climbing || enemy->alerted_by_body ||
+            enemy->raising_alarm || enemy->provoked ||
+            enemy->investigate_timer > 0.0f)
+            continue;
+
+        float bx = 0.0f;
+        float by = 0.0f;
+        bool found = false;
+        for (int j = 0; j < state->enemy_count && !found; ++j)
+        {
+            const Enemy *body = &state->enemies[j];
+            if (j == i || !body->dead)
+                continue;
+            float cx = body->x + ENEMY_W * 0.5f;
+            float cy = body->y + ENEMY_H * 0.5f;
+            if (enemy_sees_point(state, enemy, cx, cy, ENEMY_BODY_NOTICE_RANGE,
+                                 ENEMY_PERIPHERAL_RANGE))
+            {
+                bx = cx;
+                by = cy;
+                found = true;
+            }
+        }
+        for (int j = 0; j < state->dog_count && !found; ++j)
+        {
+            const Dog *body = &state->dogs[j];
+            if (!body->dead)
+                continue;
+            float cx = body->x + DOG_W * 0.5f;
+            float cy = body->y + DOG_H * 0.5f;
+            if (enemy_sees_point(state, enemy, cx, cy, ENEMY_BODY_NOTICE_RANGE,
+                                 ENEMY_PERIPHERAL_RANGE))
+            {
+                bx = cx;
+                by = cy;
+                found = true;
+            }
+        }
+        if (!found)
+            continue;
+
+        enemy->alerted_by_body = true;
+        enemy->investigate_x = bx;
+        enemy->investigate_y = by;
+        enemy->investigate_timer = ENEMY_INVESTIGATE_TIME;
+        enemy->investigate_scan_timer = ENEMY_INVESTIGATE_SCAN_FLIP;
+        enemy->dir = bx < enemy->x + ENEMY_W * 0.5f ? -1 : 1;
+
+        int switch_index = nearest_alarm_switch(state, enemy);
+        if (switch_index >= 0 &&
+            !another_guard_is_raising_alarm(state, i) &&
+            rng_range(&state->rng, 100) < GUARD_BODY_ALARM_CHANCE)
+            guard_run_to_alarm(state, enemy, switch_index);
+        else
+            gameplay_world_sound(state, SFX_ENEMY_ALERT,
+                                 enemy->x + ENEMY_W * 0.5f,
+                                 enemy->y + ENEMY_H * 0.5f);
+    }
+}
+
 static void fire_enemy_bullet(GameplayState *state, Enemy *enemy)
 {
     for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
@@ -1035,22 +1277,36 @@ static void fire_enemy_bullet(GameplayState *state, Enemy *enemy)
         if (bullet->active)
             continue;
         float enemy_x = enemy->x + ENEMY_W * 0.5f;
-        int direction = fabsf(enemy->aim_target_x - enemy_x) < 0.001f
-                            ? (enemy->dir >= 0 ? 1 : -1)
-                            : (enemy->aim_target_x > enemy_x ? 1 : -1);
-        float shot_y = enemy->aim_target_y;
-        float minimum = enemy->y + ENEMY_H * ENEMY_MUZZLE_MIN_Y_FACTOR;
-        float maximum = enemy->y + ENEMY_H * ENEMY_MUZZLE_MAX_Y_FACTOR;
-        if (shot_y < minimum)
-            shot_y = minimum;
-        if (shot_y > maximum)
-            shot_y = maximum;
-        bullet->vx = direction * ENEMY_BULLET_SPEED;
-        bullet->vy = 0.0f;
-        bullet->x = direction > 0
-                        ? enemy->x + ENEMY_W
-                        : enemy->x - BULLET_W;
-        bullet->y = shot_y - BULLET_H * 0.5f;
+        if (enemy->aim_vdir != 0)
+        {
+            /* Straight vertical shot: fire up or down the guard's own column,
+             * e.g. at Chuck climbing a ladder above or dropping in below. */
+            bullet->vx = 0.0f;
+            bullet->vy = (float)enemy->aim_vdir * ENEMY_BULLET_SPEED;
+            bullet->x = enemy_x - BULLET_W * 0.5f;
+            bullet->y = enemy->aim_vdir < 0
+                            ? enemy->y - BULLET_H
+                            : enemy->y + ENEMY_H;
+        }
+        else
+        {
+            int direction = fabsf(enemy->aim_target_x - enemy_x) < 0.001f
+                                ? (enemy->dir >= 0 ? 1 : -1)
+                                : (enemy->aim_target_x > enemy_x ? 1 : -1);
+            float shot_y = enemy->aim_target_y;
+            float minimum = enemy->y + ENEMY_H * ENEMY_MUZZLE_MIN_Y_FACTOR;
+            float maximum = enemy->y + ENEMY_H * ENEMY_MUZZLE_MAX_Y_FACTOR;
+            if (shot_y < minimum)
+                shot_y = minimum;
+            if (shot_y > maximum)
+                shot_y = maximum;
+            bullet->vx = direction * ENEMY_BULLET_SPEED;
+            bullet->vy = 0.0f;
+            bullet->x = direction > 0
+                            ? enemy->x + ENEMY_W
+                            : enemy->x - BULLET_W;
+            bullet->y = shot_y - BULLET_H * 0.5f;
+        }
         bullet->active = true;
         enemy->recoil_timer = 0.14f;
         gameplay_world_sound(state, SFX_ENEMY_SHOT,
@@ -1062,6 +1318,7 @@ static void fire_enemy_bullet(GameplayState *state, Enemy *enemy)
 void gameplay_ai_update_combat(GameplayState *state, float dt)
 {
     update_guard_encounters(state, dt);
+    update_body_discovery(state);
     update_enemy_reactions(state);
     for (int i = 0; i < state->enemy_count; ++i)
     {
@@ -1085,13 +1342,30 @@ void gameplay_ai_update_combat(GameplayState *state, float dt)
             continue;
         }
         enemy->shoot_cooldown -= dt;
-        if (enemy->shoot_cooldown > 0.0f || !enemy_has_los(state, enemy))
+        int vdir = 0;
+        if (enemy->shoot_cooldown > 0.0f ||
+            !enemy_shot_solution(state, enemy, &vdir))
             continue;
-        enemy->aim_target_x = state->player.x + PLAYER_W * 0.5f;
-        enemy->aim_target_y = state->player.y +
-                              (state->player.crawling
-                                   ? PLAYER_CRAWL_H * 0.45f
-                                   : PLAYER_H * 0.15f);
+        enemy->aim_vdir = vdir;
+        if (vdir == 0)
+        {
+            /* Lead a moving target so guards stop firing behind a running
+             * Chuck. The lead is capped implicitly by the clamp in the fire. */
+            enemy->aim_target_x = state->player.x + PLAYER_W * 0.5f +
+                                  state->player.vx * ENEMY_AIM_LEAD;
+            enemy->aim_target_y = state->player.y +
+                                  (state->player.crawling
+                                       ? PLAYER_CRAWL_H * 0.45f
+                                       : PLAYER_H * 0.15f);
+        }
+        else
+        {
+            enemy->aim_target_x = enemy->x + ENEMY_W * 0.5f;
+            enemy->aim_target_y = state->player.y +
+                                  (state->player.crawling
+                                       ? PLAYER_CRAWL_H * 0.5f
+                                       : PLAYER_H * 0.5f);
+        }
         enemy->aim_timer = ENEMY_AIM_TIME *
                            (gameplay_alarm_active(state)
                                 ? ENEMY_ALARM_AIM_MULTIPLIER
