@@ -30,9 +30,27 @@ static bool crate_position_clear(const GameplayState *state, int crate_index,
     return true;
 }
 
-static float move_crate_x(GameplayState *state, int crate_index, float dx)
+static int crate_blocking_enemy(const GameplayState *state, float x, float y)
+{
+    for (int i = 0; i < state->enemy_count; ++i)
+    {
+        const Enemy *enemy = &state->enemies[i];
+        if (!enemy->dead &&
+            gameplay_boxes_overlap(x, y, CRATE_W, CRATE_H,
+                                   enemy->x, enemy->y, ENEMY_W, ENEMY_H))
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static float move_crate_x(GameplayState *state, int crate_index, float dx,
+                          int *blocking_enemy)
 {
     Crate *crate = &state->level.runtime.crates[crate_index];
+    if (blocking_enemy != NULL)
+        *blocking_enemy = -1;
     if (!crate->active || dx == 0.0f)
         return 0.0f;
     float moved = 0.0f;
@@ -41,9 +59,16 @@ static float move_crate_x(GameplayState *state, int crate_index, float dx)
     while (remaining > 0.0f)
     {
         float step = fminf(remaining, 1.0f) * sign;
+        int enemy_index =
+            crate_blocking_enemy(state, crate->x + step, crate->y);
         if (!crate_position_clear(state, crate_index,
-                                  crate->x + step, crate->y))
+                                  crate->x + step, crate->y) ||
+            enemy_index >= 0)
+        {
+            if (blocking_enemy != NULL)
+                *blocking_enemy = enemy_index;
             break;
+        }
         crate->x += step;
         moved += step;
         remaining -= fabsf(step);
@@ -123,7 +148,14 @@ void gameplay_update_crates(GameplayState *state, CampaignState *campaign,
             crate->vy = MAX_FALL_SPEED;
 
         float desired_x = crate->vx * dt;
-        float moved_x = move_crate_x(state, i, desired_x);
+        int blocking_enemy = -1;
+        float moved_x = move_crate_x(state, i, desired_x,
+                                     &blocking_enemy);
+        if (blocking_enemy >= 0 &&
+            !state->enemies[blocking_enemy].provoked)
+        {
+            gameplay_provoke_enemy(state, blocking_enemy);
+        }
         if (fabsf(moved_x - desired_x) > 0.01f)
             crate->vx = 0.0f;
 
@@ -210,9 +242,17 @@ void gameplay_resolve_player_crates(GameplayState *state,
             float penetration = direction > 0
                                     ? player->x + PLAYER_W - crate->x
                                     : crate->x + CRATE_W - player->x;
+            int blocking_enemy = -1;
             float moved = move_crate_x(state, i,
-                                       direction * (penetration + 0.5f));
-            if (fabsf(moved) > 0.0f)
+                                       direction * (penetration + 0.5f),
+                                       &blocking_enemy);
+            if (blocking_enemy >= 0)
+            {
+                crate->vx = 0.0f;
+                if (!state->enemies[blocking_enemy].provoked)
+                    gameplay_provoke_enemy(state, blocking_enemy);
+            }
+            else if (fabsf(moved) > 0.0f)
             {
                 crate->vx = (float)direction * CRATE_PUSH_SPEED;
                 if (started_push)

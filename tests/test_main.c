@@ -395,6 +395,57 @@ static void test_crate_movement_emits_sounds(void)
                             SFX_CRATE_PUSH));
 }
 
+static void test_crate_stops_at_enemy_and_triggers_counterattack(void)
+{
+    static const char data[] =
+        "#########\n"
+        "#S B M E#\n"
+        "#########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 314);
+    CHECK(level_load_data(&state.level, "crate enemy", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.level.runtime.crate_count == 1);
+    CHECK(state.enemy_count == 1);
+
+    Crate *crate = &state.level.runtime.crates[0];
+    Enemy *enemy = &state.enemies[0];
+    crate->x = enemy->x - CRATE_W - 2.0f;
+    float enemy_x = enemy->x;
+    float crate_contact_x = enemy->x - CRATE_W;
+
+    state.player.x = crate->x - PLAYER_W + 4.0f;
+    state.player.y = enemy->y;
+    state.player.vx = PLAYER_WALK_SPEED;
+    gameplay_resolve_player_crates(&state,
+                                   crate->x - PLAYER_W,
+                                   state.player.y, PLAYER_H);
+
+    CHECK(fabsf(crate->x - crate_contact_x) < 0.01f);
+    CHECK(fabsf(crate->vx) < 0.01f);
+    CHECK(fabsf(enemy->x - enemy_x) < 0.01f);
+    CHECK(enemy->provoked);
+    CHECK(enemy->dir == -1);
+    CHECK(fabsf(enemy->aim_timer - ENEMY_AIM_TIME) < 0.01f);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_ENEMY_ALERT));
+
+    game_events_clear(&state.events);
+    enemy->aim_timer = ENEMY_AIM_TIME * 0.5f;
+    state.player.x = crate->x - PLAYER_W + 4.0f;
+    state.player.vx = PLAYER_WALK_SPEED;
+    gameplay_resolve_player_crates(&state,
+                                   crate->x - PLAYER_W,
+                                   state.player.y, PLAYER_H);
+
+    CHECK(fabsf(crate->x - crate_contact_x) < 0.01f);
+    CHECK(fabsf(enemy->x - enemy_x) < 0.01f);
+    CHECK(fabsf(enemy->aim_timer - ENEMY_AIM_TIME * 0.5f) < 0.01f);
+    CHECK(!events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                             SFX_ENEMY_ALERT));
+}
+
 static void test_hazards_emit_specific_impact_sounds(void)
 {
     GameplayState state = {0};
@@ -486,6 +537,7 @@ int main(void)
     test_grenade_fuse_and_explosion_emit_sounds();
     test_gas_canister_requires_crawling_shot();
     test_crate_movement_emits_sounds();
+    test_crate_stops_at_enemy_and_triggers_counterattack();
     test_hazards_emit_specific_impact_sounds();
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();
