@@ -212,6 +212,41 @@ static void test_terminal_unlocks_deterministically(void)
     CHECK(campaign.score == 250);
 }
 
+static void test_door_interaction_reports_range_and_teleports(void)
+{
+    static const char data[] =
+        "########\n"
+        "#SD D E#\n"
+        "########\n";
+    GameplayState state = {0};
+    Input input = {0};
+    rng_seed(&state.rng, 77);
+    CHECK(level_load_data(&state.level, "doors", data, strlen(data),
+                          &state.rng));
+    CHECK(state.level.map.door_count == 2);
+
+    const Door *entrance = &state.level.map.doors[0];
+    const Door *destination = &state.level.map.doors[1];
+    state.player.x = entrance->col * TILE_SIZE +
+                     (TILE_SIZE - PLAYER_W) * 0.5f;
+    state.player.y = (entrance->row + 1) * TILE_SIZE - PLAYER_H;
+    state.player.on_ground = true;
+
+    CHECK(gameplay_player_door_index(&state) == 0);
+    input.use_door = true;
+    gameplay_use_door(&state, &input);
+
+    CHECK(fabsf(state.player.x -
+                 (destination->col * TILE_SIZE +
+                  (TILE_SIZE - PLAYER_W) * 0.5f)) < 0.01f);
+    CHECK(fabsf(state.player.y -
+                 ((destination->row + 1) * TILE_SIZE - PLAYER_H)) < 0.01f);
+    CHECK(state.teleport_cooldown == TELEPORT_COOLDOWN);
+    CHECK(!input.use_door);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_DOOR));
+    CHECK(gameplay_player_door_index(&state) == -1);
+}
+
 static void test_key_cards_keep_scoring_and_unlock_rules(void)
 {
     GameplayState state = {0};
@@ -630,6 +665,7 @@ int main(void)
     test_level_reveal_finishes();
     test_event_buffer_reports_overflow();
     test_terminal_unlocks_deterministically();
+    test_door_interaction_reports_range_and_teleports();
     test_key_cards_keep_scoring_and_unlock_rules();
     test_mine_damage_emits_feedback();
     test_grenade_fuse_and_explosion_emit_sounds();

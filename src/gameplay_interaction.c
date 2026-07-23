@@ -90,14 +90,10 @@ bool gameplay_advance_terminal(GameplayState *state,
     return !was_unlocked && state->level.runtime.exit_unlocked;
 }
 
-void gameplay_use_door(GameplayState *state, Input *input)
+int gameplay_player_door_index(const GameplayState *state)
 {
-    if (!input->use_door || !state->player.on_ground ||
-        state->teleport_cooldown > 0.0f)
-    {
-        input->use_door = false;
-        return;
-    }
+    if (!state->player.on_ground || state->teleport_cooldown > 0.0f)
+        return -1;
 
     int center_col = (int)floorf((state->player.x + PLAYER_W * 0.5f) /
                                  TILE_SIZE);
@@ -109,21 +105,36 @@ void gameplay_use_door(GameplayState *state, Input *input)
     for (int index = 0; index < state->level.map.door_count; ++index)
     {
         const Door *door = &state->level.map.doors[index];
-        if (door->col != center_col || door->row != center_row)
-            continue;
-        int pair = index ^ 1;
-        if (pair < state->level.map.door_count)
-        {
-            const Door *destination = &state->level.map.doors[pair];
-            state->player.x = destination->col * TILE_SIZE +
-                              (TILE_SIZE - PLAYER_W) * 0.5f;
-            state->player.y = (destination->row + 1) * TILE_SIZE - player_h;
-            state->player.vx = 0.0f;
-            state->player.vy = 0.0f;
-            state->teleport_cooldown = TELEPORT_COOLDOWN;
-            game_events_sound(&state->events, SFX_DOOR);
-        }
-        break;
+        if (door->col == center_col && door->row == center_row)
+            return index;
+    }
+
+    return -1;
+}
+
+void gameplay_use_door(GameplayState *state, Input *input)
+{
+    int index = gameplay_player_door_index(state);
+    if (!input->use_door || index < 0)
+    {
+        input->use_door = false;
+        return;
+    }
+
+    int pair = index ^ 1;
+    if (pair < state->level.map.door_count)
+    {
+        const Door *destination = &state->level.map.doors[pair];
+        float player_h = state->player.crawling
+                             ? (float)PLAYER_CRAWL_H
+                             : (float)PLAYER_H;
+        state->player.x = destination->col * TILE_SIZE +
+                          (TILE_SIZE - PLAYER_W) * 0.5f;
+        state->player.y = (destination->row + 1) * TILE_SIZE - player_h;
+        state->player.vx = 0.0f;
+        state->player.vy = 0.0f;
+        state->teleport_cooldown = TELEPORT_COOLDOWN;
+        game_events_sound(&state->events, SFX_DOOR);
     }
     input->use_door = false;
 }

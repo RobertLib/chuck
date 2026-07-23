@@ -7,6 +7,7 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
                                float dt);
 bool gameplay_advance_terminal(GameplayState *state,
                                CampaignState *campaign, float dt);
+int gameplay_player_door_index(const GameplayState *state);
 void gameplay_use_door(GameplayState *state, Input *input);
 void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                             float dt);

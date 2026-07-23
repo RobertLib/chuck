@@ -64,7 +64,7 @@ means Chuck must crawl before firing to hit one.
 - Crawl: hold `Down` or `S` while on the ground
 - Shoot, throw a grenade, or use the knife when out of ammo: `Space`
 - Hack the active terminal: hold `E` while standing nearby
-- Use a door: `Down` or `S`
+- Use a door: press `E` while standing in the doorway
 - Mute or unmute sound and music: `M`
 - Toggle fullscreen: `F` or `Alt+Enter`
 - Skip a cinematic to its next screen: `Space` or `Enter`

@@ -86,7 +86,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
         game->input.jump = true;
       }
     }
-    if (key == SDLK_DOWN || key == SDLK_S)
+    if (sc == SDL_SCANCODE_E)
     {
       game->input.use_door = true;
     }

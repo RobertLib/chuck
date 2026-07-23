@@ -4,6 +4,7 @@
 #include <math.h>
 
 #include "fx.h"
+#include "gameplay_interaction.h"
 
 /*
  * Chuck intentionally ships without art assets.  Everything in this file is
@@ -64,13 +65,19 @@ static void draw_text(SDL_Renderer *r, float x, float y, float scale,
   SDL_SetRenderScale(r, 1.0f, 1.0f);
 }
 
+static float draw_text_width(const char *text, float scale)
+{
+  return (float)SDL_strlen(text) *
+         SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
+}
+
 static void draw_text_centered(Game *game, float center_y, float scale,
                                Uint8 cr, Uint8 cg, Uint8 cb, const char *text)
 {
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
   (void)win_h;
-  float text_w = (float)SDL_strlen(text) * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
+  float text_w = draw_text_width(text, scale);
   float text_h = (float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
   draw_text(game->platform.renderer, ((float)win_w - text_w) * 0.5f,
             center_y - text_h * 0.5f, scale, cr, cg, cb, text);
@@ -2133,25 +2140,48 @@ static void render_hud(Game *game)
   }
 }
 
-static void render_terminal_interaction(Game *game, int win_w, int win_h)
+static void render_interaction_prompt(Game *game, int win_w, int win_h)
 {
+  bool terminal_available = game->gameplay.terminal_in_range &&
+                            !game->gameplay.level.runtime.exit_unlocked;
+  bool door_available = gameplay_player_door_index(&game->gameplay) >= 0;
   if (game->state != STATE_PLAYING ||
-      !game->gameplay.terminal_in_range ||
-      game->gameplay.level.runtime.exit_unlocked)
+      (!terminal_available && !door_available))
   {
     return;
   }
 
   SDL_Renderer *r = game->platform.renderer;
-  float panel_w = 330.0f;
-  float panel_h = 45.0f;
-  float x = ((float)win_w - panel_w) * 0.5f;
-  float y = (float)win_h - panel_h - 12.0f;
-  float progress = game->gameplay.terminal_hack_progress / TERMINAL_HACK_TIME;
+  float progress = terminal_available
+                       ? game->gameplay.terminal_hack_progress /
+                             TERMINAL_HACK_TIME
+                       : 0.0f;
   if (progress < 0.0f)
     progress = 0.0f;
   if (progress > 1.0f)
     progress = 1.0f;
+
+  char label[64];
+  if (terminal_available && game->gameplay.terminal_hacking)
+  {
+    int percent = (int)(progress * 100.0f);
+    SDL_snprintf(label, sizeof(label), "BREACHING SECURITY... %d%%", percent);
+  }
+  else if (terminal_available)
+  {
+    SDL_snprintf(label, sizeof(label), "HOLD E TO HACK ACTIVE TERMINAL");
+  }
+  else
+  {
+    SDL_snprintf(label, sizeof(label), "PRESS E TO ENTER DOOR");
+  }
+
+  const float text_scale = 1.25f;
+  const float panel_padding = 12.0f;
+  float panel_w = draw_text_width(label, text_scale) + panel_padding * 2.0f;
+  float panel_h = terminal_available ? 45.0f : 31.0f;
+  float x = ((float)win_w - panel_w) * 0.5f;
+  float y = (float)win_h - panel_h - 12.0f;
 
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   set_rgba(r, 5, 10, 15, 235);
@@ -2175,31 +2205,27 @@ static void render_terminal_interaction(Game *game, int win_w, int win_h)
   fill_rect(r, x + panel_w - tick, y + panel_h - 2.0f, tick, 2.0f);
   fill_rect(r, x + panel_w - 2.0f, y + panel_h - tick, 2.0f, tick);
 
-  char label[64];
-  if (game->gameplay.terminal_hacking)
-  {
-    int percent = (int)(progress * 100.0f);
-    SDL_snprintf(label, sizeof(label), "BREACHING SECURITY... %d%%", percent);
-  }
-  else
-  {
-    SDL_snprintf(label, sizeof(label), "HOLD E TO HACK ACTIVE TERMINAL");
-  }
-  draw_text(r, x + 12.0f, y + 9.0f, 1.25f, 174, 255, 213, label);
+  draw_text(r, x + panel_padding, y + 9.0f, text_scale,
+            174, 255, 213, label);
 
-  color_rect(r, (SDL_Color){16, 34, 32, 255},
-             x + 12.0f, y + 31.0f, panel_w - 24.0f, 7.0f);
-  if (progress > 0.0f)
+  if (terminal_available)
   {
-    float bar_w = (panel_w - 24.0f) * progress;
-    color_rect(r, (SDL_Color){44, 168, 118, 255},
-               x + 12.0f, y + 31.0f, bar_w, 7.0f);
-    color_rect(r, (SDL_Color){120, 255, 190, 255},
-               x + 12.0f, y + 31.0f, bar_w, 2.0f);
-    color_rect(r, (SDL_Color){190, 255, 220, 255},
-               x + 12.0f + bar_w - 2.0f, y + 31.0f, 2.0f, 7.0f);
-    fx_glow(r, x + 12.0f + bar_w, y + 34.0f, 14.0f,
-            (SDL_Color){86, 240, 170, 255}, 80);
+    color_rect(r, (SDL_Color){16, 34, 32, 255},
+               x + panel_padding, y + 31.0f,
+               panel_w - panel_padding * 2.0f, 7.0f);
+    if (progress > 0.0f)
+    {
+      float bar_w = (panel_w - panel_padding * 2.0f) * progress;
+      color_rect(r, (SDL_Color){44, 168, 118, 255},
+                 x + panel_padding, y + 31.0f, bar_w, 7.0f);
+      color_rect(r, (SDL_Color){120, 255, 190, 255},
+                 x + panel_padding, y + 31.0f, bar_w, 2.0f);
+      color_rect(r, (SDL_Color){190, 255, 220, 255},
+                 x + panel_padding + bar_w - 2.0f,
+                 y + 31.0f, 2.0f, 7.0f);
+      fx_glow(r, x + panel_padding + bar_w, y + 34.0f, 14.0f,
+              (SDL_Color){86, 240, 170, 255}, 80);
+    }
   }
 }
 
@@ -2269,7 +2295,7 @@ void game_render(Game *game)
 
   render_world(game);
   render_hud(game);
-  render_terminal_interaction(game, win_w, win_h);
+  render_interaction_prompt(game, win_w, win_h);
 
   if (game->presentation.exit_unlocked_timer > 0.0f)
   {
