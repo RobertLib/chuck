@@ -33,7 +33,8 @@ typedef struct
     float death_timer;
     bool crawling; /* true while player is crawling (lower) */
     float anim_time;    /* local visual animation clock */
-    float action_timer; /* short recoil/throw follow-through timer */
+    float action_timer; /* short attack/throw follow-through timer */
+    bool knife_attacking; /* current action is a close-range knife swing */
     int shot_vertical;  /* -1 = last shot went up, +1 = down, 0 = horizontal */
 } Player;
 

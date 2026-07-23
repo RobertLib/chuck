@@ -27,6 +27,88 @@ static int find_grenade_slot(GameplayState *state)
     return -1;
 }
 
+static void damage_dog(GameplayState *state, CampaignState *campaign,
+                       Dog *dog)
+{
+    dog->hp--;
+    if (dog->hp <= 0)
+    {
+        dog->dead = true;
+        campaign->score += 75;
+        game_events_particles(&state->events,
+                              dog->x + DOG_W * 0.5f,
+                              dog->y + DOG_H * 0.5f,
+                              14, dog->dir);
+    }
+    gameplay_world_sound(state, SFX_DOG_YELP,
+                         dog->x + DOG_W * 0.5f,
+                         dog->y + DOG_H * 0.5f);
+}
+
+static void damage_enemy(GameplayState *state, CampaignState *campaign,
+                         int enemy_index)
+{
+    Enemy *enemy = &state->enemies[enemy_index];
+    enemy->hp--;
+    if (enemy->hp <= 0)
+    {
+        enemy->dead = true;
+        campaign->score += 150;
+        game_events_particles(&state->events,
+                              enemy->x + ENEMY_W * 0.5f,
+                              enemy->y + ENEMY_H * 0.5f,
+                              24, enemy->dir);
+        gameplay_world_sound(state, SFX_ENEMY_DOWN,
+                             enemy->x + ENEMY_W * 0.5f,
+                             enemy->y + ENEMY_H * 0.5f);
+    }
+    else
+    {
+        gameplay_world_sound(state, SFX_ENEMY_HIT,
+                             enemy->x + ENEMY_W * 0.5f,
+                             enemy->y + ENEMY_H * 0.5f);
+    }
+    gameplay_provoke_enemy(state, enemy_index);
+}
+
+static void player_knife_attack(GameplayState *state,
+                                CampaignState *campaign)
+{
+    float height = player_height(state);
+    float attack_x = state->player.facing > 0
+                         ? state->player.x + PLAYER_W
+                         : state->player.x - PLAYER_KNIFE_RANGE;
+
+    state->player.shot_vertical = 0;
+    state->player.knife_attacking = true;
+    state->player.action_timer = PLAYER_KNIFE_ACTION_TIME;
+    game_events_sound(&state->events, SFX_KNIFE_SWING);
+
+    for (int i = 0; i < state->dog_count; ++i)
+    {
+        Dog *dog = &state->dogs[i];
+        if (!dog->dead &&
+            gameplay_boxes_overlap(attack_x, state->player.y,
+                                   PLAYER_KNIFE_RANGE, height,
+                                   dog->x, dog->y, DOG_W, DOG_H))
+        {
+            damage_dog(state, campaign, dog);
+        }
+    }
+
+    for (int i = 0; i < state->enemy_count; ++i)
+    {
+        Enemy *enemy = &state->enemies[i];
+        if (!enemy->dead &&
+            gameplay_boxes_overlap(attack_x, state->player.y,
+                                   PLAYER_KNIFE_RANGE, height,
+                                   enemy->x, enemy->y, ENEMY_W, ENEMY_H))
+        {
+            damage_enemy(state, campaign, i);
+        }
+    }
+}
+
 static void damage_crates_in_radius(GameplayState *state,
                                     CampaignState *campaign,
                                     float x, float y, float radius)
@@ -244,7 +326,6 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                                           CampaignState *campaign,
                                           Input *input)
 {
-    (void)campaign;
     if (!input->shoot)
         return;
 
@@ -274,6 +355,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             grenade->vy = -vertical;
             state->player.grenades = 0;
             state->player.shot_vertical = 0;
+            state->player.knife_attacking = false;
             state->player.action_timer = 0.18f;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
         }
@@ -315,13 +397,21 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             }
             state->player.bullets--;
             state->player.shot_vertical = vertical;
+            state->player.knife_attacking = false;
             state->player.action_timer = 0.12f;
             game_events_sound(&state->events, SFX_PLAYER_SHOT);
             break;
         }
     }
     else
-        game_events_sound(&state->events, SFX_EMPTY_CLICK);
+    {
+        /* A knife can be used sideways from a ladder, but directional ladder
+         * input is reserved for climbing; there is no vertical knife attack. */
+        bool vertical_ladder_input =
+            state->player.on_ladder && (input->up || input->down);
+        if (!vertical_ladder_input)
+            player_knife_attack(state, campaign);
+    }
     input->shoot = false;
 }
 
@@ -452,19 +542,7 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
                                        dog->x, dog->y, DOG_W, DOG_H))
             {
                 bullet->active = false;
-                dog->hp--;
-                if (dog->hp <= 0)
-                {
-                    dog->dead = true;
-                    campaign->score += 75;
-                    game_events_particles(&state->events,
-                                          dog->x + DOG_W * 0.5f,
-                                          dog->y + DOG_H * 0.5f,
-                                          14, dog->dir);
-                }
-                gameplay_world_sound(state, SFX_DOG_YELP,
-                                     dog->x + DOG_W * 0.5f,
-                                     dog->y + DOG_H * 0.5f);
+                damage_dog(state, campaign, dog);
                 break;
             }
         }
@@ -480,24 +558,7 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
                                        ENEMY_W, ENEMY_H))
             {
                 bullet->active = false;
-                enemy->hp--;
-                if (enemy->hp <= 0)
-                {
-                    enemy->dead = true;
-                    campaign->score += 150;
-                    game_events_particles(&state->events,
-                                          enemy->x + ENEMY_W * 0.5f,
-                                          enemy->y + ENEMY_H * 0.5f,
-                                          24, enemy->dir);
-                    gameplay_world_sound(state, SFX_ENEMY_DOWN,
-                                         enemy->x + ENEMY_W * 0.5f,
-                                         enemy->y + ENEMY_H * 0.5f);
-                }
-                else
-                    gameplay_world_sound(state, SFX_ENEMY_HIT,
-                                         enemy->x + ENEMY_W * 0.5f,
-                                         enemy->y + ENEMY_H * 0.5f);
-                gameplay_provoke_enemy(state, j);
+                damage_enemy(state, campaign, j);
                 break;
             }
         }

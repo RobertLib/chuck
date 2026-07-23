@@ -46,7 +46,8 @@ and for a short time afterward. It can also bring one or two reinforcements
 through randomly selected doors after varied delays. This makes breaching a
 risky alternative to finding the correct key card.
 The active terminal is always selected away from the level entrance.
-Ammunition is limited, grenades are powerful but risky, and hazards such as
+Ammunition is limited; once the pistol is empty, the attack button switches to
+a short-range knife strike. Grenades are powerful but risky, and hazards such as
 mines, spikes, ceiling fans, falling platforms, and moving platforms make the
 building itself part of the challenge. Some doors connect distant parts of a level,
 creating shortcuts, ambushes, or escape routes depending on how you use them.
@@ -59,8 +60,9 @@ means Chuck must crawl before firing to hit one.
 - Jump: `Up` or `W` when on the ground
 - Climb: `Up` / `Down` or `W` / `S` on ladders
 - Shoot vertically from a ladder: hold `Up` / `W` or `Down` / `S` and press `Space`
+- Use the knife sideways from a ladder: press `Space` without holding `Up` or `Down`
 - Crawl: hold `Down` or `S` while on the ground
-- Shoot or throw a grenade: `Space`
+- Shoot, throw a grenade, or use the knife when out of ammo: `Space`
 - Hack the active terminal: hold `E` while standing nearby
 - Use a door: `Down` or `S`
 - Mute or unmute sound and music: `M`

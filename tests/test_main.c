@@ -354,6 +354,104 @@ static void test_gas_canister_requires_crawling_shot(void)
                             SFX_EXPLOSION));
 }
 
+static void test_empty_pistol_uses_close_range_knife(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    state.player.x = 100.0f;
+    state.player.y = 64.0f;
+    state.player.facing = 1;
+    state.player.bullets = 0;
+
+    float attack_edge = state.player.x + PLAYER_W;
+    state.enemy_count = 3;
+    state.enemies[0] = (Enemy){
+        .x = attack_edge + PLAYER_KNIFE_RANGE - 1.0f,
+        .y = state.player.y,
+        .dir = -1,
+        .hp = ENEMY_HP};
+    state.enemies[1] = (Enemy){
+        .x = attack_edge + PLAYER_KNIFE_RANGE,
+        .y = state.player.y,
+        .dir = -1,
+        .hp = ENEMY_HP};
+    state.enemies[2] = (Enemy){
+        .x = state.player.x - ENEMY_W,
+        .y = state.player.y,
+        .dir = 1,
+        .hp = ENEMY_HP};
+    state.dog_count = 1;
+    state.dogs[0] = (Dog){
+        .x = attack_edge + 2.0f,
+        .y = state.player.y + PLAYER_H - DOG_H,
+        .dir = -1,
+        .hp = DOG_HP};
+
+    Input input = {.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+
+    CHECK(!input.shoot);
+    CHECK(state.player.bullets == 0);
+    CHECK(state.player.knife_attacking);
+    CHECK(state.player.action_timer == PLAYER_KNIFE_ACTION_TIME);
+    CHECK(state.enemies[0].hp == ENEMY_HP - 1);
+    CHECK(state.enemies[1].hp == ENEMY_HP);
+    CHECK(state.enemies[2].hp == ENEMY_HP);
+    CHECK(state.dogs[0].dead);
+    CHECK(campaign.score == 75);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_KNIFE_SWING));
+    CHECK(!events_have_sound(&state.events, GAME_EVENT_SOUND,
+                             SFX_EMPTY_CLICK));
+    for (int i = 0; i < MAX_BULLETS; ++i)
+        CHECK(!state.bullets[i].active);
+}
+
+static void test_ladder_knife_is_horizontal_only(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    state.player.x = 100.0f;
+    state.player.y = 64.0f;
+    state.player.facing = 1;
+    state.player.bullets = 0;
+    state.player.on_ladder = true;
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){
+        .x = state.player.x + PLAYER_W + 2.0f,
+        .y = state.player.y,
+        .dir = -1,
+        .hp = ENEMY_HP};
+
+    Input input = {.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.knife_attacking);
+    CHECK(state.enemies[0].hp == ENEMY_HP - 1);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_KNIFE_SWING));
+
+    for (int vertical = -1; vertical <= 1; vertical += 2)
+    {
+        state.player.knife_attacking = false;
+        state.player.action_timer = 0.0f;
+        state.enemies[0].hp = ENEMY_HP;
+        game_events_clear(&state.events);
+        input = (Input){
+            .up = vertical < 0,
+            .down = vertical > 0,
+            .shoot = true};
+
+        gameplay_combat_handle_player_action(&state, &campaign, &input);
+
+        CHECK(!input.shoot);
+        CHECK(!state.player.knife_attacking);
+        CHECK(state.player.action_timer == 0.0f);
+        CHECK(state.enemies[0].hp == ENEMY_HP);
+        CHECK(!events_have_sound(&state.events, GAME_EVENT_SOUND,
+                                 SFX_KNIFE_SWING));
+    }
+}
+
 static void test_crate_movement_emits_sounds(void)
 {
     static const char data[] =
@@ -536,6 +634,8 @@ int main(void)
     test_mine_damage_emits_feedback();
     test_grenade_fuse_and_explosion_emit_sounds();
     test_gas_canister_requires_crawling_shot();
+    test_empty_pistol_uses_close_range_knife();
+    test_ladder_knife_is_horizontal_only();
     test_crate_movement_emits_sounds();
     test_crate_stops_at_enemy_and_triggers_counterattack();
     test_hazards_emit_specific_impact_sounds();

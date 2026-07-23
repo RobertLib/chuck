@@ -78,6 +78,8 @@
 #define MAX_LIVES 9
 #define PLAYER_CRAWL_H 18
 #define PLAYER_CRAWL_SPEED 60.0f
+#define PLAYER_KNIFE_RANGE 18.0f
+#define PLAYER_KNIFE_ACTION_TIME 0.18f
 
 /* Enemy tuning */
 #define ENEMY_W 26

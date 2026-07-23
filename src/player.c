@@ -18,6 +18,7 @@ void player_reset(Player *player, const Level *level)
     player->crawling = false;
     player->anim_time = 0.0f;
     player->action_timer = 0.0f;
+    player->knife_attacking = false;
     player->shot_vertical = 0;
 }
 
@@ -37,8 +38,11 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
     if (player->action_timer > 0.0f)
     {
         player->action_timer -= dt;
-        if (player->action_timer < 0.0f)
+        if (player->action_timer <= 0.0f)
+        {
             player->action_timer = 0.0f;
+            player->knife_attacking = false;
+        }
     }
 
     /* Horizontal intent */

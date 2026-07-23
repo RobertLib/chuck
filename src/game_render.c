@@ -915,7 +915,8 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
   int dir = p->facing;
   float phase = p->anim_time * 3.2f;
   float shove = (fabsf(p->vx) > 1.0f) ? sinf(phase) * 2.0f : 0.0f;
-  bool firing = p->action_timer > 0.0f;
+  bool knife = p->action_timer > 0.0f && p->knife_attacking;
+  bool firing = p->action_timer > 0.0f && !knife;
 
   /* Ground shadow and rear boot. */
   color_rect(r, (SDL_Color){3, 6, 10, 130}, x + 2.0f, y + 16.0f, 24.0f, 2.0f);
@@ -932,14 +933,31 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
   sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 6.0f, 2.0f, 2.0f, (SDL_Color){220, 239, 219, 255});
   sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 5.0f, 4.0f, 2.0f, COL_RED);
 
-  /* Braced front arm and compact sidearm. */
+  /* Braced front arm with either the sidearm or an empty-ammo knife thrust. */
   sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 11.0f, 7.0f, 4.0f, COL_OUTLINE);
   sprite_rect(r, x, y, PLAYER_W, dir, 17.0f, 11.0f, 6.0f, 2.0f, (SDL_Color){209, 154, 106, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 10.0f, firing ? 7.0f : 5.0f, 3.0f, (SDL_Color){36, 43, 48, 255});
-  if (firing && p->action_timer > 0.055f)
+  if (knife)
   {
-    sprite_rect(r, x, y, PLAYER_W, dir, 29.0f, 9.0f, 3.0f, 5.0f, COL_AMBER);
-    sprite_rect(r, x, y, PLAYER_W, dir, 32.0f, 10.0f, 2.0f, 3.0f, (SDL_Color){255, 239, 165, 255});
+    float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f ? 2.0f : 0.0f;
+    sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 10.0f, 4.0f + thrust, 4.0f,
+                (SDL_Color){209, 154, 106, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 25.0f + thrust, 9.0f, 3.0f, 5.0f,
+                (SDL_Color){55, 43, 31, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 28.0f + thrust, 10.0f, 6.0f, 2.0f,
+                (SDL_Color){205, 221, 225, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 34.0f + thrust, 10.5f, 1.0f, 1.0f,
+                (SDL_Color){241, 247, 239, 255});
+  }
+  else if (p->bullets > 0 || firing)
+  {
+    sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 10.0f,
+                firing ? 7.0f : 5.0f, 3.0f,
+                (SDL_Color){36, 43, 48, 255});
+    if (firing && p->action_timer > 0.055f)
+    {
+      sprite_rect(r, x, y, PLAYER_W, dir, 29.0f, 9.0f, 3.0f, 5.0f, COL_AMBER);
+      sprite_rect(r, x, y, PLAYER_W, dir, 32.0f, 10.0f, 2.0f, 3.0f, (SDL_Color){255, 239, 165, 255});
+    }
   }
 }
 
@@ -1055,7 +1073,8 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
   if (climbing)
     dir = 1;
   bool airborne = !p->on_ground && !climbing;
-  bool firing = p->action_timer > 0.0f;
+  bool knife = p->action_timer > 0.0f && p->knife_attacking;
+  bool firing = p->action_timer > 0.0f && !knife;
   float step = moving && p->on_ground ? sinf(phase) : 0.0f;
   float bob = moving && p->on_ground ? fabsf(step) * 0.55f
                                      : sinf(p->anim_time * 2.0f) * 0.35f;
@@ -1102,7 +1121,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
   }
 
   /* Rear arm passes behind the torso and counter-swings against the legs. */
-  if (!climbing && !firing)
+  if (!climbing && !firing && !knife)
   {
     draw_walking_arm(r, x, y, PLAYER_W, dir, 14.0f, 13.0f + bob,
                      -arm_swing, (SDL_Color){35, 102, 142, 255},
@@ -1127,42 +1146,132 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
 
   if (climbing)
   {
-    /* Keep one hand on the ladder while the other operates the sidearm. */
-    draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                      8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
-                      (SDL_Color){42, 118, 153, 255},
-                      (SDL_Color){209, 154, 105, 255});
-    if (firing && p->shot_vertical != 0)
+    if (knife)
     {
-      float hand_y = p->shot_vertical < 0 ? 8.0f : 20.0f;
-      float gun_y = p->shot_vertical < 0 ? 1.0f : 18.0f;
-      sprite_limb_segment(r, x, y, PLAYER_W, dir,
-                          18.0f, 14.0f + bob, 21.0f, hand_y,
+      /* One hand keeps its grip while the other stabs sideways.  The ladder
+         pose remains rear-facing, so only the attacking arm is mirrored. */
+      if (p->facing > 0)
+      {
+        draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                          8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
+                          (SDL_Color){42, 118, 153, 255},
+                          (SDL_Color){209, 154, 105, 255});
+      }
+      else
+      {
+        draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                          18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
+                          (SDL_Color){42, 118, 153, 255},
+                          (SDL_Color){209, 154, 105, 255});
+      }
+
+      int knife_dir = p->facing;
+      float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
+                         ? 2.0f
+                         : 0.0f;
+      sprite_limb_segment(r, x, y, PLAYER_W, knife_dir,
+                          17.0f, 14.0f + bob,
+                          21.0f + thrust, 15.0f + bob,
                           (SDL_Color){42, 118, 153, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir,
-                  19.0f, hand_y - 2.0f, 5.0f, 5.0f, COL_OUTLINE);
-      sprite_rect(r, x, y, PLAYER_W, dir,
-                  20.0f, hand_y - 1.0f, 3.0f, 3.0f,
+      sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                  20.0f + thrust, 13.0f + bob, 6.0f, 5.0f, COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                  21.0f + thrust, 14.0f + bob, 5.0f, 3.0f,
                   (SDL_Color){209, 154, 105, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir,
-                  19.0f, gun_y, 5.0f, 8.0f, (SDL_Color){31, 38, 43, 255});
+      sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                  25.0f + thrust, 13.0f + bob, 3.0f, 5.0f,
+                  (SDL_Color){55, 43, 31, 255});
+      sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                  28.0f + thrust, 14.0f + bob, 6.0f, 2.0f,
+                  (SDL_Color){205, 221, 225, 255});
+      sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                  34.0f + thrust, 14.5f + bob, 1.0f, 1.0f,
+                  (SDL_Color){241, 247, 239, 255});
+    }
+    else if (firing && p->shot_vertical == 0)
+    {
+      /* Horizontal ladder fire uses the stored facing direction while the
+         body remains turned toward the ladder. */
+      if (p->facing > 0)
+      {
+        draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                          8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
+                          (SDL_Color){42, 118, 153, 255},
+                          (SDL_Color){209, 154, 105, 255});
+      }
+      else
+      {
+        draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                          18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
+                          (SDL_Color){42, 118, 153, 255},
+                          (SDL_Color){209, 154, 105, 255});
+      }
+
+      int gun_dir = p->facing;
+      float recoil = p->action_timer > 0.075f ? -1.0f : 0.0f;
+      sprite_limb_segment(r, x, y, PLAYER_W, gun_dir,
+                          17.0f, 14.0f + bob,
+                          22.0f + recoil, 15.0f + bob,
+                          (SDL_Color){42, 118, 153, 255});
+      sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                  21.0f + recoil, 13.0f + bob, 7.0f, 5.0f, COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                  22.0f + recoil, 14.0f + bob, 6.0f, 3.0f,
+                  (SDL_Color){209, 154, 105, 255});
+      sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                  26.0f + recoil, 12.0f + bob, 8.0f, 4.0f,
+                  (SDL_Color){31, 38, 43, 255});
+      sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                  28.0f + recoil, 16.0f + bob, 3.0f, 5.0f,
+                  (SDL_Color){44, 49, 49, 255});
       if (p->action_timer > 0.055f)
       {
-        float flash_y = p->shot_vertical < 0 ? -5.0f : 26.0f;
-        sprite_rect(r, x, y, PLAYER_W, dir,
-                    18.0f, flash_y, 7.0f, 5.0f, COL_AMBER);
-        sprite_rect(r, x, y, PLAYER_W, dir,
-                    20.0f,
-                    p->shot_vertical < 0 ? flash_y - 3.0f : flash_y + 5.0f,
-                    3.0f, 3.0f, (SDL_Color){255, 242, 184, 255});
+        sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                    34.0f + recoil, 11.0f + bob, 4.0f, 6.0f, COL_AMBER);
+        sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                    38.0f + recoil, 13.0f + bob, 3.0f, 3.0f,
+                    (SDL_Color){255, 242, 184, 255});
       }
     }
     else
     {
+      /* Keep one hand on the ladder while the other operates the sidearm. */
       draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                        18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
+                        8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
                         (SDL_Color){42, 118, 153, 255},
                         (SDL_Color){209, 154, 105, 255});
+      if (firing && p->shot_vertical != 0)
+      {
+        float hand_y = p->shot_vertical < 0 ? 8.0f : 20.0f;
+        float gun_y = p->shot_vertical < 0 ? 1.0f : 18.0f;
+        sprite_limb_segment(r, x, y, PLAYER_W, dir,
+                            18.0f, 14.0f + bob, 21.0f, hand_y,
+                            (SDL_Color){42, 118, 153, 255});
+        sprite_rect(r, x, y, PLAYER_W, dir,
+                    19.0f, hand_y - 2.0f, 5.0f, 5.0f, COL_OUTLINE);
+        sprite_rect(r, x, y, PLAYER_W, dir,
+                    20.0f, hand_y - 1.0f, 3.0f, 3.0f,
+                    (SDL_Color){209, 154, 105, 255});
+        sprite_rect(r, x, y, PLAYER_W, dir,
+                    19.0f, gun_y, 5.0f, 8.0f, (SDL_Color){31, 38, 43, 255});
+        if (p->action_timer > 0.055f)
+        {
+          float flash_y = p->shot_vertical < 0 ? -5.0f : 26.0f;
+          sprite_rect(r, x, y, PLAYER_W, dir,
+                      18.0f, flash_y, 7.0f, 5.0f, COL_AMBER);
+          sprite_rect(r, x, y, PLAYER_W, dir,
+                      20.0f,
+                      p->shot_vertical < 0 ? flash_y - 3.0f : flash_y + 5.0f,
+                      3.0f, 3.0f, (SDL_Color){255, 242, 184, 255});
+        }
+      }
+      else
+      {
+        draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                          18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
+                          (SDL_Color){42, 118, 153, 255},
+                          (SDL_Color){209, 154, 105, 255});
+      }
     }
   }
 
@@ -1191,7 +1300,31 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
 
   if (!climbing)
   {
-    if (firing)
+    if (knife)
+    {
+      float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
+                         ? 2.0f
+                         : 0.0f;
+      sprite_limb_segment(r, x, y, PLAYER_W, dir,
+                          17.0f, 14.0f + bob,
+                          21.0f + thrust, 15.0f + bob,
+                          (SDL_Color){42, 118, 153, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir,
+                  20.0f + thrust, 13.0f + bob, 6.0f, 5.0f, COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, dir,
+                  21.0f + thrust, 14.0f + bob, 5.0f, 3.0f,
+                  (SDL_Color){209, 154, 105, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir,
+                  25.0f + thrust, 13.0f + bob, 3.0f, 5.0f,
+                  (SDL_Color){55, 43, 31, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir,
+                  28.0f + thrust, 14.0f + bob, 6.0f, 2.0f,
+                  (SDL_Color){205, 221, 225, 255});
+      sprite_rect(r, x, y, PLAYER_W, dir,
+                  34.0f + thrust, 14.5f + bob, 1.0f, 1.0f,
+                  (SDL_Color){241, 247, 239, 255});
+    }
+    else if (firing)
     {
       float recoil = p->action_timer > 0.075f ? -1.0f : 0.0f;
       sprite_rect(r, x, y, PLAYER_W, dir, 17.0f + recoil, 13.0f + bob, 8.0f, 5.0f, COL_OUTLINE);

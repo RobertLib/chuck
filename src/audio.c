@@ -819,6 +819,14 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_noise(s, 0.00f, 0.045f, 0.38f, 0.42f, 0.004f, 0.038f, 0xe42au);
         add_tone(s, 0.050f, 0.090f, 520.0f, 220.0f, 0.34f, WAVE_SQUARE, 0.003f, 0.075f);
         break;
+    case SFX_KNIFE_SWING:
+        if (!begin_sound(audio, effect, 0.18f, 0.28f, 85))
+            return false;
+        add_noise(s, 0.00f, 0.15f, 0.48f, 0.72f,
+                  0.003f, 0.13f, 0x51a5u);
+        add_tone(s, 0.015f, 0.15f, 1120.0f, 360.0f, 0.25f,
+                 WAVE_TRIANGLE, 0.003f, 0.12f);
+        break;
     case SFX_ENEMY_ALERT:
         if (!begin_sound(audio, effect, 0.25f, 0.34f, 240))
             return false;
