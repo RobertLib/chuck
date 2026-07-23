@@ -27,6 +27,13 @@ typedef struct
 typedef struct
 {
     float x, y;
+    float vx;
+    bool active;
+} Rocket;
+
+typedef struct
+{
+    float x, y;
     bool active;
     bool triggered;
     float timer;
@@ -86,6 +93,7 @@ typedef struct
     int mine_count;
     Grenade grenades[MAX_GRENADES];
     int grenade_count;
+    Rocket rockets[MAX_ROCKETS];
     Bullet bullets[MAX_BULLETS];
     Bullet enemy_bullets[MAX_ENEMY_BULLETS];
 

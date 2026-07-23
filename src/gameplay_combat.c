@@ -27,6 +27,14 @@ static int find_grenade_slot(GameplayState *state)
     return -1;
 }
 
+static int find_rocket_slot(GameplayState *state)
+{
+    for (int i = 0; i < MAX_ROCKETS; ++i)
+        if (!state->rockets[i].active)
+            return i;
+    return -1;
+}
+
 static void damage_dog(GameplayState *state, CampaignState *campaign,
                        Dog *dog)
 {
@@ -245,6 +253,80 @@ static void explode_grenade(GameplayState *state, CampaignState *campaign,
         gameplay_hit_player(state);
 }
 
+static void explode_rocket(GameplayState *state, CampaignState *campaign,
+                           Rocket *rocket)
+{
+    rocket->active = false;
+    float x = rocket->x + ROCKET_W * 0.5f;
+    float y = rocket->y + ROCKET_H * 0.5f;
+    game_events_explosion(&state->events, x, y, 88);
+    gameplay_world_sound(state, SFX_EXPLOSION, x, y);
+    game_events_camera_shake(&state->events, 10.0f, 0.38f);
+
+    for (int i = 0; i < state->enemy_count; ++i)
+    {
+        Enemy *enemy = &state->enemies[i];
+        if (enemy->dead ||
+            !within_radius(enemy->x + ENEMY_W * 0.5f,
+                           enemy->y + ENEMY_H * 0.5f,
+                           x, y, ROCKET_RADIUS))
+        {
+            continue;
+        }
+        enemy->hp = 0;
+        enemy->dead = true;
+        game_events_particles(&state->events,
+                              enemy->x + ENEMY_W * 0.5f,
+                              enemy->y + ENEMY_H * 0.5f,
+                              24, enemy->dir);
+        gameplay_world_sound(state, SFX_ENEMY_DOWN,
+                             enemy->x + ENEMY_W * 0.5f,
+                             enemy->y + ENEMY_H * 0.5f);
+        campaign->score += 150;
+    }
+    for (int i = 0; i < state->dog_count; ++i)
+    {
+        Dog *dog = &state->dogs[i];
+        if (dog->dead ||
+            !within_radius(dog->x + DOG_W * 0.5f,
+                           dog->y + DOG_H * 0.5f,
+                           x, y, ROCKET_RADIUS))
+        {
+            continue;
+        }
+        dog->hp = 0;
+        dog->dead = true;
+        game_events_particles(&state->events,
+                              dog->x + DOG_W * 0.5f,
+                              dog->y + DOG_H * 0.5f,
+                              14, dog->dir);
+        gameplay_world_sound(state, SFX_DOG_YELP,
+                             dog->x + DOG_W * 0.5f,
+                             dog->y + DOG_H * 0.5f);
+        campaign->score += 75;
+    }
+
+    damage_crates_in_radius(state, campaign, x, y, ROCKET_RADIUS);
+    for (int i = 0; i < state->level.runtime.gas_canister_count; ++i)
+    {
+        GasCanister *canister = &state->level.runtime.gas_canisters[i];
+        if (canister->active &&
+            within_radius(canister->x + GAS_CANISTER_W * 0.5f,
+                          canister->y + GAS_CANISTER_H * 0.5f,
+                          x, y, ROCKET_RADIUS))
+        {
+            explode_gas_canister(state, campaign, canister);
+        }
+    }
+    if (state->invuln_timer <= 0.0f &&
+        within_radius(state->player.x + PLAYER_W * 0.5f,
+                      state->player.y + player_height(state) * 0.5f,
+                      x, y, ROCKET_RADIUS))
+    {
+        gameplay_hit_player(state);
+    }
+}
+
 void gameplay_combat_update_explosives(GameplayState *state,
                                        CampaignState *campaign, float dt)
 {
@@ -329,7 +411,30 @@ void gameplay_combat_handle_player_action(GameplayState *state,
     if (!input->shoot)
         return;
 
-    if (state->player.grenades > 0)
+    if (state->player.bazooka_rockets > 0)
+    {
+        int slot = find_rocket_slot(state);
+        if (slot >= 0)
+        {
+            Rocket *rocket = &state->rockets[slot];
+            rocket->active = true;
+            rocket->vx = state->player.facing * ROCKET_SPEED;
+            rocket->x = state->player.facing > 0
+                            ? state->player.x + PLAYER_W + 3.0f
+                            : state->player.x - ROCKET_W - 3.0f;
+            rocket->y = state->player.y + player_height(state) * 0.38f -
+                        ROCKET_H * 0.5f;
+            state->player.bazooka_rockets--;
+            state->player.shot_vertical = 0;
+            state->player.knife_attacking = false;
+            state->player.bazooka_firing = true;
+            state->player.action_timer = ROCKET_ACTION_TIME;
+            gameplay_world_sound(state, SFX_ROCKET_LAUNCH,
+                                 rocket->x + ROCKET_W * 0.5f,
+                                 rocket->y + ROCKET_H * 0.5f);
+        }
+    }
+    else if (state->player.grenades > 0)
     {
         int slot = find_grenade_slot(state);
         if (slot >= 0)
@@ -356,6 +461,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             state->player.grenades = 0;
             state->player.shot_vertical = 0;
             state->player.knife_attacking = false;
+            state->player.bazooka_firing = false;
             state->player.action_timer = 0.18f;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
         }
@@ -398,6 +504,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             state->player.bullets--;
             state->player.shot_vertical = vertical;
             state->player.knife_attacking = false;
+            state->player.bazooka_firing = false;
             state->player.action_timer = 0.12f;
             game_events_sound(&state->events, SFX_PLAYER_SHOT);
             break;
@@ -455,6 +562,103 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
                                            CampaignState *campaign,
                                            float dt)
 {
+    for (int i = 0; i < MAX_ROCKETS; ++i)
+    {
+        Rocket *rocket = &state->rockets[i];
+        if (!rocket->active)
+            continue;
+
+        float previous_x = rocket->x;
+        rocket->x += rocket->vx * dt;
+        bool impact = false;
+
+        if (rocket->x + ROCKET_W < 0.0f ||
+            rocket->x > state->level.map.width * (float)TILE_SIZE)
+        {
+            impact = true;
+        }
+        else
+        {
+            float leading_x = rocket->vx > 0.0f
+                                  ? rocket->x + ROCKET_W - 1.0f
+                                  : rocket->x;
+            float leading_y = rocket->y + ROCKET_H * 0.5f;
+            impact = level_is_solid(&state->level,
+                                    (int)floorf(leading_x / TILE_SIZE),
+                                    (int)floorf(leading_y / TILE_SIZE));
+        }
+
+        float swept_x = fminf(previous_x, rocket->x);
+        float swept_w = ROCKET_W + fabsf(rocket->x - previous_x);
+        if (!impact)
+        {
+            for (int j = 0; j < state->level.runtime.crate_count; ++j)
+            {
+                const Crate *crate = &state->level.runtime.crates[j];
+                if (crate->active &&
+                    gameplay_boxes_overlap(swept_x, rocket->y,
+                                           swept_w, ROCKET_H,
+                                           crate->x, crate->y,
+                                           CRATE_W, CRATE_H))
+                {
+                    impact = true;
+                    break;
+                }
+            }
+        }
+        if (!impact)
+        {
+            for (int j = 0; j < state->level.runtime.gas_canister_count; ++j)
+            {
+                const GasCanister *canister =
+                    &state->level.runtime.gas_canisters[j];
+                if (canister->active &&
+                    gameplay_boxes_overlap(swept_x, rocket->y,
+                                           swept_w, ROCKET_H,
+                                           canister->x, canister->y,
+                                           GAS_CANISTER_W, GAS_CANISTER_H))
+                {
+                    impact = true;
+                    break;
+                }
+            }
+        }
+        if (!impact)
+        {
+            for (int j = 0; j < state->dog_count; ++j)
+            {
+                const Dog *dog = &state->dogs[j];
+                if (!dog->dead &&
+                    gameplay_boxes_overlap(swept_x, rocket->y,
+                                           swept_w, ROCKET_H,
+                                           dog->x, dog->y, DOG_W, DOG_H))
+                {
+                    impact = true;
+                    break;
+                }
+            }
+        }
+        if (!impact)
+        {
+            for (int j = 0; j < state->enemy_count; ++j)
+            {
+                const Enemy *enemy = &state->enemies[j];
+                if (!enemy->dead &&
+                    gameplay_boxes_overlap(swept_x, rocket->y,
+                                           swept_w, ROCKET_H,
+                                           enemy->x, enemy->y,
+                                           ENEMY_W, ENEMY_H))
+                {
+                    impact = true;
+                    break;
+                }
+            }
+        }
+
+        if (impact)
+            explode_rocket(state, campaign, rocket);
+    }
+
     for (int i = 0; i < MAX_BULLETS; ++i)
     {
         Bullet *bullet = &state->bullets[i];

@@ -13,12 +13,14 @@ void player_reset(Player *player, const Level *level)
     player->facing = 1;
     player->bullets = MAX_AMMO;
     player->grenades = 0;
+    player->bazooka_rockets = 0;
     player->dying = false;
     player->death_timer = 0.0f;
     player->crawling = false;
     player->anim_time = 0.0f;
     player->action_timer = 0.0f;
     player->knife_attacking = false;
+    player->bazooka_firing = false;
     player->shot_vertical = 0;
 }
 
@@ -42,6 +44,7 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
         {
             player->action_timer = 0.0f;
             player->knife_attacking = false;
+            player->bazooka_firing = false;
         }
     }
 

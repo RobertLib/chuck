@@ -184,6 +184,10 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                     campaign->lives++;
                 game_events_sound(&state->events, SFX_PICKUP_HEALTH);
                 break;
+            case ITEM_BAZOOKA:
+                state->player.bazooka_rockets = BAZOOKA_AMMO;
+                game_events_sound(&state->events, SFX_PICKUP_BAZOOKA);
+                break;
             }
         }
 

@@ -79,7 +79,8 @@ typedef enum
     ITEM_CARD = 0,
     ITEM_GUN,
     ITEM_GRENADE,
-    ITEM_MEDKIT
+    ITEM_MEDKIT,
+    ITEM_BAZOOKA
 } ItemType;
 
 typedef struct

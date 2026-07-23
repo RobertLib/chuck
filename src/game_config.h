@@ -68,6 +68,16 @@
 #define GRENADE_RADIUS 48.0f
 #define GRENADE_THROW_SPEED 260.0f
 
+/* Bazooka: every pickup contains one rocket. The slow, large projectile
+ * detonates on the first solid surface or target it reaches. */
+#define MAX_ROCKETS 1
+#define BAZOOKA_AMMO 1
+#define ROCKET_W 16
+#define ROCKET_H 6
+#define ROCKET_SPEED 460.0f
+#define ROCKET_RADIUS 72.0f
+#define ROCKET_ACTION_TIME 0.24f
+
 /* Player tuning */
 #define PLAYER_W 26
 #define PLAYER_H 32

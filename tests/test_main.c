@@ -92,6 +92,12 @@ static void test_all_embedded_levels_parse(void)
         CHECK(level.map.width > 0);
         CHECK(level.map.height > 0);
         CHECK(level.map.has_exit);
+
+        int bazooka_count = 0;
+        for (int item = 0; item < level.runtime.item_count; ++item)
+            if (level.runtime.items[item].type == ITEM_BAZOOKA)
+                bazooka_count++;
+        CHECK(bazooka_count == (((i + 1) % 2 == 0) ? 1 : 0));
     }
 }
 
@@ -329,6 +335,60 @@ static void test_grenade_fuse_and_explosion_emit_sounds(void)
 
     gameplay_combat_update_explosives(&state, &campaign, 0.30f);
     CHECK(!state.grenades[0].active);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_EXPLOSION));
+}
+
+static void test_bazooka_pickup_and_rocket_explosion(void)
+{
+    static const char data[] =
+        "##############\n"
+        "#S Z   MM  E #\n"
+        "##############\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 142);
+    CHECK(level_load_data(&state.level, "bazooka", data, strlen(data),
+                          &state.rng));
+    CHECK(state.level.runtime.item_count == 1);
+    CHECK(state.level.runtime.items[0].type == ITEM_BAZOOKA);
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 2);
+    player_reset(&state.player, &state.level);
+
+    Item *bazooka = &state.level.runtime.items[0];
+    state.player.x = bazooka->x - PLAYER_W * 0.5f;
+    state.player.y = bazooka->y - PLAYER_H * 0.5f;
+    gameplay_collect_items(&state, &campaign, 0.0f);
+    CHECK(bazooka->collected);
+    CHECK(state.player.bazooka_rockets == BAZOOKA_AMMO);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_PICKUP_BAZOOKA));
+
+    /* The unique pickup stays consumed; it cannot supply repeated rockets. */
+    gameplay_collect_items(&state, &campaign, ITEM_RESPAWN_TIME * 2.0f);
+    CHECK(bazooka->collected);
+
+    game_events_clear(&state.events);
+    state.player.facing = 1;
+    Input input = {.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(!input.shoot);
+    CHECK(state.player.bazooka_rockets == 0);
+    CHECK(state.player.bazooka_firing);
+    CHECK(state.rockets[0].active);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_ROCKET_LAUNCH));
+
+    for (int frame = 0; frame < 120 && state.rockets[0].active; ++frame)
+        gameplay_combat_update_player_bullets(&state, &campaign,
+                                               1.0f / 120.0f);
+
+    CHECK(!state.rockets[0].active);
+    CHECK(state.enemies[0].dead);
+    CHECK(state.enemies[1].dead);
+    CHECK(campaign.score == 300);
+    CHECK(!state.player.dying);
     CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
                             SFX_EXPLOSION));
 }
@@ -669,6 +729,7 @@ int main(void)
     test_key_cards_keep_scoring_and_unlock_rules();
     test_mine_damage_emits_feedback();
     test_grenade_fuse_and_explosion_emit_sounds();
+    test_bazooka_pickup_and_rocket_explosion();
     test_gas_canister_requires_crawling_shot();
     test_empty_pistol_uses_close_range_knife();
     test_ladder_knife_is_horizontal_only();

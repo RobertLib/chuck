@@ -199,6 +199,10 @@ bool level_load_data(Level *level, const char *name,
             level->map.tiles[row][col] = TILE_EMPTY;
             place_item(level, col, row, ITEM_MEDKIT);
             break;
+        case 'Z':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_item(level, col, row, ITEM_BAZOOKA);
+            break;
         case 'M':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_enemy(level, col, row, false);

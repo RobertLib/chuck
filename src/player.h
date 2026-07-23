@@ -29,12 +29,14 @@ typedef struct
     int facing;   /* -1 = left, +1 = right */
     int bullets;  /* current ammo, 0..MAX_AMMO */
     int grenades; /* current grenades carried (0 or 1) */
+    int bazooka_rockets; /* one-shot bazooka carried when non-zero */
     bool dying;   /* true while death animation plays */
     float death_timer;
     bool crawling; /* true while player is crawling (lower) */
     float anim_time;    /* local visual animation clock */
     float action_timer; /* short attack/throw follow-through timer */
     bool knife_attacking; /* current action is a close-range knife swing */
+    bool bazooka_firing; /* current action is the bazooka launch recoil */
     int shot_vertical;  /* -1 = last shot went up, +1 = down, 0 = horizontal */
 } Player;
 

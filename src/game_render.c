@@ -614,6 +614,18 @@ static void draw_gun_pickup(SDL_Renderer *r, float x, float y)
   color_rect(r, (SDL_Color){91, 76, 57, 255}, x + 8.0f, y + 6.0f, 4.0f, 8.0f);
 }
 
+static void draw_bazooka_pickup(SDL_Renderer *r, float x, float y)
+{
+  draw_soft_glow(r, x + 3.0f, y + 4.0f, 21.0f, 13.0f,
+                 (SDL_Color){112, 205, 93, 255});
+  color_rect(r, COL_OUTLINE, x - 1.0f, y + 5.0f, 23.0f, 8.0f);
+  color_rect(r, (SDL_Color){55, 77, 48, 255}, x, y + 6.0f, 20.0f, 6.0f);
+  color_rect(r, (SDL_Color){100, 129, 72, 255}, x + 2.0f, y + 7.0f, 15.0f, 2.0f);
+  color_rect(r, (SDL_Color){155, 167, 120, 255}, x + 19.0f, y + 4.0f, 4.0f, 10.0f);
+  color_rect(r, COL_OUTLINE, x + 6.0f, y + 12.0f, 6.0f, 5.0f);
+  color_rect(r, (SDL_Color){83, 68, 47, 255}, x + 8.0f, y + 12.0f, 3.0f, 4.0f);
+}
+
 static void draw_grenade(SDL_Renderer *r, float x, float y, float fuse)
 {
   color_rect(r, COL_OUTLINE, x - 1.0f, y + 1.0f, 12.0f, 10.0f);
@@ -819,6 +831,54 @@ static void sprite_rect(SDL_Renderer *r, float bx, float by, float sprite_w, int
   color_rect(r, c, floorf(x), floorf(by + ly), w, h);
 }
 
+static void draw_rocket_sprite(SDL_Renderer *r, float x, float y, int dir,
+                               bool flame)
+{
+  sprite_rect(r, x, y, ROCKET_W, dir, 0.0f, 1.0f,
+              12.0f, 5.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, ROCKET_W, dir, 2.0f, 2.0f,
+              10.0f, 3.0f, (SDL_Color){112, 132, 91, 255});
+  sprite_rect(r, x, y, ROCKET_W, dir, 12.0f, 2.0f,
+              4.0f, 3.0f, (SDL_Color){213, 187, 111, 255});
+  sprite_rect(r, x, y, ROCKET_W, dir, 1.0f, 0.0f,
+              4.0f, 2.0f, (SDL_Color){73, 91, 65, 255});
+  sprite_rect(r, x, y, ROCKET_W, dir, 1.0f, 5.0f,
+              4.0f, 1.0f, (SDL_Color){73, 91, 65, 255});
+  if (flame)
+  {
+    sprite_rect(r, x, y, ROCKET_W, dir, -5.0f, 1.0f,
+                5.0f, 5.0f, (SDL_Color){226, 70, 38, 210});
+    sprite_rect(r, x, y, ROCKET_W, dir, -3.0f, 2.0f,
+                4.0f, 3.0f, (SDL_Color){255, 218, 91, 255});
+  }
+}
+
+static void draw_bazooka_weapon(SDL_Renderer *r, float x, float y,
+                                float sprite_w, int dir,
+                                float lx, float ly, bool firing)
+{
+  float recoil = firing ? -2.0f : 0.0f;
+  sprite_rect(r, x, y, sprite_w, dir, lx - 3.0f + recoil, ly + 1.0f,
+              24.0f, 8.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, sprite_w, dir, lx - 2.0f + recoil, ly + 2.0f,
+              21.0f, 6.0f, (SDL_Color){51, 75, 48, 255});
+  sprite_rect(r, x, y, sprite_w, dir, lx + recoil, ly + 3.0f,
+              17.0f, 2.0f, (SDL_Color){106, 135, 79, 255});
+  sprite_rect(r, x, y, sprite_w, dir, lx + 18.0f + recoil, ly,
+              5.0f, 10.0f, (SDL_Color){139, 151, 111, 255});
+  sprite_rect(r, x, y, sprite_w, dir, lx + 4.0f + recoil, ly + 8.0f,
+              5.0f, 6.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, sprite_w, dir, lx + 6.0f + recoil, ly + 8.0f,
+              3.0f, 5.0f, (SDL_Color){73, 60, 43, 255});
+  if (firing)
+  {
+    sprite_rect(r, x, y, sprite_w, dir, lx - 8.0f + recoil, ly + 1.0f,
+                6.0f, 7.0f, (SDL_Color){223, 65, 38, 190});
+    sprite_rect(r, x, y, sprite_w, dir, lx - 5.0f + recoil, ly + 3.0f,
+                4.0f, 3.0f, (SDL_Color){255, 218, 94, 255});
+  }
+}
+
 /* Thick local-space line used for jointed pixel-art limbs. */
 static void sprite_segment(SDL_Renderer *r, float bx, float by, float sprite_w, int dir,
                            float lx1, float ly1, float lx2, float ly2,
@@ -924,6 +984,8 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
   float shove = (fabsf(p->vx) > 1.0f) ? sinf(phase) * 2.0f : 0.0f;
   bool knife = p->action_timer > 0.0f && p->knife_attacking;
   bool firing = p->action_timer > 0.0f && !knife;
+  bool bazooka = p->bazooka_rockets > 0 ||
+                 (firing && p->bazooka_firing);
 
   /* Ground shadow and rear boot. */
   color_rect(r, (SDL_Color){3, 6, 10, 130}, x + 2.0f, y + 16.0f, 24.0f, 2.0f);
@@ -954,6 +1016,11 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
                 (SDL_Color){205, 221, 225, 255});
     sprite_rect(r, x, y, PLAYER_W, dir, 34.0f + thrust, 10.5f, 1.0f, 1.0f,
                 (SDL_Color){241, 247, 239, 255});
+  }
+  else if (bazooka)
+  {
+    draw_bazooka_weapon(r, x, y, PLAYER_W, dir,
+                        15.0f, 5.0f, p->bazooka_firing);
   }
   else if (p->bullets > 0 || firing)
   {
@@ -1082,6 +1149,8 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
   bool airborne = !p->on_ground && !climbing;
   bool knife = p->action_timer > 0.0f && p->knife_attacking;
   bool firing = p->action_timer > 0.0f && !knife;
+  bool bazooka = p->bazooka_rockets > 0 ||
+                 (firing && p->bazooka_firing);
   float step = moving && p->on_ground ? sinf(phase) : 0.0f;
   float bob = moving && p->on_ground ? fabsf(step) * 0.55f
                                      : sinf(p->anim_time * 2.0f) * 0.35f;
@@ -1220,24 +1289,32 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
                           17.0f, 14.0f + bob,
                           22.0f + recoil, 15.0f + bob,
                           (SDL_Color){42, 118, 153, 255});
-      sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                  21.0f + recoil, 13.0f + bob, 7.0f, 5.0f, COL_OUTLINE);
-      sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                  22.0f + recoil, 14.0f + bob, 6.0f, 3.0f,
-                  (SDL_Color){209, 154, 105, 255});
-      sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                  26.0f + recoil, 12.0f + bob, 8.0f, 4.0f,
-                  (SDL_Color){31, 38, 43, 255});
-      sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                  28.0f + recoil, 16.0f + bob, 3.0f, 5.0f,
-                  (SDL_Color){44, 49, 49, 255});
-      if (p->action_timer > 0.055f)
+      if (bazooka)
+      {
+        draw_bazooka_weapon(r, x, y, PLAYER_W, gun_dir,
+                            14.0f, 8.0f + bob, true);
+      }
+      else
       {
         sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                    34.0f + recoil, 11.0f + bob, 4.0f, 6.0f, COL_AMBER);
+                    21.0f + recoil, 13.0f + bob, 7.0f, 5.0f, COL_OUTLINE);
         sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                    38.0f + recoil, 13.0f + bob, 3.0f, 3.0f,
-                    (SDL_Color){255, 242, 184, 255});
+                    22.0f + recoil, 14.0f + bob, 6.0f, 3.0f,
+                    (SDL_Color){209, 154, 105, 255});
+        sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                    26.0f + recoil, 12.0f + bob, 8.0f, 4.0f,
+                    (SDL_Color){31, 38, 43, 255});
+        sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                    28.0f + recoil, 16.0f + bob, 3.0f, 5.0f,
+                    (SDL_Color){44, 49, 49, 255});
+        if (p->action_timer > 0.055f)
+        {
+          sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                      34.0f + recoil, 11.0f + bob, 4.0f, 6.0f, COL_AMBER);
+          sprite_rect(r, x, y, PLAYER_W, gun_dir,
+                      38.0f + recoil, 13.0f + bob, 3.0f, 3.0f,
+                      (SDL_Color){255, 242, 184, 255});
+        }
       }
     }
     else
@@ -1330,6 +1407,15 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
       sprite_rect(r, x, y, PLAYER_W, dir,
                   34.0f + thrust, 14.5f + bob, 1.0f, 1.0f,
                   (SDL_Color){241, 247, 239, 255});
+    }
+    else if (bazooka)
+    {
+      sprite_limb_segment(r, x, y, PLAYER_W, dir,
+                          17.0f, 14.0f + bob,
+                          22.0f, 15.0f + bob,
+                          (SDL_Color){42, 118, 153, 255});
+      draw_bazooka_weapon(r, x, y, PLAYER_W, dir,
+                          13.0f, 8.0f + bob, p->bazooka_firing);
     }
     else if (firing)
     {
@@ -1905,6 +1991,8 @@ static void render_world(Game *game)
       draw_grenade(r, x + 3.0f, y + 4.0f, 0.0f);
     else if (it->type == ITEM_MEDKIT)
       draw_medkit(r, x, y);
+    else if (it->type == ITEM_BAZOOKA)
+      draw_bazooka_pickup(r, x - 4.0f, y + 1.0f);
   }
 
   for (int i = 0; i < lvl->map.spike_count; ++i)
@@ -1943,6 +2031,21 @@ static void render_world(Game *game)
 
   /* Fast projectiles get a one-pixel trail and hot core for impact/readability. */
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  for (int i = 0; i < MAX_ROCKETS; ++i)
+  {
+    const Rocket *rocket = &game->gameplay.rockets[i];
+    if (!rocket->active)
+      continue;
+    float x = rocket->x - cam_x;
+    float y = rocket->y + oy;
+    int dir = rocket->vx >= 0.0f ? 1 : -1;
+    fx_glow(r, x + ROCKET_W * 0.5f, y + ROCKET_H * 0.5f, 18.0f,
+            (SDL_Color){255, 132, 45, 255}, 125);
+    set_rgba(r, 122, 132, 124, 70);
+    fill_rect(r, x - (dir > 0 ? 15.0f : -15.0f), y + 1.0f,
+              16.0f, 4.0f);
+    draw_rocket_sprite(r, x, y, dir, true);
+  }
   for (int i = 0; i < MAX_BULLETS; ++i)
   {
     const Bullet *b = &game->gameplay.bullets[i];
@@ -2084,7 +2187,9 @@ static void render_hud(Game *game)
     color_rect(r, (SDL_Color){70, 84, 99, 255}, ammo_x - 1.0f, 30.0f, 5.0f, 2.0f);
   }
   if (game->gameplay.player.grenades > 0)
-    draw_grenade(r, 252.0f, 19.0f, 0.0f);
+    draw_grenade(r, 247.0f, 19.0f, 0.0f);
+  if (game->gameplay.player.bazooka_rockets > 0)
+    draw_rocket_sprite(r, 260.0f, 22.0f, 1, false);
   draw_hud_separator(r, 276.0f);
 
   /* Access status chip with a live LED. */

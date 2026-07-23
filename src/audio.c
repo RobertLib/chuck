@@ -813,6 +813,16 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.010f, 0.21f, 88.0f, 40.0f, 0.38f, WAVE_SINE, 0.004f, 0.19f);
         add_noise(s, 0.12f, 0.08f, 0.17f, 0.32f, 0.006f, 0.065f, 0x19b4u);
         break;
+    case SFX_ROCKET_LAUNCH:
+        if (!begin_sound(audio, effect, 0.46f, 0.50f, 120))
+            return false;
+        add_noise(s, 0.00f, 0.42f, 0.88f, 0.10f,
+                  0.004f, 0.34f, 0xb420u);
+        add_tone(s, 0.00f, 0.38f, 132.0f, 48.0f, 0.66f,
+                 WAVE_SAW, 0.003f, 0.31f);
+        add_tone(s, 0.04f, 0.36f, 78.0f, 31.0f, 0.44f,
+                 WAVE_SINE, 0.004f, 0.30f);
+        break;
     case SFX_EMPTY_CLICK:
         if (!begin_sound(audio, effect, 0.14f, 0.26f, 110))
             return false;
@@ -1034,6 +1044,18 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.00f, 0.18f, 392.0f, 392.0f, 0.38f, WAVE_TRIANGLE, 0.005f, 0.11f);
         add_tone(s, 0.10f, 0.20f, 523.3f, 523.3f, 0.40f, WAVE_TRIANGLE, 0.005f, 0.13f);
         add_tone(s, 0.21f, 0.17f, 784.0f, 788.0f, 0.34f, WAVE_SINE, 0.005f, 0.13f);
+        break;
+    case SFX_PICKUP_BAZOOKA:
+        if (!begin_sound(audio, effect, 0.44f, 0.36f, 140))
+            return false;
+        add_tone(s, 0.00f, 0.14f, 185.0f, 245.0f, 0.48f,
+                 WAVE_SQUARE, 0.004f, 0.10f);
+        add_tone(s, 0.12f, 0.16f, 245.0f, 370.0f, 0.43f,
+                 WAVE_TRIANGLE, 0.004f, 0.12f);
+        add_tone(s, 0.27f, 0.17f, 370.0f, 555.0f, 0.39f,
+                 WAVE_TRIANGLE, 0.004f, 0.13f);
+        add_noise(s, 0.00f, 0.10f, 0.24f, 0.40f,
+                  0.003f, 0.08f, 0xb42au);
         break;
     case SFX_CARD_WRONG:
         if (!begin_sound(audio, effect, 0.31f, 0.34f, 110))

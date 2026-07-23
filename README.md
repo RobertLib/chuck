@@ -47,7 +47,9 @@ through randomly selected doors after varied delays. This makes breaching a
 risky alternative to finding the correct key card.
 The active terminal is always selected away from the level entrance.
 Ammunition is limited; once the pistol is empty, the attack button switches to
-a short-range knife strike. Grenades are powerful but risky, and hazards such as
+a short-range knife strike. A one-shot bazooka appears in every second level;
+its rocket detonates on impact and can clear a tightly grouped patrol. Grenades
+are powerful but risky, and hazards such as
 mines, spikes, ceiling fans, falling platforms, and moving platforms make the
 building itself part of the challenge. Some doors connect distant parts of a level,
 creating shortcuts, ambushes, or escape routes depending on how you use them.
@@ -62,7 +64,7 @@ means Chuck must crawl before firing to hit one.
 - Shoot vertically from a ladder: hold `Up` / `W` or `Down` / `S` and press `Space`
 - Use the knife sideways from a ladder: press `Space` without holding `Up` or `Down`
 - Crawl: hold `Down` or `S` while on the ground
-- Shoot, throw a grenade, or use the knife when out of ammo: `Space`
+- Launch a carried rocket, throw a grenade, shoot, or use the knife: `Space`
 - Hack the active terminal: hold `E` while standing nearby
 - Use a door: press `E` while standing in the doorway
 - Mute or unmute sound and music: `M`

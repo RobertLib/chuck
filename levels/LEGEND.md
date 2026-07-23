@@ -9,6 +9,7 @@ This file describes the meaning of characters used in the level text files.
 - `G` : Gun item (`ITEM_GUN`).
 - `N` : Grenade item (`ITEM_GRENADE`).
 - `K` : Medkit item (`ITEM_MEDKIT`).
+- `Z` : Bazooka item (`ITEM_BAZOOKA`). Contains one explosive rocket and does not respawn.
 - `M` : Enemy spawn (enemy is placed here).
 - `W` : Enemy spawn with a guard dog.
 - `J` : Ambient janitor with a cleaning cart and mop (visual-only NPC).
