@@ -928,6 +928,67 @@ static void test_enemy_aligns_before_vertical_climb(void)
     CHECK(fabsf(enemy.y - 5.0f * TILE_SIZE) < 0.01f);
 }
 
+static void test_dog_escapes_ladder_perch_without_spinning(void)
+{
+    /* A dog stranded on a ladder rung one tile above the floor used to see a
+     * cliff on both sides (its ledge probes only scan the feet row) and flip
+     * direction every frame, spinning in place. It must now step down off the
+     * rung instead of spinning. */
+    static const char data[] =
+        "##########\n"
+        "#S  H    #\n"
+        "####H#####\n"
+        "#   H    #\n"
+        "#   H    #\n"
+        "####H#####\n"
+        "#       E#\n"
+        "##########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 24601);
+    CHECK(level_load_data(&state.level, "dog ladder perch", data,
+                          strlen(data), &state.rng));
+
+    int perch_col = 4;
+    int perch_row = 3; /* rung one tile above the lower floor (row 5) */
+    float perch_x = perch_col * (float)TILE_SIZE + (TILE_SIZE - DOG_W) * 0.5f;
+    float perch_y = (perch_row + 1) * (float)TILE_SIZE - DOG_H;
+
+    state.dog_count = 1;
+    Dog *dog = &state.dogs[0];
+    *dog = (Dog){0};
+    dog->x = perch_x;
+    dog->y = perch_y;
+    dog->dir = 1;
+    dog->owner = -1;
+    dog->hp = DOG_HP;
+    dog->state = DOG_GUARD;
+    dog->guard_x = 0.0f; /* anchor to the far left, across the ladder */
+    dog->guard_y = perch_y;
+    dog->roam_target_x = 0.0f;
+    dog->chase_target_x = 0.0f;
+    dog->on_ground = true;
+
+    /* Keep the player far away so the dog just tries to return home. */
+    state.player.x = 10000.0f;
+    state.player.y = 10000.0f;
+
+    int flips = 0;
+    int prev_dir = dog->dir;
+    for (int frame = 0; frame < 180; ++frame)
+    {
+        gameplay_ai_update_movement(&state, 1.0f / 60.0f);
+        if (dog->dir != prev_dir)
+        {
+            flips++;
+            prev_dir = dog->dir;
+        }
+    }
+
+    CHECK(flips <= 3);                            /* no frantic spinning */
+    CHECK(dog->y > perch_y + TILE_SIZE * 0.5f);   /* dropped off the rung */
+    CHECK(fabsf(dog->x - perch_x) > TILE_SIZE);   /* left the ladder column */
+}
+
 static void test_hazards_emit_specific_impact_sounds(void)
 {
     GameplayState state = {0};
@@ -1200,6 +1261,7 @@ int main(void)
     test_enemy_moves_away_from_blocking_crate();
     test_enemy_leaves_climb_state_when_landing_on_crate();
     test_enemy_aligns_before_vertical_climb();
+    test_dog_escapes_ladder_perch_without_spinning();
     test_hazards_emit_specific_impact_sounds();
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();

@@ -603,6 +603,40 @@ static bool dog_can_jump_gap(const GameplayState *state,
     return false;
 }
 
+/* True when there is no floor at the feet row ahead but solid ground (or a
+ * ladder top) lies within a short drop below it. This lets a dog that ended
+ * up on a ladder rung a tile above the floor walk off the ledge and drop back
+ * down instead of treating both sides as a cliff and spinning in place. */
+static bool dog_can_step_down(const GameplayState *state,
+                              const Dog *dog, int direction)
+{
+    if (!dog->on_ground)
+        return false;
+    float probe_x = direction > 0 ? dog->x + DOG_W + 3.0f : dog->x - 3.0f;
+    int col = (int)floorf(probe_x / TILE_SIZE);
+    int feet_row = (int)floorf((dog->y + DOG_H + 2.0f) / TILE_SIZE);
+    /* Do not step into a wall at body height. */
+    if (level_is_solid(&state->level, col, feet_row - 1))
+        return false;
+    for (int drop = 1; drop <= DOG_STEP_DOWN_MAX_TILES; ++drop)
+    {
+        int row = feet_row + drop;
+        if (level_is_solid(&state->level, col, row) ||
+            level_is_ladder(&state->level, col, row))
+            return true;
+    }
+    return false;
+}
+
+/* Whether the dog can make progress in a direction by any means. */
+static bool dog_can_advance(const GameplayState *state, const Dog *dog,
+                            int direction)
+{
+    return dog_has_floor_ahead(state, dog, direction) ||
+           dog_can_step_down(state, dog, direction) ||
+           dog_can_jump_gap(state, dog, direction);
+}
+
 static bool dog_sees_player(const GameplayState *state, const Dog *dog)
 {
     float dog_x = dog->x + DOG_W * 0.5f;
@@ -673,6 +707,12 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
         dog->bite_cooldown -= dt;
         if (dog->bite_cooldown < 0.0f)
             dog->bite_cooldown = 0.0f;
+    }
+    if (dog->turn_cooldown > 0.0f)
+    {
+        dog->turn_cooldown -= dt;
+        if (dog->turn_cooldown < 0.0f)
+            dog->turn_cooldown = 0.0f;
     }
 
     if (dog_sees_player(state, dog))
@@ -775,23 +815,33 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
     if (wants_move)
     {
         int direction = target_x > dog->x ? 1 : -1;
-        dog->dir = direction;
-        if (!dog->on_ground || dog_has_floor_ahead(state, dog, direction))
+        if (!dog->on_ground || dog_has_floor_ahead(state, dog, direction) ||
+            dog_can_step_down(state, dog, direction))
+        {
+            dog->dir = direction;
             dog->vx = direction * speed;
+        }
         else if (dog_can_jump_gap(state, dog, direction))
         {
+            dog->dir = direction;
             dog->vx = direction * fmaxf(speed, DOG_JUMP_MIN_SPEED);
             dog->vy = -DOG_JUMP_SPEED;
             dog->on_ground = false;
         }
-        else
+        else if (dog->turn_cooldown <= 0.0f &&
+                 dog_can_advance(state, dog, -direction))
         {
+            /* Ledge ahead that cannot be crossed: turn around and roam back.
+             * Only flip when the other way is actually passable so a boxed-in
+             * dog stands still instead of spinning in place on a ladder, and
+             * the cooldown keeps it from flipping every frame. */
             dog->dir = -direction;
             dog->state = DOG_ROAM;
             dog->roam_target_x =
                 dog->x - direction * (DOG_HANDLER_DISTANCE + 24.0f);
             dog->state_timer =
                 0.7f + rng_range(&state->rng, 90) * 0.01f;
+            dog->turn_cooldown = DOG_TURN_COOLDOWN;
         }
     }
     float previous_vx = dog->vx;

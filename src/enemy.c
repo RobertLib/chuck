@@ -58,6 +58,7 @@ void dog_init(Dog *dog, float x, float y, int owner, Rng *rng)
     dog->owner = owner;
     dog->state = DOG_GUARD;
     dog->state_timer = 0.4f + rng_range(rng, 120) * 0.01f;
+    dog->turn_cooldown = 0.0f;
     dog->bite_cooldown = 0.0f;
     dog->lost_timer = 0.0f;
     dog->chase_target_x = x + DOG_W * 0.5f;

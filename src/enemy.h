@@ -83,6 +83,7 @@ typedef struct
     int owner; /* index into Game.enemies[], -1 after the handler is gone */
     DogState state;
     float state_timer;
+    float turn_cooldown; /* debounce before reversing at a ledge */
     float bite_cooldown;
     float lost_timer;
     /* Dogs keep running to the last visible/alarm position, not to the
