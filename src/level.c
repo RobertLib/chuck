@@ -86,6 +86,18 @@ static void place_crate(Level *level, int col, int row)
     crate->on_ground = false;
 }
 
+static void place_gas_canister(Level *level, int col, int row)
+{
+    if (level->runtime.gas_canister_count >= MAX_GAS_CANISTERS)
+        return;
+    GasCanister *canister =
+        &level->runtime.gas_canisters[level->runtime.gas_canister_count++];
+    canister->x = col * TILE_SIZE +
+                  (TILE_SIZE - GAS_CANISTER_W) * 0.5f;
+    canister->y = (row + 1) * TILE_SIZE - GAS_CANISTER_H;
+    canister->active = true;
+}
+
 static void place_terminal(Level *level, int col, int row)
 {
     if (level->map.terminal_count >= MAX_TERMINALS)
@@ -214,6 +226,10 @@ bool level_load_data(Level *level, const char *name,
         case 'B':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_crate(level, col, row);
+            break;
+        case 'L':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_gas_canister(level, col, row);
             break;
         case 'T':
             level->map.tiles[row][col] = TILE_EMPTY;

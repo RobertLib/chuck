@@ -754,6 +754,56 @@ static void draw_mine(SDL_Renderer *r, const Mine *mine, float cam_x, float oy)
   color_rect(r, (SDL_Color){157, 146, 90, 255}, x + 12.0f, y + 7.0f, 3.0f, 2.0f);
 }
 
+static void draw_gas_canister(SDL_Renderer *r,
+                              const GasCanister *canister,
+                              float cam_x, float oy)
+{
+  float x = canister->x - cam_x;
+  float y = canister->y + oy;
+
+  /* A narrow pressure cylinder with stepped shoulders and a brass valve.
+     The silhouette stays below a standing shot while remaining readable
+     against the dark industrial background. */
+  color_rect(r, (SDL_Color){3, 6, 9, 120},
+             x - 2.0f, y + 14.0f, GAS_CANISTER_W + 4.0f, 3.0f);
+
+  /* Valve, collar and short neck. */
+  color_rect(r, COL_INK, x + 4.0f, y, 5.0f, 3.0f);
+  color_rect(r, (SDL_Color){201, 174, 93, 255},
+             x + 5.0f, y, 3.0f, 2.0f);
+  color_rect(r, COL_INK, x + 3.0f, y + 2.0f, 6.0f, 4.0f);
+  color_rect(r, (SDL_Color){118, 126, 116, 255},
+             x + 4.0f, y + 3.0f, 4.0f, 3.0f);
+
+  /* Rounded shoulders and long cylindrical body. */
+  color_rect(r, COL_INK, x + 2.0f, y + 5.0f, 8.0f, 2.0f);
+  color_rect(r, COL_INK, x + 1.0f, y + 6.0f, 10.0f, 9.0f);
+  color_rect(r, COL_INK, x + 2.0f, y + 15.0f, 8.0f, 1.0f);
+  color_rect(r, (SDL_Color){224, 70, 53, 255},
+             x + 3.0f, y + 6.0f, 6.0f, 1.0f);
+  color_rect(r, (SDL_Color){92, 103, 103, 255},
+             x + 2.0f, y + 7.0f, 8.0f, 7.0f);
+  color_rect(r, (SDL_Color){51, 61, 63, 255},
+             x + 2.0f, y + 14.0f, 8.0f, 1.0f);
+  color_rect(r, (SDL_Color){153, 163, 158, 255},
+             x + 3.0f, y + 9.0f, 2.0f, 5.0f);
+
+  /* A red shoulder identifies the flammable contents without making the
+     whole cylinder resemble a fire extinguisher. */
+  color_rect(r, (SDL_Color){174, 48, 41, 255},
+             x + 2.0f, y + 7.0f, 8.0f, 2.0f);
+  color_rect(r, (SDL_Color){237, 80, 58, 255},
+             x + 3.0f, y + 7.0f, 2.0f, 2.0f);
+
+  /* Small warning label with a dark gas-flame mark. */
+  color_rect(r, (SDL_Color){239, 188, 48, 255},
+             x + 5.0f, y + 10.0f, 4.0f, 3.0f);
+  color_rect(r, (SDL_Color){70, 39, 27, 255},
+             x + 6.0f, y + 10.0f, 2.0f, 2.0f);
+  color_rect(r, (SDL_Color){255, 225, 103, 255},
+             x + 5.0f, y + 10.0f, 1.0f, 2.0f);
+}
+
 /* Draw a local sprite rectangle, mirrored inside the entity collision width. */
 static void sprite_rect(SDL_Renderer *r, float bx, float by, float sprite_w, int dir,
                         float lx, float ly, float w, float h, SDL_Color c)
@@ -1727,6 +1777,10 @@ static void render_world(Game *game)
   for (int i = 0; i < lvl->runtime.crate_count; ++i)
     if (lvl->runtime.crates[i].active)
       draw_crate(r, &lvl->runtime.crates[i], cam_x, oy);
+
+  for (int i = 0; i < lvl->runtime.gas_canister_count; ++i)
+    if (lvl->runtime.gas_canisters[i].active)
+      draw_gas_canister(r, &lvl->runtime.gas_canisters[i], cam_x, oy);
 
   for (int i = 0; i < game->gameplay.mine_count; ++i)
     if (game->gameplay.mines[i].active)

@@ -50,6 +50,8 @@ Ammunition is limited, grenades are powerful but risky, and hazards such as
 mines, spikes, ceiling fans, falling platforms, and moving platforms make the
 building itself part of the challenge. Some doors connect distant parts of a level,
 creating shortcuts, ambushes, or escape routes depending on how you use them.
+Small gas canisters can also be used against nearby guards, but their low profile
+means Chuck must crawl before firing to hit one.
 
 ## Controls
 

@@ -126,6 +126,12 @@ typedef struct
 
 typedef struct
 {
+    float x, y;
+    bool active;
+} GasCanister;
+
+typedef struct
+{
     int width;
     int height;
     TileType tiles[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
@@ -163,6 +169,8 @@ typedef struct
     bool terminal_hacked;
     Crate crates[MAX_CRATES];
     int crate_count;
+    GasCanister gas_canisters[MAX_GAS_CANISTERS];
+    int gas_canister_count;
 
     Elevator elevators[MAX_ELEVATORS];
     int elevator_count;

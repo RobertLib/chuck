@@ -32,6 +32,13 @@
 #define MINE_DAMAGE 1
 #define MINE_RADIUS 36.0f
 
+/* Small floor-level gas canisters. Their low profile deliberately puts them
+ * below a standing player's firing line, so Chuck must crawl to shoot them. */
+#define MAX_GAS_CANISTERS 64
+#define GAS_CANISTER_W 12
+#define GAS_CANISTER_H 16
+#define GAS_CANISTER_RADIUS 56.0f
+
 /* Pushable/destructible crates */
 #define MAX_CRATES 64
 #define CRATE_W 28

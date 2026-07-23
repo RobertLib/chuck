@@ -41,6 +41,73 @@ static void damage_crates_in_radius(GameplayState *state,
     }
 }
 
+static void explode_gas_canister(GameplayState *state,
+                                 CampaignState *campaign,
+                                 GasCanister *canister)
+{
+    if (!canister->active)
+        return;
+
+    canister->active = false;
+    float x = canister->x + GAS_CANISTER_W * 0.5f;
+    float y = canister->y + GAS_CANISTER_H * 0.5f;
+    game_events_explosion(&state->events, x, y, 72);
+    gameplay_world_sound(state, SFX_EXPLOSION, x, y);
+    game_events_camera_shake(&state->events, 8.0f, 0.32f);
+
+    for (int i = 0; i < state->enemy_count; ++i)
+    {
+        Enemy *enemy = &state->enemies[i];
+        if (enemy->dead ||
+            !within_radius(enemy->x + ENEMY_W * 0.5f,
+                           enemy->y + ENEMY_H * 0.5f,
+                           x, y, GAS_CANISTER_RADIUS))
+        {
+            continue;
+        }
+        enemy->hp = 0;
+        enemy->dead = true;
+        game_events_particles(&state->events,
+                              enemy->x + ENEMY_W * 0.5f,
+                              enemy->y + ENEMY_H * 0.5f,
+                              24, enemy->dir);
+        gameplay_world_sound(state, SFX_ENEMY_DOWN,
+                             enemy->x + ENEMY_W * 0.5f,
+                             enemy->y + ENEMY_H * 0.5f);
+        campaign->score += 150;
+    }
+    for (int i = 0; i < state->dog_count; ++i)
+    {
+        Dog *dog = &state->dogs[i];
+        if (dog->dead ||
+            !within_radius(dog->x + DOG_W * 0.5f,
+                           dog->y + DOG_H * 0.5f,
+                           x, y, GAS_CANISTER_RADIUS))
+        {
+            continue;
+        }
+        dog->hp = 0;
+        dog->dead = true;
+        game_events_particles(&state->events,
+                              dog->x + DOG_W * 0.5f,
+                              dog->y + DOG_H * 0.5f,
+                              14, dog->dir);
+        gameplay_world_sound(state, SFX_DOG_YELP,
+                             dog->x + DOG_W * 0.5f,
+                             dog->y + DOG_H * 0.5f);
+        campaign->score += 75;
+    }
+
+    damage_crates_in_radius(state, campaign, x, y, GAS_CANISTER_RADIUS);
+    if (state->invuln_timer <= 0.0f &&
+        within_radius(state->player.x + PLAYER_W * 0.5f,
+                      state->player.y + player_height(state) * 0.5f,
+                      x, y, GAS_CANISTER_RADIUS))
+    {
+        gameplay_hit_player(state);
+    }
+}
+
 static void explode_grenade(GameplayState *state, CampaignState *campaign,
                             Grenade *grenade)
 {
@@ -303,6 +370,8 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
         Bullet *bullet = &state->bullets[i];
         if (!bullet->active)
             continue;
+        float previous_x = bullet->x;
+        float previous_y = bullet->y;
         bullet->x += bullet->vx * dt;
         bullet->y += bullet->vy * dt;
 
@@ -348,6 +417,27 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
             {
                 bullet->active = false;
                 gameplay_destroy_crate(state, campaign, crate);
+                break;
+            }
+        }
+        if (!bullet->active)
+            continue;
+
+        for (int j = 0; j < state->level.runtime.gas_canister_count; ++j)
+        {
+            GasCanister *canister =
+                &state->level.runtime.gas_canisters[j];
+            float swept_x = fminf(previous_x, bullet->x);
+            float swept_y = fminf(previous_y, bullet->y);
+            float swept_w = width + fabsf(bullet->x - previous_x);
+            float swept_h = height + fabsf(bullet->y - previous_y);
+            if (canister->active &&
+                gameplay_boxes_overlap(swept_x, swept_y, swept_w, swept_h,
+                                       canister->x, canister->y,
+                                       GAS_CANISTER_W, GAS_CANISTER_H))
+            {
+                bullet->active = false;
+                explode_gas_canister(state, campaign, canister);
                 break;
             }
         }

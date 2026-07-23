@@ -298,6 +298,62 @@ static void test_grenade_fuse_and_explosion_emit_sounds(void)
                             SFX_EXPLOSION));
 }
 
+static void test_gas_canister_requires_crawling_shot(void)
+{
+    static const char data[] =
+        "###########\n"
+        "#S   LM E #\n"
+        "###########\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 61);
+    CHECK(level_load_data(&state.level, "gas-canister", data, strlen(data),
+                          &state.rng));
+    CHECK(state.level.runtime.gas_canister_count == 1);
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    player_reset(&state.player, &state.level);
+
+    GasCanister *canister = &state.level.runtime.gas_canisters[0];
+    Input input = {.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    Bullet *standing_bullet = &state.bullets[0];
+    CHECK(standing_bullet->active);
+    CHECK(standing_bullet->y + BULLET_H <= canister->y);
+    float travel_time =
+        (canister->x + GAS_CANISTER_W + 1.0f - standing_bullet->x) /
+        standing_bullet->vx;
+    gameplay_combat_update_player_bullets(&state, &campaign, travel_time);
+    CHECK(canister->active);
+
+    memset(state.bullets, 0, sizeof(state.bullets));
+    game_events_clear(&state.events);
+    state.player.y += (float)(PLAYER_H - PLAYER_CRAWL_H);
+    state.player.crawling = true;
+    input = (Input){.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    Bullet *crawling_bullet = &state.bullets[0];
+    CHECK(crawling_bullet->active);
+    CHECK(crawling_bullet->y < canister->y + GAS_CANISTER_H);
+    CHECK(crawling_bullet->y + BULLET_H > canister->y);
+    travel_time =
+        (canister->x + GAS_CANISTER_W + 1.0f - crawling_bullet->x) /
+        crawling_bullet->vx;
+    gameplay_combat_update_player_bullets(&state, &campaign, travel_time);
+
+    CHECK(!canister->active);
+    CHECK(!crawling_bullet->active);
+    CHECK(state.enemies[0].dead);
+    CHECK(campaign.score == 150);
+    bool found_explosion = false;
+    for (int i = 0; i < state.events.count; ++i)
+        found_explosion |=
+            state.events.items[i].type == GAME_EVENT_EXPLOSION;
+    CHECK(found_explosion);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_EXPLOSION));
+}
+
 static void test_crate_movement_emits_sounds(void)
 {
     static const char data[] =
@@ -428,6 +484,7 @@ int main(void)
     test_key_cards_keep_scoring_and_unlock_rules();
     test_mine_damage_emits_feedback();
     test_grenade_fuse_and_explosion_emit_sounds();
+    test_gas_canister_requires_crawling_shot();
     test_crate_movement_emits_sounds();
     test_hazards_emit_specific_impact_sounds();
     test_enemy_spawn_uses_seeded_rng();

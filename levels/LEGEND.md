@@ -16,6 +16,7 @@ This file describes the meaning of characters used in the level text files.
 - `^` : Spike / hazard (instant damage when stepped on).
 - `O` : Rotating ceiling fan (lethal on contact with the blades).
 - `B` : Pushable crate (can be shoved or destroyed by shots/explosions).
+- `L` : Small gas canister. A standing shot passes over it; crawl and shoot it to cause an explosion that can kill nearby enemies.
 - `T` : Access terminal. One randomly selected terminal is active; the rest are decorative.
 - `c` : Decorative office chair (non-solid).
 - `d` : Decorative office desk with a computer (non-solid).
