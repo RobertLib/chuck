@@ -218,8 +218,9 @@ bool game_init_seeded(Game *game, uint64_t seed)
     /* Initialise particle system */
     particle_system_init(&game->presentation.particles);
 
-    /* Establish the hostage situation once, then reveal the title screen. */
-    game_enter_state(game, STATE_OPENING_CUTSCENE);
+    /* Boot straight to the title screen; the opening cutscene now plays after
+     * the player presses START. */
+    game_enter_state(game, STATE_INTRO);
 
     game->platform.last_tick = SDL_GetTicksNS();
     return true;
@@ -342,8 +343,9 @@ static bool update_scene(Game *game, float dt)
 
         if (finished || game->input.confirm)
         {
+            /* Cutscene over: begin the campaign on level one. */
             audio_stop_effects(&game->platform.audio);
-            game_enter_state(game, STATE_INTRO);
+            restart_game(game);
         }
         clear_edge_input(game);
         return true;
@@ -361,8 +363,9 @@ static bool update_scene(Game *game, float dt)
 
         if (game->input.confirm)
         {
+            /* START pressed: play the opening cutscene before gameplay begins. */
             game->input.confirm = false;
-            restart_game(game);
+            game_enter_state(game, STATE_OPENING_CUTSCENE);
         }
         clear_edge_input(game);
         return true;
