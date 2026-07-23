@@ -17,6 +17,10 @@ typedef struct
     int climb_dir;  /* -1 = up, +1 = down */
     int ladder_col; /* column the enemy is climbing */
     float climb_cooldown;
+    /* Temporarily keep moving away after hitting an obstacle. Without this,
+     * pursuit steering can send the guard back into the same crate every
+     * frame. */
+    float obstacle_avoid_timer;
     int hp; /* current hit points, 1..ENEMY_HP */
     bool dead;
     float shoot_cooldown; /* seconds until next shot */

@@ -794,6 +794,140 @@ static void test_crate_stops_at_enemy_and_triggers_counterattack(void)
                              SFX_ENEMY_ALERT));
 }
 
+static void test_enemy_moves_away_from_blocking_crate(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S B  M E#\n"
+        "##########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 2718);
+    CHECK(level_load_data(&state.level, "enemy crate route", data,
+                          strlen(data), &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.level.runtime.crate_count == 1);
+    CHECK(state.enemy_count == 1);
+
+    Crate *crate = &state.level.runtime.crates[0];
+    Enemy *enemy = &state.enemies[0];
+    enemy->dir = -1;
+    enemy->on_ground = true;
+    enemy->aim_timer = 0.0f;
+    enemy->provoked = true;
+    enemy->has_pursuit_target = true;
+    enemy->pursuit_target_x = state.player.x + PLAYER_W * 0.5f;
+    enemy->pursuit_target_y = enemy->y + ENEMY_H * 0.5f;
+
+    float contact_x = crate->x + CRATE_W;
+    for (int frame = 0; frame < 480 && enemy->x > contact_x + 0.01f;
+         ++frame)
+    {
+        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+    }
+    CHECK(fabsf(enemy->x - contact_x) < 0.02f);
+
+    for (int frame = 0; frame < 120; ++frame)
+        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+
+    CHECK(enemy->x > contact_x + 20.0f);
+    CHECK(enemy->obstacle_avoid_timer > 0.0f);
+}
+
+static void test_enemy_leaves_climb_state_when_landing_on_crate(void)
+{
+    GameplayState state = {0};
+    Enemy *enemy = &state.enemies[0];
+    Crate *crate = &state.level.runtime.crates[0];
+    state.enemy_count = 1;
+    state.level.runtime.crate_count = 1;
+    *crate = (Crate){
+        .x = 96.0f,
+        .y = 160.0f,
+        .active = true,
+        .on_ground = true};
+    *enemy = (Enemy){
+        .x = crate->x,
+        .y = crate->y - ENEMY_H + 1.0f,
+        .vy = ENEMY_CLIMB_SPEED,
+        .dir = 1,
+        .climbing = true,
+        .climb_dir = 1,
+        .hp = ENEMY_HP};
+
+    gameplay_resolve_enemy_crates(&state, enemy,
+                                  enemy->x, crate->y - ENEMY_H);
+
+    CHECK(!enemy->climbing);
+    CHECK(enemy->on_ground);
+    CHECK(fabsf(enemy->y - (crate->y - ENEMY_H)) < 0.01f);
+    CHECK(enemy->obstacle_avoid_timer == ENEMY_OBSTACLE_AVOID_TIME);
+}
+
+static void test_enemy_aligns_before_vertical_climb(void)
+{
+    static const char data[] =
+        "########\n"
+        "#  H   #\n"
+        "#S H E #\n"
+        "###H####\n"
+        "#  H   #\n"
+        "#  H   #\n"
+        "###H####\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 1618);
+    CHECK(level_load_data(&level, "enemy ladder alignment", data,
+                          strlen(data), &rng));
+
+    float ladder_x = 3.0f * TILE_SIZE +
+                     (TILE_SIZE - ENEMY_W) * 0.5f;
+    Enemy enemy;
+    enemy_init(&enemy, ladder_x - 10.0f, 5.0f * TILE_SIZE, &rng);
+    enemy.dir = -1;
+    enemy.on_ground = true;
+
+    enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
+                 level.map.start_x + PLAYER_W * 0.5f,
+                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, &rng);
+    CHECK(enemy.climbing);
+
+    float climb_start_y = enemy.y;
+    float off_ladder_x = enemy.x;
+    enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
+                 level.map.start_x + PLAYER_W * 0.5f,
+                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, &rng);
+
+    CHECK(enemy.x > off_ladder_x);
+    CHECK(fabsf(enemy.y - climb_start_y) < 0.01f);
+
+    for (int frame = 0; frame < 480 && enemy.climbing; ++frame)
+        enemy_update(&enemy, &level, 1.0f / 120.0f, true, false,
+                     level.map.start_x + PLAYER_W * 0.5f,
+                     2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, &rng);
+
+    CHECK(!enemy.climbing);
+    CHECK(fabsf(enemy.x - ladder_x) < 0.01f);
+    CHECK(fabsf(enemy.y - 2.0f * TILE_SIZE) < 0.01f);
+
+    enemy.on_ground = true;
+    enemy.dir = 1;
+    enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
+                 ladder_x + ENEMY_W * 0.5f,
+                 5.0f * TILE_SIZE + ENEMY_H * 0.5f, false, &rng);
+    CHECK(enemy.climbing);
+    CHECK(enemy.climb_dir == 1);
+
+    for (int frame = 0; frame < 480 && enemy.climbing; ++frame)
+        enemy_update(&enemy, &level, 1.0f / 120.0f, true, false,
+                     ladder_x + ENEMY_W * 0.5f,
+                     5.0f * TILE_SIZE + ENEMY_H * 0.5f,
+                     false, &rng);
+
+    CHECK(!enemy.climbing);
+    CHECK(fabsf(enemy.x - ladder_x) < 0.01f);
+    CHECK(fabsf(enemy.y - 5.0f * TILE_SIZE) < 0.01f);
+}
+
 static void test_hazards_emit_specific_impact_sounds(void)
 {
     GameplayState state = {0};
@@ -893,6 +1027,9 @@ int main(void)
     test_ladder_knife_is_horizontal_only();
     test_crate_movement_emits_sounds();
     test_crate_stops_at_enemy_and_triggers_counterattack();
+    test_enemy_moves_away_from_blocking_crate();
+    test_enemy_leaves_climb_state_when_landing_on_crate();
+    test_enemy_aligns_before_vertical_climb();
     test_hazards_emit_specific_impact_sounds();
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();

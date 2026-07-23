@@ -292,6 +292,12 @@ void gameplay_resolve_enemy_crates(GameplayState *state, Enemy *enemy,
             enemy->y = crate->y - ENEMY_H;
             enemy->vy = 0.0f;
             enemy->on_ground = true;
+            if (enemy->climbing)
+            {
+                enemy->climbing = false;
+                enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
+                enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
+            }
             continue;
         }
         if (previous_x + ENEMY_W * 0.5f < crate->x + CRATE_W * 0.5f)
@@ -305,6 +311,13 @@ void gameplay_resolve_enemy_crates(GameplayState *state, Enemy *enemy,
             enemy->dir = 1;
         }
         enemy->vx = 0.0f;
+        enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
+        if (enemy->climbing)
+        {
+            enemy->climbing = false;
+            enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
+            enemy->on_ground = false;
+        }
     }
 }
 

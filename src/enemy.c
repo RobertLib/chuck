@@ -14,6 +14,7 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->climb_dir = -1;
     enemy->ladder_col = 0;
     enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
+    enemy->obstacle_avoid_timer = 0.0f;
     enemy->hp = ENEMY_HP;
     enemy->dead = false;
     /* Stagger initial shoot time so enemies don't all fire at once */
@@ -93,7 +94,8 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
                                   bool pursuing, float target_x,
                                   float target_y, Rng *rng)
 {
-    float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
+    bool following_target =
+        pursuing && enemy->obstacle_avoid_timer <= 0.0f;
 
     /* Finish the chosen climb direction before making another routing
        decision. Re-evaluating it from target_y on every frame can reverse the
@@ -105,7 +107,23 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
     float ladder_x =
         enemy->ladder_col * (float)TILE_SIZE +
         (TILE_SIZE - ENEMY_W) * 0.5f;
-    enemy->vx = (ladder_x - enemy->x) * 10.0f;
+    float align_dx = ladder_x - enemy->x;
+
+    /* Centre the whole collision box before moving vertically. Starting the
+     * climb while part of the guard is still over the neighbouring floor tile
+     * lets vertical collision pin it to that floor indefinitely. */
+    if (fabsf(align_dx) > 0.5f)
+    {
+        enemy->vx = align_dx * 10.0f;
+        enemy->vy = 0.0f;
+        enemy->on_ground = false;
+        level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
+                   ENEMY_W, ENEMY_H, dt, true, &enemy->on_ground,
+                   false);
+        return;
+    }
+    enemy->x = ladder_x;
+    enemy->vx = 0.0f;
     enemy->vy = (float)enemy->climb_dir * ENEMY_CLIMB_SPEED;
 
     bool ladder_ahead;
@@ -140,21 +158,26 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
     bool can_right = right_clear && level_is_solid(level, enemy->ladder_col + 1, bot_row + 1);
     bool floor_beside = can_left || can_right;
 
+    int target_row = (int)floorf(target_y / TILE_SIZE);
+    float exit_y = (bot_row + 1) * (float)TILE_SIZE - ENEMY_H;
     bool reached_target_floor =
-        pursuing &&
-        fabsf(target_y - enemy_center_y) <= TILE_SIZE * 0.75f;
+        following_target && target_row == bot_row &&
+        fabsf(enemy->y - exit_y) <= ENEMY_CLIMB_SPEED * dt + 0.5f;
     bool leave_ladder =
         !ladder_ahead ||
         (floor_beside &&
-         (pursuing ? reached_target_floor : rng_range(rng, 100) < 4));
+         (following_target ? reached_target_floor
+                           : rng_range(rng, 100) < 4));
     if (leave_ladder)
     {
+        if (reached_target_floor)
+            enemy->y = exit_y;
         enemy->climbing = false;
         enemy->vy = 0.0f;
         enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
         if (can_left && can_right)
         {
-            if (pursuing)
+            if (following_target)
             {
                 float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
                 enemy->dir = target_x < enemy_center_x ? -1 : 1;
@@ -185,6 +208,9 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                                  bool pursuing, bool alarmed, float target_x,
                                  float target_y, bool hemmed_in, Rng *rng)
 {
+    bool following_target =
+        pursuing && enemy->obstacle_avoid_timer <= 0.0f;
+
     enemy->vy += GRAVITY * dt;
     if (enemy->vy > MAX_FALL_SPEED)
     {
@@ -222,7 +248,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
      * frame and prevents the enemy from continuing along the platform to a
      * ladder. Keeping the current patrol direction lets the ladder logic
      * below find a route between floors. */
-    if (pursuing && !hemmed_in && target_on_same_floor)
+    if (following_target && !hemmed_in && target_on_same_floor)
     {
         if (fabsf(target_dx) > 2.0f)
             enemy->dir = target_dx < 0.0f ? -1 : 1;
@@ -266,7 +292,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             bool ladder_toward_target =
                 desired_climb_dir < 0 ? up_ok : down_ok;
             bool start_climbing =
-                pursuing
+                following_target
                     ? (fabsf(target_y - enemy_center_y) >
                            TILE_SIZE * 0.75f &&
                        ladder_toward_target)
@@ -277,7 +303,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                 enemy->climbing = true;
                 enemy->on_ground = false;
                 enemy->ladder_col = center_col;
-                if (pursuing)
+                if (following_target)
                 {
                     enemy->climb_dir = desired_climb_dir;
                 }
@@ -312,6 +338,13 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
         enemy->talk_cooldown -= dt;
         if (enemy->talk_cooldown < 0.0f)
             enemy->talk_cooldown = 0.0f;
+    }
+
+    if (enemy->obstacle_avoid_timer > 0.0f)
+    {
+        enemy->obstacle_avoid_timer -= dt;
+        if (enemy->obstacle_avoid_timer < 0.0f)
+            enemy->obstacle_avoid_timer = 0.0f;
     }
 
     if (enemy->recoil_timer > 0.0f)
