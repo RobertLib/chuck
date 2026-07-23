@@ -18,7 +18,7 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
                               state->player.on_ground &&
                               !state->player.on_ladder;
     bool alarm_started = state->terminal_hacking &&
-                         state->terminal_alarm_timer <= 0.0f;
+                         !gameplay_alarm_active(state);
     if (state->terminal_hacking)
     {
         const Terminal *terminal =
@@ -27,9 +27,9 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
                           ((float)TILE_SIZE - PLAYER_W) * 0.5f;
         if (alarm_started)
         {
-            gameplay_world_sound(state, SFX_TERMINAL_ALARM,
-                                 (terminal->col + 0.5f) * TILE_SIZE,
-                                 (terminal->row + 0.5f) * TILE_SIZE);
+            gameplay_trigger_alarm(state,
+                                   (terminal->col + 0.5f) * TILE_SIZE,
+                                   (terminal->row + 0.5f) * TILE_SIZE, -1);
         }
     }
     else
@@ -40,7 +40,11 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
 
     if (state->terminal_hacking)
     {
-        state->terminal_alarm_timer = TERMINAL_ALARM_TIME;
+        const Terminal *terminal =
+            &state->level.map.terminals[state->level.runtime.active_terminal_index];
+        state->terminal_alarm_timer = ALARM_CALM_TIME;
+        state->alarm_target_x = (terminal->col + 0.5f) * TILE_SIZE;
+        state->alarm_target_y = (terminal->row + 0.5f) * TILE_SIZE;
         if (alarm_started && state->level.map.door_count > 0)
         {
             int count_range = TERMINAL_REINFORCEMENT_MAX_COUNT -
@@ -54,16 +58,7 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
                                     TERMINAL_REINFORCEMENT_FIRST_MAX);
         }
     }
-    else if (state->terminal_alarm_timer > 0.0f)
-    {
-        state->terminal_alarm_timer -= dt;
-        if (state->terminal_alarm_timer <= 0.0f)
-        {
-            state->terminal_alarm_timer = 0.0f;
-            state->terminal_reinforcement_timer = 0.0f;
-            state->terminal_reinforcements_pending = 0;
-        }
-    }
+    (void)dt;
 }
 
 bool gameplay_advance_terminal(GameplayState *state,

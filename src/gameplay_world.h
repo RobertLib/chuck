@@ -7,6 +7,11 @@ bool gameplay_boxes_overlap(float ax, float ay, float aw, float ah,
                             float bx, float by, float bw, float bh);
 void gameplay_world_sound(GameplayState *state, SoundEffect effect,
                           float x, float y);
+bool gameplay_alarm_active(const GameplayState *state);
+void gameplay_trigger_alarm(GameplayState *state, float source_x,
+                            float source_y, int switch_index);
+void gameplay_refresh_alarm_from_player(GameplayState *state);
+void gameplay_update_alarm(GameplayState *state, float dt);
 void gameplay_hit_player(GameplayState *state);
 void gameplay_unlock_exit(GameplayState *state);
 bool gameplay_player_near_active_terminal(const GameplayState *state);

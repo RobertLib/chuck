@@ -102,16 +102,66 @@ static bool enemy_has_los(const GameplayState *state, const Enemy *enemy)
     return horizontal_los_clear(state, enemy_x, player_x, enemy_y);
 }
 
-static bool terminal_target(const GameplayState *state,
-                            float *target_x, float *target_y)
+static bool alarm_target(const GameplayState *state,
+                         float *target_x, float *target_y)
 {
-    int index = state->level.runtime.active_terminal_index;
-    if (index < 0 || index >= state->level.map.terminal_count)
+    if (!gameplay_alarm_active(state))
         return false;
-    const Terminal *terminal = &state->level.map.terminals[index];
-    *target_x = (terminal->col + 0.5f) * TILE_SIZE;
-    *target_y = (terminal->row + 0.5f) * TILE_SIZE;
+    *target_x = state->alarm_target_x;
+    *target_y = state->alarm_target_y;
     return true;
+}
+
+static bool another_guard_is_raising_alarm(const GameplayState *state,
+                                           int enemy_index)
+{
+    for (int i = 0; i < state->enemy_count; ++i)
+        if (i != enemy_index && !state->enemies[i].dead &&
+            state->enemies[i].raising_alarm)
+            return true;
+    return false;
+}
+
+static int nearest_alarm_switch(const GameplayState *state,
+                                const Enemy *enemy)
+{
+    int nearest = -1;
+    float best_distance = 0.0f;
+    float enemy_x = enemy->x + ENEMY_W * 0.5f;
+    float enemy_y = enemy->y + ENEMY_H * 0.5f;
+    for (int i = 0; i < state->level.map.alarm_switch_count; ++i)
+    {
+        const AlarmSwitch *alarm_switch =
+            &state->level.map.alarm_switches[i];
+        float switch_x = (alarm_switch->col + 0.5f) * TILE_SIZE;
+        float switch_y = (alarm_switch->row + 0.5f) * TILE_SIZE;
+        /* Vertical travel is deliberately weighted: a switch on the current
+         * corridor is usually faster than a slightly nearer one by a ladder. */
+        float distance = fabsf(switch_x - enemy_x) +
+                         fabsf(switch_y - enemy_y) * 1.35f;
+        if (nearest < 0 || distance < best_distance)
+        {
+            nearest = i;
+            best_distance = distance;
+        }
+    }
+    return nearest;
+}
+
+static void guard_run_to_alarm(GameplayState *state, Enemy *enemy,
+                               int switch_index)
+{
+    enemy->raising_alarm = true;
+    enemy->alarm_switch_index = switch_index;
+    enemy->alarm_use_timer = 0.0f;
+    enemy->aim_timer = 0.0f;
+    enemy->talking = false;
+    enemy->talk_timer = 0.0f;
+    enemy->talk_partner = -1;
+    enemy->talk_cooldown = ENEMY_TALK_COOLDOWN;
+    gameplay_world_sound(state, SFX_ENEMY_ALERT,
+                         enemy->x + ENEMY_W * 0.5f,
+                         enemy->y + ENEMY_H * 0.5f);
 }
 
 static void spawn_dog_for_enemy(GameplayState *state, int enemy_index)
@@ -521,18 +571,20 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
 
     if (dog_sees_player(state, dog))
     {
+        if (gameplay_alarm_active(state))
+            gameplay_refresh_alarm_from_player(state);
         dog->chase_target_x = state->player.x + PLAYER_W * 0.5f;
         dog->has_chase_target = true;
         dog->state = DOG_CHASE;
         dog->lost_timer = DOG_LOST_TIME;
     }
-    else if (state->terminal_alarm_timer > 0.0f)
+    else if (gameplay_alarm_active(state))
     {
         if (!dog->has_chase_target)
         {
             float ignored_y;
             dog->has_chase_target =
-                terminal_target(state, &dog->chase_target_x, &ignored_y);
+                alarm_target(state, &dog->chase_target_x, &ignored_y);
         }
         if (dog->has_chase_target)
         {
@@ -646,19 +698,21 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
 
 static void update_conversations(GameplayState *state)
 {
-    if (state->terminal_alarm_timer <= 0.0f)
+    if (!gameplay_alarm_active(state))
     {
         for (int i = 0; i < state->enemy_count; ++i)
         {
             Enemy *first = &state->enemies[i];
-            if (first->dead || first->provoked || first->talking ||
+            if (first->dead || first->provoked || first->raising_alarm ||
+                first->talking ||
                 first->climbing || !first->on_ground ||
                 first->talk_partner != -1 || first->talk_cooldown > 0.0f)
                 continue;
             for (int j = i + 1; j < state->enemy_count; ++j)
             {
                 Enemy *second = &state->enemies[j];
-                if (second->dead || second->provoked || second->talking ||
+                if (second->dead || second->provoked ||
+                    second->raising_alarm || second->talking ||
                     second->climbing || !second->on_ground ||
                     second->talk_partner != -1 ||
                     second->talk_cooldown > 0.0f ||
@@ -742,21 +796,102 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
             continue;
         float previous_x = enemy->x;
         float previous_y = enemy->y;
-        bool terminal_pursuit = state->terminal_alarm_timer > 0.0f;
-        bool pursuing = terminal_pursuit || enemy->provoked;
-        if (pursuing && enemy_has_los(state, enemy))
+        bool alarm_pursuit = gameplay_alarm_active(state);
+        if (alarm_pursuit && enemy->raising_alarm)
         {
-            float height = state->player.crawling
-                               ? (float)PLAYER_CRAWL_H
-                               : (float)PLAYER_H;
-            enemy->pursuit_target_x = state->player.x + PLAYER_W * 0.5f;
-            enemy->pursuit_target_y = state->player.y + height * 0.5f;
-            enemy->has_pursuit_target = true;
+            enemy->raising_alarm = false;
+            enemy->alarm_switch_index = -1;
+            enemy->alarm_use_timer = 0.0f;
         }
-        else if (terminal_pursuit && !enemy->has_pursuit_target)
-            enemy->has_pursuit_target =
-                terminal_target(state, &enemy->pursuit_target_x,
-                                &enemy->pursuit_target_y);
+
+        bool switch_pursuit = enemy->raising_alarm;
+        if (switch_pursuit)
+        {
+            int switch_index = enemy->alarm_switch_index;
+            if (switch_index < 0 ||
+                switch_index >= state->level.map.alarm_switch_count)
+            {
+                enemy->raising_alarm = false;
+                switch_pursuit = false;
+            }
+            else
+            {
+                const AlarmSwitch *alarm_switch =
+                    &state->level.map.alarm_switches[switch_index];
+                float switch_x = (alarm_switch->col + 0.5f) * TILE_SIZE;
+                float switch_y = (alarm_switch->row + 0.5f) * TILE_SIZE;
+                float enemy_x = enemy->x + ENEMY_W * 0.5f;
+                enemy->pursuit_target_x = switch_x +
+                    (enemy_x < switch_x ? -ALARM_SWITCH_STAND_DISTANCE
+                                        : ALARM_SWITCH_STAND_DISTANCE);
+                enemy->pursuit_target_y = switch_y;
+                enemy->has_pursuit_target = true;
+                if (fabsf(enemy_x - switch_x) <=
+                        ALARM_SWITCH_USE_RANGE &&
+                    fabsf(enemy->y + ENEMY_H * 0.5f - switch_y) <=
+                        TILE_SIZE * 0.65f &&
+                    enemy->on_ground && !enemy->climbing)
+                {
+                    enemy->alarm_use_timer += dt;
+                    enemy->dir = switch_x < enemy_x
+                                     ? -1
+                                     : 1;
+                    if (enemy->alarm_use_timer >= ALARM_SWITCH_USE_TIME)
+                    {
+                        gameplay_trigger_alarm(state, switch_x, switch_y,
+                                               switch_index);
+                        enemy->raising_alarm = false;
+                        enemy->alarm_switch_index = -1;
+                        enemy->alarm_use_timer = 0.0f;
+                        alarm_pursuit = true;
+                        switch_pursuit = false;
+                    }
+                }
+                else
+                    enemy->alarm_use_timer = 0.0f;
+            }
+        }
+
+        bool pursuing = alarm_pursuit || enemy->provoked || switch_pursuit;
+        bool sees_player = pursuing && enemy_has_los(state, enemy);
+        if (sees_player)
+        {
+            if (!switch_pursuit)
+            {
+                float height = state->player.crawling
+                                   ? (float)PLAYER_CRAWL_H
+                                   : (float)PLAYER_H;
+                enemy->pursuit_target_x = state->player.x + PLAYER_W * 0.5f;
+                enemy->pursuit_target_y = state->player.y + height * 0.5f;
+                enemy->has_pursuit_target = true;
+            }
+            if (alarm_pursuit)
+                gameplay_refresh_alarm_from_player(state);
+        }
+        else if (alarm_pursuit)
+        {
+            float target_x;
+            float target_y;
+            if (alarm_target(state, &target_x, &target_y))
+            {
+                float enemy_x = enemy->x + ENEMY_W * 0.5f;
+                float enemy_y = enemy->y + ENEMY_H * 0.5f;
+                bool near_last_sighting =
+                    fabsf(target_x - enemy_x) <=
+                        ENEMY_ALARM_SEARCH_NEAR_RADIUS &&
+                    fabsf(target_y - enemy_y) <= TILE_SIZE * 0.75f;
+                if (near_last_sighting)
+                {
+                    /* Once at the last known position, sweep both sides of
+                     * the corridor instead of standing on one exact pixel. */
+                    float phase = enemy->anim_time * 0.45f + (float)i * 1.7f;
+                    target_x += sinf(phase) * ENEMY_ALARM_SEARCH_RADIUS;
+                }
+                enemy->pursuit_target_x = target_x;
+                enemy->pursuit_target_y = target_y;
+                enemy->has_pursuit_target = true;
+            }
+        }
         else if (!pursuing)
             enemy->has_pursuit_target = false;
 
@@ -764,7 +899,7 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
         bool hemmed_in =
             crate_or_enemy_blocks_side(state, i, -1) &&
             crate_or_enemy_blocks_side(state, i, 1);
-        enemy_update(enemy, &state->level, dt, pursuing,
+        enemy_update(enemy, &state->level, dt, pursuing, alarm_pursuit,
                      enemy->pursuit_target_x, enemy->pursuit_target_y,
                      hemmed_in, &state->rng);
         gameplay_resolve_enemy_crates(state, enemy, previous_x, previous_y);
@@ -817,7 +952,7 @@ static void update_enemy_reactions(GameplayState *state)
     for (int i = 0; i < state->enemy_count; ++i)
     {
         Enemy *enemy = &state->enemies[i];
-        if (enemy->dead || enemy->climbing)
+        if (enemy->dead || enemy->climbing || enemy->raising_alarm)
             continue;
         float enemy_x = enemy->x + ENEMY_W * 0.5f;
         float dx = player_x - enemy_x;
@@ -843,10 +978,52 @@ static void update_enemy_reactions(GameplayState *state)
             enemy->dir = dx > 0.0f ? 1 : -1;
             enemy->aim_target_x = player_x;
             enemy->aim_target_y = state->player.y + PLAYER_H * 0.15f;
-            enemy->aim_timer = ENEMY_AIM_TIME;
+            enemy->aim_timer = ENEMY_AIM_TIME *
+                               (gameplay_alarm_active(state)
+                                    ? ENEMY_ALARM_AIM_MULTIPLIER
+                                    : 1.0f);
             gameplay_world_sound(state, SFX_ENEMY_ALERT,
                                  enemy_x, enemy_y);
         }
+    }
+}
+
+static void update_guard_encounters(GameplayState *state, float dt)
+{
+    for (int i = 0; i < state->enemy_count; ++i)
+    {
+        Enemy *enemy = &state->enemies[i];
+        if (enemy->dead)
+            continue;
+
+        bool sees_player = !enemy->climbing && enemy_has_los(state, enemy);
+        if (!sees_player)
+        {
+            if (enemy->encounter_decided && !enemy->raising_alarm)
+            {
+                enemy->encounter_lost_timer -= dt;
+                if (enemy->encounter_lost_timer <= 0.0f)
+                {
+                    enemy->encounter_decided = false;
+                    enemy->encounter_lost_timer = 0.0f;
+                }
+            }
+            continue;
+        }
+
+        enemy->encounter_lost_timer = GUARD_ENCOUNTER_RESET_TIME;
+        if (gameplay_alarm_active(state))
+            gameplay_refresh_alarm_from_player(state);
+        if (enemy->encounter_decided || enemy->provoked ||
+            enemy->raising_alarm || gameplay_alarm_active(state))
+            continue;
+
+        enemy->encounter_decided = true;
+        int switch_index = nearest_alarm_switch(state, enemy);
+        if (switch_index >= 0 &&
+            !another_guard_is_raising_alarm(state, i) &&
+            rng_range(&state->rng, 100) < GUARD_ALARM_CHANCE)
+            guard_run_to_alarm(state, enemy, switch_index);
     }
 }
 
@@ -884,11 +1061,12 @@ static void fire_enemy_bullet(GameplayState *state, Enemy *enemy)
 
 void gameplay_ai_update_combat(GameplayState *state, float dt)
 {
+    update_guard_encounters(state, dt);
     update_enemy_reactions(state);
     for (int i = 0; i < state->enemy_count; ++i)
     {
         Enemy *enemy = &state->enemies[i];
-        if (enemy->dead || enemy->climbing)
+        if (enemy->dead || enemy->climbing || enemy->raising_alarm)
             continue;
         if (enemy->aim_timer > 0.0f)
         {
@@ -899,7 +1077,10 @@ void gameplay_ai_update_combat(GameplayState *state, float dt)
                 fire_enemy_bullet(state, enemy);
                 enemy->shoot_cooldown =
                     ENEMY_SHOOT_COOLDOWN *
-                    (0.7f + rng_range(&state->rng, 60) * 0.01f);
+                    (0.7f + rng_range(&state->rng, 60) * 0.01f) *
+                    (gameplay_alarm_active(state)
+                         ? ENEMY_ALARM_COOLDOWN_MULTIPLIER
+                         : 1.0f);
             }
             continue;
         }
@@ -911,7 +1092,10 @@ void gameplay_ai_update_combat(GameplayState *state, float dt)
                               (state->player.crawling
                                    ? PLAYER_CRAWL_H * 0.45f
                                    : PLAYER_H * 0.15f);
-        enemy->aim_timer = ENEMY_AIM_TIME;
+        enemy->aim_timer = ENEMY_AIM_TIME *
+                           (gameplay_alarm_active(state)
+                                ? ENEMY_ALARM_AIM_MULTIPLIER
+                                : 1.0f);
         gameplay_world_sound(state, SFX_ENEMY_ALERT,
                              enemy->x + ENEMY_W * 0.5f,
                              enemy->y + ENEMY_H * 0.5f);

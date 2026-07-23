@@ -736,14 +736,18 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.13f, 0.29f, 880.0f, 882.0f, 0.32f, WAVE_TRIANGLE, 0.008f, 0.22f);
         break;
     case SFX_TERMINAL_ALARM:
-        if (!begin_sound(audio, effect, 0.72f, 0.37f, 500))
+        if (!begin_sound(audio, effect, 1.05f, 0.48f, 850))
             return false;
-        add_tone(s, 0.00f, 0.30f, 620.0f, 910.0f, 0.43f,
-                 WAVE_TRIANGLE, 0.008f, 0.10f);
-        add_tone(s, 0.28f, 0.32f, 910.0f, 620.0f, 0.43f,
-                 WAVE_TRIANGLE, 0.006f, 0.13f);
-        add_tone(s, 0.54f, 0.18f, 1140.0f, 780.0f, 0.24f,
-                 WAVE_SQUARE, 0.004f, 0.14f);
+        /* Two-tone building siren with a lower mechanical harmonic. The
+         * sound nearly fills ALARM_SIREN_INTERVAL, leaving a short pulse gap. */
+        add_tone(s, 0.00f, 0.52f, 510.0f, 790.0f, 0.55f,
+                 WAVE_TRIANGLE, 0.012f, 0.10f);
+        add_tone(s, 0.50f, 0.55f, 790.0f, 510.0f, 0.55f,
+                 WAVE_TRIANGLE, 0.010f, 0.15f);
+        add_tone(s, 0.00f, 1.05f, 255.0f, 260.0f, 0.22f,
+                 WAVE_SAW, 0.015f, 0.15f);
+        add_noise(s, 0.00f, 1.05f, 0.08f, 0.035f,
+                  0.015f, 0.16f, 0xa1a2u);
         break;
     case SFX_JUMP:
         if (!begin_sound(audio, effect, 0.20f, 0.30f, 80))

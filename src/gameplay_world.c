@@ -15,6 +15,78 @@ void gameplay_world_sound(GameplayState *state, SoundEffect effect,
     game_events_world_sound(&state->events, effect, x, y);
 }
 
+bool gameplay_alarm_active(const GameplayState *state)
+{
+    return state->terminal_alarm_timer > 0.0f;
+}
+
+void gameplay_trigger_alarm(GameplayState *state, float source_x,
+                            float source_y, int switch_index)
+{
+    bool was_active = gameplay_alarm_active(state);
+    state->terminal_alarm_timer = ALARM_CALM_TIME;
+    state->alarm_target_x = source_x;
+    state->alarm_target_y = source_y;
+    state->active_alarm_switch = switch_index;
+    state->alarm_siren_timer = ALARM_SIREN_INTERVAL;
+    if (!was_active)
+    {
+        if (switch_index >= 0)
+            gameplay_world_sound(state, SFX_CARD_SCAN, source_x, source_y);
+        /* A building alarm is ambient infrastructure, not a sound emitted
+         * only at the call point. Keep the siren audible everywhere. */
+        game_events_sound(&state->events, SFX_TERMINAL_ALARM);
+        for (int i = 0; i < state->enemy_count; ++i)
+        {
+            Enemy *enemy = &state->enemies[i];
+            if (enemy->dead)
+                continue;
+            if (enemy->shoot_cooldown > ENEMY_ALARM_INITIAL_SHOT_DELAY)
+                enemy->shoot_cooldown = ENEMY_ALARM_INITIAL_SHOT_DELAY;
+            float alarm_aim_time =
+                ENEMY_AIM_TIME * ENEMY_ALARM_AIM_MULTIPLIER;
+            if (enemy->aim_timer > alarm_aim_time)
+                enemy->aim_timer = alarm_aim_time;
+        }
+    }
+}
+
+void gameplay_refresh_alarm_from_player(GameplayState *state)
+{
+    if (!gameplay_alarm_active(state))
+        return;
+    float height = state->player.crawling
+                       ? (float)PLAYER_CRAWL_H
+                       : (float)PLAYER_H;
+    state->terminal_alarm_timer = ALARM_CALM_TIME;
+    state->alarm_target_x = state->player.x + PLAYER_W * 0.5f;
+    state->alarm_target_y = state->player.y + height * 0.5f;
+}
+
+void gameplay_update_alarm(GameplayState *state, float dt)
+{
+    if (!gameplay_alarm_active(state))
+        return;
+
+    state->terminal_alarm_timer -= dt;
+    if (state->terminal_alarm_timer <= 0.0f)
+    {
+        state->terminal_alarm_timer = 0.0f;
+        state->alarm_siren_timer = 0.0f;
+        state->active_alarm_switch = -1;
+        state->terminal_reinforcement_timer = 0.0f;
+        state->terminal_reinforcements_pending = 0;
+        return;
+    }
+
+    state->alarm_siren_timer -= dt;
+    if (state->alarm_siren_timer <= 0.0f)
+    {
+        game_events_sound(&state->events, SFX_TERMINAL_ALARM);
+        state->alarm_siren_timer += ALARM_SIREN_INTERVAL;
+    }
+}
+
 void gameplay_hit_player(GameplayState *state)
 {
     if (state->player.dying)
@@ -25,6 +97,8 @@ void gameplay_hit_player(GameplayState *state)
     state->terminal_in_range = false;
     state->terminal_hacking = false;
     state->terminal_alarm_timer = 0.0f;
+    state->alarm_siren_timer = 0.0f;
+    state->active_alarm_switch = -1;
     state->terminal_reinforcement_timer = 0.0f;
     state->terminal_reinforcements_pending = 0;
 
@@ -93,6 +167,11 @@ void gameplay_provoke_enemy(GameplayState *state, int enemy_index)
             continue;
 
         Enemy *enemy = &state->enemies[index];
+        enemy->raising_alarm = false;
+        enemy->alarm_switch_index = -1;
+        enemy->alarm_use_timer = 0.0f;
+        enemy->encounter_decided = true;
+        enemy->encounter_lost_timer = GUARD_ENCOUNTER_RESET_TIME;
         enemy->talking = false;
         enemy->talk_timer = 0.0f;
         enemy->talk_partner = -1;
@@ -108,7 +187,10 @@ void gameplay_provoke_enemy(GameplayState *state, int enemy_index)
         enemy->dir = target_x < enemy_x ? -1 : 1;
         enemy->aim_target_x = target_x;
         enemy->aim_target_y = target_y;
-        enemy->aim_timer = ENEMY_AIM_TIME;
+        enemy->aim_timer = ENEMY_AIM_TIME *
+                           (gameplay_alarm_active(state)
+                                ? ENEMY_ALARM_AIM_MULTIPLIER
+                                : 1.0f);
         if (alert_source == NULL)
             alert_source = enemy;
     }

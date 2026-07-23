@@ -108,7 +108,13 @@ typedef struct
     float terminal_hack_tick_timer;
     bool terminal_in_range;
     bool terminal_hacking;
+    /* Historical name: terminal breaches and guard-operated switches now
+     * share this building-wide quiet-time countdown. */
     float terminal_alarm_timer;
+    float alarm_target_x;
+    float alarm_target_y;
+    float alarm_siren_timer;
+    int active_alarm_switch;
     float terminal_reinforcement_timer;
     int terminal_reinforcements_pending;
 } GameplayState;

@@ -9,4 +9,5 @@ void gameplay_state_begin_level(GameplayState *state)
     state->rng = rng;
     state->player_on_elevator = -1;
     state->player_on_moving_platform = -1;
+    state->active_alarm_switch = -1;
 }

@@ -5,6 +5,7 @@
 
 #include "fx.h"
 #include "gameplay_interaction.h"
+#include "gameplay_world.h"
 
 /*
  * Chuck intentionally ships without art assets.  Everything in this file is
@@ -463,6 +464,46 @@ static void draw_terminal(SDL_Renderer *r, float x, float y,
   draw_text(r, x + (active ? 7.0f : 9.0f), y + 25.0f, 0.55f,
             screen.r, screen.g, screen.b,
             active ? (hacked ? "OPEN" : "LIVE") : "OFF");
+}
+
+static void draw_alarm_switch(SDL_Renderer *r, float x, float y,
+                              bool alarm_active, bool source,
+                              bool being_used, float world_t)
+{
+  bool flash = ((int)(world_t * 5.0f) & 1) == 0;
+  SDL_Color signal = alarm_active
+                         ? (flash ? (SDL_Color){255, 76, 58, 255}
+                                  : (SDL_Color){150, 29, 27, 255})
+                         : (being_used ? COL_AMBER
+                                       : (SDL_Color){108, 44, 40, 255});
+
+  if (alarm_active || being_used)
+    draw_soft_glow(r, x + 10.0f, y + 8.0f, 12.0f, 15.0f, signal);
+  if (alarm_active && flash)
+  {
+    fx_glow(r, x + 16.0f, y + 7.0f, source ? 30.0f : 22.0f,
+            (SDL_Color){255, 48, 38, 255}, source ? 105 : 65);
+    fx_light_cone(r, x + 16.0f, y + 7.0f, 3.0f, 24.0f, 54.0f,
+                  (SDL_Color){255, 54, 42, 255}, source ? 54 : 34);
+  }
+
+  /* Compact wall-mounted call point: a shallow metal housing, one status
+   * lamp and a thumb-sized recessed button. */
+  color_rect(r, (SDL_Color){16, 20, 23, 170},
+             x + 11.0f, y + 9.0f, 13.0f, 16.0f);
+  color_rect(r, COL_INK, x + 10.0f, y + 7.0f, 12.0f, 16.0f);
+  color_rect(r, (SDL_Color){68, 76, 77, 255},
+             x + 11.0f, y + 8.0f, 10.0f, 14.0f);
+  color_rect(r, (SDL_Color){211, 162, 45, 255},
+             x + 11.0f, y + 8.0f, 10.0f, 2.0f);
+  color_rect(r, signal, x + 15.0f, y + 10.0f, 3.0f, 2.0f);
+  color_rect(r, (SDL_Color){23, 26, 29, 255},
+             x + 13.0f, y + 13.0f, 6.0f, 7.0f);
+  color_rect(r, signal, x + 14.0f, y + 14.0f, 4.0f, 5.0f);
+  color_rect(r, (SDL_Color){255, 151, 102, 255},
+             x + 15.0f, y + 15.0f, 2.0f, 1.0f);
+  color_rect(r, (SDL_Color){31, 36, 38, 255},
+             x + 15.0f, y + 23.0f, 2.0f, 7.0f);
 }
 
 static void draw_office_chair(SDL_Renderer *r, float x, float y)
@@ -1611,6 +1652,7 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
   if (e->climbing)
     dir = 1;
   bool aiming = e->aim_timer > 0.0f || e->recoil_timer > 0.0f;
+  bool using_alarm = e->raising_alarm && e->alarm_use_timer > 0.0f;
   bool moving = fabsf(e->vx) > 2.0f && !aiming && !e->talking;
   float phase = e->anim_time * 3.0f;
   float step = moving ? sinf(phase) : 0.0f;
@@ -1720,6 +1762,21 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
       sprite_rect(r, x, y, ENEMY_W, dir, 35.0f + recoil, 13.0f + bob, 3.0f, 3.0f, COL_AMBER);
     }
   }
+  else if (using_alarm && !e->climbing)
+  {
+    /* A raised forearm makes the switch interaction readable even when the
+     * guard partly overlaps the wall fixture. */
+    sprite_limb_segment(r, x, y, ENEMY_W, dir,
+                        14.0f, 13.0f + bob, 19.0f, 10.0f + bob, uniform);
+    sprite_limb_segment(r, x, y, ENEMY_W, dir,
+                        19.0f, 10.0f + bob, 23.0f, 8.0f + bob,
+                        (SDL_Color){183, 132, 91, 255});
+    sprite_rect(r, x, y, ENEMY_W, dir,
+                21.0f, 6.0f + bob, 5.0f, 5.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, ENEMY_W, dir,
+                22.0f, 7.0f + bob, 3.0f, 3.0f,
+                (SDL_Color){201, 148, 101, 255});
+  }
   else if (!e->climbing)
   {
     float front_swing = moving ? -step : gesture_swing;
@@ -1800,6 +1857,32 @@ static void draw_dog(SDL_Renderer *r, const Dog *dog, float cam_x, float oy)
   float rear_y = 12.0f + fmaxf(0.0f, -gait);
   sprite_rect(r, x, y, DOG_W, dir, 5.0f + lunge, front_y, 4.0f, 4.0f - fmaxf(0.0f, gait * 0.5f), COL_OUTLINE);
   sprite_rect(r, x, y, DOG_W, dir, 15.0f + lunge, rear_y, 4.0f, 4.0f - fmaxf(0.0f, -gait * 0.5f), COL_OUTLINE);
+}
+
+static void render_alarm_lighting(SDL_Renderer *r, int win_w, int win_h,
+                                  float world_t)
+{
+  float wave = 0.5f + 0.5f * sinf(world_t * 7.0f);
+  Uint8 wash_alpha = (Uint8)(10.0f + wave * 17.0f);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  set_rgba(r, 210, 20, 16, wash_alpha);
+  fill_rect(r, 0.0f, HUD_HEIGHT, (float)win_w,
+            (float)win_h - HUD_HEIGHT);
+  set_rgba(r, 255, 47, 35, (Uint8)(105.0f + wave * 95.0f));
+  fill_rect(r, 0.0f, HUD_HEIGHT, (float)win_w, 3.0f);
+  fill_rect(r, 0.0f, (float)win_h - 3.0f, (float)win_w, 3.0f);
+
+  /* Alternating edge blocks suggest rotating emergency beacons without
+   * covering the action in the middle of the viewport. */
+  for (int x = -12; x < win_w + 24; x += 48)
+  {
+    float offset = wave > 0.5f ? 0.0f : 24.0f;
+    set_rgba(r, 255, 92, 54, 125);
+    fill_rect(r, (float)x + offset, HUD_HEIGHT + 4.0f, 18.0f, 2.0f);
+    fill_rect(r, (float)x + 24.0f - offset,
+              (float)win_h - 7.0f, 18.0f, 2.0f);
+  }
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
 static void render_world(Game *game)
@@ -1939,6 +2022,25 @@ static void render_world(Game *game)
     bool active = i == lvl->runtime.active_terminal_index;
     draw_terminal(r, x, y, active,
                   active && lvl->runtime.terminal_hacked, world_t);
+  }
+  for (int i = 0; i < lvl->map.alarm_switch_count; ++i)
+  {
+    float x = lvl->map.alarm_switches[i].col * (float)TILE_SIZE - cam_x;
+    float y = lvl->map.alarm_switches[i].row * (float)TILE_SIZE + oy;
+    bool being_used = false;
+    for (int guard = 0; guard < game->gameplay.enemy_count; ++guard)
+    {
+      const Enemy *enemy = &game->gameplay.enemies[guard];
+      if (!enemy->dead && enemy->raising_alarm &&
+          enemy->alarm_switch_index == i && enemy->alarm_use_timer > 0.0f)
+      {
+        being_used = true;
+        break;
+      }
+    }
+    draw_alarm_switch(r, x, y, gameplay_alarm_active(&game->gameplay),
+                      game->gameplay.active_alarm_switch == i,
+                      being_used, world_t);
   }
 
   /* Ambient staff remain subdued, but correctly stand in front of the back
@@ -2105,6 +2207,8 @@ static void render_world(Game *game)
       color_rect(r, COL_RED, spark->x - cam_x - 4.0f, spark->y + oy - 4.0f, 8.0f, 2.0f);
     }
   }
+  if (gameplay_alarm_active(&game->gameplay))
+    render_alarm_lighting(r, win_w, win_h, world_t);
 }
 
 static void draw_hud_separator(SDL_Renderer *r, float x)
@@ -2230,18 +2334,39 @@ static void render_hud(Game *game)
   draw_text(r, 451.0f + first_digit * 12.0f, 19.0f, 1.5f, 248, 196, 92,
             score_buf + first_digit);
 
-  /* Live signal meter fills the right edge without stealing attention. */
+  /* The passive trail meter becomes an unmistakable security readout while
+   * the building alarm is active. */
   float t = (float)SDL_GetTicksNS() * 1.0e-9f;
-  draw_text(r, 650.0f, 8.0f, 0.7f, label_r, label_g, label_b, "TRAIL");
-  color_rect(r, (SDL_Color){10, 15, 24, 255}, 648.0f, 17.0f, 134.0f, 16.0f);
-  color_rect(r, (SDL_Color){30, 42, 58, 255}, 648.0f, 17.0f, 134.0f, 1.0f);
-  for (int i = 0; i < 12; ++i)
+  if (gameplay_alarm_active(&game->gameplay))
   {
-    float wave = 0.5f + 0.5f * sinf(t * 2.6f + (float)i * 0.9f);
-    float height = 3.0f + wave * 9.0f;
-    SDL_Color bar = i < 9 ? fx_mix((SDL_Color){24, 96, 96, 255}, COL_CYAN, wave)
-                          : (SDL_Color){52, 68, 82, 255};
-    color_rect(r, bar, 653.0f + i * 10.0f, 30.0f - height, 6.0f, height);
+    float pulse = 0.5f + 0.5f * sinf(t * 7.0f);
+    SDL_Color alert = fx_dim((SDL_Color){255, 76, 54, 255},
+                             0.55f + pulse * 0.45f);
+    char alarm_buf[24];
+    SDL_snprintf(alarm_buf, sizeof(alarm_buf), "ALERT %02d",
+                 (int)ceilf(game->gameplay.terminal_alarm_timer));
+    draw_text(r, 650.0f, 8.0f, 0.7f,
+              alert.r, alert.g, alert.b, "SECURITY");
+    color_rect(r, (SDL_Color){58, 16, 18, 255},
+               648.0f, 17.0f, 134.0f, 16.0f);
+    color_rect(r, alert, 648.0f, 17.0f, 134.0f, 2.0f);
+    color_rect(r, alert, 653.0f, 22.0f, 5.0f, 5.0f);
+    draw_text(r, 665.0f, 20.0f, 1.1f,
+              alert.r, alert.g, alert.b, alarm_buf);
+  }
+  else
+  {
+    draw_text(r, 650.0f, 8.0f, 0.7f, label_r, label_g, label_b, "TRAIL");
+    color_rect(r, (SDL_Color){10, 15, 24, 255}, 648.0f, 17.0f, 134.0f, 16.0f);
+    color_rect(r, (SDL_Color){30, 42, 58, 255}, 648.0f, 17.0f, 134.0f, 1.0f);
+    for (int i = 0; i < 12; ++i)
+    {
+      float wave = 0.5f + 0.5f * sinf(t * 2.6f + (float)i * 0.9f);
+      float height = 3.0f + wave * 9.0f;
+      SDL_Color bar = i < 9 ? fx_mix((SDL_Color){24, 96, 96, 255}, COL_CYAN, wave)
+                            : (SDL_Color){52, 68, 82, 255};
+      color_rect(r, bar, 653.0f + i * 10.0f, 30.0f - height, 6.0f, height);
+    }
   }
 }
 

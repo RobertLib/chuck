@@ -797,6 +797,10 @@ static void update_playing(Game *game, float dt)
 
     gameplay_combat_check_contacts(&game->gameplay);
 
+    /* Tick the calm countdown after perception updates, so a guard or dog
+     * seeing Chuck on the would-be final frame keeps the alarm alive. */
+    gameplay_update_alarm(&game->gameplay, dt);
+
     if (gameplay_player_reached_exit(&game->gameplay))
     {
         if ((size_t)(game->campaign.current_level + 1) < EMBEDDED_LEVEL_COUNT)

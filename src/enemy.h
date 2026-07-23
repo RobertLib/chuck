@@ -33,6 +33,13 @@ typedef struct
      * when the terminal alarm is inactive or the player is initially outside
      * the guard's normal sight and shooting range. */
     bool provoked;
+    /* The first time a guard sees Chuck, it decides whether to fight or run
+     * for an alarm switch. Losing sight for a while permits a new encounter. */
+    bool encounter_decided;
+    float encounter_lost_timer;
+    bool raising_alarm;
+    int alarm_switch_index;
+    float alarm_use_timer;
     bool talking;        /* true while chatting with another enemy */
     float talk_timer;    /* seconds remaining while talking */
     float talk_cooldown; /* seconds remaining before eligible to talk again */
@@ -76,7 +83,8 @@ typedef struct
 
 void enemy_init(Enemy *enemy, float x, float y, Rng *rng);
 void enemy_update(Enemy *enemy, Level *level, float dt,
-                  bool pursuing, float target_x, float target_y,
+                  bool pursuing, bool alarmed,
+                  float target_x, float target_y,
                   bool hemmed_in, Rng *rng);
 void dog_init(Dog *dog, float x, float y, int owner, Rng *rng);
 

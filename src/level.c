@@ -107,6 +107,16 @@ static void place_terminal(Level *level, int col, int row)
     terminal->row = row;
 }
 
+static void place_alarm_switch(Level *level, int col, int row)
+{
+    if (level->map.alarm_switch_count >= MAX_ALARM_SWITCHES)
+        return;
+    AlarmSwitch *alarm_switch =
+        &level->map.alarm_switches[level->map.alarm_switch_count++];
+    alarm_switch->col = col;
+    alarm_switch->row = row;
+}
+
 static void place_decoration(Level *level, int col, int row,
                              DecorationType type)
 {
@@ -238,6 +248,10 @@ bool level_load_data(Level *level, const char *name,
         case 'T':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_terminal(level, col, row);
+            break;
+        case 'A':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_alarm_switch(level, col, row);
             break;
         case 'c':
             level->map.tiles[row][col] = TILE_EMPTY;

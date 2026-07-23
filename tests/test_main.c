@@ -5,6 +5,7 @@
 #include "gameplay_interaction.h"
 #include "gameplay_physics.h"
 #include "gameplay_state.h"
+#include "gameplay_world.h"
 #include "level.h"
 #include "rng.h"
 
@@ -92,6 +93,7 @@ static void test_all_embedded_levels_parse(void)
         CHECK(level.map.width > 0);
         CHECK(level.map.height > 0);
         CHECK(level.map.has_exit);
+        CHECK(level.map.alarm_switch_count >= 2);
 
         int bazooka_count = 0;
         for (int item = 0; item < level.runtime.item_count; ++item)
@@ -124,6 +126,7 @@ static void test_gameplay_reset_preserves_rng_only(void)
     CHECK(state.events.count == 0);
     CHECK(state.player_on_elevator == -1);
     CHECK(state.player_on_moving_platform == -1);
+    CHECK(state.active_alarm_switch == -1);
 }
 
 static void test_level_collision_stops_at_wall(void)
@@ -209,13 +212,165 @@ static void test_terminal_unlocks_deterministically(void)
 
     gameplay_prepare_terminal(&state, &input, 0.0f);
     CHECK(state.terminal_hacking);
-    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
                             SFX_TERMINAL_ALARM));
     CHECK(gameplay_advance_terminal(&state, &campaign,
                                     TERMINAL_HACK_TIME));
     CHECK(state.level.runtime.exit_unlocked);
     CHECK(state.level.runtime.terminal_hacked);
     CHECK(campaign.score == 250);
+}
+
+static void test_alarm_switch_parsing_and_quiet_timeout(void)
+{
+    static const char data[] =
+        "#########\n"
+        "#S A M E#\n"
+        "#########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 808);
+    CHECK(level_load_data(&state.level, "alarm", data, strlen(data),
+                          &state.rng));
+    CHECK(state.level.map.alarm_switch_count == 1);
+
+    const AlarmSwitch *alarm_switch = &state.level.map.alarm_switches[0];
+    float switch_x = (alarm_switch->col + 0.5f) * TILE_SIZE;
+    float switch_y = (alarm_switch->row + 0.5f) * TILE_SIZE;
+    gameplay_trigger_alarm(&state, switch_x, switch_y, 0);
+    CHECK(gameplay_alarm_active(&state));
+    CHECK(state.active_alarm_switch == 0);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_TERMINAL_ALARM));
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_CARD_SCAN));
+
+    game_events_clear(&state.events);
+    state.alarm_siren_timer = 0.01f;
+    gameplay_update_alarm(&state, 0.02f);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_TERMINAL_ALARM));
+
+    gameplay_update_alarm(&state, ALARM_CALM_TIME * 0.5f);
+    CHECK(gameplay_alarm_active(&state));
+    state.player.x = 5.0f * TILE_SIZE;
+    state.player.y = 2.0f * TILE_SIZE - PLAYER_H;
+    gameplay_refresh_alarm_from_player(&state);
+    CHECK(fabsf(state.terminal_alarm_timer - ALARM_CALM_TIME) < 0.001f);
+    CHECK(fabsf(state.alarm_target_x -
+                (state.player.x + PLAYER_W * 0.5f)) < 0.001f);
+
+    gameplay_update_alarm(&state, ALARM_CALM_TIME);
+    CHECK(!gameplay_alarm_active(&state));
+    CHECK(state.active_alarm_switch == -1);
+}
+
+static void test_guards_choose_attack_or_alarm_and_operate_switch(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S M A  E#\n"
+        "##########\n";
+    Level level;
+    Rng level_rng;
+    rng_seed(&level_rng, 909);
+    CHECK(level_load_data(&level, "guard alarm", data, strlen(data),
+                          &level_rng));
+
+    int alarm_choices = 0;
+    int attack_choices = 0;
+    for (uint64_t seed = 1; seed <= 64; ++seed)
+    {
+        GameplayState state = {0};
+        state.level = level;
+        rng_seed(&state.rng, seed);
+        state.player.x = state.level.map.start_x;
+        state.player.y = state.level.map.start_y;
+        state.enemy_count = 1;
+        enemy_init(&state.enemies[0],
+                   state.level.map.enemy_spawns[0].x,
+                   state.level.map.enemy_spawns[0].y, &state.rng);
+        state.enemies[0].dir = -1;
+        state.enemies[0].on_ground = true;
+        state.enemies[0].shoot_cooldown = 10.0f;
+
+        gameplay_ai_update_combat(&state, 0.016f);
+        CHECK(state.enemies[0].encounter_decided);
+        if (state.enemies[0].raising_alarm)
+            alarm_choices++;
+        else
+            attack_choices++;
+    }
+    CHECK(alarm_choices > 0);
+    CHECK(attack_choices > 0);
+
+    GameplayState state = {0};
+    state.level = level;
+    rng_seed(&state.rng, 17);
+    state.enemy_count = 1;
+    Enemy *enemy = &state.enemies[0];
+    enemy_init(enemy, 0.0f, 0.0f, &state.rng);
+    const AlarmSwitch *alarm_switch = &state.level.map.alarm_switches[0];
+    float switch_x = (alarm_switch->col + 0.5f) * TILE_SIZE;
+    float switch_y = (alarm_switch->row + 0.5f) * TILE_SIZE;
+    enemy->x = switch_x - ENEMY_W * 0.5f;
+    enemy->y = switch_y - ENEMY_H * 0.5f;
+    enemy->on_ground = true;
+    enemy->raising_alarm = true;
+    enemy->alarm_switch_index = 0;
+
+    gameplay_ai_update_movement(&state, ALARM_SWITCH_USE_TIME);
+    CHECK(gameplay_alarm_active(&state));
+    CHECK(state.active_alarm_switch == 0);
+    CHECK(!enemy->raising_alarm);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_TERMINAL_ALARM));
+}
+
+static void test_alarm_increases_guard_aggression_and_search(void)
+{
+    static const char data[] =
+        "################\n"
+        "#S M      A   E#\n"
+        "################\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 5150);
+    CHECK(level_load_data(&state.level, "alarm response", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    Enemy *enemy = &state.enemies[0];
+    enemy->dir = -1;
+    enemy->on_ground = true;
+    enemy->shoot_cooldown = 3.0f;
+    enemy->aim_timer = ENEMY_AIM_TIME;
+    state.player.x = state.level.map.start_x;
+    state.player.y = state.level.map.start_y;
+
+    const AlarmSwitch *alarm_switch = &state.level.map.alarm_switches[0];
+    gameplay_trigger_alarm(&state,
+                           (alarm_switch->col + 0.5f) * TILE_SIZE,
+                           (alarm_switch->row + 0.5f) * TILE_SIZE, 0);
+    CHECK(fabsf(enemy->shoot_cooldown -
+                ENEMY_ALARM_INITIAL_SHOT_DELAY) < 0.001f);
+    CHECK(fabsf(enemy->aim_timer -
+                ENEMY_AIM_TIME * ENEMY_ALARM_AIM_MULTIPLIER) < 0.001f);
+
+    enemy->aim_timer = 0.0f;
+    enemy->shoot_cooldown = 0.0f;
+    gameplay_ai_update_combat(&state, 0.0f);
+    CHECK(fabsf(enemy->aim_timer -
+                ENEMY_AIM_TIME * ENEMY_ALARM_AIM_MULTIPLIER) < 0.001f);
+
+    enemy->aim_timer = 0.0f;
+    enemy->anim_time = 1.0f;
+    state.player.x = 1000.0f;
+    float last_x = enemy->x + ENEMY_W * 0.5f;
+    float last_y = enemy->y + ENEMY_H * 0.5f;
+    state.alarm_target_x = last_x;
+    state.alarm_target_y = last_y;
+    gameplay_ai_update_movement(&state, 0.1f);
+    CHECK(fabsf(enemy->vx) > ENEMY_WALK_SPEED);
+    CHECK(fabsf(enemy->pursuit_target_x - last_x) > 1.0f);
 }
 
 static void test_door_interaction_reports_range_and_teleports(void)
@@ -725,6 +880,9 @@ int main(void)
     test_level_reveal_finishes();
     test_event_buffer_reports_overflow();
     test_terminal_unlocks_deterministically();
+    test_alarm_switch_parsing_and_quiet_timeout();
+    test_guards_choose_attack_or_alarm_and_operate_switch();
+    test_alarm_increases_guard_aggression_and_search();
     test_door_interaction_reports_range_and_teleports();
     test_key_cards_keep_scoring_and_unlock_rules();
     test_mine_damage_emits_feedback();

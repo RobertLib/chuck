@@ -60,6 +60,12 @@ typedef struct
     int col, row;
 } Terminal;
 
+/* A guard-operated wall switch connected to the building alarm. */
+typedef struct
+{
+    int col, row;
+} AlarmSwitch;
+
 /* Background props are visual only and never participate in collision. */
 typedef enum
 {
@@ -141,6 +147,8 @@ typedef struct
     int exit_col, exit_row;
     Terminal terminals[MAX_TERMINALS];
     int terminal_count;
+    AlarmSwitch alarm_switches[MAX_ALARM_SWITCHES];
+    int alarm_switch_count;
     Decoration decorations[MAX_DECORATIONS];
     int decoration_count;
     EnemySpawn enemy_spawns[MAX_ENEMIES];

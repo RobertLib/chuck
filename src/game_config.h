@@ -52,13 +52,27 @@
 #define TERMINAL_HACK_TIME 4.0f
 #define TERMINAL_INTERACT_RANGE 44.0f
 #define TERMINAL_MIN_START_TILES 12
-#define TERMINAL_ALARM_TIME 6.0f
 #define TERMINAL_REINFORCEMENT_MIN_COUNT 1
 #define TERMINAL_REINFORCEMENT_MAX_COUNT 2
 #define TERMINAL_REINFORCEMENT_FIRST_MIN 0.65f
 #define TERMINAL_REINFORCEMENT_FIRST_MAX 2.40f
 #define TERMINAL_REINFORCEMENT_GAP_MIN 1.40f
 #define TERMINAL_REINFORCEMENT_GAP_MAX 3.50f
+
+/* Building-wide security alarm. Guards that choose not to engage immediately
+ * run to one of these wall switches. The countdown is refreshed whenever a
+ * guard or dog can still see Chuck, so it only expires after the scene has
+ * actually been quiet for a while. */
+#define MAX_ALARM_SWITCHES 16
+#define ALARM_CALM_TIME 9.0f
+/* Backwards-compatible name for code treating terminal noise as the alarm. */
+#define TERMINAL_ALARM_TIME ALARM_CALM_TIME
+#define ALARM_SWITCH_USE_TIME 0.65f
+#define ALARM_SWITCH_USE_RANGE 18.0f
+#define ALARM_SWITCH_STAND_DISTANCE 14.0f
+#define ALARM_SIREN_INTERVAL 1.15f
+#define GUARD_ALARM_CHANCE 45
+#define GUARD_ENCOUNTER_RESET_TIME 2.5f
 
 /* Grenades */
 #define MAX_GRENADES 8
@@ -99,6 +113,12 @@
 #define ENEMY_CLIMB_COOLDOWN 1.8f
 #define ENEMY_CLIMB_CHANCE 3
 #define ENEMY_HP 3
+#define ENEMY_ALARM_SPEED_MULTIPLIER 1.28f
+#define ENEMY_ALARM_AIM_MULTIPLIER 0.62f
+#define ENEMY_ALARM_COOLDOWN_MULTIPLIER 0.55f
+#define ENEMY_ALARM_INITIAL_SHOT_DELAY 0.55f
+#define ENEMY_ALARM_SEARCH_RADIUS (2.0f * TILE_SIZE)
+#define ENEMY_ALARM_SEARCH_NEAR_RADIUS (2.4f * TILE_SIZE)
 
 /* Guard dog tuning */
 #define DOG_W 24

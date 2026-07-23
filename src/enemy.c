@@ -25,6 +25,11 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->pursuit_target_y = y + ENEMY_H * 0.5f;
     enemy->has_pursuit_target = false;
     enemy->provoked = false;
+    enemy->encounter_decided = false;
+    enemy->encounter_lost_timer = 0.0f;
+    enemy->raising_alarm = false;
+    enemy->alarm_switch_index = -1;
+    enemy->alarm_use_timer = 0.0f;
     enemy->talking = false;
     enemy->talk_timer = 0.0f;
     enemy->talk_partner = -1;
@@ -177,7 +182,7 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
 }
 
 static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
-                                 bool pursuing, float target_x,
+                                 bool pursuing, bool alarmed, float target_x,
                                  float target_y, bool hemmed_in, Rng *rng)
 {
     enemy->vy += GRAVITY * dt;
@@ -202,6 +207,8 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         speed = ENEMY_WALK_SPEED * ENEMY_SPEED_HP2;
     else if (enemy->hp < ENEMY_HP - 1)
         speed = ENEMY_WALK_SPEED * ENEMY_SPEED_HP1;
+    if (alarmed)
+        speed *= ENEMY_ALARM_SPEED_MULTIPLIER;
 
     float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
     float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
@@ -294,7 +301,8 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
 }
 
 void enemy_update(Enemy *enemy, Level *level, float dt,
-                  bool pursuing, float target_x, float target_y,
+                  bool pursuing, bool alarmed,
+                  float target_x, float target_y,
                   bool hemmed_in, Rng *rng)
 {
     /* Conversation cooldown must advance in every AI state, including walking
@@ -339,7 +347,7 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
     else
     {
         enemy_update_walking(enemy, level, dt,
-                             pursuing, target_x, target_y,
+                             pursuing, alarmed, target_x, target_y,
                              hemmed_in, rng);
     }
 }

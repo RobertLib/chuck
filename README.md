@@ -4,8 +4,8 @@ Chuck is a 2D action platformer about pursuing the kidnappers who took Chuck's
 fiancée and bringing her home alive.
 
 The player explores a side-scrolling building made of platforms, ladders,
-doors, elevators, hazards, and pickups. Each level is a small infiltration
-route through the kidnappers' stronghold: follow their trail, find the key card
+doors, elevators, alarm switches, hazards, and pickups. Each level is a small
+infiltration route through the kidnappers' stronghold: follow their trail, find the key card
 or breach the security terminal that opens the way deeper inside, and decide
 when to fight, when to sneak past, and when to use the environment to your
 advantage.
@@ -34,9 +34,13 @@ cinematic rooftop rescue after the final sector.
 
 Your goal is to keep the kidnappers in reach. In each level, survive the guards,
 collect the right key card, and pass through the secured exit before the trail
-goes cold. Guards patrol the building, climb between floors, and shoot when
-they spot you. They can be eliminated with weapons, avoided by taking another
-route, or bypassed by crawling, timing movement, and using cover.
+goes cold. Guards patrol the building, climb between floors, and react to first
+contact by attacking or running for one of the wall-mounted alarm switches.
+A triggered alarm bathes the sector in red warning light and mobilizes every
+guard and dog. Guards move, aim, and fire faster while sweeping around Chuck's
+last known position; the alarm shuts itself off after he stays out of sight long enough.
+Guards can be eliminated with weapons, avoided by taking another route, or
+bypassed by crawling, timing movement, and using cover.
 
 The game rewards careful movement as much as combat. Each sector contains
 several terminals, but only the brightly lit active terminal can be hacked.
