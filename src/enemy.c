@@ -13,6 +13,7 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->climbing = false;
     enemy->climb_dir = -1;
     enemy->ladder_col = 0;
+    enemy->climb_start_floor_row = 0;
     enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
     enemy->obstacle_avoid_timer = 0.0f;
     enemy->hp = ENEMY_HP;
@@ -169,15 +170,24 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
     bool floor_beside = can_left || can_right;
 
     int target_row = (int)floorf(target_y / TILE_SIZE);
-    float exit_y = (bot_row + 1) * (float)TILE_SIZE - ENEMY_H;
+    int exit_floor_row = bot_row + 1;
+    float exit_y = exit_floor_row * (float)TILE_SIZE - ENEMY_H;
     bool reached_target_floor =
         routing_to_target && target_row == bot_row &&
         fabsf(enemy->y - exit_y) <= ENEMY_CLIMB_SPEED * dt + 0.5f;
+    /* At the start of a patrol climb the floor beside the ladder is already a
+       valid side exit. Do not roll for that same exit again while the guard's
+       body is still passing it, or a successful mount can be cancelled on the
+       very next frame. Other floors remain eligible for random patrol exits. */
+    bool reached_new_patrol_floor =
+        !routing_to_target &&
+        exit_floor_row != enemy->climb_start_floor_row;
     bool leave_ladder =
         !ladder_ahead ||
         (floor_beside &&
          (routing_to_target ? reached_target_floor
-                            : rng_range(rng, 100) < 4));
+                            : (reached_new_patrol_floor &&
+                               rng_range(rng, 100) < 4)));
     if (leave_ladder)
     {
         if (reached_target_floor)
@@ -394,6 +404,9 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                 enemy->climbing = true;
                 enemy->on_ground = false;
                 enemy->ladder_col = center_col;
+                enemy->climb_start_floor_row =
+                    (int)floorf((enemy->y + ENEMY_H - 1.0f) /
+                                TILE_SIZE) + 1;
                 if (routing_to_target)
                 {
                     enemy->climb_dir = desired_climb_dir;

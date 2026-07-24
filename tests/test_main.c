@@ -868,6 +868,45 @@ static void test_enemy_uses_ladder_while_avoiding_crate(void)
     CHECK(enemy.climb_dir == -1);
 }
 
+static void test_patrol_enemy_does_not_immediately_leave_ladder(void)
+{
+    static const char data[] =
+        "########\n"
+        "#S H  E#\n"
+        "#  H   #\n"
+        "#  H   #\n"
+        "#  H   #\n"
+        "#  H   #\n"
+        "########\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 4242);
+    CHECK(level_load_data(&level, "enemy patrol ladder commitment", data,
+                          strlen(data), &rng));
+
+    float ladder_x = 3.0f * TILE_SIZE +
+                     (TILE_SIZE - ENEMY_W) * 0.5f;
+    Enemy enemy;
+    enemy_init(&enemy, ladder_x, 5.0f * TILE_SIZE, &rng);
+    enemy.on_ground = true;
+    enemy.climb_cooldown = 0.0f;
+
+    /* This sequence accepts the patrol climb and would then accept a random
+       side exit on the next frame, while still on the starting floor. */
+    rng_seed(&rng, 389);
+    enemy_update(&enemy, &level, 1.0f / 60.0f, false, false,
+                 0.0f, 0.0f, false, &rng);
+    CHECK(enemy.climbing);
+    CHECK(enemy.climb_dir == -1);
+
+    float climb_start_y = enemy.y;
+    enemy_update(&enemy, &level, 1.0f / 60.0f, false, false,
+                 0.0f, 0.0f, false, &rng);
+
+    CHECK(enemy.climbing);
+    CHECK(enemy.y < climb_start_y);
+}
+
 static void test_enemy_leaves_climb_state_when_landing_on_crate(void)
 {
     GameplayState state = {0};
@@ -1326,6 +1365,7 @@ int main(void)
     test_crate_stops_at_enemy_and_triggers_counterattack();
     test_enemy_moves_away_from_blocking_crate();
     test_enemy_uses_ladder_while_avoiding_crate();
+    test_patrol_enemy_does_not_immediately_leave_ladder();
     test_enemy_leaves_climb_state_when_landing_on_crate();
     test_enemy_aligns_before_vertical_climb();
     test_dog_escapes_ladder_perch_without_spinning();

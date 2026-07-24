@@ -16,6 +16,7 @@ typedef struct
     bool climbing;
     int climb_dir;  /* -1 = up, +1 = down */
     int ladder_col; /* column the enemy is climbing */
+    int climb_start_floor_row; /* floor row where this climb began */
     float climb_cooldown;
     /* Temporarily keep moving away after hitting an obstacle. Without this,
      * pursuit steering can send the guard back into the same crate every
