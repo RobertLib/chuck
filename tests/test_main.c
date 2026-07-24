@@ -1235,6 +1235,37 @@ static void test_pursuing_guard_hops_small_gap(void)
     CHECK(guard->vy < 0.0f); /* leapt the gap instead of stalling at the edge */
 }
 
+static void test_pursuing_guard_walks_onto_falling_platform(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S       #\n"
+        "#M      E#\n"
+        "##F#######\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 56);
+    CHECK(level_load_data(&level, "falling platform route", data,
+                          strlen(data), &rng));
+    CHECK(level.map.enemy_count == 1);
+    CHECK(level.runtime.fall_platform_count == 1);
+
+    Enemy guard;
+    enemy_init(&guard, level.map.enemy_spawns[0].x,
+               level.map.enemy_spawns[0].y, &rng);
+    guard.on_ground = true;
+    guard.dir = 1;
+    float previous_x = guard.x;
+
+    enemy_update(&guard, &level, 0.016f, true, false,
+                 6.5f * TILE_SIZE,
+                 guard.y + ENEMY_H * 0.5f, false, &rng);
+
+    CHECK(guard.on_ground);
+    CHECK(fabsf(guard.vy) < 0.01f);
+    CHECK(guard.x > previous_x); /* walked instead of jumping over it */
+}
+
 int main(void)
 {
     test_rng_is_reproducible();
@@ -1270,6 +1301,7 @@ int main(void)
     test_noise_draws_guards_to_investigate();
     test_guard_investigates_fallen_comrade();
     test_pursuing_guard_hops_small_gap();
+    test_pursuing_guard_walks_onto_falling_platform();
 
     if (failures != 0)
     {

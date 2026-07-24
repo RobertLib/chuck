@@ -230,7 +230,28 @@ static bool enemy_floor_ahead(const Level *level, const Enemy *enemy, int dir)
     float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f : enemy->x - 3.0f;
     int col = (int)floorf(probe_x / TILE_SIZE);
     int row = (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
-    return level_is_solid(level, col, row) || level_is_ladder(level, col, row);
+    if (level_is_solid(level, col, row) || level_is_ladder(level, col, row))
+        return true;
+
+    /* Dynamic platforms are not part of the tile map. Without checking them
+     * here, a pursuing guard mistakes a perfectly walkable platform for a gap
+     * and jumps over it. A falling platform only counts while its top is still
+     * level with the current floor. */
+    for (int i = 0; i < level->runtime.fall_platform_count; ++i)
+    {
+        const FallPlatform *platform = &level->runtime.fall_platforms[i];
+        if (!platform->removed && platform->col == col &&
+            fabsf(platform->y - row * (float)TILE_SIZE) < 3.0f)
+            return true;
+    }
+    for (int i = 0; i < level->runtime.moving_platform_count; ++i)
+    {
+        const MovingPlatform *platform = &level->runtime.moving_platforms[i];
+        if (platform->row == row &&
+            (int)floorf(platform->x / TILE_SIZE) == col)
+            return true;
+    }
+    return false;
 }
 
 /* Is there a landing within jump range across a gap in the given direction? */
