@@ -82,6 +82,7 @@ static void test_level_parser_and_seeded_choices(void)
 static void test_all_embedded_levels_parse(void)
 {
     CHECK(EMBEDDED_LEVEL_COUNT > 0);
+    int sublevel_entrances = 0;
     for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
     {
         Level level;
@@ -94,6 +95,8 @@ static void test_all_embedded_levels_parse(void)
         CHECK(level.map.height > 0);
         CHECK(level.map.has_exit);
         CHECK(level.map.alarm_switch_count >= 2);
+        if (level.map.has_sublevel_entrance)
+            sublevel_entrances++;
 
         int bazooka_count = 0;
         for (int item = 0; item < level.runtime.item_count; ++item)
@@ -101,6 +104,51 @@ static void test_all_embedded_levels_parse(void)
                 bazooka_count++;
         CHECK(bazooka_count == (((i + 1) % 2 == 0) ? 1 : 0));
     }
+    CHECK(sublevel_entrances == 1);
+}
+
+static void test_embedded_restroom_sublevel(void)
+{
+    CHECK(EMBEDDED_SUBLEVEL_COUNT == 1);
+    Level restroom;
+    Rng rng;
+    rng_seed(&rng, 2026);
+    CHECK(level_load_data(&restroom, EMBEDDED_SUBLEVELS[0].name,
+                          EMBEDDED_SUBLEVELS[0].data,
+                          EMBEDDED_SUBLEVELS[0].size, &rng));
+    CHECK(restroom.map.restroom_theme);
+    CHECK(restroom.map.has_sublevel_return);
+    CHECK(!restroom.map.has_exit);
+    CHECK(restroom.map.door_count == 0);
+
+    int basins = 0;
+    int open_stalls = 0;
+    int closed_stalls = 0;
+    for (int i = 0; i < restroom.map.decoration_count; ++i)
+    {
+        basins += restroom.map.decorations[i].type ==
+                  DECOR_RESTROOM_BASIN;
+        open_stalls += restroom.map.decorations[i].type ==
+                       DECOR_RESTROOM_STALL_OPEN;
+        closed_stalls += restroom.map.decorations[i].type ==
+                         DECOR_RESTROOM_STALL_CLOSED;
+    }
+    CHECK(basins == 2);
+    CHECK(open_stalls == 2);
+    CHECK(closed_stalls == 1);
+
+    int guns = 0;
+    int grenades = 0;
+    int medkits = 0;
+    for (int i = 0; i < restroom.runtime.item_count; ++i)
+    {
+        guns += restroom.runtime.items[i].type == ITEM_GUN;
+        grenades += restroom.runtime.items[i].type == ITEM_GRENADE;
+        medkits += restroom.runtime.items[i].type == ITEM_MEDKIT;
+    }
+    CHECK(guns == 1);
+    CHECK(grenades == 1);
+    CHECK(medkits == 1);
 }
 
 static void test_gameplay_reset_preserves_rng_only(void)
@@ -406,6 +454,52 @@ static void test_door_interaction_reports_range_and_teleports(void)
     CHECK(!input.use_door);
     CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_DOOR));
     CHECK(gameplay_player_door_index(&state) == -1);
+}
+
+static void test_sublevel_doors_are_not_paired_teleports(void)
+{
+    static const char entrance_data[] =
+        "#######\n"
+        "#SU  E#\n"
+        "#######\n";
+    static const char return_data[] =
+        "#####\n"
+        "#SR #\n"
+        "#####\n";
+    GameplayState state = {0};
+    Input input = {0};
+    rng_seed(&state.rng, 78);
+    CHECK(level_load_data(&state.level, "sublevel entrance", entrance_data,
+                          strlen(entrance_data), &state.rng));
+    CHECK(state.level.map.door_count == 0);
+    state.player.x = state.level.map.sublevel_entrance_col * TILE_SIZE +
+                     (TILE_SIZE - PLAYER_W) * 0.5f;
+    state.player.y = (state.level.map.sublevel_entrance_row + 1) * TILE_SIZE -
+                     PLAYER_H;
+    state.player.on_ground = true;
+    CHECK(gameplay_player_sublevel_door_action(&state) ==
+          SUBLEVEL_DOOR_ENTER);
+    input.use_door = true;
+    CHECK(gameplay_use_sublevel_door(&state, &input) ==
+          SUBLEVEL_DOOR_ENTER);
+    CHECK(!input.use_door);
+
+    rng_seed(&state.rng, 79);
+    CHECK(level_load_data(&state.level, "sublevel return", return_data,
+                          strlen(return_data), &state.rng));
+    CHECK(state.level.map.door_count == 0);
+    state.player.x = state.level.map.sublevel_return_col * TILE_SIZE +
+                     (TILE_SIZE - PLAYER_W) * 0.5f;
+    state.player.y = (state.level.map.sublevel_return_row + 1) * TILE_SIZE -
+                     PLAYER_H;
+    state.player.on_ground = true;
+    state.teleport_cooldown = 0.0f;
+    CHECK(gameplay_player_sublevel_door_action(&state) ==
+          SUBLEVEL_DOOR_RETURN);
+    input.use_door = true;
+    CHECK(gameplay_use_sublevel_door(&state, &input) ==
+          SUBLEVEL_DOOR_RETURN);
+    CHECK(!input.use_door);
 }
 
 static void test_key_cards_keep_scoring_and_unlock_rules(void)
@@ -1350,6 +1444,7 @@ int main(void)
     test_rng_is_reproducible();
     test_level_parser_and_seeded_choices();
     test_all_embedded_levels_parse();
+    test_embedded_restroom_sublevel();
     test_gameplay_reset_preserves_rng_only();
     test_level_collision_stops_at_wall();
     test_level_reveal_finishes();
@@ -1359,6 +1454,7 @@ int main(void)
     test_guards_choose_attack_or_alarm_and_operate_switch();
     test_alarm_increases_guard_aggression_and_search();
     test_door_interaction_reports_range_and_teleports();
+    test_sublevel_doors_are_not_paired_teleports();
     test_key_cards_keep_scoring_and_unlock_rules();
     test_mine_damage_emits_feedback();
     test_grenade_fuse_and_explosion_emit_sounds();

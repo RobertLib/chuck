@@ -77,6 +77,12 @@ typedef struct
     PlatformState platform;
     CampaignState campaign;
     GameplayState gameplay;
+    /* The inactive half of a sublevel visit. It holds the paused main level
+     * while Chuck is inside, and the persistent restroom state while outside. */
+    GameplayState inactive_gameplay;
+    bool sublevel_initialized;
+    bool in_sublevel;
+    float main_level_cam_x;
     PresentationState presentation;
     Input input;
     GameState state;

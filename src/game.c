@@ -8,6 +8,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 static void game_enter_state(Game *game, GameState next_state);
@@ -106,6 +107,114 @@ static void reset_level_presentation(Game *game)
                sizeof(game->presentation.fall_platform_sounded));
 }
 
+static void reset_sublevel_visit(Game *game)
+{
+    memset(&game->inactive_gameplay, 0, sizeof(game->inactive_gameplay));
+    game->sublevel_initialized = false;
+    game->in_sublevel = false;
+    game->main_level_cam_x = 0.0f;
+}
+
+static void transfer_player_loadout(Player *destination,
+                                    const Player *source)
+{
+    destination->bullets = source->bullets;
+    destination->grenades = source->grenades;
+    destination->bazooka_rockets = source->bazooka_rockets;
+    destination->facing = source->facing;
+}
+
+static void snap_camera_to_player(Game *game)
+{
+    int win_w = 0, win_h = 0;
+    game_get_view_size(game, &win_w, &win_h);
+    (void)win_h;
+    float desired = game->gameplay.player.x + PLAYER_W * 0.5f -
+                    (float)win_w * 0.5f;
+    float max_cam = game->gameplay.level.map.width * (float)TILE_SIZE -
+                    (float)win_w;
+    if (max_cam < 0.0f)
+        max_cam = 0.0f;
+    if (desired < 0.0f)
+        desired = 0.0f;
+    if (desired > max_cam)
+        desired = max_cam;
+    game->presentation.cam_x = desired;
+}
+
+static bool initialize_restroom(Game *game)
+{
+    if (EMBEDDED_SUBLEVEL_COUNT == 0)
+    {
+        SDL_Log("No embedded restroom sublevel is available");
+        return false;
+    }
+
+    GameplayState *restroom = &game->inactive_gameplay;
+    memset(restroom, 0, sizeof(*restroom));
+    restroom->rng = game->gameplay.rng;
+    gameplay_state_begin_level(restroom);
+
+    const EmbeddedLevelData *source = &EMBEDDED_SUBLEVELS[0];
+    if (!level_load_data(&restroom->level, source->name,
+                         source->data, source->size, &restroom->rng))
+    {
+        SDL_Log("Could not load restroom sublevel");
+        return false;
+    }
+
+    player_reset(&restroom->player, &restroom->level);
+    level_reveal_init(&restroom->level);
+    level_reveal_step(&restroom->level, 10.0f);
+    gameplay_ai_spawn_level_entities(restroom);
+    game->sublevel_initialized = true;
+    return true;
+}
+
+static void swap_gameplay_areas(Game *game)
+{
+    GameplayState temporary = game->gameplay;
+    game->gameplay = game->inactive_gameplay;
+    game->inactive_gameplay = temporary;
+}
+
+static bool enter_restroom(Game *game)
+{
+    if (game->in_sublevel)
+        return false;
+    if (!game->sublevel_initialized && !initialize_restroom(game))
+        return false;
+
+    Player travelling_player = game->gameplay.player;
+    game->main_level_cam_x = game->presentation.cam_x;
+    swap_gameplay_areas(game);
+    transfer_player_loadout(&game->gameplay.player, &travelling_player);
+    game->gameplay.teleport_cooldown = TELEPORT_COOLDOWN;
+    game_events_clear(&game->gameplay.events);
+    game_events_sound(&game->gameplay.events, SFX_DOOR);
+    particle_system_clear(&game->presentation.particles);
+    game->in_sublevel = true;
+    snap_camera_to_player(game);
+    return true;
+}
+
+static bool leave_restroom(Game *game)
+{
+    if (!game->in_sublevel)
+        return false;
+
+    Player travelling_player = game->gameplay.player;
+    swap_gameplay_areas(game);
+    transfer_player_loadout(&game->gameplay.player, &travelling_player);
+    game->gameplay.teleport_cooldown = TELEPORT_COOLDOWN;
+    game_events_clear(&game->gameplay.events);
+    game_events_sound(&game->gameplay.events, SFX_DOOR);
+    particle_system_clear(&game->presentation.particles);
+    game->in_sublevel = false;
+    game->presentation.cam_x = game->main_level_cam_x;
+    return true;
+}
+
 static bool load_level(Game *game, int index)
 {
     if (index < 0 || (size_t)index >= EMBEDDED_LEVEL_COUNT)
@@ -113,6 +222,8 @@ static bool load_level(Game *game, int index)
         SDL_Log("Level index %d is out of range", index);
         return false;
     }
+
+    reset_sublevel_visit(game);
 
     gameplay_state_begin_level(&game->gameplay);
     const EmbeddedLevelData *source = &EMBEDDED_LEVELS[index];
@@ -764,6 +875,14 @@ static void update_playing(Game *game, float dt)
         game->gameplay.teleport_cooldown -= dt;
 
     gameplay_combat_update_explosives(&game->gameplay, &game->campaign, dt);
+
+    SublevelDoorAction sublevel_action =
+        gameplay_use_sublevel_door(&game->gameplay, &game->input);
+    if ((sublevel_action == SUBLEVEL_DOOR_ENTER && enter_restroom(game)) ||
+        (sublevel_action == SUBLEVEL_DOOR_RETURN && leave_restroom(game)))
+    {
+        return;
+    }
     gameplay_use_door(&game->gameplay, &game->input);
 
     gameplay_ai_update_spawns(&game->gameplay, dt);

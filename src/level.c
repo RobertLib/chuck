@@ -144,6 +144,8 @@ bool level_load_data(Level *level, const char *name,
     int max_width = 0;
     int start_count = 0;
     int exit_count = 0;
+    int sublevel_entrance_count = 0;
+    int sublevel_return_count = 0;
     bool too_wide = false;
     bool too_tall = false;
     bool invalid_spawn_metadata = false;
@@ -187,6 +189,9 @@ bool level_load_data(Level *level, const char *name,
 
         switch (c)
         {
+        case '.':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            break;
         case '#':
             level->map.tiles[row][col] = TILE_WALL;
             break;
@@ -265,6 +270,31 @@ bool level_load_data(Level *level, const char *name,
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_OFFICE_EQUIPMENT);
             break;
+        case 'q':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_RESTROOM_TOILET);
+            level->map.restroom_theme = true;
+            break;
+        case 'b':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_RESTROOM_BASIN);
+            level->map.restroom_theme = true;
+            break;
+        case 'p':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_RESTROOM_PARTITION);
+            level->map.restroom_theme = true;
+            break;
+        case 'o':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_RESTROOM_STALL_OPEN);
+            level->map.restroom_theme = true;
+            break;
+        case 'z':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_RESTROOM_STALL_CLOSED);
+            level->map.restroom_theme = true;
+            break;
         case 'S':
             level->map.tiles[row][col] = TILE_EMPTY;
             start_count++;
@@ -286,6 +316,20 @@ bool level_load_data(Level *level, const char *name,
                 level->map.doors[level->map.door_count].row = row;
                 level->map.door_count++;
             }
+            break;
+        case 'U':
+            level->map.tiles[row][col] = TILE_SUBLEVEL_DOOR;
+            sublevel_entrance_count++;
+            level->map.has_sublevel_entrance = true;
+            level->map.sublevel_entrance_col = col;
+            level->map.sublevel_entrance_row = row;
+            break;
+        case 'R':
+            level->map.tiles[row][col] = TILE_SUBLEVEL_DOOR;
+            sublevel_return_count++;
+            level->map.has_sublevel_return = true;
+            level->map.sublevel_return_col = col;
+            level->map.sublevel_return_row = row;
             break;
         case 'V':
             level->map.tiles[row][col] = TILE_ELEVATOR_SHAFT;
@@ -589,11 +633,28 @@ bool level_load_data(Level *level, const char *name,
                 name, start_count);
         return false;
     }
-    if (exit_count != 1)
+    if (exit_count + sublevel_return_count != 1)
     {
         fprintf(stderr,
-                "Level '%s' must contain exactly one exit 'E' (found %d)\n",
-                name, exit_count);
+                "Level '%s' must contain exactly one campaign exit 'E' or "
+                "sublevel return 'R' (found %d)\n",
+                name, exit_count + sublevel_return_count);
+        return false;
+    }
+    if (sublevel_entrance_count > 1)
+    {
+        fprintf(stderr,
+                "Level '%s' may contain at most one sublevel entrance 'U' "
+                "(found %d)\n",
+                name, sublevel_entrance_count);
+        return false;
+    }
+    if (sublevel_return_count > 1)
+    {
+        fprintf(stderr,
+                "Level '%s' may contain at most one sublevel return 'R' "
+                "(found %d)\n",
+                name, sublevel_return_count);
         return false;
     }
     if ((level->map.door_count % 2) != 0)

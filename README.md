@@ -67,6 +67,11 @@ creating shortcuts, ambushes, or escape routes depending on how you use them.
 Small gas canisters can also be used against nearby guards, but their low profile
 means Chuck must crawl before firing to hit one.
 
+The first sector also contains a marked WC door. It enters a small, separate
+restroom sublevel with useful supplies. The parent level is paused while Chuck
+is inside, and both areas retain their state when he leaves or returns; this WC
+entrance is independent of the paired shortcut-door system.
+
 ## Controls
 
 - Move: arrow keys or `WASD`
@@ -120,10 +125,11 @@ make clean
 
 SDL3 development files must be available through `pkg-config`.
 
-Level maps remain editable as `levels/level*.txt`. During every build they are
-converted into C arrays and linked into the `chuck` executable. The executable
-therefore does not need the `levels` directory (or any other runtime asset
-files) when it is distributed.
+Campaign maps remain editable as `levels/level*.txt`, while separate interiors
+live under `levels/sublevels/`. During every build they are converted into C
+arrays and linked into the `chuck` executable. The executable therefore does
+not need the `levels` directory (or any other runtime asset files) when it is
+distributed.
 
 ## Architecture
 

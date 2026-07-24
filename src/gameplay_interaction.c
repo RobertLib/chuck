@@ -107,6 +107,47 @@ int gameplay_player_door_index(const GameplayState *state)
     return -1;
 }
 
+SublevelDoorAction gameplay_player_sublevel_door_action(
+    const GameplayState *state)
+{
+    if (!state->player.on_ground || state->teleport_cooldown > 0.0f)
+        return SUBLEVEL_DOOR_NONE;
+
+    int center_col = (int)floorf((state->player.x + PLAYER_W * 0.5f) /
+                                 TILE_SIZE);
+    float player_h = state->player.crawling
+                         ? (float)PLAYER_CRAWL_H
+                         : (float)PLAYER_H;
+    int center_row = (int)floorf((state->player.y + player_h * 0.5f) /
+                                 TILE_SIZE);
+
+    if (state->level.map.has_sublevel_entrance &&
+        center_col == state->level.map.sublevel_entrance_col &&
+        center_row == state->level.map.sublevel_entrance_row)
+    {
+        return SUBLEVEL_DOOR_ENTER;
+    }
+    if (state->level.map.has_sublevel_return &&
+        center_col == state->level.map.sublevel_return_col &&
+        center_row == state->level.map.sublevel_return_row)
+    {
+        return SUBLEVEL_DOOR_RETURN;
+    }
+    return SUBLEVEL_DOOR_NONE;
+}
+
+SublevelDoorAction gameplay_use_sublevel_door(GameplayState *state,
+                                              Input *input)
+{
+    SublevelDoorAction action =
+        gameplay_player_sublevel_door_action(state);
+    if (!input->use_door || action == SUBLEVEL_DOOR_NONE)
+        return SUBLEVEL_DOOR_NONE;
+
+    input->use_door = false;
+    return action;
+}
+
 void gameplay_use_door(GameplayState *state, Input *input)
 {
     int index = gameplay_player_door_index(state);

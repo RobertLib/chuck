@@ -12,5 +12,7 @@ typedef struct
 
 extern const EmbeddedLevelData EMBEDDED_LEVELS[];
 extern const size_t EMBEDDED_LEVEL_COUNT;
+extern const EmbeddedLevelData EMBEDDED_SUBLEVELS[];
+extern const size_t EMBEDDED_SUBLEVEL_COUNT;
 
 #endif /* CHUCK_EMBEDDED_LEVELS_H */

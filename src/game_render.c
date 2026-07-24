@@ -57,6 +57,22 @@ static void color_rect(SDL_Renderer *r, SDL_Color c, float x, float y, float w, 
   fill_rect(r, x, y, w, h);
 }
 
+static void color_quad(SDL_Renderer *r, SDL_Color c,
+                       float x0, float y0, float x1, float y1,
+                       float x2, float y2, float x3, float y3)
+{
+  SDL_FColor fc = {(float)c.r / 255.0f, (float)c.g / 255.0f,
+                   (float)c.b / 255.0f, (float)c.a / 255.0f};
+  SDL_Vertex vertices[4] = {
+      {{x0, y0}, fc, {0.0f, 0.0f}},
+      {{x1, y1}, fc, {0.0f, 0.0f}},
+      {{x2, y2}, fc, {0.0f, 0.0f}},
+      {{x3, y3}, fc, {0.0f, 0.0f}},
+  };
+  static const int indices[6] = {0, 1, 2, 0, 2, 3};
+  SDL_RenderGeometry(r, NULL, vertices, 4, indices, 6);
+}
+
 static void draw_text(SDL_Renderer *r, float x, float y, float scale,
                       Uint8 cr, Uint8 cg, Uint8 cb, const char *text)
 {
@@ -107,6 +123,85 @@ static void render_background(Game *game, int win_w, int win_h)
   const float oy = HUD_HEIGHT;
   const float fh = (float)win_h - oy;
   float t = (float)SDL_GetTicksNS() * 1.0e-9f;
+
+  if (game->gameplay.level.map.restroom_theme)
+  {
+    const Level *level = &game->gameplay.level;
+    float cam_x = game->presentation.cam_x;
+
+    /* Outside the room is a deep service void, not another tiled wall. */
+    color_rect(r, (SDL_Color){6, 10, 16, 255}, 0.0f, oy,
+               (float)win_w, fh);
+    fx_vgrad(r, 0.0f, oy, (float)win_w, fh,
+             (SDL_Color){7, 13, 22, 255}, 255,
+             (SDL_Color){19, 31, 38, 255}, 255);
+    color_rect(r, (SDL_Color){11, 19, 28, 255},
+               0.0f, oy + 80.0f, (float)win_w, 18.0f);
+    color_rect(r, (SDL_Color){35, 53, 60, 255},
+               0.0f, oy + 83.0f, (float)win_w, 3.0f);
+    color_rect(r, (SDL_Color){8, 15, 23, 255},
+               0.0f, (float)win_h - 92.0f, (float)win_w, 92.0f);
+    for (int support = 0; support < 5; ++support)
+    {
+      float sx = 58.0f + support * 184.0f -
+                 fmodf(cam_x * 0.12f, 184.0f);
+      color_rect(r, (SDL_Color){13, 23, 31, 255},
+                 sx, oy, 14.0f, fh);
+      color_rect(r, (SDL_Color){29, 43, 49, 255},
+                 sx + 2.0f, oy, 2.0f, fh);
+    }
+
+    /* The bright ceramic surface is clipped to the actual interior bounded
+     * by the map's left and right structural wall columns. */
+    float room_left = TILE_SIZE - cam_x;
+    float room_right = (level->map.width - 1) * (float)TILE_SIZE - cam_x;
+    float room_width = room_right - room_left;
+    float room_top = (level->map.sublevel_return_row - 3) *
+                         (float)TILE_SIZE +
+                     oy;
+    float room_bottom = (level->map.sublevel_return_row + 1) *
+                            (float)TILE_SIZE +
+                        oy;
+    color_rect(r, (SDL_Color){3, 8, 12, 220},
+               room_left - 8.0f, room_top - 8.0f,
+               room_width + 16.0f, room_bottom - room_top + 16.0f);
+    color_rect(r, (SDL_Color){139, 163, 157, 255},
+               room_left, room_top, room_width, room_bottom - room_top);
+    fx_vgrad(r, room_left, room_top, room_width, room_bottom - room_top,
+             (SDL_Color){203, 211, 196, 255}, 255,
+             (SDL_Color){126, 157, 151, 255}, 255);
+    for (float y = room_top; y < room_bottom; y += 24.0f)
+      color_rect(r, (SDL_Color){83, 112, 112, 255},
+                 room_left, y, room_width, 1.0f);
+    for (int col = 1; col < level->map.width - 1; ++col)
+    {
+      float x = col * (float)TILE_SIZE - cam_x;
+      color_rect(r, (SDL_Color){91, 120, 119, 255},
+                 x, room_top, 1.0f, room_bottom - room_top);
+    }
+    color_rect(r, (SDL_Color){49, 92, 91, 255},
+               room_left, room_top + 68.0f, room_width, 8.0f);
+    color_rect(r, (SDL_Color){185, 205, 191, 255},
+               room_left, room_top + 68.0f, room_width, 2.0f);
+
+    /* A plumbing run and two fluorescent fixtures keep the interior from
+     * reading as an office backdrop while leaving the fixtures dominant. */
+    color_rect(r, (SDL_Color){29, 54, 58, 255},
+               room_left, room_top + 45.0f, room_width, 7.0f);
+    color_rect(r, (SDL_Color){112, 146, 141, 255},
+               room_left, room_top + 46.0f, room_width, 2.0f);
+    for (int fixture = 0; fixture < 2; ++fixture)
+    {
+      float fx = room_left + room_width * (0.30f + fixture * 0.43f) - 48.0f;
+      fx_glow(r, fx + 54.0f, room_top + 8.0f, 62.0f,
+              (SDL_Color){190, 240, 226, 255}, 42);
+      color_rect(r, (SDL_Color){25, 42, 46, 255},
+                 fx, room_top + 4.0f, 108.0f, 8.0f);
+      color_rect(r, (SDL_Color){202, 235, 222, 255},
+                 fx + 5.0f, room_top + 6.0f, 98.0f, 3.0f);
+    }
+    return;
+  }
 
   /* Smooth atmospheric gradient: cool and dark up top, a faint teal cast
    * toward the floor so the space feels lit from below by machinery. */
@@ -319,6 +414,39 @@ static void draw_wall_tile(SDL_Renderer *r, const Level *lvl,
                x + TILE_SIZE - 2.0f, y, 2.0f, TILE_SIZE);
 }
 
+static void draw_restroom_wall_tile(SDL_Renderer *r, const Level *lvl,
+                                    int col, int row, float x, float y)
+{
+  unsigned h = tile_hash(col, row);
+  bool floor_top = !level_is_solid(lvl, col, row - 1);
+  SDL_Color tile = ((col + row) & 1)
+                       ? (SDL_Color){80, 105, 106, 255}
+                       : (SDL_Color){91, 116, 115, 255};
+
+  color_rect(r, (SDL_Color){24, 42, 46, 255},
+             x, y, TILE_SIZE, TILE_SIZE);
+  color_rect(r, tile, x + 1.0f, y + 1.0f,
+             TILE_SIZE - 2.0f, TILE_SIZE - 2.0f);
+  color_rect(r, (SDL_Color){124, 148, 143, 255},
+             x + 2.0f, y + 2.0f, TILE_SIZE - 4.0f, 1.0f);
+
+  if (floor_top)
+  {
+    SDL_Color floor = (h & 1u)
+                          ? (SDL_Color){43, 64, 68, 255}
+                          : (SDL_Color){54, 76, 78, 255};
+    color_rect(r, floor, x + 1.0f, y + 4.0f,
+               TILE_SIZE - 2.0f, TILE_SIZE - 5.0f);
+    color_rect(r, (SDL_Color){190, 213, 202, 255},
+               x, y, TILE_SIZE, 3.0f);
+    color_rect(r, (SDL_Color){62, 94, 94, 255},
+               x, y + 3.0f, TILE_SIZE, 2.0f);
+  }
+  if (!level_is_solid(lvl, col, row + 1))
+    color_rect(r, (SDL_Color){17, 31, 35, 255},
+               x, y + TILE_SIZE - 3.0f, TILE_SIZE, 3.0f);
+}
+
 static void draw_ladder_tile(SDL_Renderer *r, float x, float y, int row)
 {
   (void)row;
@@ -393,6 +521,24 @@ static void draw_door(SDL_Renderer *r, float x, float y, int index)
   char label[3];
   SDL_snprintf(label, sizeof(label), "%d", index / 2 + 1);
   draw_text(r, x + 13.0f, y + 14.0f, 0.65f, 148, 176, 188, label);
+}
+
+static void draw_restroom_door(SDL_Renderer *r, float x, float y)
+{
+  fx_glow(r, x + 16.0f, y + 1.0f, 15.0f,
+          (SDL_Color){116, 226, 209, 255}, 42);
+  color_rect(r, COL_INK, x + 1.0f, y, 30.0f, 32.0f);
+  color_rect(r, (SDL_Color){48, 73, 80, 255},
+             x + 2.0f, y + 1.0f, 28.0f, 31.0f);
+  color_rect(r, (SDL_Color){80, 113, 118, 255},
+             x + 4.0f, y + 3.0f, 24.0f, 27.0f);
+  color_rect(r, (SDL_Color){25, 43, 50, 255},
+             x + 6.0f, y + 5.0f, 20.0f, 23.0f);
+  color_rect(r, (SDL_Color){185, 226, 218, 255},
+             x + 8.0f, y + 7.0f, 16.0f, 9.0f);
+  draw_text(r, x + 10.0f, y + 8.0f, 0.75f, 31, 72, 73, "WC");
+  color_rect(r, (SDL_Color){116, 226, 209, 255},
+             x + 22.0f, y + 21.0f, 3.0f, 5.0f);
 }
 
 static void draw_exit(SDL_Renderer *r, const Game *game, float x, float y)
@@ -607,6 +753,161 @@ static void draw_office_equipment(SDL_Renderer *r, float x, float y,
   }
 }
 
+static void draw_restroom_toilet(SDL_Renderer *r, float x, float y)
+{
+  /* Side profile: cistern at the wall, projecting seat and a curved pedestal.
+   * This silhouette stays readable at one-tile resolution. */
+  color_rect(r, (SDL_Color){4, 10, 12, 120},
+             x + 2.0f, y + 29.0f, 29.0f, 3.0f);
+  color_rect(r, COL_INK, x + 2.0f, y + 4.0f, 13.0f, 20.0f);
+  color_rect(r, (SDL_Color){201, 218, 211, 255},
+             x + 4.0f, y + 6.0f, 9.0f, 16.0f);
+  color_rect(r, (SDL_Color){239, 244, 231, 255},
+             x + 3.0f, y + 4.0f, 11.0f, 3.0f);
+  color_rect(r, (SDL_Color){55, 92, 91, 255},
+             x + 11.0f, y + 9.0f, 3.0f, 4.0f);
+  color_rect(r, COL_INK, x + 10.0f, y + 17.0f, 21.0f, 7.0f);
+  color_rect(r, (SDL_Color){235, 240, 227, 255},
+             x + 11.0f, y + 18.0f, 19.0f, 4.0f);
+  color_rect(r, (SDL_Color){67, 122, 129, 255},
+             x + 15.0f, y + 20.0f, 12.0f, 2.0f);
+  color_rect(r, (SDL_Color){182, 207, 202, 255},
+             x + 14.0f, y + 23.0f, 13.0f, 5.0f);
+  color_rect(r, (SDL_Color){168, 195, 191, 255},
+             x + 16.0f, y + 27.0f, 8.0f, 5.0f);
+  color_rect(r, COL_INK, x + 15.0f, y + 30.0f, 11.0f, 2.0f);
+}
+
+static void draw_restroom_basin(SDL_Renderer *r, float x, float y)
+{
+  /* Wall-mounted side profile: the exposed faucet, open bowl and drain pipe
+   * avoid the rectangular monitor-and-stand silhouette of the old sprite. */
+  color_rect(r, COL_INK, x + 1.0f, y + 3.0f, 7.0f, 11.0f);
+  color_rect(r, (SDL_Color){86, 154, 144, 255},
+             x + 3.0f, y + 5.0f, 3.0f, 7.0f);
+  color_rect(r, (SDL_Color){221, 232, 218, 255},
+             x + 4.0f, y + 4.0f, 1.0f, 3.0f);
+
+  /* Tall gooseneck tap with a downward spout. */
+  color_rect(r, COL_INK, x + 8.0f, y + 6.0f, 4.0f, 12.0f);
+  color_rect(r, (SDL_Color){190, 205, 197, 255},
+             x + 9.0f, y + 7.0f, 2.0f, 11.0f);
+  color_rect(r, COL_INK, x + 9.0f, y + 5.0f, 14.0f, 4.0f);
+  color_rect(r, (SDL_Color){190, 205, 197, 255},
+             x + 10.0f, y + 6.0f, 12.0f, 2.0f);
+  color_rect(r, COL_INK, x + 20.0f, y + 7.0f, 4.0f, 9.0f);
+  color_rect(r, (SDL_Color){190, 205, 197, 255},
+             x + 21.0f, y + 8.0f, 2.0f, 7.0f);
+
+  /* Wide open ceramic bowl with visible water, sloped underside and U-bend. */
+  color_rect(r, COL_INK, x + 3.0f, y + 15.0f, 29.0f, 8.0f);
+  color_rect(r, (SDL_Color){230, 238, 225, 255},
+             x + 5.0f, y + 16.0f, 26.0f, 5.0f);
+  color_rect(r, (SDL_Color){72, 135, 142, 255},
+             x + 9.0f, y + 17.0f, 18.0f, 2.0f);
+  color_rect(r, (SDL_Color){193, 211, 204, 255},
+             x + 8.0f, y + 22.0f, 19.0f, 4.0f);
+  color_rect(r, (SDL_Color){129, 151, 148, 255},
+             x + 14.0f, y + 26.0f, 4.0f, 5.0f);
+  color_rect(r, (SDL_Color){129, 151, 148, 255},
+             x + 14.0f, y + 29.0f, 9.0f, 3.0f);
+  color_rect(r, (SDL_Color){129, 151, 148, 255},
+             x + 21.0f, y + 27.0f, 3.0f, 5.0f);
+}
+
+static void draw_restroom_partition(SDL_Renderer *r, float x, float y)
+{
+  /* Narrow stall divider with a raised foot and a visible latch plate. */
+  color_rect(r, (SDL_Color){4, 10, 12, 110},
+             x + 21.0f, y + 30.0f, 11.0f, 2.0f);
+  color_rect(r, COL_INK, x + 22.0f, y, 10.0f, 28.0f);
+  color_rect(r, (SDL_Color){48, 86, 84, 255},
+             x + 24.0f, y + 2.0f, 7.0f, 24.0f);
+  color_rect(r, (SDL_Color){91, 132, 124, 255},
+             x + 25.0f, y + 3.0f, 2.0f, 22.0f);
+  color_rect(r, (SDL_Color){174, 190, 180, 255},
+             x + 23.0f, y + 15.0f, 3.0f, 5.0f);
+  color_rect(r, COL_INK, x + 25.0f, y + 27.0f, 5.0f, 5.0f);
+}
+
+static void draw_restroom_stall_frame(SDL_Renderer *r, float x, float y)
+{
+  /* One-tile-scale cubicle frame, sized around the toilet rather than around
+   * a full room doorway. */
+  color_rect(r, (SDL_Color){4, 10, 12, 120},
+             x - 6.0f, y + 29.0f, 46.0f, 3.0f);
+  color_rect(r, COL_INK, x - 6.0f, y - 7.0f, 46.0f, 5.0f);
+  color_rect(r, (SDL_Color){43, 82, 79, 255},
+             x - 3.0f, y - 5.0f, 40.0f, 2.0f);
+  color_rect(r, COL_INK, x - 6.0f, y - 3.0f, 5.0f, 35.0f);
+  color_rect(r, (SDL_Color){64, 106, 101, 255},
+             x - 4.0f, y - 1.0f, 2.0f, 28.0f);
+  color_rect(r, COL_INK, x + 35.0f, y - 3.0f, 5.0f, 35.0f);
+  color_rect(r, (SDL_Color){88, 130, 121, 255},
+             x + 36.0f, y - 1.0f, 2.0f, 28.0f);
+  color_rect(r, COL_INK, x - 4.0f, y + 27.0f, 4.0f, 5.0f);
+  color_rect(r, COL_INK, x + 36.0f, y + 27.0f, 4.0f, 5.0f);
+}
+
+static void draw_restroom_stall_open(SDL_Renderer *r, float x, float y)
+{
+  /* Recessed tiled back wall and plumbing inside the open cubicle. */
+  color_rect(r, (SDL_Color){49, 76, 76, 255},
+             x - 1.0f, y - 2.0f, 36.0f, 29.0f);
+  for (int line = 0; line < 2; ++line)
+    color_rect(r, (SDL_Color){72, 103, 100, 255},
+               x - 1.0f, y + 7.0f + line * 13.0f, 36.0f, 1.0f);
+  color_rect(r, (SDL_Color){116, 148, 138, 255},
+             x + 1.0f, y, 3.0f, 6.0f);
+  color_rect(r, (SDL_Color){160, 184, 169, 255},
+             x + 2.0f, y, 1.0f, 6.0f);
+  color_rect(r, COL_INK, x + 24.0f, y + 1.0f, 10.0f, 7.0f);
+  color_rect(r, (SDL_Color){230, 232, 214, 255},
+             x + 26.0f, y + 2.0f, 6.0f, 5.0f);
+  color_rect(r, (SDL_Color){92, 116, 111, 255},
+             x + 28.0f, y + 3.0f, 2.0f, 2.0f);
+  color_rect(r, (SDL_Color){230, 232, 214, 255},
+             x + 30.0f, y + 6.0f, 2.0f, 3.0f);
+
+  draw_restroom_toilet(r, x + 1.0f, y);
+  draw_restroom_stall_frame(r, x, y);
+
+  /* Door folded toward the viewer: a trapezoid makes its open state obvious. */
+  color_quad(r, COL_INK,
+             x + 29.0f, y, x + 44.0f, y + 4.0f,
+             x + 44.0f, y + 28.0f, x + 29.0f, y + 27.0f);
+  color_quad(r, (SDL_Color){52, 103, 96, 255},
+             x + 32.0f, y + 3.0f, x + 41.0f, y + 6.0f,
+             x + 41.0f, y + 24.0f, x + 32.0f, y + 24.0f);
+  color_quad(r, (SDL_Color){96, 148, 134, 255},
+             x + 33.0f, y + 4.0f, x + 35.0f, y + 5.0f,
+             x + 35.0f, y + 23.0f, x + 33.0f, y + 23.0f);
+  color_rect(r, (SDL_Color){220, 188, 102, 255},
+             x + 38.0f, y + 13.0f, 2.0f, 2.0f);
+}
+
+static void draw_restroom_stall_closed(SDL_Renderer *r, float x, float y)
+{
+  draw_restroom_stall_frame(r, x, y);
+
+  /* Full opaque panel with a deliberate floor gap, hinges and occupied latch. */
+  color_rect(r, COL_INK, x - 2.0f, y, 36.0f, 27.0f);
+  color_rect(r, (SDL_Color){47, 94, 89, 255},
+             x + 1.0f, y + 3.0f, 30.0f, 21.0f);
+  color_rect(r, (SDL_Color){73, 122, 113, 255},
+             x + 3.0f, y + 5.0f, 26.0f, 2.0f);
+  color_rect(r, (SDL_Color){34, 70, 69, 255},
+             x + 3.0f, y + 19.0f, 26.0f, 2.0f);
+  color_rect(r, (SDL_Color){145, 162, 149, 255},
+             x - 2.0f, y + 5.0f, 3.0f, 5.0f);
+  color_rect(r, (SDL_Color){145, 162, 149, 255},
+             x - 2.0f, y + 17.0f, 3.0f, 5.0f);
+  color_rect(r, (SDL_Color){220, 188, 102, 255},
+             x + 25.0f, y + 13.0f, 3.0f, 3.0f);
+  color_rect(r, (SDL_Color){183, 60, 53, 255},
+             x + 22.0f, y + 9.0f, 7.0f, 2.0f);
+}
+
 static void draw_decoration(SDL_Renderer *r, const Decoration *decoration,
                             float cam_x, float oy, float world_t)
 {
@@ -616,10 +917,20 @@ static void draw_decoration(SDL_Renderer *r, const Decoration *decoration,
     draw_office_chair(r, x, y);
   else if (decoration->type == DECOR_OFFICE_DESK)
     draw_office_desk(r, x, y);
-  else
+  else if (decoration->type == DECOR_OFFICE_EQUIPMENT)
     draw_office_equipment(r, x, y,
                           tile_hash(decoration->col, decoration->row) % 3u,
                           world_t);
+  else if (decoration->type == DECOR_RESTROOM_TOILET)
+    draw_restroom_toilet(r, x, y);
+  else if (decoration->type == DECOR_RESTROOM_BASIN)
+    draw_restroom_basin(r, x, y);
+  else if (decoration->type == DECOR_RESTROOM_PARTITION)
+    draw_restroom_partition(r, x, y);
+  else if (decoration->type == DECOR_RESTROOM_STALL_OPEN)
+    draw_restroom_stall_open(r, x, y);
+  else
+    draw_restroom_stall_closed(r, x, y);
 }
 
 static void draw_card(SDL_Renderer *r, float x, float y, Uint8 alpha, bool active)
@@ -1908,7 +2219,12 @@ static void render_world(Game *game)
         continue;
       TileType tile = lvl->map.tiles[row][col];
       if (tile == TILE_WALL)
-        draw_wall_tile(r, lvl, col, row, x, y);
+      {
+        if (lvl->map.restroom_theme)
+          draw_restroom_wall_tile(r, lvl, col, row, x, y);
+        else
+          draw_wall_tile(r, lvl, col, row, x, y);
+      }
       else if (tile == TILE_LADDER)
         draw_ladder_tile(r, x, y, row);
       else if (tile == TILE_ELEVATOR_SHAFT)
@@ -2008,6 +2324,18 @@ static void render_world(Game *game)
     float x = lvl->map.doors[d].col * (float)TILE_SIZE - cam_x;
     float y = lvl->map.doors[d].row * (float)TILE_SIZE + oy;
     draw_door(r, x, y, d);
+  }
+  if (lvl->map.has_sublevel_entrance)
+  {
+    float x = lvl->map.sublevel_entrance_col * (float)TILE_SIZE - cam_x;
+    float y = lvl->map.sublevel_entrance_row * (float)TILE_SIZE + oy;
+    draw_restroom_door(r, x, y);
+  }
+  if (lvl->map.has_sublevel_return)
+  {
+    float x = lvl->map.sublevel_return_col * (float)TILE_SIZE - cam_x;
+    float y = lvl->map.sublevel_return_row * (float)TILE_SIZE + oy;
+    draw_restroom_door(r, x, y);
   }
   if (lvl->map.has_exit)
   {
@@ -2387,8 +2715,11 @@ static void render_interaction_prompt(Game *game, int win_w, int win_h)
   bool terminal_available = game->gameplay.terminal_in_range &&
                             !game->gameplay.level.runtime.exit_unlocked;
   bool door_available = gameplay_player_door_index(&game->gameplay) >= 0;
+  SublevelDoorAction sublevel_action =
+      gameplay_player_sublevel_door_action(&game->gameplay);
+  bool sublevel_door_available = sublevel_action != SUBLEVEL_DOOR_NONE;
   if (game->state != STATE_PLAYING ||
-      (!terminal_available && !door_available))
+      (!terminal_available && !door_available && !sublevel_door_available))
   {
     return;
   }
@@ -2412,6 +2743,14 @@ static void render_interaction_prompt(Game *game, int win_w, int win_h)
   else if (terminal_available)
   {
     SDL_snprintf(label, sizeof(label), "HOLD E TO HACK ACTIVE TERMINAL");
+  }
+  else if (sublevel_action == SUBLEVEL_DOOR_ENTER)
+  {
+    SDL_snprintf(label, sizeof(label), "PRESS E TO ENTER WC");
+  }
+  else if (sublevel_action == SUBLEVEL_DOOR_RETURN)
+  {
+    SDL_snprintf(label, sizeof(label), "PRESS E TO LEAVE WC");
   }
   else
   {

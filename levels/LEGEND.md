@@ -5,6 +5,7 @@ This file describes the meaning of characters used in the level text files.
 - `#` : Wall (solid, impassable tile).
 - `H` : Ladder (can climb up/down).
 - (space) : Empty space / air.
+- `.` : Empty padding / air (useful before a compact sublevel room).
 - `C` : Card item (`ITEM_CARD`).
 - `G` : Gun item (`ITEM_GUN`).
 - `N` : Grenade item (`ITEM_GRENADE`).
@@ -26,6 +27,13 @@ This file describes the meaning of characters used in the level text files.
 - `S` : Player start position.
 - `E` : Exit / level end.
 - `D` : Door tile (`TILE_DOOR`).
+- `U` : Entrance to a separate sublevel (currently the WC/restroom).
+- `R` : Return door from a sublevel to its paused parent level.
+- `q` : Decorative restroom toilet (non-solid).
+- `b` : Decorative restroom washbasin (non-solid).
+- `p` : Decorative restroom stall partition (non-solid).
+- `o` : Open restroom stall with a visible toilet (non-solid).
+- `z` : Closed restroom stall door (non-solid).
 - `V` : Elevator shaft (vertical elevator track).
 - `F` : Falling platform (falls after triggered).
 - `P` : Moving platform (moves horizontally).
@@ -40,3 +48,4 @@ Notes:
 - A `SPAWNS n0 n1 ...` line may appear after the grid. When present, it must
   contain exactly one spawn count for every door, in the order the doors
   appear in the file.
+- A campaign level contains one `E`; a sublevel contains one `R` instead.

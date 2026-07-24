@@ -13,6 +13,7 @@ typedef enum
     TILE_WALL,
     TILE_LADDER,
     TILE_DOOR,
+    TILE_SUBLEVEL_DOOR,
     TILE_ELEVATOR_SHAFT /* visual only – not solid */,
     TILE_FALL_PLATFORM /* single-tile one-way platform that can fall */
 } TileType;
@@ -71,7 +72,12 @@ typedef enum
 {
     DECOR_OFFICE_CHAIR = 0,
     DECOR_OFFICE_DESK,
-    DECOR_OFFICE_EQUIPMENT
+    DECOR_OFFICE_EQUIPMENT,
+    DECOR_RESTROOM_TOILET,
+    DECOR_RESTROOM_BASIN,
+    DECOR_RESTROOM_PARTITION,
+    DECOR_RESTROOM_STALL_OPEN,
+    DECOR_RESTROOM_STALL_CLOSED
 } DecorationType;
 
 typedef struct
@@ -145,6 +151,11 @@ typedef struct
     float start_x, start_y;
     bool has_exit;
     int exit_col, exit_row;
+    bool has_sublevel_entrance;
+    int sublevel_entrance_col, sublevel_entrance_row;
+    bool has_sublevel_return;
+    int sublevel_return_col, sublevel_return_row;
+    bool restroom_theme;
     Terminal terminals[MAX_TERMINALS];
     int terminal_count;
     AlarmSwitch alarm_switches[MAX_ALARM_SWITCHES];

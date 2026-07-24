@@ -10,6 +10,7 @@ BUILD_DIR := build
 TARGET := chuck
 LEVEL_GENERATOR := tools/embed_levels.py
 LEVEL_FILES := $(wildcard levels/level*.txt)
+SUBLEVEL_FILES := $(wildcard levels/sublevels/*.txt)
 EMBEDDED_LEVELS_SOURCE := $(BUILD_DIR)/embedded_levels.c
 EMBEDDED_LEVELS_OBJECT := $(BUILD_DIR)/embedded_levels.o
 TEST_TARGET := $(BUILD_DIR)/core_tests
@@ -33,8 +34,8 @@ $(TARGET): $(OBJECTS)
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
-$(EMBEDDED_LEVELS_SOURCE): $(LEVEL_GENERATOR) $(LEVEL_FILES) | $(BUILD_DIR)
-	python3 $(LEVEL_GENERATOR) $@ $(LEVEL_FILES)
+$(EMBEDDED_LEVELS_SOURCE): $(LEVEL_GENERATOR) $(LEVEL_FILES) $(SUBLEVEL_FILES) | $(BUILD_DIR)
+	python3 $(LEVEL_GENERATOR) $@ $(LEVEL_FILES) --sublevels $(SUBLEVEL_FILES)
 
 $(EMBEDDED_LEVELS_OBJECT): $(EMBEDDED_LEVELS_SOURCE) $(SRC_DIR)/embedded_levels.h
 	$(CC) $(CFLAGS) $(DEPFLAGS) -I$(SRC_DIR) -c $< -o $@
