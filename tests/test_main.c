@@ -1225,7 +1225,12 @@ static void test_enemy_fires_vertical_shot_up_a_shaft(void)
     {
         const Bullet *bullet = &state.enemy_bullets[i];
         if (bullet->active && bullet->vx == 0.0f && bullet->vy < 0.0f)
+        {
             fired_up = true;
+            CHECK(fabsf((bullet->x + BULLET_H * 0.5f) -
+                        (guard->x + ENEMY_W * 0.5f)) < 0.01f);
+            CHECK(fabsf(bullet->y - (guard->y - BULLET_W)) < 0.01f);
+        }
     }
     CHECK(fired_up);
 }

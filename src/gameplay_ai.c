@@ -1333,9 +1333,9 @@ static void fire_enemy_bullet(GameplayState *state, Enemy *enemy)
              * e.g. at Chuck climbing a ladder above or dropping in below. */
             bullet->vx = 0.0f;
             bullet->vy = (float)enemy->aim_vdir * ENEMY_BULLET_SPEED;
-            bullet->x = enemy_x - BULLET_W * 0.5f;
+            bullet->x = enemy_x - BULLET_H * 0.5f;
             bullet->y = enemy->aim_vdir < 0
-                            ? enemy->y - BULLET_H
+                            ? enemy->y - BULLET_W
                             : enemy->y + ENEMY_H;
         }
         else

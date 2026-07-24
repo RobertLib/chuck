@@ -786,31 +786,34 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt)
             continue;
         bullet->x += bullet->vx * dt;
         bullet->y += bullet->vy * dt;
-        if (bullet->x + BULLET_W < 0.0f ||
+        bool vertical = fabsf(bullet->vy) > fabsf(bullet->vx);
+        float width = vertical ? (float)BULLET_H : (float)BULLET_W;
+        float height = vertical ? (float)BULLET_W : (float)BULLET_H;
+        if (bullet->x + width < 0.0f ||
             bullet->x > state->level.map.width * (float)TILE_SIZE ||
-            bullet->y + BULLET_H < 0.0f ||
+            bullet->y + height < 0.0f ||
             bullet->y > state->level.map.height * (float)TILE_SIZE)
         {
             bullet->active = false;
             continue;
         }
 
-        int col = (int)floorf((bullet->x + BULLET_W * 0.5f +
-                               (bullet->vx > 0.0f    ? BULLET_W * 0.5f - 1.0f
-                                : bullet->vx < 0.0f  ? -(BULLET_W * 0.5f)
+        int col = (int)floorf((bullet->x + width * 0.5f +
+                               (bullet->vx > 0.0f    ? width * 0.5f - 1.0f
+                                : bullet->vx < 0.0f  ? -(width * 0.5f)
                                                      : 0.0f)) /
                               TILE_SIZE);
-        int row = (int)floorf((bullet->y + BULLET_H * 0.5f +
-                               (bullet->vy > 0.0f    ? BULLET_H * 0.5f - 1.0f
-                                : bullet->vy < 0.0f  ? -(BULLET_H * 0.5f)
+        int row = (int)floorf((bullet->y + height * 0.5f +
+                               (bullet->vy > 0.0f    ? height * 0.5f - 1.0f
+                                : bullet->vy < 0.0f  ? -(height * 0.5f)
                                                      : 0.0f)) /
                               TILE_SIZE);
         if (level_is_solid(&state->level, col, row))
         {
             bullet->active = false;
             gameplay_world_sound(state, SFX_BULLET_IMPACT,
-                                 bullet->x + BULLET_W * 0.5f,
-                                 bullet->y + BULLET_H * 0.5f);
+                                 bullet->x + width * 0.5f,
+                                 bullet->y + height * 0.5f);
             continue;
         }
         for (int j = 0; j < state->level.runtime.crate_count; ++j)
@@ -818,20 +821,20 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt)
             const Crate *crate = &state->level.runtime.crates[j];
             if (crate->active &&
                 gameplay_boxes_overlap(bullet->x, bullet->y,
-                                       BULLET_W, BULLET_H,
+                                       width, height,
                                        crate->x, crate->y,
                                        CRATE_W, CRATE_H))
             {
                 bullet->active = false;
                 gameplay_world_sound(state, SFX_BULLET_IMPACT,
-                                     bullet->x + BULLET_W * 0.5f,
-                                     bullet->y + BULLET_H * 0.5f);
+                                     bullet->x + width * 0.5f,
+                                     bullet->y + height * 0.5f);
                 break;
             }
         }
         if (bullet->active && state->invuln_timer <= 0.0f &&
             gameplay_boxes_overlap(bullet->x, bullet->y,
-                                   BULLET_W, BULLET_H,
+                                   width, height,
                                    state->player.x, state->player.y,
                                    PLAYER_W, player_height(state)))
         {

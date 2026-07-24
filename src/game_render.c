@@ -2177,12 +2177,24 @@ static void render_world(Game *game)
       continue;
     float x = b->x - cam_x;
     float y = b->y + oy;
-    fx_glow(r, x + BULLET_W * 0.5f, y + BULLET_H * 0.5f, 11.0f,
+    bool vertical = fabsf(b->vy) > fabsf(b->vx);
+    float bullet_w = vertical ? (float)BULLET_H : (float)BULLET_W;
+    float bullet_h = vertical ? (float)BULLET_W : (float)BULLET_H;
+    fx_glow(r, x + bullet_w * 0.5f, y + bullet_h * 0.5f, 11.0f,
             (SDL_Color){255, 92, 62, 255}, 110);
     set_rgba(r, 255, 52, 39, 80);
-    fill_rect(r, x - (b->vx > 0.0f ? 7.0f : -7.0f), y, 11.0f, 4.0f);
-    color_rect(r, (SDL_Color){255, 103, 54, 255}, x, y, BULLET_W, BULLET_H);
-    color_rect(r, (SDL_Color){255, 225, 128, 255}, x + 2.0f, y + 1.0f, 4.0f, 2.0f);
+    if (vertical)
+      fill_rect(r, x, y - (b->vy > 0.0f ? 7.0f : -7.0f), 4.0f, 11.0f);
+    else
+      fill_rect(r, x - (b->vx > 0.0f ? 7.0f : -7.0f), y, 11.0f, 4.0f);
+    color_rect(r, (SDL_Color){255, 103, 54, 255},
+               x, y, bullet_w, bullet_h);
+    if (vertical)
+      color_rect(r, (SDL_Color){255, 225, 128, 255},
+                 x + 1.0f, y + 2.0f, 2.0f, 4.0f);
+    else
+      color_rect(r, (SDL_Color){255, 225, 128, 255},
+                 x + 2.0f, y + 1.0f, 4.0f, 2.0f);
   }
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
