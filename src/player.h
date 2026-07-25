@@ -26,6 +26,7 @@ typedef struct
     float vx, vy;
     bool on_ground;
     bool on_ladder;
+    bool facade_climbing; /* dedicated exterior mode; independent of ladders */
     int facing;   /* -1 = left, +1 = right */
     int bullets;  /* current ammo, 0..MAX_AMMO */
     int grenades; /* current grenades carried (0 or 1) */

@@ -25,7 +25,10 @@ This file describes the meaning of characters used in the level text files.
 - `d` : Decorative office desk with a computer (non-solid).
 - `i` : Decorative office equipment; its visual variant is selected from a filing cabinet, printer, or server rack (non-solid).
 - `S` : Player start position.
-- `E` : Exit / level end.
+- `E` : Normal security-door exit. When the map also contains `Y`, this door
+  is physically blocked and cannot be unlocked by a card or terminal.
+- `Y` : Open traversable window. In an interior it is the alternative route
+  out; in a `MODE FACADE` level it is the window back into the building.
 - `D` : Door tile (`TILE_DOOR`).
 - `U` : Entrance to a separate sublevel (currently the WC/restroom).
 - `R` : Return door from a sublevel to its paused parent level.
@@ -37,6 +40,8 @@ This file describes the meaning of characters used in the level text files.
 - `V` : Elevator shaft (vertical elevator track).
 - `F` : Falling platform (falls after triggered).
 - `P` : Moving platform (moves horizontally).
+- `r` : Facade-mode window that periodically throws an object toward the player.
+- `v` : Facade-mode bird entry point. Birds periodically cross toward the player.
 
 Notes:
 
@@ -48,4 +53,8 @@ Notes:
 - A `SPAWNS n0 n1 ...` line may appear after the grid. When present, it must
   contain exactly one spawn count for every door, in the order the doors
   appear in the file.
-- A campaign level contains one `E`; a sublevel contains one `R` instead.
+- `MODE FACADE` on a metadata line after the grid selects the separate exterior
+  climbing mode. It uses direct four-way wall movement: no gravity, ladders,
+  doors, items, guards, or ordinary platform simulation.
+- An interior campaign level contains one `E` and may additionally contain one
+  `Y`. A facade level contains one `Y` and no `E`; a sublevel contains one `R`.

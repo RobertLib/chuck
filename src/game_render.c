@@ -117,12 +117,129 @@ static void draw_soft_glow(SDL_Renderer *r, float x, float y, float w, float h,
   fx_glow(r, x + w * 0.5f, y + h * 0.5f, radius, color, 72);
 }
 
+static void render_facade_background(Game *game, int win_w, int win_h)
+{
+  SDL_Renderer *r = game->platform.renderer;
+  float top = HUD_HEIGHT;
+  float height = (float)win_h - top;
+  float t = (float)SDL_GetTicksNS() * 1.0e-9f;
+
+  color_rect(r, (SDL_Color){5, 9, 19, 255}, 0.0f, top,
+             (float)win_w, height);
+  fx_vgrad(r, 0.0f, top, (float)win_w, height,
+           (SDL_Color){7, 12, 29, 255}, 255,
+           (SDL_Color){25, 32, 48, 255}, 255);
+
+  /* Stars and distant towers move more slowly than the climb, selling the
+   * height without letting the backdrop interfere with the route. */
+  for (int i = 0; i < 30; ++i)
+  {
+    unsigned h = tile_hash(i * 13 + 7, 211);
+    float x = (float)(h % (unsigned)win_w);
+    float y = top + fmodf((float)((h >> 8) % 700u) -
+                          game->presentation.cam_y * 0.08f + 700.0f,
+                          700.0f);
+    Uint8 glow = (Uint8)(80 + (h % 100u));
+    set_rgba(r, 155, 194, 218, glow);
+    fill_rect(r, x, y, (h & 3u) == 0u ? 2.0f : 1.0f, 1.0f);
+  }
+
+  float skyline_shift = fmodf(game->presentation.cam_y * 0.14f, 110.0f);
+  for (int i = 0; i < 9; ++i)
+  {
+    unsigned h = tile_hash(i, 307);
+    float tower_w = 74.0f + (float)(h % 58u);
+    float tower_h = 100.0f + (float)((h >> 7) % 180u);
+    float x = i * 104.0f - fmodf(game->presentation.cam_x * 0.08f, 104.0f);
+    float y = (float)win_h - tower_h + skyline_shift;
+    color_rect(r, (SDL_Color){10, 16, 28, 255}, x, y,
+               tower_w, tower_h);
+    for (float wy = y + 18.0f; wy < (float)win_h; wy += 28.0f)
+      for (float wx = x + 13.0f; wx < x + tower_w - 8.0f; wx += 22.0f)
+        if (((int)(wx + wy) + i) % 3 == 0)
+          color_rect(r, (SDL_Color){70, 69, 55, 255}, wx, wy, 5.0f, 8.0f);
+  }
+
+  /* A masonry shell, floor bands and structural bays establish one coherent
+   * building. Windows are separate fixtures rendered in those bays, never a
+   * second texture underneath gameplay objects. */
+  float face_left = FACADE_BUILDING_SIDE_INSET -
+                    game->presentation.cam_x;
+  float face_width = game->gameplay.level.map.width * (float)TILE_SIZE -
+                     FACADE_BUILDING_SIDE_INSET * 2.0f;
+  float face_right = face_left + face_width;
+  color_rect(r, (SDL_Color){43, 43, 47, 255}, face_left, top,
+             face_width, height);
+
+  int first_course = (int)floorf(game->presentation.cam_y / 16.0f) - 1;
+  int last_course = first_course + (int)(height / 16.0f) + 3;
+  for (int course = first_course; course <= last_course; ++course)
+  {
+    float y = course * 16.0f + HUD_HEIGHT - game->presentation.cam_y;
+    color_rect(r, (SDL_Color){30, 31, 35, 255}, face_left, y,
+               face_width, 1.0f);
+    float joint_offset = (course & 1) != 0 ? 32.0f : 0.0f;
+    for (float x = face_left + joint_offset; x < face_right; x += 64.0f)
+    {
+      color_rect(r, (SDL_Color){35, 35, 39, 255}, x, y,
+                 1.0f, 16.0f);
+    }
+  }
+
+  /* Five window bays are separated by shallow stone pilasters. */
+  for (int col = 6; col < game->gameplay.level.map.width - 3; col += 4)
+  {
+    float x = (col + 0.5f) * (float)TILE_SIZE -
+              game->presentation.cam_x;
+    color_rect(r, (SDL_Color){27, 28, 32, 255}, x - 4.0f, top,
+               9.0f, height);
+    color_rect(r, (SDL_Color){59, 58, 60, 255}, x - 3.0f, top,
+               2.0f, height);
+  }
+
+  /* Each band sits in the wall gap between two window rows. */
+  for (int row = 3; row < game->gameplay.level.map.height; row += 3)
+  {
+    float y = (row + 2) * (float)TILE_SIZE + HUD_HEIGHT -
+              game->presentation.cam_y;
+    if (y < top - 8.0f || y > (float)win_h + 8.0f)
+      continue;
+    color_rect(r, (SDL_Color){24, 25, 29, 255}, face_left, y,
+               face_width, 6.0f);
+    color_rect(r, (SDL_Color){70, 67, 65, 255}, face_left, y,
+               face_width, 2.0f);
+  }
+
+  color_rect(r, (SDL_Color){22, 24, 29, 255}, face_left, top,
+             7.0f, height);
+  color_rect(r, (SDL_Color){67, 65, 65, 255}, face_right - 7.0f, top,
+             7.0f, height);
+  float roof_y = HUD_HEIGHT - game->presentation.cam_y;
+  if (roof_y >= top - 10.0f && roof_y <= (float)win_h)
+  {
+    color_rect(r, (SDL_Color){19, 21, 26, 255}, face_left - 5.0f,
+               roof_y, face_width + 10.0f, 10.0f);
+    color_rect(r, (SDL_Color){92, 87, 80, 255}, face_left - 5.0f,
+               roof_y, face_width + 10.0f, 3.0f);
+  }
+
+  float beacon = 0.45f + 0.55f * sinf(t * 2.2f);
+  fx_glow(r, (float)win_w - 42.0f, top + 25.0f, 20.0f,
+          (SDL_Color){228, 54, 48, 255}, (Uint8)(35.0f + beacon * 55.0f));
+}
+
 static void render_background(Game *game, int win_w, int win_h)
 {
   SDL_Renderer *r = game->platform.renderer;
   const float oy = HUD_HEIGHT;
   const float fh = (float)win_h - oy;
   float t = (float)SDL_GetTicksNS() * 1.0e-9f;
+
+  if (game->gameplay.level.map.mode == LEVEL_MODE_FACADE)
+  {
+    render_facade_background(game, win_w, win_h);
+    return;
+  }
 
   if (game->gameplay.level.map.restroom_theme)
   {
@@ -543,9 +660,11 @@ static void draw_restroom_door(SDL_Renderer *r, float x, float y)
 
 static void draw_exit(SDL_Renderer *r, const Game *game, float x, float y)
 {
-  bool unlocked = game->gameplay.level.runtime.exit_unlocked;
-  SDL_Color signal = unlocked ? (SDL_Color){64, 238, 145, 255}
-                              : (SDL_Color){230, 75, 61, 255};
+  bool blocked = game->gameplay.level.map.has_window;
+  bool unlocked = game->gameplay.level.runtime.exit_unlocked && !blocked;
+  SDL_Color signal = blocked ? (SDL_Color){104, 110, 116, 255}
+                     : unlocked ? (SDL_Color){64, 238, 145, 255}
+                                : (SDL_Color){230, 75, 61, 255};
   if (unlocked)
     draw_soft_glow(r, x + 5.0f, y + 3.0f, 22.0f, 28.0f, signal);
 
@@ -557,11 +676,157 @@ static void draw_exit(SDL_Renderer *r, const Game *game, float x, float y)
   color_rect(r, (SDL_Color){11, 18, 22, 255}, x + 20.0f, y + 18.0f, 5.0f, 7.0f);
   color_rect(r, signal, x + 21.0f, y + 19.0f, 3.0f, 2.0f);
   draw_text(r, x + 9.0f, y + 12.0f, 0.65f, signal.r, signal.g, signal.b,
-            unlocked ? "GO" : "LOCK");
+            blocked ? "JAM" : (unlocked ? "GO" : "LOCK"));
+  if (blocked)
+  {
+    color_rect(r, (SDL_Color){91, 71, 55, 255}, x + 3.0f, y + 7.0f,
+               26.0f, 4.0f);
+    color_rect(r, (SDL_Color){91, 71, 55, 255}, x + 3.0f, y + 23.0f,
+               26.0f, 4.0f);
+    color_rect(r, (SDL_Color){151, 126, 82, 255}, x + 4.0f, y + 7.0f,
+               24.0f, 1.0f);
+  }
+}
+
+static void draw_open_window(SDL_Renderer *r, float x, float y)
+{
+  SDL_Color signal = {91, 238, 183, 255};
+  fx_glow(r, x + 16.0f, y + 15.0f, 24.0f, signal, 75);
+
+  color_rect(r, (SDL_Color){12, 16, 24, 255}, x + 1.0f, y,
+             30.0f, 32.0f);
+  color_rect(r, (SDL_Color){63, 72, 82, 255}, x + 3.0f, y + 2.0f,
+             26.0f, 28.0f);
+  color_rect(r, (SDL_Color){8, 17, 28, 255},
+             x + 6.0f, y + 5.0f, 20.0f, 20.0f);
+  color_rect(r, (SDL_Color){53, 69, 79, 255},
+             x + 14.0f, y + 5.0f, 3.0f, 20.0f);
+  color_rect(r, (SDL_Color){53, 69, 79, 255},
+             x + 6.0f, y + 14.0f, 20.0f, 3.0f);
+  color_rect(r, (SDL_Color){17, 20, 27, 255}, x + 2.0f, y + 27.0f,
+             28.0f, 5.0f);
+  color_rect(r, (SDL_Color){112, 120, 126, 255}, x, y + 27.0f,
+             32.0f, 2.0f);
+
+  draw_text(r, x + 10.0f, y + 9.0f, 1.0f,
+            signal.r, signal.g, signal.b, ">");
+}
+
+static void draw_facade_closed_window(SDL_Renderer *r, float x, float y,
+                                      unsigned variant, float world_t)
+{
+  float light = 0.0f;
+  if (variant % 3u == 0u)
+  {
+    float period = 6.5f + (float)(variant % 5u) * 0.9f;
+    float phase_offset = (float)(variant % 23u) * 1.17f;
+    float phase = fmodf(world_t + phase_offset, period);
+    float fade_in_end = 0.45f;
+    float fade_out_start = period * 0.52f;
+    float fade_out_end = fade_out_start + 0.55f;
+    if (phase < fade_in_end)
+      light = phase / fade_in_end;
+    else if (phase < fade_out_start)
+      light = 1.0f;
+    else if (phase < fade_out_end)
+      light = 1.0f - (phase - fade_out_start) /
+                         (fade_out_end - fade_out_start);
+  }
+
+  SDL_Color glass = fx_mix((SDL_Color){12, 24, 35, 255},
+                           (SDL_Color){125, 91, 49, 255}, light);
+  SDL_Color reflection = fx_mix((SDL_Color){37, 66, 82, 255},
+                                (SDL_Color){196, 144, 72, 255}, light);
+
+  if (light > 0.02f)
+  {
+    fx_glow(r, x + 16.0f, y + 24.0f, 22.0f,
+            (SDL_Color){220, 158, 76, 255}, (Uint8)(light * 42.0f));
+  }
+
+  color_rect(r, (SDL_Color){19, 20, 24, 255}, x - 2.0f, y - 2.0f,
+             36.0f, 54.0f);
+  color_rect(r, (SDL_Color){80, 77, 74, 255}, x, y,
+             32.0f, 50.0f);
+  color_rect(r, glass, x + 4.0f, y + 4.0f, 24.0f, 41.0f);
+  color_rect(r, reflection, x + 6.0f, y + 6.0f, 3.0f, 36.0f);
+  color_rect(r, (SDL_Color){50, 52, 55, 255}, x + 15.0f, y + 4.0f,
+             3.0f, 41.0f);
+  color_rect(r, (SDL_Color){50, 52, 55, 255}, x + 4.0f, y + 24.0f,
+             24.0f, 3.0f);
+  if (variant % 7u == 0u)
+  {
+    color_rect(r, (SDL_Color){72, 63, 57, 255}, x + 19.0f, y + 5.0f,
+               8.0f, 38.0f);
+  }
+  color_rect(r, (SDL_Color){28, 29, 32, 255}, x - 3.0f, y + 49.0f,
+             38.0f, 5.0f);
+  color_rect(r, (SDL_Color){105, 99, 91, 255}, x - 3.0f, y + 49.0f,
+             38.0f, 2.0f);
+}
+
+static void draw_facade_open_window(SDL_Renderer *r, float x, float y,
+                                    bool destination)
+{
+  SDL_Color signal = {91, 238, 183, 255};
+  if (destination)
+    fx_glow(r, x + 16.0f, y + 24.0f, 27.0f, signal, 82);
+
+  color_rect(r, (SDL_Color){15, 17, 22, 255}, x - 2.0f, y - 2.0f,
+             36.0f, 54.0f);
+  color_rect(r, (SDL_Color){82, 78, 73, 255}, x, y,
+             32.0f, 50.0f);
+  color_rect(r, (SDL_Color){5, 10, 17, 255}, x + 4.0f, y + 4.0f,
+             24.0f, 41.0f);
+  color_rect(r, (SDL_Color){46, 52, 59, 255}, x + 5.0f, y + 5.0f,
+             4.0f, 39.0f);
+  color_rect(r, (SDL_Color){97, 91, 82, 255}, x - 3.0f, y + 49.0f,
+             38.0f, 5.0f);
+  color_rect(r, (SDL_Color){139, 130, 116, 255}, x - 3.0f, y + 49.0f,
+             38.0f, 2.0f);
+  if (destination)
+  {
+    draw_text(r, x + 11.0f, y + 17.0f, 1.0f,
+              signal.r, signal.g, signal.b, "^");
+  }
+}
+
+static void draw_facade_hazard_source(SDL_Renderer *r,
+                                      const FacadeHazardSpawn *spawn,
+                                      float cam_x, float oy, float world_t)
+{
+  float x = spawn->x - TILE_SIZE * 0.5f - cam_x;
+  float y = spawn->y - TILE_SIZE * 0.5f + oy;
+  if (spawn->type == FACADE_HAZARD_BIRD)
+  {
+    draw_facade_closed_window(r, x, y,
+                              tile_hash((int)(spawn->x / TILE_SIZE),
+                                        (int)(spawn->y / TILE_SIZE)),
+                              world_t);
+    /* A perched silhouette telegraphs the direction from which birds enter. */
+    float bob = sinf(world_t * 3.0f + spawn->y * 0.02f);
+    color_rect(r, (SDL_Color){12, 15, 22, 255}, x + 8.0f,
+               y + 45.0f + bob, 16.0f, 5.0f);
+    color_rect(r, (SDL_Color){18, 21, 29, 255}, x + 12.0f,
+               y + 40.0f + bob, 8.0f, 7.0f);
+    color_rect(r, (SDL_Color){172, 126, 54, 255}, x + 18.0f,
+               y + 42.0f + bob, 3.0f, 2.0f);
+    return;
+  }
+
+  draw_facade_open_window(r, x, y, false);
+  /* Hands and a held shape make the danger readable before the first throw. */
+  color_rect(r, (SDL_Color){108, 75, 61, 255}, x + 8.0f, y + 35.0f,
+             5.0f, 3.0f);
+  color_rect(r, (SDL_Color){108, 75, 61, 255}, x + 19.0f, y + 35.0f,
+             5.0f, 3.0f);
+  color_rect(r, (SDL_Color){91, 101, 108, 255}, x + 13.0f, y + 30.0f,
+             6.0f, 6.0f);
 }
 
 static void draw_terminal(SDL_Renderer *r, float x, float y,
-                          bool active, bool hacked, float world_t)
+                          bool active, bool hacked, bool route_blocked,
+                          float world_t)
 {
   SDL_Color screen = active ? (SDL_Color){68, 245, 159, 255}
                             : (SDL_Color){62, 75, 79, 255};
@@ -609,7 +874,8 @@ static void draw_terminal(SDL_Renderer *r, float x, float y,
              x + 19.0f, y + 22.0f, 3.0f, 2.0f);
   draw_text(r, x + (active ? 7.0f : 9.0f), y + 25.0f, 0.55f,
             screen.r, screen.g, screen.b,
-            active ? (hacked ? "OPEN" : "LIVE") : "OFF");
+            active ? (hacked ? (route_blocked ? "FAIL" : "OPEN") : "LIVE")
+                   : "OFF");
 }
 
 static void draw_alarm_switch(SDL_Renderer *r, float x, float y,
@@ -1494,7 +1760,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
 
   float phase = p->anim_time * 3.0f;
   bool moving = fabsf(p->vx) > 2.0f;
-  bool climbing = p->on_ladder;
+  bool climbing = p->on_ladder || p->facade_climbing;
   /* A back-facing ladder pose must not inherit or mirror the last walk direction. */
   if (climbing)
     dir = 1;
@@ -2170,6 +2436,161 @@ static void draw_dog(SDL_Renderer *r, const Dog *dog, float cam_x, float oy)
   sprite_rect(r, x, y, DOG_W, dir, 15.0f + lunge, rear_y, 4.0f, 4.0f - fmaxf(0.0f, -gait * 0.5f), COL_OUTLINE);
 }
 
+static void draw_thrown_object(SDL_Renderer *r, const ThrownObject *object,
+                               float cam_x, float oy)
+{
+  float x = object->x - cam_x;
+  float y = object->y + oy;
+  float wobble_x = cosf(object->angle) * 2.0f;
+  float wobble_y = sinf(object->angle) * 2.0f;
+  SDL_Color outline = {17, 20, 26, 255};
+
+  if (object->variant == 0)
+  {
+    /* Flower pot. */
+    color_rect(r, outline, x + 2.0f + wobble_x, y + 2.0f, 10.0f, 11.0f);
+    color_rect(r, (SDL_Color){145, 65, 44, 255},
+               x + 3.0f + wobble_x, y + 3.0f, 8.0f, 9.0f);
+    color_rect(r, (SDL_Color){52, 112, 66, 255},
+               x + 5.0f, y + wobble_y, 4.0f, 5.0f);
+  }
+  else if (object->variant == 1)
+  {
+    /* Bottle. */
+    color_rect(r, outline, x + 4.0f + wobble_x, y + 1.0f, 7.0f, 13.0f);
+    color_rect(r, (SDL_Color){65, 120, 112, 255},
+               x + 5.0f + wobble_x, y + 2.0f, 5.0f, 11.0f);
+    color_rect(r, (SDL_Color){142, 198, 178, 255},
+               x + 7.0f + wobble_x, y + 3.0f, 1.0f, 7.0f);
+  }
+  else
+  {
+    /* Brick-sized chunk of facade. */
+    color_rect(r, outline, x + 1.0f, y + 2.0f + wobble_y, 13.0f, 10.0f);
+    color_rect(r, (SDL_Color){118, 79, 64, 255},
+               x + 2.0f, y + 3.0f + wobble_y, 11.0f, 8.0f);
+    color_rect(r, (SDL_Color){172, 119, 87, 255},
+               x + 3.0f, y + 4.0f + wobble_y, 7.0f, 2.0f);
+  }
+}
+
+static void draw_bird(SDL_Renderer *r, const Bird *bird,
+                      float cam_x, float oy)
+{
+  float x = bird->x - cam_x;
+  float y = bird->y + oy;
+  float flap = sinf(bird->anim_time * 15.0f);
+  int dir = bird->vx >= 0.0f ? 1 : -1;
+  float head_x = dir > 0 ? x + 19.0f : x + 2.0f;
+  SDL_Color body = {31, 35, 43, 255};
+  SDL_Color wing = {48, 53, 62, 255};
+
+  color_rect(r, body, x + 7.0f, y + 5.0f, 13.0f, 6.0f);
+  color_rect(r, body, head_x, y + 3.0f, 6.0f, 6.0f);
+  color_rect(r, (SDL_Color){193, 139, 49, 255},
+             dir > 0 ? head_x + 5.0f : head_x - 3.0f, y + 5.0f, 4.0f, 2.0f);
+  if (flap > 0.0f)
+  {
+    color_rect(r, wing, x + 8.0f, y, 10.0f, 5.0f);
+    color_rect(r, wing, x + 10.0f, y + 9.0f, 8.0f, 3.0f);
+  }
+  else
+  {
+    color_rect(r, wing, x + 8.0f, y + 7.0f, 10.0f, 5.0f);
+    color_rect(r, wing, x + 10.0f, y + 2.0f, 8.0f, 3.0f);
+  }
+  color_rect(r, body, dir > 0 ? x + 3.0f : x + 19.0f,
+             y + 6.0f, 5.0f, 3.0f);
+}
+
+static bool facade_fixture_at(const Level *level, int col, int row)
+{
+  int start_col = (int)floorf((level->map.start_x + PLAYER_W * 0.5f) /
+                              TILE_SIZE);
+  int start_row = (int)floorf((level->map.start_y + PLAYER_H * 0.5f) /
+                              TILE_SIZE);
+  if ((col == start_col && row == start_row) ||
+      (level->map.has_window && col == level->map.window_col &&
+       row == level->map.window_row))
+  {
+    return true;
+  }
+
+  for (int i = 0; i < level->map.facade_hazard_spawn_count; ++i)
+  {
+    const FacadeHazardSpawn *spawn = &level->map.facade_hazard_spawns[i];
+    int spawn_col = (int)floorf(spawn->x / TILE_SIZE);
+    int spawn_row = (int)floorf(spawn->y / TILE_SIZE);
+    if (col == spawn_col && row == spawn_row)
+      return true;
+  }
+  return false;
+}
+
+static void render_facade_world(Game *game, int win_w, int win_h)
+{
+  SDL_Renderer *r = game->platform.renderer;
+  const Level *level = &game->gameplay.level;
+  float cam_x = game->presentation.cam_x -
+                game->presentation.camera_shake_x;
+  float oy = HUD_HEIGHT - game->presentation.cam_y +
+             game->presentation.camera_shake_y;
+  float world_t = (float)SDL_GetTicksNS() * 1.0e-9f;
+
+  render_background(game, win_w, win_h);
+  if (!level->reveal.done)
+    return;
+
+  /* Closed windows and gameplay windows share the same architectural grid.
+   * A special fixture replaces its ordinary window instead of covering it. */
+  for (int row = 3; row < level->map.height; row += 3)
+  {
+    float y = row * (float)TILE_SIZE + oy;
+    if (y < HUD_HEIGHT - 56.0f || y > (float)win_h + 8.0f)
+      continue;
+    for (int col = 4; col < level->map.width - 4; col += 4)
+    {
+      if (facade_fixture_at(level, col, row))
+        continue;
+      float x = col * (float)TILE_SIZE - cam_x;
+      draw_facade_closed_window(r, x, y, tile_hash(col, row), world_t);
+    }
+  }
+
+  float start_center = level->map.start_x + PLAYER_W * 0.5f;
+  int start_col = (int)floorf(start_center / TILE_SIZE);
+  int start_row = (int)floorf((level->map.start_y + PLAYER_H * 0.5f) /
+                              TILE_SIZE);
+  draw_facade_open_window(r, start_col * (float)TILE_SIZE - cam_x,
+                          start_row * (float)TILE_SIZE + oy, false);
+  if (level->map.has_window)
+  {
+    draw_facade_open_window(
+        r, level->map.window_col * (float)TILE_SIZE - cam_x,
+        level->map.window_row * (float)TILE_SIZE + oy, true);
+  }
+
+  for (int i = 0; i < level->map.facade_hazard_spawn_count; ++i)
+    draw_facade_hazard_source(r, &level->map.facade_hazard_spawns[i],
+                              cam_x, oy, world_t);
+
+  for (int i = 0; i < MAX_THROWN_OBJECTS; ++i)
+    if (game->gameplay.thrown_objects[i].active)
+      draw_thrown_object(r, &game->gameplay.thrown_objects[i], cam_x, oy);
+  for (int i = 0; i < MAX_BIRDS; ++i)
+    if (game->gameplay.birds[i].active)
+      draw_bird(r, &game->gameplay.birds[i], cam_x, oy);
+
+  particle_system_render(&game->presentation.particles, r, oy, cam_x);
+  if (!game->gameplay.player.dying)
+  {
+    bool blink = game->gameplay.invuln_timer > 0.0f &&
+                 ((int)(game->gameplay.invuln_timer * 12.0f) % 2 == 0);
+    if (!blink)
+      draw_player(r, &game->gameplay.player, cam_x, oy, false, 0.0f);
+  }
+}
+
 static void render_alarm_lighting(SDL_Renderer *r, int win_w, int win_h,
                                   float world_t)
 {
@@ -2200,9 +2621,15 @@ static void render_world(Game *game)
 {
   SDL_Renderer *r = game->platform.renderer;
   const Level *lvl = &game->gameplay.level;
-  const float oy = HUD_HEIGHT + game->presentation.camera_shake_y;
+  const float oy = HUD_HEIGHT - game->presentation.cam_y +
+                   game->presentation.camera_shake_y;
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
+  if (lvl->map.mode == LEVEL_MODE_FACADE)
+  {
+    render_facade_world(game, win_w, win_h);
+    return;
+  }
   const float cam_x = game->presentation.cam_x - game->presentation.camera_shake_x;
   float world_t = (float)SDL_GetTicksNS() * 1.0e-9f;
 
@@ -2215,7 +2642,9 @@ static void render_world(Game *game)
     {
       float x = col * (float)TILE_SIZE - cam_x;
       float y = row * (float)TILE_SIZE + oy;
-      if (x + TILE_SIZE < 0.0f || x > (float)win_w || !lvl->reveal.tiles_visible[row][col])
+      if (x + TILE_SIZE < 0.0f || x > (float)win_w ||
+          y + TILE_SIZE < HUD_HEIGHT || y > (float)win_h ||
+          !lvl->reveal.tiles_visible[row][col])
         continue;
       TileType tile = lvl->map.tiles[row][col];
       if (tile == TILE_WALL)
@@ -2238,6 +2667,7 @@ static void render_world(Game *game)
   /* Lighting pass derived from the tile grid: soft contact shadows under
    * every overhead surface, plus recessed warm fixtures on long ceilings.
    * Because it reads the level itself, light always matches architecture. */
+  if (lvl->map.mode != LEVEL_MODE_FACADE)
   {
     int first_col = (int)(cam_x / (float)TILE_SIZE) - 1;
     if (first_col < 0)
@@ -2343,13 +2773,20 @@ static void render_world(Game *game)
     float y = lvl->map.exit_row * (float)TILE_SIZE + oy;
     draw_exit(r, game, x, y);
   }
+  if (lvl->map.has_window)
+  {
+    float x = lvl->map.window_col * (float)TILE_SIZE - cam_x;
+    float y = lvl->map.window_row * (float)TILE_SIZE + oy;
+    draw_open_window(r, x, y);
+  }
   for (int i = 0; i < lvl->map.terminal_count; ++i)
   {
     float x = lvl->map.terminals[i].col * (float)TILE_SIZE - cam_x;
     float y = lvl->map.terminals[i].row * (float)TILE_SIZE + oy;
     bool active = i == lvl->runtime.active_terminal_index;
     draw_terminal(r, x, y, active,
-                  active && lvl->runtime.terminal_hacked, world_t);
+                  active && lvl->runtime.terminal_hacked,
+                  lvl->map.has_window, world_t);
   }
   for (int i = 0; i < lvl->map.alarm_switch_count; ++i)
   {
@@ -2577,12 +3014,60 @@ static void draw_hud_heart(SDL_Renderer *r, float x, float y, bool filled)
   }
 }
 
+static void render_facade_hud(Game *game, int win_w)
+{
+  SDL_Renderer *r = game->platform.renderer;
+  fx_vgrad(r, 0.0f, 0.0f, (float)win_w, 37.0f,
+           (SDL_Color){31, 39, 52, 255}, 255,
+           (SDL_Color){11, 17, 28, 255}, 255);
+  color_rect(r, (SDL_Color){181, 132, 56, 255},
+             0.0f, 38.0f, (float)win_w, 2.0f);
+  draw_text(r, 12.0f, 8.0f, 1.35f, 236, 238, 224, "FACADE CLIMB");
+  draw_text(r, 12.0f, 25.0f, 0.65f, 154, 164, 176,
+            "ARROWS / WASD  MOVE ON WALL");
+  draw_hud_separator(r, 220.0f);
+
+  draw_text(r, 232.0f, 8.0f, 0.7f, 108, 128, 148, "VITAL");
+  for (int i = 0; i < 5; ++i)
+    draw_hud_heart(r, 232.0f + i * 14.0f, 19.0f,
+                   i < game->campaign.lives);
+  draw_hud_separator(r, 326.0f);
+
+  float start_y = game->gameplay.level.map.start_y;
+  float target_y = game->gameplay.level.map.window_row * (float)TILE_SIZE;
+  float distance = start_y - target_y;
+  float climbed = start_y - game->gameplay.player.y;
+  float progress = distance > 0.0f ? climbed / distance : 1.0f;
+  if (progress < 0.0f)
+    progress = 0.0f;
+  if (progress > 1.0f)
+    progress = 1.0f;
+  draw_text(r, 338.0f, 8.0f, 0.7f, 108, 128, 148, "ALTITUDE");
+  color_rect(r, (SDL_Color){10, 15, 24, 255},
+             338.0f, 20.0f, 304.0f, 11.0f);
+  color_rect(r, (SDL_Color){54, 128, 128, 255},
+             340.0f, 22.0f, 300.0f * progress, 7.0f);
+  color_rect(r, (SDL_Color){123, 226, 204, 255},
+             340.0f, 22.0f, 300.0f * progress, 2.0f);
+
+  int tiles_remaining = (int)ceilf(fabsf(game->gameplay.player.y - target_y) /
+                                   TILE_SIZE);
+  char remaining[24];
+  SDL_snprintf(remaining, sizeof(remaining), "WINDOW %02dM", tiles_remaining);
+  draw_text(r, 658.0f, 15.0f, 1.0f, 225, 198, 112, remaining);
+}
+
 static void render_hud(Game *game)
 {
   SDL_Renderer *r = game->platform.renderer;
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
   (void)win_h;
+  if (game->gameplay.level.map.mode == LEVEL_MODE_FACADE)
+  {
+    render_facade_hud(game, win_w);
+    return;
+  }
   const Uint8 label_r = 108, label_g = 128, label_b = 148;
 
   /* Brushed console body, lit from above, closed by a cyan status line. */
@@ -2638,9 +3123,17 @@ static void render_hud(Game *game)
 
   /* Access status chip with a live LED. */
   draw_text(r, 287.0f, 8.0f, 0.7f, label_r, label_g, label_b, "ACCESS");
+  bool blocked = game->gameplay.level.map.has_window;
   bool unlocked = game->gameplay.level.runtime.exit_unlocked;
   float blink = 0.5f + 0.5f * sinf((float)SDL_GetTicksNS() * 1.0e-9f * 4.0f);
-  if (unlocked)
+  if (blocked)
+  {
+    color_rect(r, (SDL_Color){36, 38, 42, 255}, 287.0f, 19.0f, 70.0f, 13.0f);
+    color_rect(r, (SDL_Color){96, 102, 108, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
+    color_rect(r, (SDL_Color){166, 142, 91, 255}, 291.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 298.0f, 22.0f, 0.9f, 190, 190, 184, "BLOCKED");
+  }
+  else if (unlocked)
   {
     color_rect(r, (SDL_Color){16, 52, 40, 255}, 287.0f, 19.0f, 70.0f, 13.0f);
     color_rect(r, (SDL_Color){40, 132, 96, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
@@ -2886,10 +3379,16 @@ void game_render(Game *game)
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     draw_text_centered(game, 63.0f, 2.2f, 94, 255, 201, "PURSUIT ROUTE OPEN");
     float exit_screen = game->gameplay.level.map.exit_col * (float)TILE_SIZE - game->presentation.cam_x;
+    float exit_screen_y = game->gameplay.level.map.exit_row * (float)TILE_SIZE +
+                          HUD_HEIGHT - game->presentation.cam_y;
     if (exit_screen + TILE_SIZE < 0.0f)
       draw_text(r, 199.0f, 52.0f, 2.2f, 226, 216, 94, "<");
     else if (exit_screen > (float)win_w)
       draw_text(r, 584.0f, 52.0f, 2.2f, 226, 216, 94, ">");
+    else if (exit_screen_y + TILE_SIZE < HUD_HEIGHT)
+      draw_text(r, 393.0f, 48.0f, 2.2f, 226, 216, 94, "^");
+    else if (exit_screen_y > (float)win_h)
+      draw_text(r, 393.0f, 61.0f, 2.2f, 226, 216, 94, "v");
   }
 
   if (game->state == STATE_LEVEL_CLEARED)

@@ -10,6 +10,7 @@ void player_reset(Player *player, const Level *level)
     player->vy = 0.0f;
     player->on_ground = false;
     player->on_ladder = false;
+    player->facade_climbing = false;
     player->facing = 1;
     player->bullets = MAX_AMMO;
     player->grenades = 0;

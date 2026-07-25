@@ -55,6 +55,7 @@ typedef struct
     Intro intro;
 
     float cam_x; /* world x of left edge of the viewport */
+    float cam_y; /* world y above the visible gameplay area */
     /* Short, decaying render offset used by gameplay explosions. The HUD is
      * rendered separately and therefore stays readable while the world shakes. */
     float camera_shake_timer;
@@ -83,6 +84,7 @@ typedef struct
     bool sublevel_initialized;
     bool in_sublevel;
     float main_level_cam_x;
+    float main_level_cam_y;
     PresentationState presentation;
     Input input;
     GameState state;

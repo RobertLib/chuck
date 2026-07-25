@@ -115,7 +115,10 @@ void gameplay_hit_player(GameplayState *state)
 
 void gameplay_unlock_exit(GameplayState *state)
 {
-    if (state->level.runtime.exit_unlocked)
+    /* In an interior with an escape window the security door is physically
+     * barricaded. Cards and terminals remain usable/scorable, but cannot turn
+     * that door into the route forward. */
+    if (state->level.map.has_window || state->level.runtime.exit_unlocked)
         return;
     state->level.runtime.exit_unlocked = true;
     state->terminal_in_range = false;
@@ -127,6 +130,7 @@ bool gameplay_player_near_active_terminal(const GameplayState *state)
 {
     int index = state->level.runtime.active_terminal_index;
     if (state->level.runtime.exit_unlocked ||
+        state->level.runtime.terminal_hacked ||
         index < 0 || index >= state->level.map.terminal_count)
     {
         return false;

@@ -143,14 +143,37 @@ typedef struct
     bool active;
 } GasCanister;
 
+typedef enum
+{
+    LEVEL_MODE_INTERIOR = 0,
+    LEVEL_MODE_FACADE
+} LevelMode;
+
+typedef enum
+{
+    FACADE_HAZARD_THROWN_OBJECT = 0,
+    FACADE_HAZARD_BIRD
+} FacadeHazardType;
+
+typedef struct
+{
+    float x, y; /* center of the source window or bird entry point */
+    FacadeHazardType type;
+} FacadeHazardSpawn;
+
 typedef struct
 {
     int width;
     int height;
     TileType tiles[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
     float start_x, start_y;
+    LevelMode mode;
     bool has_exit;
     int exit_col, exit_row;
+    bool has_window;
+    int window_col, window_row;
+    FacadeHazardSpawn facade_hazard_spawns[MAX_FACADE_HAZARD_SPAWNS];
+    int facade_hazard_spawn_count;
     bool has_sublevel_entrance;
     int sublevel_entrance_col, sublevel_entrance_row;
     bool has_sublevel_return;

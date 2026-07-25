@@ -128,6 +128,18 @@ static void place_decoration(Level *level, int col, int row,
     decoration->type = type;
 }
 
+static void place_facade_hazard(Level *level, int col, int row,
+                                FacadeHazardType type)
+{
+    if (level->map.facade_hazard_spawn_count >= MAX_FACADE_HAZARD_SPAWNS)
+        return;
+    FacadeHazardSpawn *spawn =
+        &level->map.facade_hazard_spawns[level->map.facade_hazard_spawn_count++];
+    spawn->x = (col + 0.5f) * TILE_SIZE;
+    spawn->y = (row + 0.5f) * TILE_SIZE;
+    spawn->type = type;
+}
+
 bool level_load_data(Level *level, const char *name,
                      const char *data, size_t size, Rng *rng)
 {
@@ -144,6 +156,7 @@ bool level_load_data(Level *level, const char *name,
     int max_width = 0;
     int start_count = 0;
     int exit_count = 0;
+    int window_count = 0;
     int sublevel_entrance_count = 0;
     int sublevel_return_count = 0;
     bool too_wide = false;
@@ -308,6 +321,22 @@ bool level_load_data(Level *level, const char *name,
             level->map.exit_col = col;
             level->map.exit_row = row;
             break;
+        case 'Y':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            window_count++;
+            level->map.has_window = true;
+            level->map.window_col = col;
+            level->map.window_row = row;
+            break;
+        case 'r':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_facade_hazard(level, col, row,
+                                FACADE_HAZARD_THROWN_OBJECT);
+            break;
+        case 'v':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_facade_hazard(level, col, row, FACADE_HAZARD_BIRD);
+            break;
         case 'D':
             level->map.tiles[row][col] = TILE_DOOR;
             if (level->map.door_count < MAX_DOORS)
@@ -379,6 +408,21 @@ bool level_load_data(Level *level, const char *name,
 
     level->map.width = max_width;
     level->map.height = row;
+
+    /* Facade traversal is an explicit level mode, not a side effect of which
+     * hazards happen to be present in the map. */
+    for (size_t k = 0; k + 11 <= size; ++k)
+    {
+        bool line_start = k == 0 || data[k - 1] == '\n';
+        bool line_end = k + 11 == size || data[k + 11] == '\r' ||
+                        data[k + 11] == '\n';
+        if (line_start && line_end &&
+            strncmp(data + k, "MODE FACADE", 11) == 0)
+        {
+            level->map.mode = LEVEL_MODE_FACADE;
+            break;
+        }
+    }
 
     /* Office props are floor-standing and visual only. Keep them off ladders,
      * shafts, falling/moving platforms and open air so they can never be left
@@ -478,6 +522,7 @@ bool level_load_data(Level *level, const char *name,
     /* Preserve the old behavior for maps with neither an access card nor a
      * terminal. Maps containing either route start with a locked exit. */
     level->runtime.exit_unlocked =
+        !level->map.has_window &&
         level->runtime.card_count == 0 && level->map.terminal_count == 0;
 
     /* Discover elevator shafts: scan each column for consecutive TILE_ELEVATOR_SHAFT runs. */
@@ -633,12 +678,27 @@ bool level_load_data(Level *level, const char *name,
                 name, start_count);
         return false;
     }
-    if (exit_count + sublevel_return_count != 1)
+    bool valid_destination = false;
+    if (sublevel_return_count == 1)
+        valid_destination = exit_count == 0 && window_count == 0;
+    else if (level->map.mode == LEVEL_MODE_FACADE)
+        valid_destination = exit_count == 0 && window_count == 1;
+    else
+        valid_destination = exit_count == 1 && window_count <= 1;
+    if (!valid_destination)
     {
         fprintf(stderr,
-                "Level '%s' must contain exactly one campaign exit 'E' or "
-                "sublevel return 'R' (found %d)\n",
-                name, exit_count + sublevel_return_count);
+                "Level '%s' has invalid destinations for its mode "
+                "(E=%d, Y=%d, R=%d)\n",
+                name, exit_count, window_count, sublevel_return_count);
+        return false;
+    }
+    if (window_count > 1)
+    {
+        fprintf(stderr,
+                "Level '%s' may contain at most one traversable window 'Y' "
+                "(found %d)\n",
+                name, window_count);
         return false;
     }
     if (sublevel_entrance_count > 1)

@@ -34,6 +34,23 @@ typedef struct
 typedef struct
 {
     float x, y;
+    float vx, vy;
+    float angle;
+    int variant;
+    bool active;
+} ThrownObject;
+
+typedef struct
+{
+    float x, y;
+    float vx, vy;
+    float anim_time;
+    bool active;
+} Bird;
+
+typedef struct
+{
+    float x, y;
     bool active;
     bool triggered;
     float timer;
@@ -96,6 +113,10 @@ typedef struct
     Rocket rockets[MAX_ROCKETS];
     Bullet bullets[MAX_BULLETS];
     Bullet enemy_bullets[MAX_ENEMY_BULLETS];
+    ThrownObject thrown_objects[MAX_THROWN_OBJECTS];
+    Bird birds[MAX_BIRDS];
+    float facade_hazard_spawn_timers[MAX_FACADE_HAZARD_SPAWNS];
+    bool facade_hazards_initialized;
 
     float invuln_timer;
     int door_spawns[MAX_DOORS];

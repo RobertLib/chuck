@@ -242,11 +242,19 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
 
 bool gameplay_player_reached_exit(const GameplayState *state)
 {
-    if (!state->level.map.has_exit || !state->level.runtime.exit_unlocked)
-        return false;
     float height = state->player.crawling
                        ? (float)PLAYER_CRAWL_H
                        : (float)PLAYER_H;
+    if (state->level.map.has_window)
+    {
+        return gameplay_boxes_overlap(
+            state->player.x, state->player.y, PLAYER_W, height,
+            state->level.map.window_col * (float)TILE_SIZE,
+            state->level.map.window_row * (float)TILE_SIZE,
+            TILE_SIZE, TILE_SIZE);
+    }
+    if (!state->level.map.has_exit || !state->level.runtime.exit_unlocked)
+        return false;
     return gameplay_boxes_overlap(
         state->player.x, state->player.y, PLAYER_W, height,
         state->level.map.exit_col * (float)TILE_SIZE,

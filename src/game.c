@@ -1,6 +1,7 @@
 #include "game.h"
 #include "embedded_levels.h"
 #include "gameplay_ai.h"
+#include "gameplay_climb.h"
 #include "gameplay_combat.h"
 #include "gameplay_interaction.h"
 #include "gameplay_physics.h"
@@ -113,6 +114,7 @@ static void reset_sublevel_visit(Game *game)
     game->sublevel_initialized = false;
     game->in_sublevel = false;
     game->main_level_cam_x = 0.0f;
+    game->main_level_cam_y = 0.0f;
 }
 
 static void transfer_player_loadout(Player *destination,
@@ -124,22 +126,50 @@ static void transfer_player_loadout(Player *destination,
     destination->facing = source->facing;
 }
 
-static void snap_camera_to_player(Game *game)
+static void camera_target(Game *game, float *target_x, float *target_y)
 {
     int win_w = 0, win_h = 0;
     game_get_view_size(game, &win_w, &win_h);
-    (void)win_h;
-    float desired = game->gameplay.player.x + PLAYER_W * 0.5f -
-                    (float)win_w * 0.5f;
-    float max_cam = game->gameplay.level.map.width * (float)TILE_SIZE -
-                    (float)win_w;
-    if (max_cam < 0.0f)
-        max_cam = 0.0f;
-    if (desired < 0.0f)
-        desired = 0.0f;
-    if (desired > max_cam)
-        desired = max_cam;
-    game->presentation.cam_x = desired;
+
+    float desired_x = game->gameplay.player.x + PLAYER_W * 0.5f -
+                      (float)win_w * 0.5f;
+    float max_x = game->gameplay.level.map.width * (float)TILE_SIZE -
+                  (float)win_w;
+    if (max_x < 0.0f)
+        max_x = 0.0f;
+    if (desired_x < 0.0f)
+        desired_x = 0.0f;
+    if (desired_x > max_x)
+        desired_x = max_x;
+
+    float view_height = (float)(win_h - HUD_HEIGHT);
+    float world_height =
+        game->gameplay.level.map.height * (float)TILE_SIZE;
+    float max_y = world_height - view_height;
+    float desired_y = game->gameplay.player.y + PLAYER_H * 0.5f -
+                      view_height * 0.5f;
+    /* Existing campaign maps intentionally fit with one clipped structural
+     * row. Only genuinely tall maps should begin tracking vertically. */
+    if (world_height <= view_height + TILE_SIZE)
+    {
+        max_y = 0.0f;
+        desired_y = 0.0f;
+    }
+    if (max_y < 0.0f)
+        max_y = 0.0f;
+    if (desired_y < 0.0f)
+        desired_y = 0.0f;
+    if (desired_y > max_y)
+        desired_y = max_y;
+
+    *target_x = desired_x;
+    *target_y = desired_y;
+}
+
+static void snap_camera_to_player(Game *game)
+{
+    camera_target(game, &game->presentation.cam_x,
+                  &game->presentation.cam_y);
 }
 
 static bool initialize_restroom(Game *game)
@@ -187,6 +217,7 @@ static bool enter_restroom(Game *game)
 
     Player travelling_player = game->gameplay.player;
     game->main_level_cam_x = game->presentation.cam_x;
+    game->main_level_cam_y = game->presentation.cam_y;
     swap_gameplay_areas(game);
     transfer_player_loadout(&game->gameplay.player, &travelling_player);
     game->gameplay.teleport_cooldown = TELEPORT_COOLDOWN;
@@ -212,6 +243,7 @@ static bool leave_restroom(Game *game)
     particle_system_clear(&game->presentation.particles);
     game->in_sublevel = false;
     game->presentation.cam_x = game->main_level_cam_x;
+    game->presentation.cam_y = game->main_level_cam_y;
     return true;
 }
 
@@ -254,18 +286,8 @@ static bool load_level(Game *game, int index)
             DOOR_SPAWN_INTERVAL *
             (0.4f + rng_range(&game->gameplay.rng, 60) * 0.01f);
     }
-    /* Keep the existing window size; initialise camera to centre on player. */
-    int win_w = 0, win_h = 0;
-    game_get_view_size(game, &win_w, &win_h);
-    float max_cam = game->gameplay.level.map.width * (float)TILE_SIZE - (float)win_w;
-    if (max_cam < 0.0f)
-        max_cam = 0.0f;
-    float desired = game->gameplay.player.x + PLAYER_W * 0.5f - (float)win_w * 0.5f;
-    if (desired < 0.0f)
-        desired = 0.0f;
-    if (desired > max_cam)
-        desired = max_cam;
-    game->presentation.cam_x = desired;
+    /* Keep the existing window size; initialise camera around the spawn. */
+    snap_camera_to_player(game);
 
     return true;
 }
@@ -380,6 +402,7 @@ static void finish_player_death(Game *game)
     else
     {
         player_reset(&game->gameplay.player, &game->gameplay.level);
+        snap_camera_to_player(game);
         game_events_sound(&game->gameplay.events, SFX_RESPAWN);
     }
 }
@@ -580,7 +603,9 @@ static bool update_scene(Game *game, float dt)
             return true;
         }
         /* Reveal finished: either start key-card intro animation or spawn entities. */
-        if (game->gameplay.level.runtime.card_count > 0 && game->gameplay.level.runtime.active_card_index >= 0)
+        if (!game->gameplay.level.map.has_window &&
+            game->gameplay.level.runtime.card_count > 0 &&
+            game->gameplay.level.runtime.active_card_index >= 0)
         {
             /* Determine active card position among card items. */
             int active_pos = 0;
@@ -621,7 +646,8 @@ static bool update_scene(Game *game, float dt)
         }
         else
         {
-            gameplay_ai_spawn_level_entities(&game->gameplay);
+            if (game->gameplay.level.map.mode == LEVEL_MODE_INTERIOR)
+                gameplay_ai_spawn_level_entities(&game->gameplay);
             game_enter_state(game, STATE_PLAYING);
         }
     }
@@ -683,8 +709,86 @@ static bool update_scene(Game *game, float dt)
     return false;
 }
 
+static bool try_finish_current_level(Game *game)
+{
+    if (!gameplay_player_reached_exit(&game->gameplay))
+        return false;
+
+    if ((size_t)(game->campaign.current_level + 1) < EMBEDDED_LEVEL_COUNT)
+    {
+        int next_level = game->campaign.current_level + 1;
+        if (game->gameplay.level.map.has_window)
+        {
+            /* A window is a continuous physical route between inside and the
+             * facade. The hostage/elevator report belongs only between normal
+             * interior sectors and would contradict what is on screen here. */
+            audio_stop_music(&game->platform.audio);
+            if (!load_level(game, next_level))
+            {
+                SDL_Log("Could not follow window route to level %d",
+                        next_level);
+                return false;
+            }
+        }
+        else
+        {
+            level_transition_init(
+                &game->presentation.level_transition,
+                game->campaign.current_level,
+                next_level,
+                game->campaign.level_elapsed_time,
+                game->campaign.score - game->campaign.level_start_score,
+                gameplay_neutralized_hostiles(&game->gameplay));
+            audio_stop_music(&game->platform.audio);
+            game_enter_state(game, STATE_LEVEL_TRANSITION);
+        }
+    }
+    else
+    {
+        game_enter_state(game, STATE_LEVEL_CLEARED);
+    }
+    game_events_sound(&game->gameplay.events, SFX_LEVEL_CLEAR);
+    return true;
+}
+
+static void update_follow_camera(Game *game, float dt)
+{
+    float desired_x = 0.0f;
+    float desired_y = 0.0f;
+    camera_target(game, &desired_x, &desired_y);
+    float alpha = 8.0f * dt;
+    if (alpha > 1.0f)
+        alpha = 1.0f;
+    game->presentation.cam_x +=
+        (desired_x - game->presentation.cam_x) * alpha;
+    game->presentation.cam_y +=
+        (desired_y - game->presentation.cam_y) * alpha;
+}
+
+static void update_facade_playing(Game *game, float dt)
+{
+    game->campaign.level_elapsed_time += dt;
+    if (game->gameplay.invuln_timer > 0.0f)
+        game->gameplay.invuln_timer -= dt;
+
+    gameplay_climb_update_player(&game->gameplay, &game->input, dt);
+    game->input.jump = false;
+    game->input.shoot = false;
+    game->input.use_door = false;
+    gameplay_climb_update(&game->gameplay, dt);
+
+    if (!try_finish_current_level(game))
+        update_follow_camera(game, dt);
+}
+
 static void update_playing(Game *game, float dt)
 {
+    if (game->gameplay.level.map.mode == LEVEL_MODE_FACADE)
+    {
+        update_facade_playing(game, dt);
+        return;
+    }
+
     game->campaign.level_elapsed_time += dt;
 
     if (game->gameplay.invuln_timer > 0.0f)
@@ -923,42 +1027,10 @@ static void update_playing(Game *game, float dt)
      * seeing Chuck on the would-be final frame keeps the alarm alive. */
     gameplay_update_alarm(&game->gameplay, dt);
 
-    if (gameplay_player_reached_exit(&game->gameplay))
+    if (!try_finish_current_level(game))
     {
-        if ((size_t)(game->campaign.current_level + 1) < EMBEDDED_LEVEL_COUNT)
-        {
-            level_transition_init(
-                &game->presentation.level_transition,
-                game->campaign.current_level,
-                game->campaign.current_level + 1,
-                game->campaign.level_elapsed_time,
-                game->campaign.score - game->campaign.level_start_score,
-                gameplay_neutralized_hostiles(&game->gameplay));
-            audio_stop_music(&game->platform.audio);
-            game_enter_state(game, STATE_LEVEL_TRANSITION);
-        }
-        else
-            game_enter_state(game, STATE_LEVEL_CLEARED);
-        game_events_sound(&game->gameplay.events, SFX_LEVEL_CLEAR);
-    }
-
-    /* Camera: follow player horizontally, clamped to level bounds */
-    {
-        int win_w = 0, win_h = 0;
-        game_get_view_size(game, &win_w, &win_h);
-        float desired = game->gameplay.player.x + PLAYER_W * 0.5f - (float)win_w * 0.5f;
-        float max_cam = game->gameplay.level.map.width * (float)TILE_SIZE - (float)win_w;
-        if (max_cam < 0.0f)
-            max_cam = 0.0f;
-        if (desired < 0.0f)
-            desired = 0.0f;
-        if (desired > max_cam)
-            desired = max_cam;
-        /* Smoothly interpolate camera towards desired position (lerp). */
-        float alpha = 8.0f * dt; /* responsiveness factor */
-        if (alpha > 1.0f)
-            alpha = 1.0f;
-        game->presentation.cam_x += (desired - game->presentation.cam_x) * alpha;
+        /* Camera: follow the player and expose vertical space on tall maps. */
+        update_follow_camera(game, dt);
     }
 }
 

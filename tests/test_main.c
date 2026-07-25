@@ -1,6 +1,7 @@
 #include "embedded_levels.h"
 #include "game_event.h"
 #include "gameplay_ai.h"
+#include "gameplay_climb.h"
 #include "gameplay_combat.h"
 #include "gameplay_interaction.h"
 #include "gameplay_physics.h"
@@ -93,8 +94,35 @@ static void test_all_embedded_levels_parse(void)
                               EMBEDDED_LEVELS[i].size, &rng));
         CHECK(level.map.width > 0);
         CHECK(level.map.height > 0);
-        CHECK(level.map.has_exit);
-        CHECK(level.map.alarm_switch_count >= 2);
+        CHECK(level.map.has_exit || level.map.has_window);
+        if (level.map.mode == LEVEL_MODE_INTERIOR)
+            CHECK(level.map.alarm_switch_count >= 2);
+        if (i == 1)
+        {
+            CHECK(level.map.mode == LEVEL_MODE_INTERIOR);
+            CHECK(level.map.has_exit);
+            CHECK(level.map.has_window);
+            CHECK(!level.runtime.exit_unlocked);
+        }
+        if (i == 2)
+        {
+            CHECK(level.map.mode == LEVEL_MODE_FACADE);
+            CHECK(!level.map.has_exit);
+            CHECK(level.map.has_window);
+            CHECK(level.map.facade_hazard_spawn_count >= 8);
+            CHECK(level.map.door_count == 0);
+            CHECK(level.runtime.item_count == 0);
+            CHECK(level.map.enemy_count == 0);
+            for (int row = 0; row < level.map.height; ++row)
+                for (int col = 0; col < level.map.width; ++col)
+                    CHECK(level.map.tiles[row][col] != TILE_LADDER);
+        }
+        if (i == 3)
+        {
+            CHECK(level.map.mode == LEVEL_MODE_INTERIOR);
+            CHECK(level.map.has_exit);
+            CHECK(!level.map.has_window);
+        }
         if (level.map.has_sublevel_entrance)
             sublevel_entrances++;
 
@@ -163,6 +191,9 @@ static void test_gameplay_reset_preserves_rng_only(void)
     state.events.count = 4;
     state.player_on_elevator = 5;
     state.player_on_moving_platform = 6;
+    state.facade_hazards_initialized = true;
+    state.thrown_objects[0].active = true;
+    state.birds[0].active = true;
 
     gameplay_state_begin_level(&state);
 
@@ -175,6 +206,134 @@ static void test_gameplay_reset_preserves_rng_only(void)
     CHECK(state.player_on_elevator == -1);
     CHECK(state.player_on_moving_platform == -1);
     CHECK(state.active_alarm_switch == -1);
+    CHECK(!state.facade_hazards_initialized);
+    CHECK(!state.thrown_objects[0].active);
+    CHECK(!state.birds[0].active);
+}
+
+static void test_blocked_exit_uses_separate_window(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#Y S C TE#\n"
+        "##########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 2027);
+    CHECK(level_load_data(&state.level, "blocked exit", data, strlen(data),
+                          &state.rng));
+    CHECK(state.level.map.mode == LEVEL_MODE_INTERIOR);
+    CHECK(state.level.map.has_exit);
+    CHECK(state.level.map.has_window);
+    CHECK(!state.level.runtime.exit_unlocked);
+
+    gameplay_unlock_exit(&state);
+    CHECK(!state.level.runtime.exit_unlocked);
+
+    state.player.x = state.level.map.window_col * (float)TILE_SIZE;
+    state.player.y = state.level.map.window_row * (float)TILE_SIZE;
+    CHECK(gameplay_player_reached_exit(&state));
+
+    state.player.x = state.level.map.exit_col * (float)TILE_SIZE;
+    state.player.y = state.level.map.exit_row * (float)TILE_SIZE;
+    CHECK(!gameplay_player_reached_exit(&state));
+}
+
+static void test_facade_mode_and_hazards_are_seeded(void)
+{
+    static const char data[] =
+        ".........\n"
+        ".Y.r.v...\n"
+        ".S.......\n"
+        ".........\n"
+        "\n"
+        "MODE FACADE\n";
+    GameplayState first = {0};
+    GameplayState second = {0};
+    rng_seed(&first.rng, 2027);
+    rng_seed(&second.rng, 2027);
+    CHECK(level_load_data(&first.level, "facade", data, strlen(data),
+                          &first.rng));
+    CHECK(level_load_data(&second.level, "facade", data, strlen(data),
+                          &second.rng));
+    CHECK(first.level.map.mode == LEVEL_MODE_FACADE);
+    CHECK(first.level.map.has_window);
+    CHECK(!first.level.map.has_exit);
+    CHECK(first.level.map.facade_hazard_spawn_count == 2);
+
+    player_reset(&first.player, &first.level);
+    player_reset(&second.player, &second.level);
+    gameplay_climb_init(&first);
+    gameplay_climb_init(&second);
+    for (int i = 0; i < first.level.map.facade_hazard_spawn_count; ++i)
+    {
+        CHECK(fabsf(first.facade_hazard_spawn_timers[i] -
+                    second.facade_hazard_spawn_timers[i]) < 0.0001f);
+        first.facade_hazard_spawn_timers[i] = 0.0f;
+        second.facade_hazard_spawn_timers[i] = 0.0f;
+    }
+
+    gameplay_climb_update(&first, 0.016f);
+    gameplay_climb_update(&second, 0.016f);
+    CHECK(first.thrown_objects[0].active);
+    CHECK(first.birds[0].active);
+    CHECK(first.thrown_objects[0].variant ==
+          second.thrown_objects[0].variant);
+    CHECK(fabsf(first.thrown_objects[0].vx -
+                second.thrown_objects[0].vx) < 0.0001f);
+    CHECK(fabsf(first.birds[0].vx - second.birds[0].vx) < 0.0001f);
+
+    float previous_x = first.player.x;
+    float previous_y = first.player.y;
+    Input input = {.right = true, .up = true};
+    gameplay_climb_update_player(&first, &input, 0.1f);
+    CHECK(first.player.x > previous_x);
+    CHECK(first.player.y < previous_y);
+    CHECK(first.player.facade_climbing);
+    CHECK(!first.player.on_ladder);
+    CHECK(!first.player.on_ground);
+}
+
+static void test_facade_bird_hits_player(void)
+{
+    GameplayState state = {0};
+    state.level.map.mode = LEVEL_MODE_FACADE;
+    state.level.map.width = 10;
+    state.level.map.height = 10;
+    state.facade_hazards_initialized = true;
+    state.player.x = 64.0f;
+    state.player.y = 64.0f;
+    state.player.facing = 1;
+    state.birds[0] = (Bird){.x = 66.0f, .y = 68.0f, .active = true};
+
+    gameplay_climb_update(&state, 0.0f);
+
+    CHECK(state.player.dying);
+    CHECK(!state.birds[0].active);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_FAN_HIT));
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_PLAYER_HIT));
+}
+
+static void test_embedded_facade_climbs_directly_to_upper_window(void)
+{
+    GameplayState state = {0};
+    rng_seed(&state.rng, 3030);
+    CHECK(EMBEDDED_LEVEL_COUNT >= 4);
+    CHECK(level_load_data(&state.level, EMBEDDED_LEVELS[2].name,
+                          EMBEDDED_LEVELS[2].data,
+                          EMBEDDED_LEVELS[2].size, &state.rng));
+    CHECK(state.level.map.mode == LEVEL_MODE_FACADE);
+    player_reset(&state.player, &state.level);
+
+    Input input = {.up = true};
+    for (int frame = 0;
+         frame < 300 && !gameplay_player_reached_exit(&state);
+         ++frame)
+    {
+        gameplay_climb_update_player(&state, &input, 0.05f);
+    }
+    CHECK(gameplay_player_reached_exit(&state));
 }
 
 static void test_level_collision_stops_at_wall(void)
@@ -1446,6 +1605,10 @@ int main(void)
     test_all_embedded_levels_parse();
     test_embedded_restroom_sublevel();
     test_gameplay_reset_preserves_rng_only();
+    test_blocked_exit_uses_separate_window();
+    test_facade_mode_and_hazards_are_seeded();
+    test_facade_bird_hits_player();
+    test_embedded_facade_climbs_directly_to_upper_window();
     test_level_collision_stops_at_wall();
     test_level_reveal_finishes();
     test_event_buffer_reports_overflow();

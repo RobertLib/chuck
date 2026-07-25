@@ -238,4 +238,24 @@
 #define CEILING_FAN_HIT_HEIGHT 8.0f
 #define CEILING_FAN_CENTER_Y 10.0f
 
+/* Exterior facade climb hazards. Map-authored sources wake only while the
+ * player is nearby, keeping tall levels active around the visible route. */
+#define MAX_FACADE_HAZARD_SPAWNS 32
+#define MAX_THROWN_OBJECTS 12
+#define MAX_BIRDS 12
+#define THROWN_OBJECT_SIZE 14.0f
+#define THROWN_OBJECT_SPEED 205.0f
+#define THROWN_OBJECT_GRAVITY 410.0f
+#define THROWN_OBJECT_SPAWN_MIN 1.8f
+#define THROWN_OBJECT_SPAWN_MAX 3.4f
+#define BIRD_W 26.0f
+#define BIRD_H 12.0f
+#define BIRD_SPEED 155.0f
+#define BIRD_SPAWN_MIN 2.4f
+#define BIRD_SPAWN_MAX 4.6f
+#define FACADE_HAZARD_WAKE_RANGE (10.0f * TILE_SIZE)
+#define FACADE_CLIMB_SPEED 112.0f
+#define FACADE_BUILDING_SIDE_INSET 80.0f
+#define FACADE_CLIMB_SIDE_MARGIN FACADE_BUILDING_SIDE_INSET
+
 #endif /* CHUCK_GAME_CONFIG_H */
