@@ -48,6 +48,16 @@ typedef struct
     bool active;
 } Bird;
 
+/* Facade wind runs as one building-wide cycle: quiet, an announced warning,
+ * then the gust itself. Keeping it a single phase machine means the renderer,
+ * the HUD and the simulation all read the same state. */
+typedef enum
+{
+    FACADE_WIND_CALM = 0,
+    FACADE_WIND_WARNING,
+    FACADE_WIND_GUSTING
+} FacadeWindPhase;
+
 typedef struct
 {
     float x, y;
@@ -124,7 +134,17 @@ typedef struct
     ThrownObject thrown_objects[MAX_THROWN_OBJECTS];
     Bird birds[MAX_BIRDS];
     float facade_hazard_spawn_timers[MAX_FACADE_HAZARD_SPAWNS];
+    float facade_hazard_windup_timers[MAX_FACADE_HAZARD_SPAWNS];
     bool facade_hazards_initialized;
+    FacadeWindPhase facade_wind_phase;
+    float facade_wind_timer;
+    int facade_wind_dir;
+    bool facade_wind_sheltered;
+    /* Highest banked position on the wall; always somewhere the climber has
+     * actually stood, so respawning there can never place him inside stone. */
+    float facade_checkpoint_x;
+    float facade_checkpoint_y;
+    bool facade_has_checkpoint;
 
     float invuln_timer;
     int door_spawns[MAX_DOORS];

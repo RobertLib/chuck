@@ -19,6 +19,52 @@ static float spawn_delay(GameplayState *state, FacadeHazardType type)
                           THROWN_OBJECT_SPAWN_MAX);
 }
 
+static float calm_delay(GameplayState *state)
+{
+    return random_between(&state->rng, FACADE_WIND_CALM_MIN,
+                          FACADE_WIND_CALM_MAX);
+}
+
+/*
+ * Facade collision is deliberately its own thing. `level_is_solid` reports
+ * out-of-bounds tiles as wall, which is right for a floor-based level but
+ * would pin a climber against the top of the shaft; here the world edges are
+ * handled by the clamp instead, and only real masonry blocks movement.
+ */
+static bool facade_tile_solid(const Level *level, int col, int row)
+{
+    if (col < 0 || col >= level->map.width ||
+        row < 0 || row >= level->map.height)
+    {
+        return false;
+    }
+    return level->map.tiles[row][col] == TILE_WALL;
+}
+
+static bool facade_point_solid(const Level *level, float x, float y)
+{
+    return facade_tile_solid(level, (int)floorf(x / TILE_SIZE),
+                             (int)floorf(y / TILE_SIZE));
+}
+
+static bool facade_box_blocked(const Level *level, float x, float y,
+                               float w, float h)
+{
+    int first_col = (int)floorf(x / TILE_SIZE);
+    int last_col = (int)floorf((x + w - 1.0f) / TILE_SIZE);
+    int first_row = (int)floorf(y / TILE_SIZE);
+    int last_row = (int)floorf((y + h - 1.0f) / TILE_SIZE);
+    for (int row = first_row; row <= last_row; ++row)
+    {
+        for (int col = first_col; col <= last_col; ++col)
+        {
+            if (facade_tile_solid(level, col, row))
+                return true;
+        }
+    }
+    return false;
+}
+
 void gameplay_climb_init(GameplayState *state)
 {
     if (state->level.map.mode != LEVEL_MODE_FACADE ||
@@ -32,8 +78,68 @@ void gameplay_climb_init(GameplayState *state)
         /* A short first delay makes a source legible before it attacks. */
         state->facade_hazard_spawn_timers[i] =
             spawn_delay(state, type) * random_between(&state->rng, 0.25f, 0.55f);
+        state->facade_hazard_windup_timers[i] = 0.0f;
     }
+    state->facade_wind_phase = FACADE_WIND_CALM;
+    state->facade_wind_timer = calm_delay(state);
+    state->facade_wind_dir = rng_range(&state->rng, 2) == 0 ? -1 : 1;
+    state->facade_wind_sheltered = false;
     state->facade_hazards_initialized = true;
+}
+
+float gameplay_climb_wind_push(const GameplayState *state)
+{
+    if (state->facade_wind_phase != FACADE_WIND_GUSTING)
+        return 0.0f;
+    return (float)state->facade_wind_dir * FACADE_WIND_PUSH;
+}
+
+/* A solid tile a short way upwind of the climber's chest takes the gust. */
+static bool facade_wind_sheltered(const GameplayState *state)
+{
+    if (state->facade_wind_dir == 0)
+        return false;
+
+    const Player *player = &state->player;
+    float height = player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+    float edge = state->facade_wind_dir > 0
+                     ? player->x - FACADE_WIND_SHELTER_REACH
+                     : player->x + PLAYER_W + FACADE_WIND_SHELTER_REACH;
+    for (int sample = 0; sample < 3; ++sample)
+    {
+        float y = player->y + height * (0.2f + 0.3f * (float)sample);
+        if (facade_point_solid(&state->level, edge, y))
+            return true;
+    }
+    return false;
+}
+
+static void update_wind(GameplayState *state, float dt)
+{
+    state->facade_wind_timer -= dt;
+    if (state->facade_wind_timer > 0.0f)
+        return;
+
+    switch (state->facade_wind_phase)
+    {
+    case FACADE_WIND_CALM:
+        state->facade_wind_dir = rng_range(&state->rng, 2) == 0 ? -1 : 1;
+        state->facade_wind_phase = FACADE_WIND_WARNING;
+        state->facade_wind_timer = FACADE_WIND_WARN_TIME;
+        /* The cue is the whole point of the warning: it is what lets the
+         * player pick a shelter before the wall starts pushing back. */
+        game_events_sound(&state->events, SFX_WIND_GUST);
+        break;
+    case FACADE_WIND_WARNING:
+        state->facade_wind_phase = FACADE_WIND_GUSTING;
+        state->facade_wind_timer = FACADE_WIND_GUST_TIME;
+        break;
+    case FACADE_WIND_GUSTING:
+    default:
+        state->facade_wind_phase = FACADE_WIND_CALM;
+        state->facade_wind_timer = calm_delay(state);
+        break;
+    }
 }
 
 void gameplay_climb_update_player(GameplayState *state, const Input *input,
@@ -64,12 +170,36 @@ void gameplay_climb_update_player(GameplayState *state, const Input *input,
 
     player->vx = move_x * FACADE_CLIMB_SPEED;
     player->vy = move_y * FACADE_CLIMB_SPEED;
-    player->x += player->vx * dt;
-    player->y += player->vy * dt;
+
+    /* Evaluated here, once per simulated frame, so the HUD and the renderer
+     * report the same shelter the movement below is using. */
+    float wind = gameplay_climb_wind_push(state);
+    state->facade_wind_sheltered = wind != 0.0f && facade_wind_sheltered(state);
+    if (wind != 0.0f && !state->facade_wind_sheltered)
+        player->vx += wind;
+
     player->on_ground = false;
     player->on_ladder = false;
     player->facade_climbing = true;
     player->crawling = false;
+
+    /* Axis-separated so a climber pressed diagonally into a ledge slides
+     * along it instead of sticking to the corner. */
+    float height = (float)PLAYER_H;
+    float step_x = player->vx * dt;
+    if (step_x != 0.0f &&
+        !facade_box_blocked(&state->level, player->x + step_x, player->y,
+                            (float)PLAYER_W, height))
+    {
+        player->x += step_x;
+    }
+    float step_y = player->vy * dt;
+    if (step_y != 0.0f &&
+        !facade_box_blocked(&state->level, player->x, player->y + step_y,
+                            (float)PLAYER_W, height))
+    {
+        player->y += step_y;
+    }
 
     float world_width = state->level.map.width * (float)TILE_SIZE;
     float world_height = state->level.map.height * (float)TILE_SIZE;
@@ -92,6 +222,37 @@ void gameplay_climb_update_player(GameplayState *state, const Input *input,
 
     if (move_x != 0.0f || move_y != 0.0f)
         player->anim_time += dt * 5.0f;
+
+    /* Bank height every few floors. Only positions the climber has actually
+     * held are stored, which is what keeps a respawn out of the masonry. */
+    if (!state->facade_has_checkpoint ||
+        player->y < state->facade_checkpoint_y - FACADE_CHECKPOINT_STEP)
+    {
+        state->facade_checkpoint_x = player->x;
+        state->facade_checkpoint_y = player->y;
+        state->facade_has_checkpoint = true;
+    }
+}
+
+void gameplay_climb_restore_checkpoint(GameplayState *state)
+{
+    if (state->level.map.mode != LEVEL_MODE_FACADE ||
+        !state->facade_has_checkpoint)
+    {
+        return;
+    }
+    state->player.x = state->facade_checkpoint_x;
+    state->player.y = state->facade_checkpoint_y;
+    state->player.vx = 0.0f;
+    state->player.vy = 0.0f;
+    state->player.facade_climbing = true;
+
+    /* Nothing already in the air should be allowed to land on a climber who
+     * has just been put back on the wall. */
+    for (int i = 0; i < MAX_THROWN_OBJECTS; ++i)
+        state->thrown_objects[i].active = false;
+    for (int i = 0; i < MAX_BIRDS; ++i)
+        state->birds[i].active = false;
 }
 
 static bool spawn_thrown_object(GameplayState *state,
@@ -141,6 +302,7 @@ static bool spawn_thrown_object(GameplayState *state,
     object->angle = random_between(&state->rng, 0.0f, 6.28318531f);
     object->variant = rng_range(&state->rng, 3);
     object->active = true;
+    gameplay_world_sound(state, SFX_GRENADE_THROW, spawn->x, spawn->y);
     return true;
 }
 
@@ -182,14 +344,8 @@ static bool spawn_bird(GameplayState *state,
         bird->vy = 48.0f;
     bird->anim_time = random_between(&state->rng, 0.0f, 1.0f);
     bird->active = true;
+    gameplay_world_sound(state, SFX_BIRD_CALL, spawn->x, spawn->y);
     return true;
-}
-
-static bool point_hits_solid(const Level *level, float x, float y)
-{
-    int col = (int)floorf(x / TILE_SIZE);
-    int row = (int)floorf(y / TILE_SIZE);
-    return level_is_solid(level, col, row);
 }
 
 static void update_thrown_objects(GameplayState *state, float dt)
@@ -213,7 +369,8 @@ static void update_thrown_objects(GameplayState *state, float dt)
 
         float center_x = object->x + THROWN_OBJECT_SIZE * 0.5f;
         float center_y = object->y + THROWN_OBJECT_SIZE * 0.5f;
-        if (point_hits_solid(&state->level, center_x, center_y))
+        /* Shattering on ledges is what turns them into usable cover. */
+        if (facade_point_solid(&state->level, center_x, center_y))
         {
             gameplay_world_sound(state, SFX_BULLET_IMPACT,
                                  center_x, center_y);
@@ -259,15 +416,31 @@ static void update_birds(GameplayState *state, float dt)
         Bird *bird = &state->birds[i];
         if (!bird->active)
             continue;
-        bird->x += bird->vx * dt;
-        bird->y += bird->vy * dt;
         bird->anim_time += dt;
+        /* The swoop is a function of the bird's own clock, so a replay of the
+         * same seed reproduces the same flight path. */
+        float swoop = sinf(bird->anim_time * BIRD_WAVE_RATE) * BIRD_WAVE_SPEED;
+        bird->x += bird->vx * dt;
+        bird->y += (bird->vy + swoop) * dt;
 
         if (bird->x + BIRD_W < -TILE_SIZE ||
             bird->x > world_width + TILE_SIZE ||
             bird->y + BIRD_H < -TILE_SIZE ||
             bird->y > world_height + TILE_SIZE)
         {
+            bird->active = false;
+            continue;
+        }
+
+        /* Birds break off against masonry, so a ledge is cover from them too. */
+        float bird_center_x = bird->x + BIRD_W * 0.5f;
+        float bird_center_y = bird->y + BIRD_H * 0.5f;
+        if (facade_point_solid(&state->level, bird_center_x, bird_center_y))
+        {
+            gameplay_world_sound(state, SFX_BIRD_CALL,
+                                 bird_center_x, bird_center_y);
+            game_events_particles(&state->events, bird_center_x, bird_center_y,
+                                  5, bird->vx < 0.0f ? -1 : 1);
             bird->active = false;
             continue;
         }
@@ -292,6 +465,7 @@ void gameplay_climb_update(GameplayState *state, float dt)
         return;
 
     gameplay_climb_init(state);
+    update_wind(state, dt);
     float player_height = state->player.crawling
                               ? (float)PLAYER_CRAWL_H
                               : (float)PLAYER_H;
@@ -301,6 +475,20 @@ void gameplay_climb_update(GameplayState *state, float dt)
     {
         const FacadeHazardSpawn *spawn =
             &state->level.map.facade_hazard_spawns[i];
+
+        if (state->facade_hazard_windup_timers[i] > 0.0f)
+        {
+            state->facade_hazard_windup_timers[i] -= dt;
+            if (state->facade_hazard_windup_timers[i] > 0.0f)
+                continue;
+            state->facade_hazard_windup_timers[i] = 0.0f;
+            state->facade_hazard_spawn_timers[i] =
+                spawn_thrown_object(state, spawn)
+                    ? spawn_delay(state, spawn->type)
+                    : 0.25f;
+            continue;
+        }
+
         state->facade_hazard_spawn_timers[i] -= dt;
         if (state->facade_hazard_spawn_timers[i] > 0.0f)
             continue;
@@ -311,11 +499,17 @@ void gameplay_climb_update(GameplayState *state, float dt)
             continue;
         }
 
-        bool spawned = spawn->type == FACADE_HAZARD_BIRD
-                           ? spawn_bird(state, spawn)
-                           : spawn_thrown_object(state, spawn);
-        state->facade_hazard_spawn_timers[i] =
-            spawned ? spawn_delay(state, spawn->type) : 0.25f;
+        if (spawn->type == FACADE_HAZARD_BIRD)
+        {
+            state->facade_hazard_spawn_timers[i] =
+                spawn_bird(state, spawn) ? spawn_delay(state, spawn->type)
+                                         : 0.25f;
+            continue;
+        }
+
+        /* Throwers announce themselves, then let go a beat later. */
+        state->facade_hazard_windup_timers[i] = THROWN_OBJECT_WINDUP;
+        gameplay_world_sound(state, SFX_GUARD_TALK, spawn->x, spawn->y);
     }
 
     update_thrown_objects(state, dt);

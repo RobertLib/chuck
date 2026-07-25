@@ -2,7 +2,9 @@
 
 This file describes the meaning of characters used in the level text files.
 
-- `#` : Wall (solid, impassable tile).
+- `#` : Wall (solid, impassable tile). In a `MODE FACADE` level it is exterior
+  masonry: a stone cornice or plant the climber must route around, and cover
+  that shatters thrown objects and turns birds away.
 - `H` : Ladder (can climb up/down).
 - (space) : Empty space / air.
 - `.` : Empty padding / air (useful before a compact sublevel room).
@@ -33,7 +35,9 @@ This file describes the meaning of characters used in the level text files.
 - `U` : Entrance to a separate sublevel (currently the WC/restroom).
 - `R` : Return door from a sublevel to its paused parent level.
 - `q` : Decorative restroom toilet (non-solid).
-- `b` : Decorative restroom washbasin (non-solid).
+- `b` : Decorative restroom washbasin (non-solid). A mirror is drawn in the
+  tile above it, and reflects Chuck when he stands in front of it.
+- `u` : Decorative restroom urinal (non-solid).
 - `p` : Decorative restroom stall partition (non-solid).
 - `o` : Open restroom stall with a visible toilet (non-solid).
 - `z` : Closed restroom stall door (non-solid).
@@ -55,6 +59,11 @@ Notes:
   appear in the file.
 - `MODE FACADE` on a metadata line after the grid selects the separate exterior
   climbing mode. It uses direct four-way wall movement: no gravity, ladders,
-  doors, items, guards, or ordinary platform simulation.
+  doors, guards, or ordinary platform simulation. Pickups do work, so items
+  placed on a facade are optional detours that carry into the next sector.
+- Facade masonry authoring: the climber box is exactly one tile tall, so a
+  single `#` inside a two-row band seals that band off horizontally. Keep
+  cornices to full rows with gaps of three tiles or more, and leave lone
+  blocks out; plant is painted on top of the cornices instead.
 - An interior campaign level contains one `E` and may additionally contain one
   `Y`. A facade level contains one `Y` and no `E`; a sublevel contains one `R`.

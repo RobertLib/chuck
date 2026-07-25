@@ -118,6 +118,42 @@ static void draw_soft_glow(SDL_Renderer *r, float x, float y, float w, float h,
   fx_glow(r, x + w * 0.5f, y + h * 0.5f, radius, color, 72);
 }
 
+/*
+ * Mirror over a basin. Chuck's reflection is deliberately only a silhouette:
+ * it makes the room feel occupied without adding a second figure the player
+ * has to read while fighting.
+ */
+static void draw_restroom_mirror(SDL_Renderer *r, float x, float y,
+                                 float reflection_offset, bool reflected)
+{
+  color_rect(r, (SDL_Color){10, 17, 21, 255}, x - 2.0f, y - 2.0f,
+             30.0f, 30.0f);
+  color_rect(r, (SDL_Color){139, 160, 156, 255}, x - 1.0f, y - 1.0f,
+             28.0f, 28.0f);
+  fx_vgrad(r, x, y, 26.0f, 26.0f,
+           (SDL_Color){96, 130, 136, 255}, 255,
+           (SDL_Color){46, 74, 84, 255}, 255);
+
+  if (reflected && reflection_offset > -9.0f && reflection_offset < 9.0f)
+  {
+    float rx = x + 13.0f + reflection_offset;
+    color_rect(r, (SDL_Color){38, 60, 72, 255}, rx - 5.0f, y + 12.0f,
+               11.0f, 14.0f);
+    color_rect(r, (SDL_Color){52, 76, 86, 255}, rx - 4.0f, y + 6.0f,
+               8.0f, 7.0f);
+  }
+
+  /* A stepped streak of light is what makes flat fill read as glass. */
+  for (int step = 0; step < 6; ++step)
+  {
+    fx_rect_a(r, (SDL_Color){196, 224, 218, 255}, 46,
+              x + 4.0f + (float)step * 1.6f,
+              y + 22.0f - (float)step * 4.0f, 5.0f, 4.0f);
+  }
+  color_rect(r, (SDL_Color){193, 208, 200, 255}, x - 1.0f, y - 1.0f,
+             28.0f, 2.0f);
+}
+
 static void render_facade_background(Game *game, int win_w, int win_h)
 {
   SDL_Renderer *r = game->platform.renderer;
@@ -246,6 +282,31 @@ static void render_background(Game *game, int win_w, int win_h)
   {
     const Level *level = &game->gameplay.level;
     float cam_x = game->presentation.cam_x;
+    /* The interior is derived from the map's own masonry, so the tiling,
+     * mirrors and lighting follow whatever shape the sublevel is drawn in
+     * instead of assuming one fixed room height. */
+    int wall_top = level->map.height;
+    int wall_bottom = -1;
+    int wall_left = level->map.width;
+    int wall_right = -1;
+    for (int row = 0; row < level->map.height; ++row)
+    {
+      for (int col = 0; col < level->map.width; ++col)
+      {
+        if (level->map.tiles[row][col] != TILE_WALL)
+          continue;
+        if (row < wall_top)
+          wall_top = row;
+        if (row > wall_bottom)
+          wall_bottom = row;
+        if (col < wall_left)
+          wall_left = col;
+        if (col > wall_right)
+          wall_right = col;
+      }
+    }
+    if (wall_bottom <= wall_top || wall_right <= wall_left)
+      return;
 
     /* Outside the room is a deep service void, not another tiled wall. */
     color_rect(r, (SDL_Color){6, 10, 16, 255}, 0.0f, oy,
@@ -270,16 +331,13 @@ static void render_background(Game *game, int win_w, int win_h)
     }
 
     /* The bright ceramic surface is clipped to the actual interior bounded
-     * by the map's left and right structural wall columns. */
-    float room_left = TILE_SIZE - cam_x;
-    float room_right = (level->map.width - 1) * (float)TILE_SIZE - cam_x;
+     * by the map's structural wall ring. */
+    float room_left = (wall_left + 1) * (float)TILE_SIZE - cam_x;
+    float room_right = wall_right * (float)TILE_SIZE - cam_x;
     float room_width = room_right - room_left;
-    float room_top = (level->map.sublevel_return_row - 3) *
-                         (float)TILE_SIZE +
-                     oy;
-    float room_bottom = (level->map.sublevel_return_row + 1) *
-                            (float)TILE_SIZE +
-                        oy;
+    float room_top = (wall_top + 1) * (float)TILE_SIZE + oy;
+    float room_bottom = wall_bottom * (float)TILE_SIZE + oy;
+    float room_height = room_bottom - room_top;
     color_rect(r, (SDL_Color){3, 8, 12, 220},
                room_left - 8.0f, room_top - 8.0f,
                room_width + 16.0f, room_bottom - room_top + 16.0f);
@@ -291,32 +349,88 @@ static void render_background(Game *game, int win_w, int win_h)
     for (float y = room_top; y < room_bottom; y += 24.0f)
       color_rect(r, (SDL_Color){83, 112, 112, 255},
                  room_left, y, room_width, 1.0f);
-    for (int col = 1; col < level->map.width - 1; ++col)
+    for (int col = wall_left + 1; col < wall_right; ++col)
     {
       float x = col * (float)TILE_SIZE - cam_x;
       color_rect(r, (SDL_Color){91, 120, 119, 255},
-                 x, room_top, 1.0f, room_bottom - room_top);
+                 x, room_top, 1.0f, room_height);
     }
-    color_rect(r, (SDL_Color){49, 92, 91, 255},
-               room_left, room_top + 68.0f, room_width, 8.0f);
-    color_rect(r, (SDL_Color){185, 205, 191, 255},
-               room_left, room_top + 68.0f, room_width, 2.0f);
 
-    /* A plumbing run and two fluorescent fixtures keep the interior from
-     * reading as an office backdrop while leaving the fixtures dominant. */
+    /* The dado rail is measured up from the floor rather than down from the
+     * ceiling, so it stays at waist height in a room of any storey count. */
+    float rail_y = room_bottom - 60.0f;
+    color_rect(r, (SDL_Color){49, 92, 91, 255},
+               room_left, rail_y, room_width, 8.0f);
+    color_rect(r, (SDL_Color){185, 205, 191, 255},
+               room_left, rail_y, room_width, 2.0f);
+
+    /* A plumbing run and ceiling fixtures keep the interior from reading as
+     * an office backdrop while leaving the fittings dominant. */
     color_rect(r, (SDL_Color){29, 54, 58, 255},
-               room_left, room_top + 45.0f, room_width, 7.0f);
+               room_left, room_top + 20.0f, room_width, 7.0f);
     color_rect(r, (SDL_Color){112, 146, 141, 255},
-               room_left, room_top + 46.0f, room_width, 2.0f);
-    for (int fixture = 0; fixture < 2; ++fixture)
+               room_left, room_top + 21.0f, room_width, 2.0f);
+    for (float bracket = room_left + 40.0f; bracket < room_right;
+         bracket += 96.0f)
     {
-      float fx = room_left + room_width * (0.30f + fixture * 0.43f) - 48.0f;
-      fx_glow(r, fx + 54.0f, room_top + 8.0f, 62.0f,
-              (SDL_Color){190, 240, 226, 255}, 42);
+      color_rect(r, (SDL_Color){22, 44, 48, 255},
+                 bracket, room_top + 14.0f, 4.0f, 8.0f);
+    }
+
+    int fixture_count = (int)(room_width / 300.0f) + 1;
+    if (fixture_count > 4)
+      fixture_count = 4;
+    for (int fixture = 0; fixture < fixture_count; ++fixture)
+    {
+      float centre = room_left + room_width *
+                                     ((float)fixture + 0.5f) /
+                                     (float)fixture_count;
+      /* One tube in the room is on its last legs; the flicker is rare enough
+       * to be atmosphere rather than a strobe. */
+      float flicker = fixture == 1 && fmodf(t * 1.9f, 5.0f) < 0.11f
+                          ? 0.35f
+                          : 1.0f;
+      fx_glow(r, centre, room_top + 8.0f, 62.0f,
+              (SDL_Color){190, 240, 226, 255}, (Uint8)(42.0f * flicker));
       color_rect(r, (SDL_Color){25, 42, 46, 255},
-                 fx, room_top + 4.0f, 108.0f, 8.0f);
-      color_rect(r, (SDL_Color){202, 235, 222, 255},
-                 fx + 5.0f, room_top + 6.0f, 98.0f, 3.0f);
+                 centre - 54.0f, room_top + 4.0f, 108.0f, 8.0f);
+      color_rect(r, fx_dim((SDL_Color){202, 235, 222, 255}, flicker),
+                 centre - 49.0f, room_top + 6.0f, 98.0f, 3.0f);
+    }
+
+    /* Mirrors hang over the basins the map placed. */
+    for (int i = 0; i < level->map.decoration_count; ++i)
+    {
+      const Decoration *decoration = &level->map.decorations[i];
+      if (decoration->type != DECOR_RESTROOM_BASIN)
+        continue;
+      float mirror_x = decoration->col * (float)TILE_SIZE - cam_x + 3.0f;
+      float mirror_y = (decoration->row - 1) * (float)TILE_SIZE + oy + 3.0f;
+      float basin_centre = (decoration->col + 0.5f) * (float)TILE_SIZE;
+      float player_centre = game->gameplay.player.x + PLAYER_W * 0.5f;
+      bool in_front =
+          fabsf(game->gameplay.player.y -
+                (decoration->row * (float)TILE_SIZE)) < TILE_SIZE;
+      draw_restroom_mirror(r, mirror_x, mirror_y,
+                           (player_centre - basin_centre) * 0.45f,
+                           in_front);
+    }
+
+    /* Illuminated sign over the door back to the level. */
+    if (level->map.has_sublevel_return)
+    {
+      float sign_x = level->map.sublevel_return_col * (float)TILE_SIZE -
+                     cam_x + 2.0f;
+      float sign_y = (level->map.sublevel_return_row - 1) *
+                         (float)TILE_SIZE +
+                     oy + 8.0f;
+      fx_glow(r, sign_x + 14.0f, sign_y + 8.0f, 26.0f,
+              (SDL_Color){110, 230, 170, 255}, 46);
+      color_rect(r, (SDL_Color){12, 22, 24, 255}, sign_x, sign_y,
+                 28.0f, 16.0f);
+      color_rect(r, (SDL_Color){36, 92, 74, 255}, sign_x + 1.0f,
+                 sign_y + 1.0f, 26.0f, 14.0f);
+      draw_text(r, sign_x + 6.0f, sign_y + 5.0f, 0.85f, 156, 240, 196, "WC");
     }
     return;
   }
@@ -532,8 +646,20 @@ static void draw_wall_tile(SDL_Renderer *r, const Level *lvl,
                x + TILE_SIZE - 2.0f, y, 2.0f, TILE_SIZE);
 }
 
+/* Topmost masonry row: the room's own ceiling, which must not be mistaken
+ * for a slab floating inside the room. */
+static int restroom_ceiling_row(const Level *lvl)
+{
+  for (int row = 0; row < lvl->map.height; ++row)
+    for (int col = 0; col < lvl->map.width; ++col)
+      if (lvl->map.tiles[row][col] == TILE_WALL)
+        return row;
+  return 0;
+}
+
 static void draw_restroom_wall_tile(SDL_Renderer *r, const Level *lvl,
-                                    int col, int row, float x, float y)
+                                    int col, int row, float x, float y,
+                                    int ceiling_row)
 {
   unsigned h = tile_hash(col, row);
   bool floor_top = !level_is_solid(lvl, col, row - 1);
@@ -563,6 +689,26 @@ static void draw_restroom_wall_tile(SDL_Renderer *r, const Level *lvl,
   if (!level_is_solid(lvl, col, row + 1))
     color_rect(r, (SDL_Color){17, 31, 35, 255},
                x, y + TILE_SIZE - 3.0f, TILE_SIZE, 3.0f);
+
+  /* A slab inside the room with open air both above and below is a service
+   * catwalk rather than the room's own floor: it gets a handrail and hangers. */
+  if (floor_top && row > ceiling_row && !level_is_solid(lvl, col, row + 1))
+  {
+    color_rect(r, (SDL_Color){22, 40, 44, 255},
+               x, y + TILE_SIZE - 6.0f, TILE_SIZE, 3.0f);
+    color_rect(r, (SDL_Color){35, 60, 62, 255},
+               x + 13.0f, y + TILE_SIZE, 6.0f, 4.0f);
+    color_rect(r, (SDL_Color){28, 48, 52, 255}, x + 4.0f, y - 13.0f,
+               3.0f, 13.0f);
+    color_rect(r, (SDL_Color){28, 48, 52, 255}, x + 25.0f, y - 13.0f,
+               3.0f, 13.0f);
+    color_rect(r, (SDL_Color){52, 84, 84, 255}, x, y - 13.0f,
+               TILE_SIZE, 3.0f);
+    color_rect(r, (SDL_Color){130, 160, 152, 255}, x, y - 13.0f,
+               TILE_SIZE, 1.0f);
+    color_rect(r, (SDL_Color){40, 68, 70, 255}, x, y - 7.0f,
+               TILE_SIZE, 2.0f);
+  }
 }
 
 static void draw_ladder_tile(SDL_Renderer *r, float x, float y, int row)
@@ -792,9 +938,87 @@ static void draw_facade_open_window(SDL_Renderer *r, float x, float y,
   }
 }
 
+/*
+ * Masonry on the facade: the projecting stone cornice that caps each floor,
+ * the thing the climb is actually routed around and the thing bricks shatter
+ * against. Some tiles carry a plant unit on top; that is only paint, since a
+ * lone solid tile between two cornices would seal the gap the player needs.
+ */
+static void draw_facade_ledge(SDL_Renderer *r, const Level *level,
+                              int col, int row, float x, float y,
+                              float world_t)
+{
+  bool left = level_is_solid(level, col - 1, row);
+  bool right = level_is_solid(level, col + 1, row);
+  unsigned variant = tile_hash(col, row);
+
+  if (variant % 11u == 0u && !level_is_solid(level, col, row - 1))
+  {
+    /* Condenser unit standing on the cornice: a louvered case with a slow
+     * fan behind it, kept low so it never reads as something to climb. */
+    float ux = x + 6.0f;
+    float uy = y - 13.0f;
+    color_rect(r, (SDL_Color){11, 13, 17, 255}, ux - 1.0f, uy - 1.0f,
+               22.0f, 16.0f);
+    color_rect(r, (SDL_Color){64, 68, 73, 255}, ux, uy, 20.0f, 14.0f);
+    fx_vgrad(r, ux, uy, 20.0f, 14.0f,
+             (SDL_Color){84, 88, 92, 255}, 255,
+             (SDL_Color){45, 49, 55, 255}, 255);
+    color_rect(r, (SDL_Color){30, 33, 38, 255}, ux + 2.0f, uy + 2.0f,
+               16.0f, 10.0f);
+    for (int slat = 0; slat < 4; ++slat)
+    {
+      color_rect(r, (SDL_Color){74, 79, 84, 255},
+                 ux + 3.0f + (float)slat * 4.0f, uy + 3.0f, 1.0f, 8.0f);
+    }
+    float spin = world_t * 2.6f + (float)(variant % 7u);
+    float blade_x = cosf(spin) * 4.0f;
+    float blade_y = sinf(spin) * 3.0f;
+    color_rect(r, (SDL_Color){104, 110, 116, 255},
+               ux + 10.0f - blade_x, uy + 7.0f - blade_y,
+               fabsf(blade_x) * 2.0f + 1.0f, fabsf(blade_y) * 2.0f + 1.0f);
+    color_rect(r, (SDL_Color){20, 22, 27, 255}, ux + 9.0f, uy + 6.0f,
+               2.0f, 2.0f);
+    color_rect(r, (SDL_Color){96, 100, 105, 255}, ux, uy, 20.0f, 1.0f);
+  }
+  else if (variant % 13u == 0u && !level_is_solid(level, col, row - 1))
+  {
+    /* Vent stack and a bracketed pipe run breaking up a long cornice. */
+    color_rect(r, (SDL_Color){14, 16, 20, 255}, x + 10.0f, y - 12.0f,
+               11.0f, 15.0f);
+    color_rect(r, (SDL_Color){86, 82, 76, 255}, x + 11.0f, y - 11.0f,
+               9.0f, 13.0f);
+    color_rect(r, (SDL_Color){118, 112, 100, 255}, x + 9.0f, y - 14.0f,
+               13.0f, 3.0f);
+  }
+
+  /* Stone cornice: a lit top face, a shadowed soffit, and a dark underside
+   * so the climbable gaps between runs stay obvious. */
+  color_rect(r, (SDL_Color){20, 21, 26, 255}, x, y + 1.0f, 32.0f, 31.0f);
+  color_rect(r, (SDL_Color){88, 84, 78, 255}, x, y + 2.0f, 32.0f, 9.0f);
+  color_rect(r, (SDL_Color){126, 120, 108, 255}, x, y + 2.0f, 32.0f, 3.0f);
+  color_rect(r, (SDL_Color){59, 58, 60, 255}, x, y + 11.0f, 32.0f, 13.0f);
+  fx_vgrad(r, x, y + 11.0f, 32.0f, 13.0f,
+           (SDL_Color){70, 68, 68, 255}, 255,
+           (SDL_Color){38, 38, 42, 255}, 255);
+  color_rect(r, (SDL_Color){26, 27, 32, 255}, x, y + 24.0f, 32.0f, 8.0f);
+  if ((variant & 3u) == 0u)
+  {
+    /* Occasional weathering keeps a long run from looking extruded. */
+    color_rect(r, (SDL_Color){46, 45, 44, 255}, x + 7.0f, y + 5.0f,
+               9.0f, 2.0f);
+  }
+  if (!left)
+    color_rect(r, (SDL_Color){101, 96, 88, 255}, x, y + 2.0f, 2.0f, 22.0f);
+  if (!right)
+    color_rect(r, (SDL_Color){101, 96, 88, 255}, x + 30.0f, y + 2.0f,
+               2.0f, 22.0f);
+}
+
 static void draw_facade_hazard_source(SDL_Renderer *r,
                                       const FacadeHazardSpawn *spawn,
-                                      float cam_x, float oy, float world_t)
+                                      float cam_x, float oy, float world_t,
+                                      float windup)
 {
   float x = spawn->x - TILE_SIZE * 0.5f - cam_x;
   float y = spawn->y - TILE_SIZE * 0.5f + oy;
@@ -823,6 +1047,27 @@ static void draw_facade_hazard_source(SDL_Renderer *r,
              5.0f, 3.0f);
   color_rect(r, (SDL_Color){91, 101, 108, 255}, x + 13.0f, y + 30.0f,
              6.0f, 6.0f);
+
+  if (windup <= 0.0f)
+    return;
+
+  /* The wind-up is the contract with the player: the thrower leans out and
+   * raises the object for a beat before anything is in the air. */
+  float lean = 6.0f * (1.0f - windup);
+  color_rect(r, (SDL_Color){44, 52, 62, 255}, x + 9.0f, y + 20.0f - lean,
+             14.0f, 17.0f);
+  color_rect(r, (SDL_Color){64, 74, 86, 255}, x + 10.0f, y + 21.0f - lean,
+             12.0f, 5.0f);
+  color_rect(r, (SDL_Color){186, 134, 96, 255}, x + 12.0f, y + 12.0f - lean,
+             9.0f, 8.0f);
+  color_rect(r, (SDL_Color){108, 75, 61, 255}, x + 21.0f, y + 14.0f - lean,
+             5.0f, 4.0f);
+  color_rect(r, (SDL_Color){150, 96, 66, 255}, x + 24.0f, y + 8.0f - lean,
+             8.0f, 8.0f);
+  float pulse = 0.55f + 0.45f * sinf(world_t * 18.0f);
+  fx_glow(r, x + 16.0f, y + 6.0f, 18.0f, (SDL_Color){236, 96, 72, 255},
+          (Uint8)(70.0f * pulse));
+  draw_text(r, x + 13.0f, y - 2.0f, 1.1f, 244, 132, 96, "!");
 }
 
 static void draw_terminal(SDL_Renderer *r, float x, float y,
@@ -1082,6 +1327,32 @@ static void draw_restroom_basin(SDL_Renderer *r, float x, float y)
              x + 21.0f, y + 27.0f, 3.0f, 5.0f);
 }
 
+static void draw_restroom_urinal(SDL_Renderer *r, float x, float y)
+{
+  /* Wall-hung bowl with an exposed flush pipe. Shorter than the basin and
+   * mounted higher, so a row of them reads differently at a glance. */
+  color_rect(r, COL_INK, x + 6.0f, y + 1.0f, 5.0f, 9.0f);
+  color_rect(r, (SDL_Color){168, 188, 182, 255},
+             x + 7.0f, y + 2.0f, 3.0f, 8.0f);
+  color_rect(r, COL_INK, x + 9.0f, y + 3.0f, 12.0f, 4.0f);
+  color_rect(r, (SDL_Color){190, 205, 197, 255},
+             x + 10.0f, y + 4.0f, 10.0f, 2.0f);
+
+  color_rect(r, (SDL_Color){4, 10, 12, 110},
+             x + 5.0f, y + 27.0f, 22.0f, 3.0f);
+  color_rect(r, COL_INK, x + 4.0f, y + 8.0f, 24.0f, 19.0f);
+  color_rect(r, (SDL_Color){233, 239, 226, 255},
+             x + 6.0f, y + 9.0f, 20.0f, 16.0f);
+  color_rect(r, (SDL_Color){199, 214, 207, 255},
+             x + 8.0f, y + 11.0f, 16.0f, 9.0f);
+  color_rect(r, (SDL_Color){76, 132, 138, 255},
+             x + 11.0f, y + 18.0f, 10.0f, 3.0f);
+  color_rect(r, (SDL_Color){146, 168, 163, 255},
+             x + 13.0f, y + 24.0f, 6.0f, 5.0f);
+  color_rect(r, (SDL_Color){249, 250, 243, 255},
+             x + 7.0f, y + 10.0f, 2.0f, 12.0f);
+}
+
 static void draw_restroom_partition(SDL_Renderer *r, float x, float y)
 {
   /* Narrow stall divider with a raised foot and a visible latch plate. */
@@ -1192,6 +1463,8 @@ static void draw_decoration(SDL_Renderer *r, const Decoration *decoration,
     draw_restroom_toilet(r, x, y);
   else if (decoration->type == DECOR_RESTROOM_BASIN)
     draw_restroom_basin(r, x, y);
+  else if (decoration->type == DECOR_RESTROOM_URINAL)
+    draw_restroom_urinal(r, x, y);
   else if (decoration->type == DECOR_RESTROOM_PARTITION)
     draw_restroom_partition(r, x, y);
   else if (decoration->type == DECOR_RESTROOM_STALL_OPEN)
@@ -2528,6 +2801,69 @@ static bool facade_fixture_at(const Level *level, int col, int row)
   return false;
 }
 
+/*
+ * Wind is invisible, so it is drawn twice: as streaks that start during the
+ * warning beat and thicken once the gust lands, and as a bracket around Chuck
+ * whenever a ledge upwind of him is actually taking the push.
+ */
+static void render_facade_wind(Game *game, int win_w, int win_h,
+                               float world_t)
+{
+  SDL_Renderer *r = game->platform.renderer;
+  const GameplayState *state = &game->gameplay;
+  if (state->facade_wind_phase == FACADE_WIND_CALM)
+    return;
+
+  bool gusting = state->facade_wind_phase == FACADE_WIND_GUSTING;
+  float intensity =
+      gusting ? 1.0f
+              : 1.0f - state->facade_wind_timer / FACADE_WIND_WARN_TIME;
+  if (intensity < 0.0f)
+    intensity = 0.0f;
+  float dir = (float)state->facade_wind_dir;
+  float span = (float)win_w + 160.0f;
+  float field = (float)(win_h - HUD_HEIGHT);
+
+  for (int i = 0; i < 28; ++i)
+  {
+    unsigned h = tile_hash(i * 37 + 11, 909);
+    float speed = 300.0f + (float)(h % 260u);
+    float y = HUD_HEIGHT + fmodf((float)((h >> 7) % 4096u), field);
+    float x = fmodf((float)(h % 617u) + world_t * speed * dir, span);
+    if (x < 0.0f)
+      x += span;
+    x -= 80.0f;
+    float length = 16.0f + (float)(h % 44u) * (0.5f + intensity * 0.5f);
+    Uint8 alpha = (Uint8)(intensity * (gusting ? 96.0f : 46.0f));
+    fx_rect_a(r, (SDL_Color){208, 228, 238, 255}, alpha, x, y, length, 1.0f);
+  }
+
+  /* A wash on the windward edge shows which way the wall is pushing. */
+  Uint8 wash = (Uint8)(intensity * (gusting ? 46.0f : 20.0f));
+  float wash_w = 70.0f;
+  fx_rect_a(r, (SDL_Color){150, 190, 214, 255}, wash,
+            dir > 0.0f ? 0.0f : (float)win_w - wash_w, HUD_HEIGHT,
+            wash_w, field);
+
+  if (gusting && state->facade_wind_sheltered && !state->player.dying)
+  {
+    float px = state->player.x - game->presentation.cam_x +
+               game->presentation.camera_shake_x;
+    float py = state->player.y + HUD_HEIGHT - game->presentation.cam_y +
+               game->presentation.camera_shake_y;
+    SDL_Color safe = {96, 230, 140, 255};
+    float pulse = 0.6f + 0.4f * sinf(world_t * 9.0f);
+    fx_rect_a(r, safe, (Uint8)(150.0f * pulse), px - 4.0f, py - 4.0f,
+              8.0f, 2.0f);
+    fx_rect_a(r, safe, (Uint8)(150.0f * pulse), px + PLAYER_W - 4.0f,
+              py - 4.0f, 8.0f, 2.0f);
+    fx_rect_a(r, safe, (Uint8)(150.0f * pulse), px - 4.0f,
+              py + PLAYER_H + 2.0f, 8.0f, 2.0f);
+    fx_rect_a(r, safe, (Uint8)(150.0f * pulse), px + PLAYER_W - 4.0f,
+              py + PLAYER_H + 2.0f, 8.0f, 2.0f);
+  }
+}
+
 static void render_facade_world(Game *game, int win_w, int win_h)
 {
   SDL_Renderer *r = game->platform.renderer;
@@ -2572,8 +2908,54 @@ static void render_facade_world(Game *game, int win_w, int win_h)
   }
 
   for (int i = 0; i < level->map.facade_hazard_spawn_count; ++i)
+  {
+    float windup = game->gameplay.facade_hazard_windup_timers[i] /
+                   THROWN_OBJECT_WINDUP;
     draw_facade_hazard_source(r, &level->map.facade_hazard_spawns[i],
-                              cam_x, oy, world_t);
+                              cam_x, oy, world_t, windup);
+  }
+
+  /* Ledges and plant sit in front of the windows: they are the geometry the
+   * climb is actually routed around. */
+  int first_row = (int)floorf(game->presentation.cam_y / TILE_SIZE) - 1;
+  int last_row = first_row + (win_h / TILE_SIZE) + 3;
+  if (first_row < 0)
+    first_row = 0;
+  if (last_row >= level->map.height)
+    last_row = level->map.height - 1;
+  for (int row = first_row; row <= last_row; ++row)
+  {
+    for (int col = 0; col < level->map.width; ++col)
+    {
+      if (level->map.tiles[row][col] != TILE_WALL)
+        continue;
+      draw_facade_ledge(r, level, col, row,
+                        col * (float)TILE_SIZE - cam_x,
+                        row * (float)TILE_SIZE + oy, world_t);
+    }
+  }
+
+  /* Pickups left out on the wall for climbers willing to detour. */
+  for (int i = 0; i < level->runtime.item_count; ++i)
+  {
+    const Item *item = &level->runtime.items[i];
+    if (item->collected)
+      continue;
+    float bob = sinf(world_t * 3.14159265f + (float)i * 0.7f) * 3.0f;
+    float x = item->x - 7.0f - cam_x;
+    float y = item->y - 9.0f + oy + bob;
+    fx_glow(r, x + 8.0f, y + 8.0f, 20.0f, (SDL_Color){140, 210, 224, 255}, 40);
+    if (item->type == ITEM_GUN)
+      draw_gun_pickup(r, x, y + 3.0f);
+    else if (item->type == ITEM_GRENADE)
+      draw_grenade(r, x + 3.0f, y + 4.0f, 0.0f);
+    else if (item->type == ITEM_MEDKIT)
+      draw_medkit(r, x, y);
+    else if (item->type == ITEM_BAZOOKA)
+      draw_bazooka_pickup(r, x - 4.0f, y + 1.0f);
+    else
+      draw_card(r, x, y, 255, true);
+  }
 
   for (int i = 0; i < MAX_THROWN_OBJECTS; ++i)
     if (game->gameplay.thrown_objects[i].active)
@@ -2590,6 +2972,8 @@ static void render_facade_world(Game *game, int win_w, int win_h)
     if (!blink)
       draw_player(r, &game->gameplay.player, cam_x, oy, false, 0.0f);
   }
+
+  render_facade_wind(game, win_w, win_h, world_t);
 }
 
 static void render_alarm_lighting(SDL_Renderer *r, int win_w, int win_h,
@@ -2637,6 +3021,7 @@ static void render_world(Game *game)
   render_background(game, win_w, win_h);
 
   /* Structural tile layer. */
+  int ceiling_row = lvl->map.restroom_theme ? restroom_ceiling_row(lvl) : 0;
   for (int row = 0; row < lvl->map.height; ++row)
   {
     for (int col = 0; col < lvl->map.width; ++col)
@@ -2651,7 +3036,7 @@ static void render_world(Game *game)
       if (tile == TILE_WALL)
       {
         if (lvl->map.restroom_theme)
-          draw_restroom_wall_tile(r, lvl, col, row, x, y);
+          draw_restroom_wall_tile(r, lvl, col, row, x, y, ceiling_row);
         else
           draw_wall_tile(r, lvl, col, row, x, y);
       }
@@ -3023,16 +3408,43 @@ static void render_facade_hud(Game *game, int win_w)
            (SDL_Color){11, 17, 28, 255}, 255);
   color_rect(r, (SDL_Color){181, 132, 56, 255},
              0.0f, 38.0f, (float)win_w, 2.0f);
-  draw_text(r, 12.0f, 8.0f, 1.35f, 236, 238, 224, "FACADE CLIMB");
-  draw_text(r, 12.0f, 25.0f, 0.65f, 154, 164, 176,
-            "ARROWS / WASD  MOVE ON WALL");
-  draw_hud_separator(r, 220.0f);
+  draw_text(r, 12.0f, 8.0f, 1.35f, 236, 238, 224, "FACADE");
+  draw_text(r, 12.0f, 25.0f, 0.65f, 154, 164, 176, "MOVE ON WALL");
+  draw_hud_separator(r, 112.0f);
 
-  draw_text(r, 232.0f, 8.0f, 0.7f, 108, 128, 148, "VITAL");
+  draw_text(r, 124.0f, 8.0f, 0.7f, 108, 128, 148, "VITAL");
   for (int i = 0; i < 5; ++i)
-    draw_hud_heart(r, 232.0f + i * 14.0f, 19.0f,
+    draw_hud_heart(r, 124.0f + i * 14.0f, 19.0f,
                    i < game->campaign.lives);
-  draw_hud_separator(r, 326.0f);
+  draw_hud_separator(r, 218.0f);
+
+  /* Wind gauge. During the warning it shows which way the gust will push;
+   * during the gust it also says whether Chuck is currently in its lee. */
+  const GameplayState *state = &game->gameplay;
+  bool gusting = state->facade_wind_phase == FACADE_WIND_GUSTING;
+  bool warning = state->facade_wind_phase == FACADE_WIND_WARNING;
+  draw_text(r, 230.0f, 8.0f, 0.7f, 108, 128, 148, "WIND");
+  SDL_Color wind_color = gusting ? (state->facade_wind_sheltered
+                                        ? (SDL_Color){96, 230, 140, 255}
+                                        : (SDL_Color){236, 132, 84, 255})
+                                 : warning ? (SDL_Color){225, 198, 112, 255}
+                                           : (SDL_Color){58, 74, 92, 255};
+  const char *wind_text = gusting
+                              ? (state->facade_wind_sheltered ? "LEE" : "GUST")
+                              : warning ? "RISING" : "CALM";
+  for (int arrow = 0; arrow < 4; ++arrow)
+  {
+    float lit = (gusting || warning) ? 1.0f : 0.35f;
+    float ax = 230.0f + (float)arrow * 9.0f;
+    float grow = (gusting ? 1.0f : 0.55f) * (2.0f + (float)arrow * 1.2f);
+    SDL_Color body = fx_dim(wind_color, lit);
+    color_rect(r, body,
+               state->facade_wind_dir >= 0 ? ax : ax + 6.0f - grow * 0.4f,
+               22.0f - grow * 0.5f, grow, 1.0f + grow * 0.5f);
+  }
+  draw_text(r, 272.0f, 19.0f, 0.75f, wind_color.r, wind_color.g,
+            wind_color.b, wind_text);
+  draw_hud_separator(r, 330.0f);
 
   float start_y = game->gameplay.level.map.start_y;
   float target_y = game->gameplay.level.map.window_row * (float)TILE_SIZE;
@@ -3043,19 +3455,25 @@ static void render_facade_hud(Game *game, int win_w)
     progress = 0.0f;
   if (progress > 1.0f)
     progress = 1.0f;
-  draw_text(r, 338.0f, 8.0f, 0.7f, 108, 128, 148, "ALTITUDE");
+  draw_text(r, 342.0f, 8.0f, 0.7f, 108, 128, 148, "ALTITUDE");
   color_rect(r, (SDL_Color){10, 15, 24, 255},
-             338.0f, 20.0f, 304.0f, 11.0f);
+             342.0f, 20.0f, 264.0f, 11.0f);
   color_rect(r, (SDL_Color){54, 128, 128, 255},
-             340.0f, 22.0f, 300.0f * progress, 7.0f);
+             344.0f, 22.0f, 260.0f * progress, 7.0f);
   color_rect(r, (SDL_Color){123, 226, 204, 255},
-             340.0f, 22.0f, 300.0f * progress, 2.0f);
+             344.0f, 22.0f, 260.0f * progress, 2.0f);
 
   int tiles_remaining = (int)ceilf(fabsf(game->gameplay.player.y - target_y) /
                                    TILE_SIZE);
   char remaining[24];
   SDL_snprintf(remaining, sizeof(remaining), "WINDOW %02dM", tiles_remaining);
-  draw_text(r, 658.0f, 15.0f, 1.0f, 225, 198, 112, remaining);
+  draw_text(r, 618.0f, 8.0f, 1.0f, 225, 198, 112, remaining);
+
+  /* What Chuck is carrying up the wall is what he will have inside. */
+  char loadout[32];
+  SDL_snprintf(loadout, sizeof(loadout), "AMMO %d  GREN %d",
+               game->gameplay.player.bullets, game->gameplay.player.grenades);
+  draw_text(r, 618.0f, 24.0f, 0.7f, 132, 152, 170, loadout);
 }
 
 static void render_hud(Game *game)

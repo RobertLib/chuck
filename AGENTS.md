@@ -143,6 +143,31 @@ Every map character is documented in [levels/LEGEND.md](levels/LEGEND.md); keep
 it in sync when touching the parser. An optional trailing `SPAWNS n0 n1 ...`
 line gives per-door spawn counts and must list exactly one number per door.
 
+### The facade climb
+
+Levels flagged `MODE FACADE` are climbed, not walked
+([gameplay_climb.c](src/gameplay_climb.c)). Four things make the wall a route
+rather than a straight line up, and each is tested:
+
+- **Masonry.** `#` tiles are stone cornices the climber collides with
+  (axis-separated, so he slides along a ledge instead of sticking to it). They
+  are also cover: thrown objects shatter on them and birds break off against
+  them. Because the player box is exactly one tile tall, a lone solid tile
+  inside a two-row band would seal the band — see
+  [levels/LEGEND.md](levels/LEGEND.md); plant is painted on cornices instead.
+- **Wind.** One building-wide phase machine (calm → warning → gust) seeded from
+  the level RNG. The warning beat plays `SFX_WIND_GUST` and pushes nothing; the
+  gust pushes sideways unless a solid tile within `FACADE_WIND_SHELTER_REACH`
+  upwind of Chuck breaks it, which is what makes the shelters worth using.
+- **Telegraphed throwers.** An `r` source shouts and leans out for
+  `THROWN_OBJECT_WINDUP` before releasing, so every brick can be answered.
+- **Checkpoints.** Height is banked every `FACADE_CHECKPOINT_STEP` at a
+  position Chuck actually held, and a lost life resumes there
+  (`gameplay_climb_restore_checkpoint`, called from `finish_player_death`).
+
+`update_facade_playing` also runs `gameplay_collect_items`, so pickups on the
+wall are real detours whose loadout carries into the next sector.
+
 ### Sublevels
 
 `Game` holds two `GameplayState`s: `gameplay` (active) and `inactive_gameplay`.
@@ -150,6 +175,13 @@ Entering the WC door swaps them (`swap_gameplay_areas`), so the parent level is
 frozen intact rather than reloaded, and only the player's loadout crosses over
 (`transfer_player_loadout`). Sublevel doors (`U`/`R`) are a separate mechanism
 from the paired teleport doors (`D`), which are matched by index 0↔1, 2↔3, ….
+
+The restroom is a full small level rather than a free item cache: a guard, an
+ambient janitor, a shovable crate, a gas canister and a service catwalk reached
+by ladder, with the medkit past a gap that has to be jumped. Its interior art
+is derived from the map's own wall bounding box, so the room can be reshaped
+without touching the renderer; a slab with open air above and below is drawn as
+a railed catwalk rather than as the room's floor.
 
 ### Tuning, art, audio
 

@@ -428,6 +428,9 @@ static void finish_player_death(Game *game)
     else
     {
         player_reset(&game->gameplay.player, &game->gameplay.level);
+        /* On the wall, height already earned is kept: the climb resumes from
+         * the last banked floor rather than from the pavement. */
+        gameplay_climb_restore_checkpoint(&game->gameplay);
         snap_camera_to_player(game);
         game_events_sound(&game->gameplay.events, SFX_RESPAWN);
     }
@@ -852,6 +855,9 @@ static void update_facade_playing(Game *game, float dt)
     game->input.shoot = false;
     game->input.use_door = false;
     gameplay_climb_update(&game->gameplay, dt);
+    /* Loadout carried up the wall is spent inside the next sector, so the
+     * detour to a pickup is the climb's own risk/reward decision. */
+    gameplay_collect_items(&game->gameplay, &game->campaign, dt);
 
     if (!try_finish_current_level(game))
         update_follow_camera(game, dt);

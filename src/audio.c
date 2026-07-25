@@ -1073,6 +1073,27 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.00f, 0.23f, 1280.0f, 210.0f, 0.44f,
                  WAVE_TRIANGLE, 0.002f, 0.19f);
         break;
+    case SFX_WIND_GUST:
+        /*
+         * One long swell that covers the warning beat and the gust itself, so
+         * the sound is the telegraph rather than an accent on top of it.
+         */
+        if (!begin_sound(audio, effect, 3.40f, 0.30f, 900))
+            return false;
+        add_noise(s, 0.00f, 3.40f, 0.62f, 0.055f, 0.85f, 1.30f, 0x2c7du);
+        add_noise(s, 0.55f, 2.50f, 0.30f, 0.012f, 0.70f, 1.10f, 0x91a4u);
+        add_tone(s, 0.30f, 2.70f, 168.0f, 96.0f, 0.10f,
+                 WAVE_SINE, 0.80f, 1.10f);
+        break;
+    case SFX_BIRD_CALL:
+        if (!begin_sound(audio, effect, 0.36f, 0.30f, 140))
+            return false;
+        add_tone(s, 0.00f, 0.09f, 1180.0f, 1520.0f, 0.30f,
+                 WAVE_TRIANGLE, 0.004f, 0.06f);
+        add_tone(s, 0.13f, 0.11f, 1420.0f, 980.0f, 0.27f,
+                 WAVE_TRIANGLE, 0.004f, 0.08f);
+        add_noise(s, 0.24f, 0.10f, 0.20f, 0.42f, 0.004f, 0.09f, 0x6b3au);
+        break;
     case SFX_PICKUP_AMMO:
         if (!begin_sound(audio, effect, 0.24f, 0.34f, 80))
             return false;

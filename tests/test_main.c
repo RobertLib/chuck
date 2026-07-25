@@ -112,11 +112,19 @@ static void test_all_embedded_levels_parse(void)
             CHECK(level.map.has_window);
             CHECK(level.map.facade_hazard_spawn_count >= 8);
             CHECK(level.map.door_count == 0);
-            CHECK(level.runtime.item_count == 0);
+            /* Pickups on the wall are optional detours, never the route. */
+            CHECK(level.runtime.item_count == 3);
             CHECK(level.map.enemy_count == 0);
+            /* Masonry is what the climb is routed around; it must exist, and
+             * the exterior never uses interior traversal aids. */
+            int facade_walls = 0;
             for (int row = 0; row < level.map.height; ++row)
                 for (int col = 0; col < level.map.width; ++col)
+                {
                     CHECK(level.map.tiles[row][col] != TILE_LADDER);
+                    facade_walls += level.map.tiles[row][col] == TILE_WALL;
+                }
+            CHECK(facade_walls > 40);
         }
         if (i == 3)
         {
@@ -151,18 +159,22 @@ static void test_embedded_restroom_sublevel(void)
     CHECK(restroom.map.door_count == 0);
 
     int basins = 0;
+    int urinals = 0;
     int open_stalls = 0;
     int closed_stalls = 0;
     for (int i = 0; i < restroom.map.decoration_count; ++i)
     {
         basins += restroom.map.decorations[i].type ==
                   DECOR_RESTROOM_BASIN;
+        urinals += restroom.map.decorations[i].type ==
+                   DECOR_RESTROOM_URINAL;
         open_stalls += restroom.map.decorations[i].type ==
                        DECOR_RESTROOM_STALL_OPEN;
         closed_stalls += restroom.map.decorations[i].type ==
                          DECOR_RESTROOM_STALL_CLOSED;
     }
-    CHECK(basins == 2);
+    CHECK(basins == 3);
+    CHECK(urinals == 2);
     CHECK(open_stalls == 2);
     CHECK(closed_stalls == 1);
 
@@ -178,6 +190,29 @@ static void test_embedded_restroom_sublevel(void)
     CHECK(guns == 1);
     CHECK(grenades == 1);
     CHECK(medkits == 1);
+
+    /* The side room earns its detour: it is guarded, it has an upper service
+     * walkway to climb to, and it has something to shove and something that
+     * explodes. */
+    CHECK(restroom.map.enemy_count == 1);
+    CHECK(restroom.map.janitor_count == 1);
+    CHECK(restroom.runtime.crate_count == 1);
+    CHECK(restroom.runtime.gas_canister_count == 1);
+
+    int ladder_tiles = 0;
+    for (int row = 0; row < restroom.map.height; ++row)
+        for (int col = 0; col < restroom.map.width; ++col)
+            ladder_tiles += restroom.map.tiles[row][col] == TILE_LADDER;
+    CHECK(ladder_tiles >= 4);
+
+    /* Both walkway pickups have to sit above the floor the door is on, or
+     * the climb up is decorative. */
+    int high_items = 0;
+    for (int i = 0; i < restroom.runtime.item_count; ++i)
+        if (restroom.runtime.items[i].y <
+            restroom.map.sublevel_return_row * (float)TILE_SIZE)
+            high_items++;
+    CHECK(high_items == 2);
 }
 
 /* ---- Prologue car chase ---------------------------------------------- */
@@ -569,6 +604,12 @@ static void test_gameplay_reset_preserves_rng_only(void)
     state.facade_hazards_initialized = true;
     state.thrown_objects[0].active = true;
     state.birds[0].active = true;
+    state.facade_wind_phase = FACADE_WIND_GUSTING;
+    state.facade_wind_timer = 3.0f;
+    state.facade_wind_dir = -1;
+    state.facade_hazard_windup_timers[0] = 0.5f;
+    state.facade_has_checkpoint = true;
+    state.facade_checkpoint_y = 128.0f;
 
     gameplay_state_begin_level(&state);
 
@@ -584,6 +625,12 @@ static void test_gameplay_reset_preserves_rng_only(void)
     CHECK(!state.facade_hazards_initialized);
     CHECK(!state.thrown_objects[0].active);
     CHECK(!state.birds[0].active);
+    CHECK(state.facade_wind_phase == FACADE_WIND_CALM);
+    CHECK(state.facade_wind_timer == 0.0f);
+    CHECK(state.facade_wind_dir == 0);
+    CHECK(state.facade_hazard_windup_timers[0] == 0.0f);
+    CHECK(!state.facade_has_checkpoint);
+    CHECK(state.facade_checkpoint_y == 0.0f);
 }
 
 static void test_campaign_continue_flow(void)
@@ -703,13 +750,20 @@ static void test_facade_mode_and_hazards_are_seeded(void)
 
     gameplay_climb_update(&first, 0.016f);
     gameplay_climb_update(&second, 0.016f);
-    CHECK(first.thrown_objects[0].active);
     CHECK(first.birds[0].active);
+    CHECK(fabsf(first.birds[0].vx - second.birds[0].vx) < 0.0001f);
+
+    /* The thrower shouts first, so its brick appears a beat later. */
+    for (int frame = 0; frame < 60 && !first.thrown_objects[0].active; ++frame)
+    {
+        gameplay_climb_update(&first, 0.016f);
+        gameplay_climb_update(&second, 0.016f);
+    }
+    CHECK(first.thrown_objects[0].active);
     CHECK(first.thrown_objects[0].variant ==
           second.thrown_objects[0].variant);
     CHECK(fabsf(first.thrown_objects[0].vx -
                 second.thrown_objects[0].vx) < 0.0001f);
-    CHECK(fabsf(first.birds[0].vx - second.birds[0].vx) < 0.0001f);
 
     float previous_x = first.player.x;
     float previous_y = first.player.y;
@@ -744,7 +798,119 @@ static void test_facade_bird_hits_player(void)
                             SFX_PLAYER_HIT));
 }
 
-static void test_embedded_facade_climbs_directly_to_upper_window(void)
+static void test_facade_ledges_block_and_are_routed_around(void)
+{
+    /* A ledge with one gap: pressing up alone stalls, and adding a sideways
+     * press slides along the ledge until the gap is found. */
+    static const char data[] =
+        ".........\n"
+        ".Y.......\n"
+        ".........\n"
+        "###...###\n"
+        ".........\n"
+        ".S.......\n"
+        ".........\n"
+        "\n"
+        "MODE FACADE\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 4242);
+    CHECK(level_load_data(&state.level, "ledges", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+
+    Input up = {.up = true};
+    for (int frame = 0; frame < 60; ++frame)
+        gameplay_climb_update_player(&state, &up, 0.05f);
+    /* Stopped underneath the ledge rather than passing through it. */
+    CHECK(state.player.y > 3 * (float)TILE_SIZE);
+    float blocked_y = state.player.y;
+
+    Input up_right = {.up = true, .right = true};
+    for (int frame = 0; frame < 20; ++frame)
+        gameplay_climb_update_player(&state, &up_right, 0.05f);
+    CHECK(state.player.x > state.level.map.start_x);
+    CHECK(state.player.y < blocked_y);
+
+    for (int frame = 0; frame < 80; ++frame)
+        gameplay_climb_update_player(&state, &up, 0.05f);
+    CHECK(state.player.y < 2 * (float)TILE_SIZE);
+}
+
+static void test_facade_ledge_stops_thrown_object_and_bird(void)
+{
+    static const char data[] =
+        ".........\n"
+        ".Y.......\n"
+        "#########\n"
+        ".S.......\n"
+        "\n"
+        "MODE FACADE\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 909);
+    CHECK(level_load_data(&state.level, "cover", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+    state.facade_hazards_initialized = true;
+
+    state.thrown_objects[0] = (ThrownObject){
+        .x = 4 * (float)TILE_SIZE, .y = 2 * (float)TILE_SIZE + 8.0f,
+        .vx = 0.0f, .vy = 0.0f, .active = true};
+    state.birds[0] = (Bird){
+        .x = 6 * (float)TILE_SIZE, .y = 2 * (float)TILE_SIZE + 8.0f,
+        .vx = 10.0f, .vy = 0.0f, .active = true};
+
+    gameplay_climb_update(&state, 0.016f);
+
+    CHECK(!state.thrown_objects[0].active);
+    CHECK(!state.birds[0].active);
+    CHECK(!state.player.dying);
+}
+
+/*
+ * A deliberately dumb climber: hold up, and whenever that stops making
+ * progress, sweep sideways until it can rise again, reversing at whatever
+ * stops the sweep. If even this reaches the window then the map has no dead
+ * end, which is the property worth pinning about the level itself.
+ */
+static bool facade_bot_reaches_window(GameplayState *state, int max_frames)
+{
+    const float step = 0.05f;
+    int scan_dir = -1;
+    bool scanning = false;
+
+    for (int frame = 0; frame < max_frames; ++frame)
+    {
+        if (gameplay_player_reached_exit(state))
+            return true;
+
+        Input input = {.up = true};
+        if (scanning)
+        {
+            input.left = scan_dir < 0;
+            input.right = scan_dir > 0;
+        }
+        float previous_x = state->player.x;
+        float previous_y = state->player.y;
+        gameplay_climb_update_player(state, &input, step);
+
+        if (state->player.y < previous_y - 0.001f)
+        {
+            scanning = false;
+            continue;
+        }
+        if (!scanning)
+        {
+            scanning = true;
+            continue;
+        }
+        /* The sweep ran into masonry or the edge of the face: turn around. */
+        if (fabsf(state->player.x - previous_x) < 0.001f)
+            scan_dir = -scan_dir;
+    }
+    return gameplay_player_reached_exit(state);
+}
+
+static void test_embedded_facade_has_a_route_to_the_window(void)
 {
     GameplayState state = {0};
     rng_seed(&state.rng, 3030);
@@ -755,14 +921,144 @@ static void test_embedded_facade_climbs_directly_to_upper_window(void)
     CHECK(state.level.map.mode == LEVEL_MODE_FACADE);
     player_reset(&state.player, &state.level);
 
-    Input input = {.up = true};
-    for (int frame = 0;
-         frame < 300 && !gameplay_player_reached_exit(&state);
+    CHECK(facade_bot_reaches_window(&state, 2400));
+}
+
+static void test_facade_checkpoint_banks_height(void)
+{
+    GameplayState state = {0};
+    rng_seed(&state.rng, 606);
+    CHECK(level_load_data(&state.level, EMBEDDED_LEVELS[2].name,
+                          EMBEDDED_LEVELS[2].data,
+                          EMBEDDED_LEVELS[2].size, &state.rng));
+    player_reset(&state.player, &state.level);
+    float start_y = state.player.y;
+
+    Input up = {.up = true};
+    for (int frame = 0; frame < 40; ++frame)
+        gameplay_climb_update_player(&state, &up, 0.05f);
+    CHECK(state.facade_has_checkpoint);
+    CHECK(state.facade_checkpoint_y < start_y);
+    float banked_y = state.facade_checkpoint_y;
+    CHECK(state.player.y <= banked_y);
+
+    /* Losing a life restarts at the map spawn, and the climb is then handed
+     * back the height it had already earned. */
+    state.thrown_objects[0].active = true;
+    player_reset(&state.player, &state.level);
+    CHECK(state.player.y == start_y);
+    gameplay_climb_restore_checkpoint(&state);
+    CHECK(state.player.y == banked_y);
+    CHECK(state.player.x == state.facade_checkpoint_x);
+    CHECK(!state.thrown_objects[0].active);
+
+    /* Banking only ever moves up the wall. */
+    for (int frame = 0; frame < 40; ++frame)
+    {
+        Input down = {.down = true};
+        gameplay_climb_update_player(&state, &down, 0.05f);
+    }
+    CHECK(state.facade_checkpoint_y == banked_y);
+}
+
+static void test_facade_wind_warns_then_pushes_unless_sheltered(void)
+{
+    static const char data[] =
+        ".........\n"
+        ".Y.......\n"
+        ".........\n"
+        ".S.......\n"
+        "\n"
+        "MODE FACADE\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 77);
+    CHECK(level_load_data(&state.level, "wind", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+    gameplay_climb_init(&state);
+    CHECK(state.facade_wind_phase == FACADE_WIND_CALM);
+    CHECK(gameplay_climb_wind_push(&state) == 0.0f);
+
+    /* Run the cycle forward: calm, an announced warning, then the gust. */
+    for (int frame = 0; frame < 1200 &&
+                        state.facade_wind_phase != FACADE_WIND_WARNING;
          ++frame)
     {
-        gameplay_climb_update_player(&state, &input, 0.05f);
+        game_events_clear(&state.events);
+        gameplay_climb_update(&state, 0.05f);
     }
-    CHECK(gameplay_player_reached_exit(&state));
+    CHECK(state.facade_wind_phase == FACADE_WIND_WARNING);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_WIND_GUST));
+    /* The warning beat itself never pushes. */
+    CHECK(gameplay_climb_wind_push(&state) == 0.0f);
+
+    for (int frame = 0; frame < 120 &&
+                        state.facade_wind_phase != FACADE_WIND_GUSTING;
+         ++frame)
+    {
+        game_events_clear(&state.events);
+        gameplay_climb_update(&state, 0.05f);
+    }
+    CHECK(state.facade_wind_phase == FACADE_WIND_GUSTING);
+    float push = gameplay_climb_wind_push(&state);
+    CHECK(fabsf(push) > 0.0f);
+
+    Input idle = {0};
+    /* Park him mid-face so there is room for masonry on either side. */
+    state.player.x = 4 * (float)TILE_SIZE;
+    float before_x = state.player.x;
+    gameplay_climb_update_player(&state, &idle, 0.1f);
+    CHECK(!state.facade_wind_sheltered);
+    CHECK(fabsf(state.player.x - before_x) > 1.0f);
+    CHECK((state.player.x > before_x) == (push > 0.0f));
+
+    /* Standing in the lee of masonry upwind cancels the same gust. */
+    int shelter_col = 4 + (push > 0.0f ? -2 : 2);
+    int shelter_row = (int)((state.player.y + PLAYER_H * 0.5f) / TILE_SIZE);
+    state.level.map.tiles[shelter_row][shelter_col] = TILE_WALL;
+    state.player.x = 4 * (float)TILE_SIZE;
+    before_x = state.player.x;
+    gameplay_climb_update_player(&state, &idle, 0.1f);
+    CHECK(state.facade_wind_sheltered);
+    CHECK(fabsf(state.player.x - before_x) < 0.001f);
+
+    /* The flag has to survive the rest of the frame: the HUD and the world
+     * renderer read it after the hazards have been stepped. */
+    gameplay_climb_update(&state, 0.016f);
+    CHECK(state.facade_wind_sheltered);
+}
+
+static void test_facade_thrower_winds_up_before_releasing(void)
+{
+    static const char data[] =
+        ".........\n"
+        ".Y.......\n"
+        ".r.......\n"
+        ".S.......\n"
+        "\n"
+        "MODE FACADE\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 5150);
+    CHECK(level_load_data(&state.level, "windup", data, strlen(data),
+                          &state.rng));
+    CHECK(state.level.map.facade_hazard_spawn_count == 1);
+    player_reset(&state.player, &state.level);
+    gameplay_climb_init(&state);
+    state.facade_hazard_spawn_timers[0] = 0.0f;
+
+    game_events_clear(&state.events);
+    gameplay_climb_update(&state, 0.016f);
+    /* The shout lands first and nothing is in the air yet. */
+    CHECK(state.facade_hazard_windup_timers[0] > 0.0f);
+    CHECK(!state.thrown_objects[0].active);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_GUARD_TALK));
+
+    game_events_clear(&state.events);
+    for (int frame = 0; frame < 60 && !state.thrown_objects[0].active; ++frame)
+        gameplay_climb_update(&state, 0.016f);
+    CHECK(state.thrown_objects[0].active);
+    CHECK(state.facade_hazard_windup_timers[0] == 0.0f);
 }
 
 static void test_level_collision_stops_at_wall(void)
@@ -2049,7 +2345,12 @@ int main(void)
     test_blocked_exit_uses_separate_window();
     test_facade_mode_and_hazards_are_seeded();
     test_facade_bird_hits_player();
-    test_embedded_facade_climbs_directly_to_upper_window();
+    test_facade_ledges_block_and_are_routed_around();
+    test_facade_ledge_stops_thrown_object_and_bird();
+    test_embedded_facade_has_a_route_to_the_window();
+    test_facade_checkpoint_banks_height();
+    test_facade_wind_warns_then_pushes_unless_sheltered();
+    test_facade_thrower_winds_up_before_releasing();
     test_level_collision_stops_at_wall();
     test_level_reveal_finishes();
     test_event_buffer_reports_overflow();

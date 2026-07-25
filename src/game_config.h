@@ -251,15 +251,39 @@
 #define THROWN_OBJECT_GRAVITY 410.0f
 #define THROWN_OBJECT_SPAWN_MIN 1.8f
 #define THROWN_OBJECT_SPAWN_MAX 3.4f
+/* A source shouts and leans out before it lets go, so every throw can be
+ * answered by moving behind a ledge instead of by memorising the map. */
+#define THROWN_OBJECT_WINDUP 0.60f
 #define BIRD_W 26.0f
 #define BIRD_H 12.0f
 #define BIRD_SPEED 155.0f
 #define BIRD_SPAWN_MIN 2.4f
 #define BIRD_SPAWN_MAX 4.6f
+/* Birds swoop rather than fly on rails; the wave is derived from their own
+ * animation clock so the motion stays deterministic. */
+#define BIRD_WAVE_SPEED 190.0f
+#define BIRD_WAVE_RATE 3.6f
 #define FACADE_HAZARD_WAKE_RANGE (10.0f * TILE_SIZE)
 #define FACADE_CLIMB_SPEED 112.0f
 #define FACADE_BUILDING_SIDE_INSET 80.0f
 #define FACADE_CLIMB_SIDE_MARGIN FACADE_BUILDING_SIDE_INSET
+
+/* Wind. Gusts announce themselves for a beat, then shove the climber sideways
+ * along the wall unless a ledge or air-conditioning unit upwind of him breaks
+ * the gust. Standing still in the open during a gust is never fatal, but it
+ * costs the route, which is what makes the shelters worth using. */
+#define FACADE_WIND_WARN_TIME 1.15f
+#define FACADE_WIND_GUST_TIME 2.30f
+#define FACADE_WIND_CALM_MIN 4.20f
+#define FACADE_WIND_CALM_MAX 7.60f
+#define FACADE_WIND_PUSH 82.0f
+/* How far upwind a solid tile still counts as cover. */
+#define FACADE_WIND_SHELTER_REACH 42.0f
+
+/* Climb checkpoints. A tall wall would be miserable if one brick cost the
+ * whole ascent, so height already earned is banked every few floors and a
+ * lost life resumes from there. */
+#define FACADE_CHECKPOINT_STEP (3.0f * TILE_SIZE)
 
 /* Prologue car chase. A top-down, forward-only pursuit played once before the
  * campaign: Chuck tails the kidnappers' SUV through night traffic until it

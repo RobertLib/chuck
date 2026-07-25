@@ -293,6 +293,11 @@ bool level_load_data(Level *level, const char *name,
             place_decoration(level, col, row, DECOR_RESTROOM_BASIN);
             level->map.restroom_theme = true;
             break;
+        case 'u':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_RESTROOM_URINAL);
+            level->map.restroom_theme = true;
+            break;
         case 'p':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_RESTROOM_PARTITION);
