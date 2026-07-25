@@ -211,6 +211,60 @@ static void test_gameplay_reset_preserves_rng_only(void)
     CHECK(!state.birds[0].active);
 }
 
+static void test_campaign_continue_flow(void)
+{
+    CampaignState campaign;
+    campaign_reset(&campaign);
+    CHECK(campaign.current_level == 0);
+    CHECK(campaign.lives == PLAYER_LIVES);
+    CHECK(campaign.continues_remaining == PLAYER_CONTINUES);
+    CHECK(campaign.score == 0);
+    CHECK(campaign.continue_timer == 0.0f);
+
+    campaign.current_level = 2;
+    campaign.score = 1234;
+    for (int life = 1; life < PLAYER_LIVES; ++life)
+        CHECK(!campaign_lose_life(&campaign));
+    CHECK(campaign_lose_life(&campaign));
+    CHECK(campaign_begin_continue(&campaign));
+    CHECK(fabsf(campaign.continue_timer - CONTINUE_COUNTDOWN_TIME) < 0.001f);
+    CHECK(!campaign_update_continue(&campaign,
+                                    CONTINUE_COUNTDOWN_TIME * 0.5f));
+    CHECK(campaign_accept_continue(&campaign));
+    CHECK(campaign.current_level == 2);
+    CHECK(campaign.score == 1234);
+    CHECK(campaign.lives == PLAYER_LIVES);
+    CHECK(campaign.continues_remaining == PLAYER_CONTINUES - 1);
+    CHECK(campaign.continue_timer == 0.0f);
+
+    while (campaign.continues_remaining > 0)
+    {
+        campaign.lives = 1;
+        CHECK(campaign_lose_life(&campaign));
+        CHECK(campaign_begin_continue(&campaign));
+        CHECK(campaign_accept_continue(&campaign));
+    }
+    campaign.lives = 1;
+    CHECK(campaign_lose_life(&campaign));
+    CHECK(!campaign_begin_continue(&campaign));
+    CHECK(!campaign_accept_continue(&campaign));
+}
+
+static void test_campaign_continue_countdown_expires(void)
+{
+    CampaignState campaign;
+    campaign_reset(&campaign);
+    campaign.lives = 1;
+    CHECK(campaign_lose_life(&campaign));
+    CHECK(campaign_begin_continue(&campaign));
+    CHECK(!campaign_update_continue(&campaign,
+                                    CONTINUE_COUNTDOWN_TIME - 0.1f));
+    CHECK(campaign_update_continue(&campaign, 0.11f));
+    CHECK(campaign.continue_timer == 0.0f);
+    CHECK(!campaign_accept_continue(&campaign));
+    CHECK(campaign.continues_remaining == PLAYER_CONTINUES);
+}
+
 static void test_blocked_exit_uses_separate_window(void)
 {
     static const char data[] =
@@ -1605,6 +1659,8 @@ int main(void)
     test_all_embedded_levels_parse();
     test_embedded_restroom_sublevel();
     test_gameplay_reset_preserves_rng_only();
+    test_campaign_continue_flow();
+    test_campaign_continue_countdown_expires();
     test_blocked_exit_uses_separate_window();
     test_facade_mode_and_hazards_are_seeded();
     test_facade_bird_hits_player();

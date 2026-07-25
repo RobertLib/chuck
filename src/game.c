@@ -294,10 +294,26 @@ static bool load_level(Game *game, int index)
 
 static void restart_game(Game *game)
 {
-    game->campaign.lives = PLAYER_LIVES;
-    game->campaign.score = 0;
+    campaign_reset(&game->campaign);
     load_level(game, 0);
     audio_play(&game->platform.audio, SFX_MENU_START);
+}
+
+static bool continue_game(Game *game)
+{
+    int level = game->campaign.current_level;
+    if (!campaign_accept_continue(&game->campaign))
+        return false;
+
+    audio_stop_effects(&game->platform.audio);
+    if (!load_level(game, level))
+    {
+        SDL_Log("Could not continue from level %d", level);
+        game_enter_state(game, STATE_GAME_OVER);
+        return true;
+    }
+    audio_play(&game->platform.audio, SFX_RESPAWN);
+    return true;
 }
 
 bool game_init(Game *game)
@@ -332,8 +348,7 @@ bool game_init_seeded(Game *game, uint64_t seed)
     SDL_SetRenderVSync(game->platform.renderer, 1);
     SDL_srand(SDL_GetTicksNS());
 
-    game->campaign.lives = PLAYER_LIVES;
-    game->campaign.score = 0;
+    campaign_reset(&game->campaign);
     if (!load_level(game, 0))
     {
         SDL_DestroyRenderer(game->platform.renderer);
@@ -390,14 +405,16 @@ static void finish_player_death(Game *game)
     game->gameplay.player.death_timer = 0.0f;
     particle_system_clear(&game->presentation.particles);
 
-    game->campaign.lives -= 1;
+    bool out_of_lives = campaign_lose_life(&game->campaign);
     game->gameplay.invuln_timer = INVULN_TIME;
 
-    if (game->campaign.lives <= 0)
+    if (out_of_lives)
     {
         audio_stop_music(&game->platform.audio);
-        game_enter_state(game, STATE_GAME_OVER);
-        game_events_sound(&game->gameplay.events, SFX_GAME_OVER);
+        if (campaign_begin_continue(&game->campaign))
+            game_enter_state(game, STATE_CONTINUE);
+        else
+            game_enter_state(game, STATE_GAME_OVER);
     }
     else
     {
@@ -440,10 +457,14 @@ static void game_enter_state(Game *game, GameState next_state)
     case STATE_LEVEL_CLEARED:
         game->presentation.message_timer = 1.2f;
         break;
+    case STATE_GAME_OVER:
+        game->presentation.message_timer = GAME_OVER_DISPLAY_TIME;
+        audio_play(&game->platform.audio, SFX_GAME_OVER);
+        break;
     case STATE_SHOW_KEYCARD:
     case STATE_PLAYING:
     case STATE_LEVEL_TRANSITION:
-    case STATE_GAME_OVER:
+    case STATE_CONTINUE:
         break;
     }
     game->state = next_state;
@@ -575,12 +596,28 @@ static bool update_scene(Game *game, float dt)
         return true;
     }
 
-    /* If restart requested via input handler while in end state, restart. */
-    if (game->input.restart &&
-        game->state == STATE_GAME_OVER)
+    if (game->state == STATE_CONTINUE)
     {
-        restart_game(game);
+        if (game->input.confirm && continue_game(game))
+        {
+            clear_edge_input(game);
+            return true;
+        }
+
+        if (campaign_update_continue(&game->campaign, dt))
+            game_enter_state(game, STATE_GAME_OVER);
+
         clear_edge_input(game);
+        return true;
+    }
+
+    if (game->state == STATE_GAME_OVER)
+    {
+        game->presentation.message_timer -= dt;
+        if (game->presentation.message_timer <= 0.0f)
+            game_return_to_intro(game);
+        clear_edge_input(game);
+        return true;
     }
 
     /* Level start reveal animation: show tiles progressively, then spawn entities. */

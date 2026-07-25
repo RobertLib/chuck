@@ -88,10 +88,18 @@ typedef struct
 {
     int current_level;
     int lives;
+    int continues_remaining;
     int score;
     float level_elapsed_time;
     int level_start_score;
+    float continue_timer;
 } CampaignState;
+
+void campaign_reset(CampaignState *campaign);
+bool campaign_lose_life(CampaignState *campaign);
+bool campaign_begin_continue(CampaignState *campaign);
+bool campaign_update_continue(CampaignState *campaign, float dt);
+bool campaign_accept_continue(CampaignState *campaign);
 
 typedef struct
 {

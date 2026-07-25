@@ -53,7 +53,8 @@ void game_handle_event(Game *game, const SDL_Event *event)
     if ((game->state == STATE_INTRO ||
          game->state == STATE_OPENING_CUTSCENE ||
          game->state == STATE_LEVEL_TRANSITION ||
-         game->state == STATE_OUTRO) &&
+         game->state == STATE_OUTRO ||
+         game->state == STATE_CONTINUE) &&
         (key == SDLK_SPACE || key == SDLK_RETURN || key == SDLK_KP_ENTER))
     {
       game->input.confirm = true;
@@ -90,10 +91,8 @@ void game_handle_event(Game *game, const SDL_Event *event)
     {
       game->input.use_door = true;
     }
-    if (key == SDLK_R &&
-        (game->state == STATE_GAME_OVER ||
-         (game->state == STATE_OUTRO &&
-          game->presentation.outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)))
+    if (key == SDLK_R && game->state == STATE_OUTRO &&
+        game->presentation.outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)
     {
       game->input.restart = true;
     }

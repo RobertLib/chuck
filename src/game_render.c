@@ -3330,6 +3330,21 @@ static void draw_overlay_panel(Game *game, float y, SDL_Color accent,
     draw_text_centered(game, y + 37.0f, 1.5f, 210, 220, 215, subtitle);
 }
 
+static void draw_continue_overlay(Game *game)
+{
+  draw_overlay_panel(game, 190.0f, (SDL_Color){248, 188, 74, 255},
+                     "CONTINUE?", "PRESS ENTER OR SPACE");
+
+  int seconds = (int)ceilf(game->campaign.continue_timer);
+  char countdown[16];
+  char remaining[40];
+  SDL_snprintf(countdown, sizeof(countdown), "%d", seconds);
+  SDL_snprintf(remaining, sizeof(remaining), "CONTINUES LEFT: %d",
+               game->campaign.continues_remaining);
+  draw_text_centered(game, 310.0f, 6.0f, 248, 188, 74, countdown);
+  draw_text_centered(game, 365.0f, 1.5f, 210, 220, 215, remaining);
+}
+
 void game_render(Game *game)
 {
   SDL_Renderer *r = game->platform.renderer;
@@ -3394,9 +3409,11 @@ void game_render(Game *game)
   if (game->state == STATE_LEVEL_CLEARED)
     draw_overlay_panel(game, 240.0f, (SDL_Color){86, 233, 151, 255},
                        "THE TRAIL LEADS UP", NULL);
+  else if (game->state == STATE_CONTINUE)
+    draw_continue_overlay(game);
   else if (game->state == STATE_GAME_OVER)
     draw_overlay_panel(game, 225.0f, (SDL_Color){235, 72, 65, 255},
-                       "THE TRAIL WENT COLD", "PRESS R TO RESTART THE PURSUIT");
+                       "GAME OVER", "RETURNING TO MAIN MENU");
   /* One shared finishing pass keeps every frame looking like the same film:
    * gentle scanlines for texture and a vignette that focuses the action. */
   fx_vignette(r, win_w, win_h, 58);

@@ -18,6 +18,7 @@ typedef enum
     STATE_LEVEL_TRANSITION,
     STATE_LEVEL_CLEARED,
     STATE_OUTRO,
+    STATE_CONTINUE,
     STATE_GAME_OVER
 } GameState;
 
