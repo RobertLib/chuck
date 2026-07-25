@@ -67,3 +67,51 @@ Notes:
   blocks out; plant is painted on top of the cornices instead.
 - An interior campaign level contains one `E` and may additionally contain one
   `Y`. A facade level contains one `Y` and no `E`; a sublevel contains one `R`.
+  When a map has both, the `Y` is the route and the `E` is dead scenery: the
+  exit stays locked whatever the player does with cards or terminals.
+
+## Authoring rules for interiors
+
+A storey is a solid `#` slab with an open band above it. Entities stand in the
+bottom row of that band, so a two-row band is a corridor and a three-row band is
+a hall. These rules come from the tuning in
+[game_config.h](../src/game_config.h) and every campaign map obeys them.
+
+- **Jump reach.** A 365px/s jump under 980px/s² gravity peaks at 68px. In a
+  two-row band the ceiling caps it at one tile and the player only covers about
+  48px of ground — enough to clear a one-tile hole in the floor, not a two-tile
+  one. Give him a second open row (~87px) before asking for a two-tile jump;
+  anything wider needs a ladder, a lift shaft or a moving platform.
+- **Spikes are area denial, not an obstacle course.** Clearing a single 32px
+  spike means covering 58px of ground while the whole 26px-wide player box is
+  above floor level, and even an unobstructed jump only offers about 73px of
+  that. Two spikes side by side cannot be jumped at all. Use `^` to split a
+  floor into halves that are each reached some other way.
+- **Ceiling fans** hit a 46px-wide, 8px-tall band across the middle of their
+  tile. Placed in an air row they only catch a jumping player, which is the
+  intent — but the blades overhang the neighbouring columns, so keep `O` at
+  least two columns clear of any `H` or `V` a climber passes through, and never
+  put one directly above a `B` the player can stand on.
+- **Ladders need not run the full height.** A run from the destination floor's
+  headroom down to the source floor's standing row can be mounted and left at
+  both ends; staggering short runs is what turns a floor plan into a route.
+- **`F` panels are a shortcut, never a lifeline.** They fall away for the rest
+  of the run, so the level must still be finishable once every one of them has
+  gone, and no ledge they serve may become a place the player cannot leave.
+- **`P` platforms** patrol the contiguous non-solid run of their row, bounded by
+  `#`, `D` and `V`. Keep ladders and other gaps out of that row or the platform
+  will wander further than the void it is meant to bridge.
+
+## Authoring rules for facades
+
+- The climb is inset by `FACADE_BUILDING_SIDE_INSET` (80px) on both sides, so
+  the outer two and a half columns are out of reach — pad them and start the
+  masonry at column 2.
+- Closed windows are painted on an architectural grid: rows that are multiples
+  of three, columns that are multiples of four. Put `S`, `Y`, `r` and `v` on
+  that grid so each one replaces a painted window instead of covering one.
+- Cornices belong on the rows between those window rows, so a full-width run
+  leaves two open rows above it. Leave the cornice directly above `S` open at
+  the start column, or the climb is sealed in before it begins.
+- A row of short balconies instead of a full cornice makes a good breather: it
+  still gives cover and a wind shelter without a lateral detour.

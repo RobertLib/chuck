@@ -134,14 +134,26 @@ player start).
 
 Maps live as text in `levels/level*.txt` (campaign, natural-sorted) and
 `levels/sublevels/*.txt`. [tools/embed_levels.py](tools/embed_levels.py) turns
-them into `build/embedded_levels.c` on every build. **Adding `levels/level3.txt`
-is all that is needed for a new campaign level** — the Makefile wildcards it in
-and progression is driven by `EMBEDDED_LEVEL_COUNT`. Level music cycles with
+them into `build/embedded_levels.c` on every build. **Adding
+`levels/level16.txt` is all that is needed for a new campaign level** — the
+Makefile wildcards it in and progression is driven by `EMBEDDED_LEVEL_COUNT`.
+Level music cycles with
 `MUSIC_LEVEL_ONE + index % (MUSIC_TRACK_COUNT - MUSIC_LEVEL_ONE)`.
 
-Every map character is documented in [levels/LEGEND.md](levels/LEGEND.md); keep
-it in sync when touching the parser. An optional trailing `SPAWNS n0 n1 ...`
-line gives per-door spawn counts and must list exactly one number per door.
+The campaign is fifteen levels that alternate interior sectors with exterior
+climbs: levels 3, 7, 11 and 13 are `MODE FACADE`, and each is entered through
+the `Y` window of the sector below it, whose `E` stair door is welded shut.
+Every other level ends at a normal `E`. Four sectors (1, 5, 9 and 14) have a
+`U` into the restroom, and every odd-numbered index carries exactly one
+bazooka. `test_all_embedded_levels_parse` pins that shape, so a new level has
+to keep it: the alternation, the campaign ending inside the building, and no
+rocket left out on a wall where nothing can be fired.
+
+Every map character is documented in [levels/LEGEND.md](levels/LEGEND.md),
+along with the authoring rules the geometry has to respect (jump reach, spike
+and fan clearance, gap widths); keep both in sync when touching the parser. An
+optional trailing `SPAWNS n0 n1 ...` line gives per-door spawn counts and must
+list exactly one number per door.
 
 ### The facade climb
 

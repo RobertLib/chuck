@@ -83,8 +83,12 @@ static void test_level_parser_and_seeded_choices(void)
 
 static void test_all_embedded_levels_parse(void)
 {
-    CHECK(EMBEDDED_LEVEL_COUNT > 0);
+    CHECK(EMBEDDED_LEVEL_COUNT == 15);
     int sublevel_entrances = 0;
+    int facade_levels = 0;
+    /* The campaign alternates interior sectors with climbs, and the only way
+     * onto a facade is the window of the sector below it. */
+    bool climb_expected = false;
     for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
     {
         Level level;
@@ -96,24 +100,19 @@ static void test_all_embedded_levels_parse(void)
         CHECK(level.map.width > 0);
         CHECK(level.map.height > 0);
         CHECK(level.map.has_exit || level.map.has_window);
-        if (level.map.mode == LEVEL_MODE_INTERIOR)
-            CHECK(level.map.alarm_switch_count >= 2);
-        if (i == 1)
+
+        bool facade = level.map.mode == LEVEL_MODE_FACADE;
+        CHECK(facade == climb_expected);
+        if (facade)
         {
-            CHECK(level.map.mode == LEVEL_MODE_INTERIOR);
-            CHECK(level.map.has_exit);
-            CHECK(level.map.has_window);
-            CHECK(!level.runtime.exit_unlocked);
-        }
-        if (i == 2)
-        {
-            CHECK(level.map.mode == LEVEL_MODE_FACADE);
+            facade_levels++;
             CHECK(!level.map.has_exit);
             CHECK(level.map.has_window);
             CHECK(level.map.facade_hazard_spawn_count >= 8);
             CHECK(level.map.door_count == 0);
             /* Pickups on the wall are optional detours, never the route. */
-            CHECK(level.runtime.item_count == 3);
+            CHECK(level.runtime.item_count > 0);
+            CHECK(level.runtime.item_count <= 4);
             CHECK(level.map.enemy_count == 0);
             /* Masonry is what the climb is routed around; it must exist, and
              * the exterior never uses interior traversal aids. */
@@ -126,12 +125,17 @@ static void test_all_embedded_levels_parse(void)
                 }
             CHECK(facade_walls > 40);
         }
-        if (i == 3)
+        else
         {
-            CHECK(level.map.mode == LEVEL_MODE_INTERIOR);
             CHECK(level.map.has_exit);
-            CHECK(!level.map.has_window);
+            CHECK(level.map.alarm_switch_count >= 2);
+            /* A sector that hands over to a climb has its stair door welded
+             * shut, so neither a card nor a terminal can open it. */
+            if (level.map.has_window)
+                CHECK(!level.runtime.exit_unlocked);
         }
+        climb_expected = !facade && level.map.has_window;
+
         if (level.map.has_sublevel_entrance)
             sublevel_entrances++;
 
@@ -140,8 +144,14 @@ static void test_all_embedded_levels_parse(void)
             if (level.runtime.items[item].type == ITEM_BAZOOKA)
                 bazooka_count++;
         CHECK(bazooka_count == (((i + 1) % 2 == 0) ? 1 : 0));
+        /* Nothing can be fired on the wall, so a rocket out there is dead
+         * weight; every bazooka belongs to an interior sector. */
+        CHECK(!facade || bazooka_count == 0);
     }
-    CHECK(sublevel_entrances == 1);
+    /* The campaign ends inside the building, not hanging off it. */
+    CHECK(!climb_expected);
+    CHECK(facade_levels == 4);
+    CHECK(sublevel_entrances == 4);
 }
 
 static void test_embedded_restroom_sublevel(void)
@@ -910,18 +920,26 @@ static bool facade_bot_reaches_window(GameplayState *state, int max_frames)
     return gameplay_player_reached_exit(state);
 }
 
-static void test_embedded_facade_has_a_route_to_the_window(void)
+static void test_embedded_facades_have_a_route_to_the_window(void)
 {
-    GameplayState state = {0};
-    rng_seed(&state.rng, 3030);
-    CHECK(EMBEDDED_LEVEL_COUNT >= 4);
-    CHECK(level_load_data(&state.level, EMBEDDED_LEVELS[2].name,
-                          EMBEDDED_LEVELS[2].data,
-                          EMBEDDED_LEVELS[2].size, &state.rng));
-    CHECK(state.level.map.mode == LEVEL_MODE_FACADE);
-    player_reset(&state.player, &state.level);
-
-    CHECK(facade_bot_reaches_window(&state, 2400));
+    int climbs = 0;
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        GameplayState state = {0};
+        rng_seed(&state.rng, 3030 + i);
+        CHECK(level_load_data(&state.level, EMBEDDED_LEVELS[i].name,
+                              EMBEDDED_LEVELS[i].data,
+                              EMBEDDED_LEVELS[i].size, &state.rng));
+        if (state.level.map.mode != LEVEL_MODE_FACADE)
+            continue;
+        climbs++;
+        player_reset(&state.player, &state.level);
+        /* Allowance scales with the wall: a taller face is more sweeping,
+         * not a different kind of route. */
+        CHECK(facade_bot_reaches_window(&state,
+                                        60 * state.level.map.height + 800));
+    }
+    CHECK(climbs == 4);
 }
 
 static void test_facade_checkpoint_banks_height(void)
@@ -2347,7 +2365,7 @@ int main(void)
     test_facade_bird_hits_player();
     test_facade_ledges_block_and_are_routed_around();
     test_facade_ledge_stops_thrown_object_and_bird();
-    test_embedded_facade_has_a_route_to_the_window();
+    test_embedded_facades_have_a_route_to_the_window();
     test_facade_checkpoint_banks_height();
     test_facade_wind_warns_then_pushes_unless_sheltered();
     test_facade_thrower_winds_up_before_releasing();

@@ -1,15 +1,18 @@
-#########################
-#  H   O   H       H    #
-#E H d T c H A C   Hi D #
-###H#######H#######H#####
-#  H       H  V    H    #
-#  H D L   Hi V Z  Hd   #
-###H#######H##V####H#####
-#  H       H  V    H    #
-#  H d C c HA V G  H K  #
-###H#######H##V####H#####
-#  H       H  V    H    #
-#S H   C T Hi V G  H A c#
-#########################
+########################################
+#           H    O       O   H         #
+#d c   i   AH  C   d   c   i H   d   E #
+############H################H##########
+#    H      H        H       H         #
+#    H   O  H    O   H       H O       #
+#cd  HM  ^^ H  i  d  HG    T H c    Ni #
+#####H###############H##FFF#############
+#    H  H            H            H    #
+#    H  H  O         H     O      H    #
+#Di  Hd H c  M     LBH  C   d  W  H c D#
+########H###### P  ###############H#####
+#       H                         H    #
+#       H        O             O  H    #
+#DS  d  Hc  J   ^^  X   i  M  T B HA ZD#
+########################################
 
-SPAWNS 0 2
+SPAWNS 2 0 1 1
