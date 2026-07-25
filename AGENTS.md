@@ -35,20 +35,23 @@ Two layers, and the split is the most important invariant in the codebase:
 - **Application shell** (SDL-dependent): [main.c](src/main.c) (SDL callbacks),
   [game.c](src/game.c) (state machine, level loading, per-frame orchestration),
   [game_input.c](src/game_input.c), [game_render.c](src/game_render.c),
-  [audio.c](src/audio.c), [intro.c](src/intro.c), [cutscene.c](src/cutscene.c),
+  [chase_render.c](src/chase_render.c), [audio.c](src/audio.c),
+  [intro.c](src/intro.c), [cutscene.c](src/cutscene.c),
   [particle.c](src/particle.c).
 - **Gameplay core** (no SDL, no knowledge of `Game`): `src/gameplay_*.c`,
   [level.c](src/level.c), [player.c](src/player.c), [enemy.c](src/enemy.c),
-  [rng.c](src/rng.c), [game_event.c](src/game_event.c). These only include each
-  other plus libc. That is what makes them deterministic and directly testable.
+  [chase.c](src/chase.c), [rng.c](src/rng.c),
+  [game_event.c](src/game_event.c). These only include each other plus libc.
+  That is what makes them deterministic and directly testable.
 
 Gameplay code never plays a sound, spawns a particle, or shakes the camera
 itself. It appends to `GameplayState.events` (a `GameEventBuffer`, see
 [game_event.h](src/game_event.h)) via `game_events_sound`,
 `gameplay_world_sound`, `game_events_particles`, `game_events_explosion`,
 `game_events_camera_shake`. The shell drains that buffer once per frame in
-`dispatch_game_events` ([game.c:44](src/game.c#L44)) and turns events into audio
-and presentation. Keep new gameplay feedback on this path — calling
+`dispatch_events` ([game.c:50](src/game.c#L50)) and turns events into audio and
+presentation; the prologue pursuit reports its feedback through the same
+function with its own buffer. Keep new gameplay feedback on this path — calling
 `audio_play` from a gameplay module would both break the layering and break the
 tests, which assert on emitted events.
 
@@ -57,15 +60,22 @@ tests, which assert on emitted events.
 [game.h](src/game.h) composes four areas: `PlatformState` (window, renderer,
 audio), `CampaignState` (level index, lives, score, timers), `GameplayState`
 (the whole simulation), `PresentationState` (camera, shake, particles, cutscene
-and HUD animation state). Scene changes go through the single
-`game_enter_state`; starting a level goes through the single `load_level`.
+and HUD animation state), plus the self-contained `Chase` used by the prologue.
+Scene changes go through the single `game_enter_state`; starting a level goes
+through the single `load_level`.
 
 ### Frame flow
 
 `SDL_AppIterate` clamps `dt` to 0.05s → `game_update` clears the event buffer,
 reads input, then `update_scene`. If `update_scene` returns true the frame was
-consumed by a non-playing state (intro, cutscenes, transitions, game over);
-otherwise `update_playing` runs the simulation. Events are dispatched last.
+consumed by a non-playing state (intro, the prologue drive, cutscenes,
+transitions, game over); otherwise `update_playing` runs the simulation. Events
+are dispatched last.
+
+The scene order the player walks through is `STATE_INTRO` → `STATE_CHASE` →
+`STATE_OPENING_CUTSCENE` → level one. The chase branch owns its own event
+dispatch and camera-shake tick because those normally run only on playing
+frames.
 
 `update_playing` ([game.c:686](src/game.c#L686)) has a deliberate ordering:
 terminal hold → player physics → elevators/falling/moving platforms → crates →
@@ -76,11 +86,36 @@ seeing Chuck on the final frame keeps the alarm alive) → exit check → camera
 lerp. Reordering these has caused real bugs; several tests pin the resulting
 behavior.
 
+### The prologue pursuit
+
+Pressing START drops the player into a top-down, forward-only car chase
+([chase.c](src/chase.c)) before the platformer begins: Chuck tails the
+kidnappers' SUV through night traffic until it parks at the building the first
+level opens in. It is a gameplay-core module — no SDL, seeded `Rng`, its own
+`GameEventBuffer` — and [chase_render.c](src/chase_render.c) is the only part
+that touches SDL.
+
+Road space is measured in pixels: `x` across the road, `y` along the driving
+direction and growing forward, so screen-up is forward and the renderer needs no
+world scale. Four phases run in order: `DEPARTURE` (the SUV pulls away, Chuck
+runs to his car — skippable), `PURSUIT` (`CHASE_PURSUIT_DURATION` seconds of
+driving), `ARRIVAL` (both cars brake onto their marks) and `DONE`, which is the
+shell's cue to play the opening cutscene. Crashing out or letting the gap exceed
+`CHASE_LOSE_GAP` only fails the attempt: `CHASE_PHASE_FAILED` restarts the drive
+after a beat, so the prologue can never block the campaign.
+
+Two rules keep it fair, and both are tested: traffic is never generated more
+than `CHASE_MAX_CARS_ABREAST` cars wide, so at least two lanes are always open,
+and the SUV holds a speed that keeps Chuck at arm's length once it is being
+tailed, so holding the accelerator settles into a stable tail instead of ramming
+the car his fiancée is in.
+
 ### Determinism and RNG
 
 Gameplay randomness uses the explicitly seeded `Rng`
 ([rng.h](src/rng.h)) held in `GameplayState`; `game_init_seeded` lets tests fix
-the seed. `SDL_rand` is reserved for purely visual effects (camera shake,
+the seed. The chase seeds its own `Rng` from that stream when the state is
+entered, so one game seed still decides the drive and every level after it. `SDL_rand` is reserved for purely visual effects (camera shake,
 particles). Do not introduce `SDL_rand`, `rand()`, or wall-clock reads into
 gameplay modules — reproducibility is a tested property.
 

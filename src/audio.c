@@ -718,6 +718,50 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
                       0.004f, 0.06f, 0x6200u + (Uint32)beat * 19u);
         }
         break;
+    case SFX_CHASE_ENGINE:
+        /*
+         * The pursuit engine is one cached rev that the chase retriggers faster
+         * as the car speeds up, so a fixed-pitch sample still reads as revs.
+         * It sits well below the effects it has to share the road with.
+         */
+        if (!begin_sound(audio, effect, 1.40f, 0.26f, 700))
+            return false;
+        add_tone(s, 0.00f, 1.40f, 58.0f, 74.0f, 0.54f,
+                 WAVE_SAW, 0.10f, 0.30f);
+        add_tone(s, 0.00f, 1.40f, 116.0f, 148.0f, 0.22f,
+                 WAVE_TRIANGLE, 0.10f, 0.30f);
+        add_noise(s, 0.00f, 1.40f, 0.20f, 0.030f,
+                  0.10f, 0.32f, 0x3c17u);
+        break;
+    case SFX_CHASE_TIRES:
+        if (!begin_sound(audio, effect, 0.42f, 0.34f, 200))
+            return false;
+        add_noise(s, 0.00f, 0.42f, 0.58f, 0.30f,
+                  0.005f, 0.34f, 0x71a4u);
+        add_tone(s, 0.00f, 0.36f, 880.0f, 430.0f, 0.20f,
+                 WAVE_SAW, 0.006f, 0.30f);
+        break;
+    case SFX_CHASE_CRASH:
+        if (!begin_sound(audio, effect, 0.62f, 0.52f, 140))
+            return false;
+        /* Sheet metal first, then the low thump of the two masses meeting. */
+        add_noise(s, 0.00f, 0.10f, 0.95f, 0.62f,
+                  0.002f, 0.09f, 0x9d31u);
+        add_noise(s, 0.00f, 0.62f, 0.42f, 0.075f,
+                  0.003f, 0.52f, 0x2f88u);
+        add_tone(s, 0.00f, 0.44f, 132.0f, 46.0f, 0.72f,
+                 WAVE_TRIANGLE, 0.003f, 0.38f);
+        add_tone(s, 0.05f, 0.26f, 1560.0f, 620.0f, 0.20f,
+                 WAVE_SQUARE, 0.003f, 0.22f);
+        break;
+    case SFX_CHASE_HORN:
+        if (!begin_sound(audio, effect, 0.58f, 0.38f, 420))
+            return false;
+        add_tone(s, 0.00f, 0.58f, 392.0f, 388.0f, 0.34f,
+                 WAVE_SQUARE, 0.012f, 0.20f);
+        add_tone(s, 0.00f, 0.58f, 494.0f, 489.0f, 0.28f,
+                 WAVE_SQUARE, 0.012f, 0.20f);
+        break;
     case SFX_REVEAL_TICK:
         if (!begin_sound(audio, effect, 0.052f, 0.12f, 40))
             return false;

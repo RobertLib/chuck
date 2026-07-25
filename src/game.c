@@ -42,15 +42,14 @@ static void update_camera_shake(Game *game, float dt)
     game->presentation.camera_shake_y = roundf(random_y * amplitude);
 }
 
-static void dispatch_game_events(Game *game)
+/*
+ * Turns one buffer of gameplay events into audio and presentation. Every
+ * simulation in the game (the platformer and the prologue pursuit) reports
+ * feedback the same way, so they share this one translation point.
+ */
+static void dispatch_events(Game *game, GameEventBuffer *events,
+                            float listener_x, float listener_y)
 {
-    GameEventBuffer *events = &game->gameplay.events;
-    float player_height = game->gameplay.player.crawling
-                              ? (float)PLAYER_CRAWL_H
-                              : (float)PLAYER_H;
-    float listener_x = game->gameplay.player.x + PLAYER_W * 0.5f;
-    float listener_y = game->gameplay.player.y + player_height * 0.5f;
-
     for (int i = 0; i < events->count; ++i)
     {
         const GameEvent *event = &events->items[i];
@@ -90,6 +89,16 @@ static void dispatch_game_events(Game *game)
 
     if (events->overflowed)
         SDL_Log("Gameplay event buffer overflowed");
+}
+
+static void dispatch_gameplay_events(Game *game)
+{
+    float player_height = game->gameplay.player.crawling
+                              ? (float)PLAYER_CRAWL_H
+                              : (float)PLAYER_H;
+    dispatch_events(game, &game->gameplay.events,
+                    game->gameplay.player.x + PLAYER_W * 0.5f,
+                    game->gameplay.player.y + player_height * 0.5f);
 }
 
 static void reset_level_presentation(Game *game)
@@ -437,8 +446,24 @@ static void game_enter_state(Game *game, GameState next_state)
 {
     switch (next_state)
     {
+    case STATE_CHASE:
+    {
+        /* The pursuit draws from the campaign RNG, so one game seed still
+         * decides the whole run: the drive and every level after it. */
+        uint64_t seed = ((uint64_t)rng_next(&game->gameplay.rng) << 32) ^
+                        (uint64_t)rng_next(&game->gameplay.rng);
+        chase_init(&game->chase, seed);
+        reset_level_presentation(game);
+        audio_stop_effects(&game->platform.audio);
+        audio_play_music(&game->platform.audio, MUSIC_LEVEL_TWO);
+        break;
+    }
     case STATE_OPENING_CUTSCENE:
         opening_cutscene_init(&game->presentation.opening_cutscene);
+        /* Arriving from the drive: drop the engine and the road music before
+         * the rain-soaked street outside the building. */
+        audio_stop_effects(&game->platform.audio);
+        audio_play_music(&game->platform.audio, MUSIC_INTRO);
         break;
     case STATE_INTRO:
     {
@@ -518,10 +543,24 @@ static bool update_scene(Game *game, float dt)
 
         if (game->input.confirm)
         {
-            /* START pressed: play the opening cutscene before gameplay begins. */
+            /* START pressed: the prologue drive runs before anything else, and
+             * hands over to the opening cutscene at the building. */
             game->input.confirm = false;
-            game_enter_state(game, STATE_OPENING_CUTSCENE);
+            game_enter_state(game, STATE_CHASE);
         }
+        clear_edge_input(game);
+        return true;
+    }
+
+    if (game->state == STATE_CHASE)
+    {
+        game_events_clear(&game->chase.events);
+        ChaseOutcome outcome = chase_update(&game->chase, &game->input, dt);
+        dispatch_events(game, &game->chase.events,
+                        game->chase.player.x, game->chase.player.y);
+        update_camera_shake(game, dt);
+        if (outcome == CHASE_REACHED_BUILDING)
+            game_enter_state(game, STATE_OPENING_CUTSCENE);
         clear_edge_input(game);
         return true;
     }
@@ -1079,7 +1118,7 @@ void game_update(Game *game, float dt)
     bool scene_handled_frame = update_scene(game, dt);
     if (!scene_handled_frame)
         update_playing(game, dt);
-    dispatch_game_events(game);
+    dispatch_gameplay_events(game);
     if (!scene_handled_frame)
     {
         particle_system_update(&game->presentation.particles, dt);

@@ -51,6 +51,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
     }
 
     if ((game->state == STATE_INTRO ||
+         game->state == STATE_CHASE ||
          game->state == STATE_OPENING_CUTSCENE ||
          game->state == STATE_LEVEL_TRANSITION ||
          game->state == STATE_OUTRO ||

@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 #include <math.h>
 
+#include "chase_render.h"
 #include "fx.h"
 #include "gameplay_interaction.h"
 #include "gameplay_world.h"
@@ -3353,6 +3354,15 @@ void game_render(Game *game)
 
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
+
+  if (game->state == STATE_CHASE)
+  {
+    chase_render(r, &game->chase, win_w, win_h,
+                 game->presentation.camera_shake_x,
+                 game->presentation.camera_shake_y);
+    SDL_RenderPresent(r);
+    return;
+  }
 
   if (game->state == STATE_OPENING_CUTSCENE)
   {

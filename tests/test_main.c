@@ -1,3 +1,4 @@
+#include "chase.h"
 #include "embedded_levels.h"
 #include "game_event.h"
 #include "gameplay_ai.h"
@@ -177,6 +178,380 @@ static void test_embedded_restroom_sublevel(void)
     CHECK(guns == 1);
     CHECK(grenades == 1);
     CHECK(medkits == 1);
+}
+
+/* ---- Prologue car chase ---------------------------------------------- */
+
+#define CHASE_STEP (1.0f / 60.0f)
+
+static ChaseOutcome chase_step(Chase *chase, const Input *input)
+{
+    game_events_clear(&chase->events);
+    return chase_update(chase, input, CHASE_STEP);
+}
+
+static void chase_run(Chase *chase, const Input *input, float seconds)
+{
+    int frames = (int)(seconds / CHASE_STEP);
+    for (int i = 0; i < frames; ++i)
+        chase_step(chase, input);
+}
+
+/* Jumps straight to the drive, the way pressing Space in the opening does. */
+static void chase_skip_departure(Chase *chase)
+{
+    Input input = {0};
+    input.confirm = true;
+    chase_step(chase, &input);
+}
+
+static void chase_clear_traffic(Chase *chase)
+{
+    for (int i = 0; i < CHASE_MAX_CARS; ++i)
+        chase->cars[i].active = false;
+}
+
+static ChaseCar *chase_place_car_ahead(Chase *chase, int slot)
+{
+    ChaseCar *car = &chase->cars[slot];
+    memset(car, 0, sizeof(*car));
+    car->active = true;
+    car->kind = CHASE_CAR_TRAFFIC;
+    car->x = chase->player.x;
+    car->y = chase->player.y + CHASE_CAR_LENGTH * 0.6f;
+    return car;
+}
+
+static void test_chase_is_reproducible_from_a_seed(void)
+{
+    Chase first;
+    Chase second;
+    Chase other_seed;
+    chase_init(&first, 20260725u);
+    chase_init(&second, 20260725u);
+    chase_init(&other_seed, 20260726u);
+
+    Input input = {0};
+    input.up = true;
+    input.left = true;
+    for (int frame = 0; frame < 900; ++frame)
+    {
+        /* Same seed, same inputs: the whole drive has to match frame for frame. */
+        input.left = (frame / 40) % 2 == 0;
+        input.right = !input.left;
+        chase_step(&first, &input);
+        chase_step(&second, &input);
+        chase_step(&other_seed, &input);
+    }
+
+    CHECK(first.phase == second.phase);
+    CHECK(first.player.x == second.player.x);
+    CHECK(first.player.y == second.player.y);
+    CHECK(first.player.integrity == second.player.integrity);
+    CHECK(first.target.y == second.target.y);
+    CHECK(first.rng.state == second.rng.state);
+    for (int i = 0; i < CHASE_MAX_CARS; ++i)
+    {
+        CHECK(first.cars[i].active == second.cars[i].active);
+        CHECK(first.cars[i].x == second.cars[i].x);
+        CHECK(first.cars[i].y == second.cars[i].y);
+    }
+    CHECK(other_seed.rng.state != first.rng.state);
+}
+
+static void test_chase_departure_hands_over_to_the_drive(void)
+{
+    Chase chase;
+    chase_init(&chase, 4242);
+    CHECK(chase.phase == CHASE_PHASE_DEPARTURE);
+    CHECK(!chase.player.engine_running);
+    CHECK(chase.player.speed == 0.0f);
+    CHECK(chase_gap(&chase) > 0.0f);
+
+    Input input = {0};
+    bool heard_door = false;
+    bool heard_engine = false;
+    int frames = (int)(CHASE_DEPARTURE_DURATION / CHASE_STEP) + 2;
+    for (int i = 0; i < frames; ++i)
+    {
+        chase_step(&chase, &input);
+        if (events_have_sound(&chase.events, GAME_EVENT_SOUND,
+                              SFX_OPENING_CAR_DOOR))
+            heard_door = true;
+        if (events_have_sound(&chase.events, GAME_EVENT_SOUND, SFX_CHASE_ENGINE))
+            heard_engine = true;
+    }
+
+    CHECK(heard_door);
+    CHECK(heard_engine);
+    CHECK(chase.phase == CHASE_PHASE_PURSUIT);
+    CHECK(chase.player.engine_running);
+    CHECK(chase.player.integrity == CHASE_INTEGRITY);
+    /* The SUV's head start is pulled back to one fixed opening gap. */
+    CHECK(fabsf(chase_gap(&chase) - CHASE_START_GAP) < 12.0f);
+
+    /* Skipping the beat reaches the same phase without waiting it out. */
+    Chase skipped;
+    chase_init(&skipped, 4242);
+    chase_skip_departure(&skipped);
+    CHECK(skipped.phase == CHASE_PHASE_PURSUIT);
+    CHECK(skipped.player.engine_running);
+}
+
+static void test_chase_collision_costs_integrity_and_speed(void)
+{
+    Chase chase;
+    chase_init(&chase, 77);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+    chase.player.invuln_timer = 0.0f;
+
+    ChaseCar *car = chase_place_car_ahead(&chase, 0);
+    Input input = {0};
+    chase_step(&chase, &input);
+
+    CHECK(chase.player.integrity == CHASE_INTEGRITY - 1);
+    CHECK(chase.player.speed == CHASE_CRASH_SPEED);
+    CHECK(chase.player.invuln_timer > 0.0f);
+    CHECK(car->wreck_time > 0.0f);
+    CHECK(events_have_sound(&chase.events, GAME_EVENT_SOUND, SFX_CHASE_CRASH));
+    bool shook = false;
+    for (int i = 0; i < chase.events.count; ++i)
+    {
+        if (chase.events.items[i].type == GAME_EVENT_CAMERA_SHAKE)
+            shook = true;
+    }
+    CHECK(shook);
+
+    /* The crash cooldown stops one pile-up from emptying the whole car. */
+    chase_place_car_ahead(&chase, 1);
+    chase_step(&chase, &input);
+    CHECK(chase.player.integrity == CHASE_INTEGRITY - 1);
+}
+
+static void test_chase_kerb_scrape_bleeds_speed_without_damage(void)
+{
+    Chase chase;
+    chase_init(&chase, 31);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+
+    Input input = {0};
+    input.right = true;
+    bool heard_tyres = false;
+    for (int i = 0; i < 90; ++i)
+    {
+        chase_clear_traffic(&chase);
+        chase_step(&chase, &input);
+        if (events_have_sound(&chase.events, GAME_EVENT_SOUND, SFX_CHASE_TIRES))
+            heard_tyres = true;
+    }
+
+    CHECK(heard_tyres);
+    CHECK(chase.player.integrity == CHASE_INTEGRITY);
+    CHECK(chase.player.x <=
+          CHASE_ROAD_WIDTH - CHASE_CAR_WIDTH * 0.5f - CHASE_KERB_MARGIN + 0.01f);
+    /* Grinding the kerb costs speed, which is what opens the gap. */
+    CHECK(chase.player.speed < CHASE_CRUISE_SPEED);
+}
+
+static void test_chase_holding_the_throttle_never_catches_the_suv(void)
+{
+    Chase chase;
+    chase_init(&chase, 606);
+    chase_skip_departure(&chase);
+
+    Input input = {0};
+    input.up = true;
+    float smallest_gap = chase_gap(&chase);
+    for (int i = 0; i < 900; ++i)
+    {
+        chase_clear_traffic(&chase);
+        chase_step(&chase, &input);
+        float gap = chase_gap(&chase);
+        if (gap < smallest_gap)
+            smallest_gap = gap;
+    }
+
+    CHECK(chase.phase == CHASE_PHASE_PURSUIT);
+    CHECK(smallest_gap > CHASE_MIN_GAP - 30.0f);
+    CHECK(chase_gap(&chase) < CHASE_LOSE_GAP);
+    /* No traffic to hit and no way to ram them: the car stays intact. */
+    CHECK(chase.player.integrity == CHASE_INTEGRITY);
+}
+
+static void test_chase_lost_trail_restarts_the_pursuit(void)
+{
+    Chase chase;
+    chase_init(&chase, 8181);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+
+    Input input = {0};
+    chase.target.y = chase.player.y + CHASE_LOSE_GAP + 20.0f;
+    chase_step(&chase, &input);
+
+    CHECK(chase.phase == CHASE_PHASE_FAILED);
+    CHECK(chase.failure == CHASE_FAILURE_LOST);
+    CHECK(chase.attempts == 0);
+
+    chase_run(&chase, &input, CHASE_FAILED_DURATION + 0.1f);
+    CHECK(chase.phase == CHASE_PHASE_PURSUIT);
+    CHECK(chase.attempts == 1);
+    CHECK(chase.player.integrity == CHASE_INTEGRITY);
+    CHECK(chase.pursuit_time < 0.3f);
+    CHECK(fabsf(chase_gap(&chase) - CHASE_START_GAP) < 60.0f);
+}
+
+static void test_chase_wreck_restarts_the_pursuit(void)
+{
+    Chase chase;
+    chase_init(&chase, 9191);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+    chase.player.invuln_timer = 0.0f;
+    chase.player.integrity = 1;
+
+    chase_place_car_ahead(&chase, 0);
+    Input input = {0};
+    chase_step(&chase, &input);
+
+    CHECK(chase.phase == CHASE_PHASE_FAILED);
+    CHECK(chase.failure == CHASE_FAILURE_WRECKED);
+    CHECK(events_have_sound(&chase.events, GAME_EVENT_SOUND, SFX_EXPLOSION));
+
+    chase_run(&chase, &input, CHASE_FAILED_DURATION + 0.1f);
+    CHECK(chase.phase == CHASE_PHASE_PURSUIT);
+    CHECK(chase.player.integrity == CHASE_INTEGRITY);
+}
+
+static void test_chase_surviving_the_drive_parks_at_the_building(void)
+{
+    Chase chase;
+    chase_init(&chase, 5150);
+    chase_skip_departure(&chase);
+
+    Input input = {0};
+    chase.pursuit_time = CHASE_PURSUIT_DURATION;
+    CHECK(chase_step(&chase, &input) == CHASE_RUNNING);
+    CHECK(chase.phase == CHASE_PHASE_ARRIVAL);
+    CHECK(chase.building_y > chase.player.y);
+    CHECK(chase_route_progress(&chase) == 1.0f);
+    /* Nothing is left driving in the forecourt the cars are pulling into. */
+    for (int i = 0; i < CHASE_MAX_CARS; ++i)
+        CHECK(!(chase.cars[i].active && chase.cars[i].y > chase.target.y));
+
+    ChaseOutcome outcome = CHASE_RUNNING;
+    int frames = (int)((CHASE_ARRIVAL_DURATION + 0.2f) / CHASE_STEP);
+    for (int i = 0; i < frames; ++i)
+        outcome = chase_step(&chase, &input);
+
+    CHECK(outcome == CHASE_REACHED_BUILDING);
+    CHECK(chase.phase == CHASE_PHASE_DONE);
+    CHECK(chase.player.speed == 0.0f);
+    CHECK(chase.target.speed == 0.0f);
+    /* Both cars stop short of the entrance, the SUV closest to it. */
+    CHECK(chase.target.y > chase.player.y);
+    CHECK(chase.target.y < chase.building_y);
+    CHECK(chase.player.y < chase.building_y);
+    /* Reporting the outcome again is safe: the shell polls it once per frame. */
+    CHECK(chase_step(&chase, &input) == CHASE_REACHED_BUILDING);
+}
+
+static void test_chase_cross_traffic_obeys_the_signal(void)
+{
+    Chase chase;
+    chase_init(&chase, 1234);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+    for (int i = 1; i < CHASE_MAX_INTERSECTIONS; ++i)
+        chase.intersections[i].active = false;
+
+    ChaseIntersection *junction = &chase.intersections[0];
+    junction->active = true;
+    junction->y = chase.player.y + 420.0f;
+    junction->signal_offset = 0.0f;
+    junction->cross_spawn_timer = 0.05f;
+
+    /* Red for the cross street: nothing may pull into the junction. */
+    chase.time = CHASE_SIGNAL_CROSS_GREEN + 0.4f;
+    CHECK(!chase_cross_has_green(junction, chase.time));
+    Input input = {0};
+    for (int i = 0; i < 30; ++i)
+    {
+        chase_step(&chase, &input);
+        for (int c = 0; c < CHASE_MAX_CARS; ++c)
+            CHECK(!(chase.cars[c].active &&
+                    chase.cars[c].kind == CHASE_CAR_CROSSING));
+    }
+
+    /* Green: cars enter from the kerbs and drive straight across. */
+    chase.time = 0.05f;
+    junction->cross_spawn_timer = 0.02f;
+    CHECK(chase_cross_has_green(junction, chase.time));
+    bool crossing_seen = false;
+    for (int i = 0; i < 30 && !crossing_seen; ++i)
+    {
+        chase_step(&chase, &input);
+        for (int c = 0; c < CHASE_MAX_CARS; ++c)
+        {
+            const ChaseCar *car = &chase.cars[c];
+            if (!car->active || car->kind != CHASE_CAR_CROSSING)
+                continue;
+            crossing_seen = true;
+            CHECK(car->vy == 0.0f);
+            CHECK(fabsf(car->vx) >= CHASE_CROSS_SPEED_MIN);
+            CHECK(fabsf(car->y - junction->y) <= CHASE_CROSS_LANE_OFFSET + 1.0f);
+            /* Right-hand rule on the cross street too. */
+            CHECK((car->vx > 0.0f) == (car->y < junction->y));
+        }
+    }
+    CHECK(crossing_seen);
+}
+
+static void test_chase_generated_traffic_matches_its_lane(void)
+{
+    Chase chase;
+    chase_init(&chase, 606060);
+    chase_skip_departure(&chase);
+
+    Input input = {0};
+    int junctions = 0;
+    int lane_cars = 0;
+    int oncoming_cars = 0;
+    for (int frame = 0; frame < 600; ++frame)
+    {
+        chase_step(&chase, &input);
+        for (int i = 0; i < CHASE_MAX_INTERSECTIONS; ++i)
+        {
+            if (chase.intersections[i].active)
+                junctions++;
+        }
+        for (int i = 0; i < CHASE_MAX_CARS; ++i)
+        {
+            const ChaseCar *car = &chase.cars[i];
+            if (!car->active || car->wreck_time > 0.0f)
+                continue;
+            if (car->kind == CHASE_CAR_TRAFFIC)
+            {
+                lane_cars++;
+                /* Runs with the pursuit, on the pursuit's side, and slower. */
+                CHECK(car->vy > 0.0f);
+                CHECK(car->vy <= CHASE_TRAFFIC_SPEED_MAX);
+                CHECK(car->x > CHASE_ROAD_WIDTH * 0.5f);
+            }
+            else if (car->kind == CHASE_CAR_ONCOMING)
+            {
+                oncoming_cars++;
+                CHECK(car->vy < 0.0f);
+                CHECK(car->x < CHASE_ROAD_WIDTH * 0.5f);
+            }
+        }
+    }
+
+    CHECK(junctions > 0);
+    CHECK(lane_cars > 0);
+    CHECK(oncoming_cars > 0);
 }
 
 static void test_gameplay_reset_preserves_rng_only(void)
@@ -1659,6 +2034,16 @@ int main(void)
     test_all_embedded_levels_parse();
     test_embedded_restroom_sublevel();
     test_gameplay_reset_preserves_rng_only();
+    test_chase_is_reproducible_from_a_seed();
+    test_chase_departure_hands_over_to_the_drive();
+    test_chase_collision_costs_integrity_and_speed();
+    test_chase_kerb_scrape_bleeds_speed_without_damage();
+    test_chase_holding_the_throttle_never_catches_the_suv();
+    test_chase_lost_trail_restarts_the_pursuit();
+    test_chase_wreck_restarts_the_pursuit();
+    test_chase_surviving_the_drive_parks_at_the_building();
+    test_chase_cross_traffic_obeys_the_signal();
+    test_chase_generated_traffic_matches_its_lane();
     test_campaign_continue_flow();
     test_campaign_continue_countdown_expires();
     test_blocked_exit_uses_separate_window();

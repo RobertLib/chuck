@@ -2,6 +2,7 @@
 #define CHUCK_GAME_H
 
 #include "audio.h"
+#include "chase.h"
 #include "common.h"
 #include "cutscene.h"
 #include "gameplay_state.h"
@@ -10,6 +11,7 @@
 
 typedef enum
 {
+    STATE_CHASE,
     STATE_OPENING_CUTSCENE,
     STATE_INTRO,
     STATE_LEVEL_START,
@@ -79,6 +81,10 @@ typedef struct
     PlatformState platform;
     CampaignState campaign;
     GameplayState gameplay;
+    /* The prologue pursuit. It runs once, between the title screen and the
+     * opening cutscene, and is a self-contained simulation of its own rather
+     * than a variation on the platformer. */
+    Chase chase;
     /* The inactive half of a sublevel visit. It holds the paused main level
      * while Chuck is inside, and the persistent restroom state while outside. */
     GameplayState inactive_gameplay;

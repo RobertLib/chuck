@@ -261,4 +261,113 @@
 #define FACADE_BUILDING_SIDE_INSET 80.0f
 #define FACADE_CLIMB_SIDE_MARGIN FACADE_BUILDING_SIDE_INSET
 
+/* Prologue car chase. A top-down, forward-only pursuit played once before the
+ * campaign: Chuck tails the kidnappers' SUV through night traffic until it
+ * reaches the building where the platformer starts. Road space is measured in
+ * pixels, x across the road and y along the driving direction (y grows
+ * forward), so the simulation needs no separate world scale. */
+#define CHASE_ROAD_WIDTH 480.0f
+#define CHASE_LANE_COUNT 4
+#define CHASE_LANE_WIDTH (CHASE_ROAD_WIDTH / (float)CHASE_LANE_COUNT)
+/* Lanes 0..1 carry oncoming traffic, 2..3 run with the pursuit. */
+#define CHASE_FIRST_FORWARD_LANE 2
+#define CHASE_KERB_MARGIN 5.0f
+#define CHASE_CAR_LENGTH 84.0f
+#define CHASE_CAR_WIDTH 46.0f
+#define CHASE_SUV_LENGTH 98.0f
+#define CHASE_SUV_WIDTH 54.0f
+#define CHASE_MAX_CARS 24
+#define CHASE_MAX_INTERSECTIONS 4
+#define CHASE_BLOCK_LENGTH 1000.0f
+#define CHASE_JUNCTION_HALF 92.0f
+#define CHASE_SPAWN_MARGIN 760.0f
+#define CHASE_CULL_MARGIN 280.0f
+/* Never more than this many cars abreast, so at least two lanes stay open. */
+#define CHASE_MAX_CARS_ABREAST 2
+
+/* Player car handling. Coasting matches the SUV's own speed, so holding a lane
+ * keeps the trail while every dodge and crash has to be paid back on the
+ * accelerator. */
+#define CHASE_CRUISE_SPEED 320.0f
+#define CHASE_MAX_SPEED 470.0f
+#define CHASE_MIN_SPEED 140.0f
+#define CHASE_ACCEL 235.0f
+#define CHASE_BRAKE 330.0f
+#define CHASE_COAST 130.0f
+#define CHASE_STEER_SPEED 250.0f
+#define CHASE_CRASH_SPEED 150.0f
+#define CHASE_SCRAPE_DRAG 150.0f
+#define CHASE_SCRAPE_SOUND_INTERVAL 0.34f
+#define CHASE_INTEGRITY 3
+#define CHASE_HIT_INVULN 1.1f
+#define CHASE_NEAR_MISS_SIDE 62.0f
+#define CHASE_NEAR_MISS_AHEAD 130.0f
+#define CHASE_HORN_INTERVAL 1.6f
+#define CHASE_ENGINE_INTERVAL 1.05f
+
+/* Traffic */
+#define CHASE_TRAFFIC_SPEED_MIN 150.0f
+#define CHASE_TRAFFIC_SPEED_MAX 215.0f
+#define CHASE_ONCOMING_SPEED_MIN 150.0f
+#define CHASE_ONCOMING_SPEED_MAX 205.0f
+#define CHASE_CROSS_SPEED_MIN 195.0f
+#define CHASE_CROSS_SPEED_MAX 265.0f
+#define CHASE_CROSS_GAP_MIN 0.85f
+#define CHASE_CROSS_GAP_MAX 1.40f
+#define CHASE_CROSS_LANE_OFFSET 42.0f
+#define CHASE_CROSS_ALERT_RANGE 900.0f
+#define CHASE_SIGNAL_PERIOD 7.4f
+#define CHASE_SIGNAL_CROSS_GREEN 3.1f
+#define CHASE_WRECK_DRIFT 95.0f
+
+/* The hunted SUV */
+#define CHASE_TARGET_SPEED 300.0f
+#define CHASE_TARGET_SPEED_SWING 26.0f
+#define CHASE_TARGET_BOOST 65.0f
+#define CHASE_TARGET_BOOST_TIME 1.6f
+#define CHASE_TARGET_STEER_SPEED 205.0f
+#define CHASE_TARGET_LANE_TIME_MIN 2.2f
+#define CHASE_TARGET_LANE_TIME_MAX 4.8f
+#define CHASE_TARGET_LOOKAHEAD 210.0f
+#define CHASE_START_GAP 380.0f
+#define CHASE_MIN_GAP 190.0f
+#define CHASE_LOSE_GAP 1050.0f
+
+/* The opening beat, cue by cue: the kidnappers slam a door and pull away while
+ * Chuck runs up the pavement, unlocks his car and pulls out after them. The
+ * renderer stages Chuck's run from the same timings the simulation uses. */
+#define CHASE_KERB_X \
+    (CHASE_ROAD_WIDTH - CHASE_CAR_WIDTH * 0.5f - CHASE_KERB_MARGIN)
+#define CHASE_DEPARTURE_TARGET_OFFSET 260.0f
+/* They leave at ordinary traffic speed: they are not being chased yet, which is
+ * what lets Chuck close the distance after his late start. */
+#define CHASE_DEPARTURE_TARGET_SPEED 230.0f
+#define CHASE_DEPARTURE_TARGET_ACCEL 190.0f
+#define CHASE_DEPARTURE_SUV_DOOR 1.20f
+#define CHASE_DEPARTURE_SUV_START 1.40f
+#define CHASE_DEPARTURE_CHUCK_RUN 1.60f
+#define CHASE_DEPARTURE_CAR_DOOR 3.05f
+#define CHASE_DEPARTURE_IGNITION 3.30f
+#define CHASE_DEPARTURE_PULL_OUT 3.45f
+
+/* Arrival geometry, measured back from the building's front face. */
+#define CHASE_ARRIVAL_PLAYER_STOP 310.0f
+#define CHASE_ARRIVAL_TARGET_STOP 130.0f
+#define CHASE_ARRIVAL_CAMERA_LEAD 70.0f
+
+/* Camera and pacing. The camera keeps the player's car near the bottom of the
+ * view so most of the frame shows the road being driven into. */
+#define CHASE_CAMERA_LEAD 135.0f
+/* The opening and closing beats sit further back so the SUV can be watched
+ * driving away, and so the destination fits in frame. */
+#define CHASE_DEPARTURE_CAMERA_LEAD 110.0f
+#define CHASE_PAVEMENT_WIDTH 26.0f
+#define CHASE_DEPARTURE_DURATION 6.0f
+#define CHASE_PURSUIT_DURATION 40.0f
+#define CHASE_FAILED_DURATION 2.4f
+#define CHASE_ARRIVAL_DURATION 5.4f
+/* Both cars are on their marks before the beat ends. */
+#define CHASE_ARRIVAL_BRAKE_TIME 4.2f
+#define CHASE_ARRIVAL_DISTANCE 1500.0f
+
 #endif /* CHUCK_GAME_CONFIG_H */

@@ -3,6 +3,10 @@
 Chuck is a 2D action platformer about pursuing the kidnappers who took Chuck's
 fiancée and bringing her home alive.
 
+The game opens with a top-down night car chase: Chuck tails the kidnappers' SUV
+through city traffic until it reaches the building where they take her. From
+there the game becomes a platformer.
+
 The player explores a side-scrolling building made of platforms, ladders,
 doors, elevators, alarm switches, hazards, and pickups. Each level is a small
 infiltration route through the kidnappers' stronghold: follow their trail, find the key card
@@ -16,9 +20,12 @@ alarms, pickups, and scoring ignore them completely.
 
 ## Story
 
-Chuck arrives at the building just as a group of kidnappers drags his fiancée
-inside. He tries to stop them, but cannot take a clear shot without putting her
-in danger, so he follows them into the building.
+Kidnappers take Chuck's fiancée off the street and drive away with her. Chuck
+gets to his own car seconds later and follows them across the city, and they lead
+him to the building they are holding her in.
+
+He arrives just as they drag her inside. He tries to stop them, but cannot take a
+clear shot without putting her in danger, so he follows them into the building.
 
 The kidnappers keep moving deeper into the complex while Chuck fights and
 sneaks his way through its guarded sectors. Each level brings him closer to
@@ -29,6 +36,19 @@ the pursuit.
 The mission is simple: follow the kidnappers through every level, overcome the
 building's security, and bring his fiancée home. The pursuit ends in a
 cinematic rooftop rescue after the final sector.
+
+## The pursuit drive
+
+The prologue is played from above, driving forward along a four-lane city street.
+Only two things matter: stay on the SUV, and keep the car in one piece. Slower
+traffic runs with you, oncoming traffic comes down the two left-hand lanes with
+its headlights in your face, and every block ends at a signalled junction where
+cross traffic cuts straight across your path — the lights and the painted warning
+on the road tell you whether it is about to. The readout shows how far ahead the
+SUV is; clipping another car, or scraping a kerb, costs the speed you need to
+stay with it. Three crashes wreck the car, and letting the SUV get too far ahead
+loses the trail, but neither ends the game: a failed attempt only restarts the
+drive, so the story always continues. Reaching the building starts the campaign.
 
 ## Gameplay
 
@@ -73,6 +93,15 @@ is inside, and both areas retain their state when he leaves or returns; this WC
 entrance is independent of the paired shortcut-door system.
 
 ## Controls
+
+### Pursuit drive
+
+- Steer: `Left` / `Right` or `A` / `D`
+- Accelerate: `Up` or `W`
+- Brake: `Down` or `S`
+- Skip the opening beat: `Space` or `Enter`
+
+### Platformer
 
 - Move: arrow keys or `WASD`
 - Jump: `Up` or `W` when on the ground
@@ -133,16 +162,17 @@ distributed.
 
 ## Architecture
 
-The SDL-facing application shell lives in `game.c`, `game_input.c`, and
-`game_render.c`. `Game` composes four explicit areas of state: platform
-resources, campaign progress, current gameplay simulation, and presentation.
-Scene changes go through one state-transition function and loading a level
-uses one simulation reset path.
+The SDL-facing application shell lives in `game.c`, `game_input.c`,
+`game_render.c`, and `chase_render.c`. `Game` composes four explicit areas of
+state: platform resources, campaign progress, current gameplay simulation, and
+presentation. Scene changes go through one state-transition function and loading
+a level uses one simulation reset path.
 
 Gameplay rules are split by responsibility under `src/gameplay_*.c`: AI,
-combat, interactions, physics, and shared world operations. These modules do
-not depend on SDL or on the top-level `Game`, which keeps them deterministic
-and directly testable. They report sounds, particles, and camera shake through
+combat, interactions, physics, and shared world operations. The prologue drive
+is a separate simulation of its own in `chase.c`. These modules do not depend on
+SDL or on the top-level `Game`, which keeps them deterministic and directly
+testable. They report sounds, particles, and camera shake through
 a small event buffer that the application shell translates into presentation
 effects.
 
@@ -150,8 +180,8 @@ effects.
 (`LevelRuntime`), and reveal-animation state (`LevelReveal`). Random gameplay
 choices use an explicitly seeded `Rng`; the SDL random generator is reserved
 for visual effects. The core tests cover seeded behavior, parsing every
-embedded level, collision, resets, interactions, AI spawning, and combat
-feedback.
+embedded level, collision, resets, interactions, AI spawning, combat feedback,
+and the prologue drive from its opening beat to the arrival at the building.
 
 ## Assets
 
