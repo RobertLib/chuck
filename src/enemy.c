@@ -10,6 +10,7 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->vy = 0.0f;
     enemy->dir = rng_range(rng, 2) == 0 ? -1 : 1;
     enemy->on_ground = false;
+    enemy->on_elevator = -1;
     enemy->climbing = false;
     enemy->climb_dir = -1;
     enemy->ladder_col = 0;
@@ -238,6 +239,119 @@ static bool enemy_box_tiles_clear(const Level *level, float x, float y,
     return true;
 }
 
+static bool enemy_over_elevator(const Enemy *enemy, const Elevator *elevator)
+{
+    float center_x = enemy->x + ENEMY_W * 0.5f;
+    float platform_x = elevator->col * (float)TILE_SIZE;
+    return center_x > platform_x && center_x < platform_x + TILE_SIZE;
+}
+
+/* Elevators move before enemy AI. A remembered rider therefore has to be
+ * carried to the platform's new top before gravity and steering run. */
+static void enemy_begin_elevator_ride(Enemy *enemy, const Level *level)
+{
+    if (enemy->on_elevator < 0 ||
+        enemy->on_elevator >= level->runtime.elevator_count ||
+        enemy->climbing)
+    {
+        enemy->on_elevator = -1;
+        return;
+    }
+
+    const Elevator *elevator =
+        &level->runtime.elevators[enemy->on_elevator];
+    if (!enemy_over_elevator(enemy, elevator) || enemy->vy < 0.0f)
+    {
+        enemy->on_elevator = -1;
+        return;
+    }
+
+    enemy->y = elevator->y - ENEMY_H;
+    enemy->vy = 0.0f;
+    enemy->on_ground = true;
+}
+
+/* Snap a falling guard onto a lift it crossed this frame, or keep an existing
+ * rider attached after walking/aiming physics cleared the grounded flag. */
+static void enemy_finish_elevator_ride(Enemy *enemy, const Level *level,
+                                       float previous_y)
+{
+    if (enemy->climbing || enemy->vy < 0.0f)
+    {
+        enemy->on_elevator = -1;
+        return;
+    }
+
+    int remembered = enemy->on_elevator;
+    enemy->on_elevator = -1;
+    float previous_feet = previous_y + ENEMY_H;
+    float feet = enemy->y + ENEMY_H;
+    for (int i = 0; i < level->runtime.elevator_count; ++i)
+    {
+        const Elevator *elevator = &level->runtime.elevators[i];
+        if (!enemy_over_elevator(enemy, elevator))
+            continue;
+        bool kept_ride = i == remembered;
+        bool crossed_top =
+            previous_feet <= elevator->y + 1.0f && feet >= elevator->y;
+        if (!kept_ride && !crossed_top)
+            continue;
+        enemy->y = elevator->y - ENEMY_H;
+        enemy->vy = 0.0f;
+        enemy->on_ground = true;
+        enemy->on_elevator = i;
+        return;
+    }
+}
+
+static bool enemy_can_leave_elevator(const Level *level,
+                                     const Enemy *enemy, int dir)
+{
+    if (enemy->on_elevator < 0 ||
+        enemy->on_elevator >= level->runtime.elevator_count)
+        return false;
+
+    const Elevator *elevator =
+        &level->runtime.elevators[enemy->on_elevator];
+    int floor_row = (int)lroundf(elevator->y / TILE_SIZE);
+    float floor_y = floor_row * (float)TILE_SIZE;
+    if (fabsf(elevator->y - floor_y) >
+        ENEMY_ELEVATOR_FLOOR_TOLERANCE)
+        return false;
+
+    int floor_col = elevator->col + dir;
+    if (!level_is_solid(level, floor_col, floor_row) &&
+        !level_is_ladder(level, floor_col, floor_row))
+        return false;
+
+    float exit_x = floor_col * (float)TILE_SIZE +
+                   (TILE_SIZE - ENEMY_W) * 0.5f;
+    return enemy_box_tiles_clear(level, exit_x, floor_y - ENEMY_H,
+                                 ENEMY_W, ENEMY_H);
+}
+
+static int enemy_elevator_ahead(const Level *level, const Enemy *enemy,
+                                int dir, float *floor_y)
+{
+    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f
+                            : enemy->x - 3.0f;
+    int col = (int)floorf(probe_x / TILE_SIZE);
+    int row = (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
+    float y = row * (float)TILE_SIZE;
+    for (int i = 0; i < level->runtime.elevator_count; ++i)
+    {
+        const Elevator *elevator = &level->runtime.elevators[i];
+        if (elevator->col == col &&
+            y >= elevator->top_limit - ENEMY_ELEVATOR_FLOOR_TOLERANCE &&
+            y <= elevator->bot_limit + ENEMY_ELEVATOR_FLOOR_TOLERANCE)
+        {
+            *floor_y = y;
+            return i;
+        }
+    }
+    return -1;
+}
+
 static bool enemy_floor_ahead(const Level *level, const Enemy *enemy, int dir)
 {
     float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f : enemy->x - 3.0f;
@@ -262,6 +376,14 @@ static bool enemy_floor_ahead(const Level *level, const Enemy *enemy, int dir)
         const MovingPlatform *platform = &level->runtime.moving_platforms[i];
         if (platform->row == row &&
             (int)floorf(platform->x / TILE_SIZE) == col)
+            return true;
+    }
+    for (int i = 0; i < level->runtime.elevator_count; ++i)
+    {
+        const Elevator *elevator = &level->runtime.elevators[i];
+        if (elevator->col == col &&
+            fabsf(elevator->y - row * (float)TILE_SIZE) <=
+                ENEMY_ELEVATOR_FLOOR_TOLERANCE)
             return true;
     }
     return false;
@@ -328,6 +450,26 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
     bool target_on_same_floor =
         fabsf(target_y - enemy_center_y) <= TILE_SIZE * 0.75f;
     bool reached_target_x = false;
+    bool waiting_on_elevator = false;
+
+    if (enemy->on_elevator >= 0)
+    {
+        int exit_dir = enemy->dir;
+        if (following_target && fabsf(target_dx) > 2.0f)
+            exit_dir = target_dx < 0.0f ? -1 : 1;
+        bool may_leave = (!following_target || target_on_same_floor) &&
+                         enemy_can_leave_elevator(level, enemy, exit_dir);
+        if (may_leave)
+        {
+            enemy->dir = exit_dir;
+        }
+        else
+        {
+            /* Stay on the one-tile platform between floors. A pursuing guard
+             * only steps off when the lift reaches its target storey. */
+            waiting_on_elevator = true;
+        }
+    }
 
     /* Only follow the target's X position once the enemy is on its floor.
      * Otherwise, crossing that X position makes the direction flip every
@@ -342,15 +484,50 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             reached_target_x = true;
     }
 
-    enemy->vx = (hemmed_in || reached_target_x)
+    bool preserving_gap_jump =
+        !enemy->on_ground &&
+        fabsf(enemy->vx) >= ENEMY_JUMP_MIN_SPEED - 0.5f;
+    enemy->vx = (hemmed_in || reached_target_x || waiting_on_elevator)
                     ? 0.0f
-                    : (float)enemy->dir * speed;
+                    : preserving_gap_jump
+                          ? (float)enemy->dir *
+                                fmaxf(fabsf(enemy->vx),
+                                      ENEMY_JUMP_MIN_SPEED)
+                          : (float)enemy->dir * speed;
 
     if (enemy->on_ground)
     {
         int center_col = (int)floorf((enemy->x + ENEMY_W * 0.5f) / TILE_SIZE);
         int center_row = (int)floorf((enemy->y + ENEMY_H * 0.5f) / TILE_SIZE);
         int foot_row = (int)floorf((enemy->y + ENEMY_H * 0.5f) / TILE_SIZE);
+
+        /* A guard routing to another storey waits at a shaft instead of
+         * jumping over it. The lift never pauses, so once it aligns with the
+         * floor, commit the final half-step onto its one-tile platform. */
+        if (following_target && !target_on_same_floor &&
+            enemy->on_elevator < 0 && !hemmed_in)
+        {
+            float floor_y = 0.0f;
+            int elevator_index =
+                enemy_elevator_ahead(level, enemy, enemy->dir, &floor_y);
+            if (elevator_index >= 0)
+            {
+                const Elevator *elevator =
+                    &level->runtime.elevators[elevator_index];
+                enemy->vx = 0.0f;
+                if (fabsf(elevator->y - floor_y) <=
+                    ENEMY_ELEVATOR_FLOOR_TOLERANCE)
+                {
+                    enemy->x = elevator->col * (float)TILE_SIZE +
+                               (TILE_SIZE - ENEMY_W) * 0.5f;
+                    enemy->y = elevator->y - ENEMY_H;
+                    enemy->vy = 0.0f;
+                    enemy->on_ground = true;
+                    enemy->on_elevator = elevator_index;
+                    return;
+                }
+            }
+        }
 
         /* Reverse at walls. */
         int ahead_col = (enemy->dir > 0)
@@ -435,6 +612,9 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
                   float target_x, float target_y,
                   bool hemmed_in, Rng *rng)
 {
+    enemy_begin_elevator_ride(enemy, level);
+    float previous_y = enemy->y;
+
     /* Conversation cooldown must advance in every AI state, including walking
      * and climbing, so enemies eventually become eligible to talk again. */
     if (enemy->talk_cooldown > 0.0f)
@@ -468,6 +648,7 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
     if (enemy->talking && !pursuing)
     {
         enemy_update_talking(enemy, level, dt);
+        enemy_finish_elevator_ride(enemy, level, previous_y);
         return;
     }
     if (pursuing && enemy->talking)
@@ -487,4 +668,5 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
                              pursuing, alarmed, target_x, target_y,
                              hemmed_in, rng);
     }
+    enemy_finish_elevator_ride(enemy, level, previous_y);
 }

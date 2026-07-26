@@ -2308,6 +2308,97 @@ static void test_pursuing_guard_hops_small_gap(void)
     gameplay_ai_update_movement(&state, 0.016f);
     CHECK(!guard->on_ground);
     CHECK(guard->vy < 0.0f); /* leapt the gap instead of stalling at the edge */
+
+    bool reached_far_side = false;
+    for (int frame = 0; frame < 180; ++frame)
+    {
+        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+        if (guard->on_ground && guard->x >= 4.0f * TILE_SIZE)
+        {
+            reached_far_side = true;
+            break;
+        }
+    }
+    CHECK(reached_far_side); /* completing the jump matters, not just starting it */
+}
+
+static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
+{
+    static const char data[] =
+        "#######\n"
+        "#     #\n"
+        "###V###\n"
+        "#  V  #\n"
+        "###V###\n"
+        "#S V E#\n"
+        "#######\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 57);
+    CHECK(level_load_data(&level, "enemy elevator route", data,
+                          strlen(data), &rng));
+    CHECK(level.runtime.elevator_count == 1);
+
+    Elevator *elevator = &level.runtime.elevators[0];
+    float elevator_x = elevator->col * (float)TILE_SIZE;
+    Enemy guard;
+    enemy_init(&guard,
+               elevator_x - ENEMY_W,
+               6.0f * TILE_SIZE - ENEMY_H, &rng);
+    guard.dir = 1;
+    guard.on_ground = true;
+
+    /* At a shaft leading toward the target floor, the guard waits for and
+     * boards the aligned platform instead of jumping across the opening. */
+    elevator->y = elevator->bot_limit - TILE_SIZE;
+    float waiting_x = guard.x;
+    enemy_update(&guard, &level, 0.016f, true, false,
+                 5.5f * TILE_SIZE,
+                 elevator->top_limit - ENEMY_H * 0.5f,
+                 false, &rng);
+    CHECK(guard.on_elevator == -1);
+    CHECK(guard.on_ground);
+    CHECK(fabsf(guard.x - waiting_x) < 0.01f);
+
+    elevator->y = elevator->bot_limit;
+    enemy_update(&guard, &level, 0.016f, true, false,
+                 5.5f * TILE_SIZE,
+                 elevator->top_limit - ENEMY_H * 0.5f,
+                 false, &rng);
+    CHECK(guard.on_elevator == 0);
+    CHECK(guard.on_ground);
+    CHECK(fabsf(guard.y - (elevator->y - ENEMY_H)) < 0.01f);
+    float riding_x = guard.x;
+
+    for (int frame = 0; frame < 30; ++frame)
+    {
+        level_update_elevators(&level, 0.016f);
+        enemy_update(&guard, &level, 0.016f, true, false,
+                     5.5f * TILE_SIZE,
+                     elevator->top_limit - ENEMY_H * 0.5f,
+                     false, &rng);
+        CHECK(guard.on_elevator == 0);
+        CHECK(guard.on_ground);
+        CHECK(fabsf(guard.y - (elevator->y - ENEMY_H)) < 0.01f);
+    }
+    CHECK(elevator->y < elevator->bot_limit - 30.0f);
+    CHECK(fabsf(guard.x - riding_x) < 0.01f);
+
+    /* Once the platform lines up with the requested storey, the guard may
+     * walk off instead of waiting through another lift cycle. */
+    elevator->y = elevator->top_limit;
+    elevator->vy = ELEVATOR_SPEED;
+    guard.y = elevator->y - ENEMY_H;
+    for (int frame = 0; frame < 60 && guard.on_elevator >= 0; ++frame)
+    {
+        enemy_update(&guard, &level, 1.0f / 120.0f, true, false,
+                     5.5f * TILE_SIZE,
+                     elevator->top_limit - ENEMY_H * 0.5f,
+                     false, &rng);
+    }
+    CHECK(guard.on_elevator == -1);
+    CHECK(guard.on_ground);
+    CHECK(guard.x + ENEMY_W * 0.5f >= elevator_x + TILE_SIZE);
 }
 
 static void test_pursuing_guard_walks_onto_falling_platform(void)
@@ -2401,6 +2492,7 @@ int main(void)
     test_noise_draws_guards_to_investigate();
     test_guard_investigates_fallen_comrade();
     test_pursuing_guard_hops_small_gap();
+    test_guard_rides_elevator_and_leaves_at_target_floor();
     test_pursuing_guard_walks_onto_falling_platform();
 
     if (failures != 0)

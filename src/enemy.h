@@ -13,6 +13,7 @@ typedef struct
     float vx, vy;
     int dir; /* horizontal patrol direction: -1 or +1 */
     bool on_ground;
+    int on_elevator; /* runtime elevator index while riding, otherwise -1 */
     bool climbing;
     int climb_dir;  /* -1 = up, +1 = down */
     int ladder_col; /* column the enemy is climbing */

@@ -153,8 +153,9 @@
 
 /* Pursuit movement: guards hop small gaps while chasing (patrol is unchanged). */
 #define ENEMY_JUMP_SPEED 300.0f
-#define ENEMY_JUMP_MIN_SPEED 120.0f
+#define ENEMY_JUMP_MIN_SPEED 190.0f
 #define ENEMY_JUMP_MAX_GAP_TILES 2
+#define ENEMY_ELEVATOR_FLOOR_TOLERANCE 8.0f
 /* A search party fans out around the last sighting instead of clustering. */
 #define ENEMY_SEARCH_FAN 1.5f
 #define ENEMY_ALARM_SPEED_MULTIPLIER 1.28f
