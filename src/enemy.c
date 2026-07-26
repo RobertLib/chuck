@@ -16,6 +16,7 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->ladder_col = 0;
     enemy->climb_start_floor_row = 0;
     enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
+    enemy->mounting_crate = false;
     enemy->obstacle_avoid_timer = 0.0f;
     enemy->hp = ENEMY_HP;
     enemy->dead = false;
@@ -450,12 +451,12 @@ static bool enemy_box_crates_clear(const Level *level, float x, float y,
     return true;
 }
 
-/* Start the jump before touching the crate: a guard needs enough horizontal
+/* Start the climb before touching the crate: a guard needs enough horizontal
  * runway for its feet to rise above the box before their collision shapes
- * overlap. Refuse the jump when a low ceiling, stacked crate, wall, or missing
- * floor would make the landing unsafe. */
-static bool enemy_can_jump_crate(const Level *level, const Enemy *enemy,
-                                 int dir)
+ * overlap. The route beyond is checked too, so mounting the crate cannot lead
+ * to a blocked edge or a stranded guard. */
+static bool enemy_can_mount_crate(const Level *level, const Enemy *enemy,
+                                  int dir)
 {
     float enemy_feet = enemy->y + ENEMY_H;
     int floor_row = (int)floorf((enemy_feet + 2.0f) / TILE_SIZE);
@@ -577,12 +578,16 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             reached_target_x = true;
     }
 
+    bool preserving_crate_mount =
+        !enemy->on_ground && enemy->mounting_crate;
     bool preserving_gap_jump =
         !enemy->on_ground &&
         fabsf(enemy->vx) >= ENEMY_JUMP_MIN_SPEED - 0.5f;
     enemy->vx = (hemmed_in || reached_target_x || waiting_on_elevator)
                     ? 0.0f
-                    : preserving_gap_jump
+                    : preserving_crate_mount
+                          ? (float)enemy->dir * ENEMY_CRATE_MOUNT_SPEED
+                          : preserving_gap_jump
                           ? (float)enemy->dir *
                                 fmaxf(fabsf(enemy->vx),
                                       ENEMY_JUMP_MIN_SPEED)
@@ -590,6 +595,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
 
     if (enemy->on_ground)
     {
+        enemy->mounting_crate = false;
         int center_col = (int)floorf((enemy->x + ENEMY_W * 0.5f) / TILE_SIZE);
         int center_row = (int)floorf((enemy->y + ENEMY_H * 0.5f) / TILE_SIZE);
         int foot_row = (int)floorf((enemy->y + ENEMY_H * 0.5f) / TILE_SIZE);
@@ -622,12 +628,13 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             }
         }
 
-        /* An actively routing guard clears a safe crate so it cannot stall on
-         * the way to its target. Patrols vary their route: one roll at the
-         * approach either commits to the jump or turns them away for the full
-         * obstacle-avoidance window, avoiding a per-frame re-roll or jitter. */
+        /* An actively routing guard climbs onto a safe crate so it cannot
+         * stall on the way to its target. Patrols vary their route: one roll
+         * at the approach either commits to the climb or turns them away for
+         * the full obstacle-avoidance window, avoiding a per-frame re-roll or
+         * jitter. */
         if (!hemmed_in && enemy->vx != 0.0f &&
-            enemy_can_jump_crate(level, enemy, enemy->dir))
+            enemy_can_mount_crate(level, enemy, enemy->dir))
         {
             bool jump = following_target ||
                         rng_range(rng, 100) <
@@ -635,9 +642,10 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             if (jump)
             {
                 enemy->vy = -ENEMY_JUMP_SPEED;
-                if (fabsf(enemy->vx) < ENEMY_JUMP_MIN_SPEED)
-                    enemy->vx = (float)enemy->dir * ENEMY_JUMP_MIN_SPEED;
+                enemy->vx =
+                    (float)enemy->dir * ENEMY_CRATE_MOUNT_SPEED;
                 enemy->on_ground = false;
+                enemy->mounting_crate = true;
             }
             else
             {

@@ -2467,7 +2467,7 @@ static void test_enemy_moves_away_from_blocking_crate(void)
     CHECK(enemy->obstacle_avoid_timer > 0.0f);
 }
 
-static void test_enemy_jumps_over_blocking_crate(void)
+static void test_enemy_climbs_over_blocking_crate(void)
 {
     static const char data[] =
         "##########\n"
@@ -2494,13 +2494,20 @@ static void test_enemy_jumps_over_blocking_crate(void)
     enemy->pursuit_target_y = enemy->y + ENEMY_H * 0.5f;
 
     bool jumped = false;
+    bool landed_on_crate = false;
     bool landed_beyond_crate = false;
     for (int frame = 0; frame < 720; ++frame)
     {
         gameplay_ai_update_movement(&state, 1.0f / 120.0f);
         if (enemy->vy < 0.0f)
             jumped = true;
-        if (jumped && enemy->on_ground &&
+        bool overlaps_crate =
+            enemy->x < crate->x + CRATE_W &&
+            enemy->x + ENEMY_W > crate->x;
+        if (jumped && enemy->on_ground && overlaps_crate &&
+            fabsf(enemy->y + ENEMY_H - crate->y) < 0.01f)
+            landed_on_crate = true;
+        if (landed_on_crate && enemy->on_ground &&
             enemy->x + ENEMY_W <= crate->x + 0.01f)
         {
             landed_beyond_crate = true;
@@ -2509,6 +2516,7 @@ static void test_enemy_jumps_over_blocking_crate(void)
     }
 
     CHECK(jumped);
+    CHECK(landed_on_crate);
     CHECK(landed_beyond_crate);
     CHECK(enemy->obstacle_avoid_timer == 0.0f);
 }
@@ -3253,7 +3261,7 @@ int main(void)
     test_crate_movement_emits_sounds();
     test_crate_stops_at_enemy_and_triggers_counterattack();
     test_enemy_moves_away_from_blocking_crate();
-    test_enemy_jumps_over_blocking_crate();
+    test_enemy_climbs_over_blocking_crate();
     test_patrol_enemy_may_turn_from_jumpable_crate();
     test_enemy_uses_ladder_while_avoiding_crate();
     test_patrol_enemy_does_not_immediately_leave_ladder();

@@ -19,6 +19,9 @@ typedef struct
     int ladder_col; /* column the enemy is climbing */
     int climb_start_floor_row; /* floor row where this climb began */
     float climb_cooldown;
+    /* Keeps a crate jump short enough to land on the box instead of sailing
+     * over it. Cleared as soon as the guard is grounded again. */
+    bool mounting_crate;
     /* Temporarily keep moving away after hitting an obstacle. Without this,
      * pursuit steering can send the guard back into the same crate every
      * frame. */

@@ -292,6 +292,7 @@ void gameplay_resolve_enemy_crates(GameplayState *state, Enemy *enemy,
             enemy->y = crate->y - ENEMY_H;
             enemy->vy = 0.0f;
             enemy->on_ground = true;
+            enemy->mounting_crate = false;
             if (enemy->climbing)
             {
                 enemy->climbing = false;
@@ -311,6 +312,7 @@ void gameplay_resolve_enemy_crates(GameplayState *state, Enemy *enemy,
             enemy->dir = 1;
         }
         enemy->vx = 0.0f;
+        enemy->mounting_crate = false;
         enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
         if (enemy->climbing)
         {
