@@ -308,17 +308,58 @@ static void janitor_init(Janitor *janitor, float x, float y,
     janitor->x = x;
     janitor->y = y;
     janitor->dir = rng_range(rng, 2) == 0 ? -1 : 1;
+    janitor->cart_dir = janitor->dir;
     janitor->anim_time = (float)rng_range(rng, 628) * 0.01f;
     janitor_set_activity(janitor,
                           starts_mopping ? JANITOR_MOP : JANITOR_WALK, rng);
 }
 
+static void janitor_collision_bounds(const Janitor *janitor, int cart_dir,
+                                     float *x, float *width)
+{
+    *x = janitor->x;
+    *width = JANITOR_W + JANITOR_CART_SIDE_EXTENT;
+    if (cart_dir > 0)
+        *x -= JANITOR_CART_SIDE_EXTENT;
+}
+
+static bool janitor_box_clear(const GameplayState *state,
+                              float x, float y, float width, float height)
+{
+    int left = (int)floorf(x / TILE_SIZE);
+    int right = (int)floorf((x + width - 1.0f) / TILE_SIZE);
+    int top = (int)floorf(y / TILE_SIZE);
+    int bottom = (int)floorf((y + height - 1.0f) / TILE_SIZE);
+    for (int row = top; row <= bottom; ++row)
+    {
+        for (int col = left; col <= right; ++col)
+        {
+            TileType tile = level_tile(&state->level, col, row);
+            if (tile == TILE_WALL || tile == TILE_DOOR)
+                return false;
+        }
+    }
+    return true;
+}
+
+static bool janitor_cart_side_clear(const GameplayState *state,
+                                    const Janitor *janitor, int cart_dir)
+{
+    float x;
+    float width;
+    janitor_collision_bounds(janitor, cart_dir, &x, &width);
+    return janitor_box_clear(state, x, janitor->y, width, JANITOR_H);
+}
+
 static bool janitor_has_floor_ahead(const GameplayState *state,
                                     const Janitor *janitor)
 {
+    float x;
+    float width;
+    janitor_collision_bounds(janitor, janitor->cart_dir, &x, &width);
     float probe_x = janitor->dir > 0
-                        ? janitor->x + JANITOR_W + 7.0f
-                        : janitor->x - 7.0f;
+                        ? x + width + 7.0f
+                        : x - 7.0f;
     int col = (int)floorf(probe_x / TILE_SIZE);
     int row = (int)floorf((janitor->y + JANITOR_H + 3.0f) / TILE_SIZE);
     return level_is_solid(&state->level, col, row) ||
@@ -328,9 +369,12 @@ static bool janitor_has_floor_ahead(const GameplayState *state,
 static bool janitor_side_blocked(const GameplayState *state,
                                  const Janitor *janitor)
 {
+    float x;
+    float width;
+    janitor_collision_bounds(janitor, janitor->cart_dir, &x, &width);
     float probe_x = janitor->dir > 0
-                        ? janitor->x + JANITOR_W + 2.0f
-                        : janitor->x - 2.0f;
+                        ? x + width + 2.0f
+                        : x - 2.0f;
     int col = (int)floorf(probe_x / TILE_SIZE);
     int top = (int)floorf((janitor->y + 1.0f) / TILE_SIZE);
     int bottom = (int)floorf((janitor->y + JANITOR_H - 1.0f) / TILE_SIZE);
@@ -371,6 +415,13 @@ static void update_janitor(GameplayState *state, Janitor *janitor, float dt)
             spot->active = false;
         }
     }
+
+    /* Keep the cart on its old side after a turn at a wall. Once the janitor
+     * has walked far enough away, it can move to the new trailing side without
+     * appearing inside static geometry. */
+    if (janitor->cart_dir != janitor->dir &&
+        janitor_cart_side_clear(state, janitor, janitor->dir))
+        janitor->cart_dir = janitor->dir;
 
     janitor->activity_timer -= dt;
     if (janitor->activity_timer <= 0.0f)
@@ -421,9 +472,15 @@ static void update_janitor(GameplayState *state, Janitor *janitor, float dt)
     if (janitor->vy > MAX_FALL_SPEED)
         janitor->vy = MAX_FALL_SPEED;
     float intended_vx = janitor->vx;
-    level_move(&state->level, &janitor->x, &janitor->y,
-               &janitor->vx, &janitor->vy, JANITOR_W, JANITOR_H,
+    float collision_x;
+    float collision_width;
+    janitor_collision_bounds(janitor, janitor->cart_dir,
+                             &collision_x, &collision_width);
+    float left_extension = janitor->x - collision_x;
+    level_move(&state->level, &collision_x, &janitor->y,
+               &janitor->vx, &janitor->vy, collision_width, JANITOR_H,
                dt, false, &janitor->on_ground, false);
+    janitor->x = collision_x + left_extension;
     if (janitor->activity == JANITOR_WALK && intended_vx != 0.0f &&
         janitor->vx == 0.0f)
     {
@@ -479,10 +536,19 @@ void gameplay_ai_spawn_level_entities(GameplayState *state)
     }
     state->janitor_count = state->level.map.janitor_count;
     for (int i = 0; i < state->janitor_count; ++i)
+    {
         janitor_init(&state->janitors[i],
                      state->level.map.janitor_spawns[i].x,
                      state->level.map.janitor_spawns[i].y,
                      (i & 1) == 0, &state->rng);
+        Janitor *janitor = &state->janitors[i];
+        if (!janitor_cart_side_clear(state, janitor, janitor->cart_dir) &&
+            janitor_cart_side_clear(state, janitor, -janitor->cart_dir))
+        {
+            janitor->dir = -janitor->dir;
+            janitor->cart_dir = janitor->dir;
+        }
+    }
     state->mine_count = state->level.map.mine_count;
     for (int i = 0; i < state->mine_count; ++i)
     {

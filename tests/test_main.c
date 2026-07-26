@@ -2879,6 +2879,51 @@ static void test_janitor_ai_is_seeded_and_visual_only(void)
     CHECK(first.janitors[0].wet_spots[0].active);
 }
 
+static void test_janitor_cart_stays_clear_when_turning_at_wall(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S E  J###\n"
+        "##########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 1357);
+    CHECK(level_load_data(&state.level, "janitor turn", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.janitor_count == 1);
+
+    Janitor *janitor = &state.janitors[0];
+    janitor->dir = 1;
+    janitor->cart_dir = 1;
+    janitor->activity = JANITOR_WALK;
+    janitor->activity_timer = 100.0f;
+    janitor->on_ground = true;
+
+    gameplay_ai_update_movement(&state, 0.1f);
+    CHECK(janitor->dir == -1);
+    CHECK(janitor->cart_dir == 1);
+    CHECK(gameplay_box_tiles_clear(
+        &state, janitor->x - JANITOR_CART_SIDE_EXTENT, janitor->y,
+        JANITOR_W + JANITOR_CART_SIDE_EXTENT, JANITOR_H));
+    CHECK(!gameplay_box_tiles_clear(
+        &state, janitor->x, janitor->y,
+        JANITOR_W + JANITOR_CART_SIDE_EXTENT, JANITOR_H));
+
+    janitor->activity = JANITOR_WALK;
+    janitor->activity_timer = 100.0f;
+    for (int frame = 0; frame < 30; ++frame)
+    {
+        gameplay_ai_update_movement(&state, 0.05f);
+        float collision_x = janitor->cart_dir > 0
+                                ? janitor->x - JANITOR_CART_SIDE_EXTENT
+                                : janitor->x;
+        CHECK(gameplay_box_tiles_clear(
+            &state, collision_x, janitor->y,
+            JANITOR_W + JANITOR_CART_SIDE_EXTENT, JANITOR_H));
+    }
+    CHECK(janitor->cart_dir == -1);
+}
+
 static void test_enemy_vision_cone_stealth_and_walls(void)
 {
     /* Open corridor: a standing Chuck five tiles ahead is spotted and aimed at;
@@ -3348,6 +3393,7 @@ int main(void)
     test_hazards_emit_specific_impact_sounds();
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();
+    test_janitor_cart_stays_clear_when_turning_at_wall();
     test_enemy_vision_cone_stealth_and_walls();
     test_enemy_fires_vertical_shot_up_a_shaft();
     test_noise_draws_guards_to_investigate();

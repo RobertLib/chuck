@@ -2233,6 +2233,7 @@ static void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
   float x = janitor->x - cam_x;
   float y = janitor->y + oy;
   int dir = janitor->dir;
+  int cart_dir = janitor->cart_dir;
   bool walking = janitor->activity == JANITOR_WALK &&
                  fabsf(janitor->vx) > 2.0f;
   bool mopping = janitor->activity == JANITOR_MOP;
@@ -2264,8 +2265,9 @@ static void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
   }
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-  /* Compact housekeeping cart, trailing behind the walking direction. */
-  float cart_x = dir > 0 ? x - 25.0f : x + JANITOR_W + 3.0f;
+  /* During a turn the cart stays on its clear side until there is enough room
+   * to place it behind the janitor again. */
+  float cart_x = cart_dir > 0 ? x - 25.0f : x + JANITOR_W + 3.0f;
   float cart_y = y + 7.0f;
   /* Short contact shadows keep the two silhouettes grounded without joining
    * them into one long, high-contrast stripe. */
@@ -2291,8 +2293,8 @@ static void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
   color_rect(r, (SDL_Color){88, 96, 96, 255},
              cart_x + 18.0f, cart_y + 22.0f, 2.0f, 2.0f);
   set_color(r, (SDL_Color){82, 91, 92, 255});
-  SDL_RenderLine(r, cart_x + (dir > 0 ? 20.0f : 3.0f), cart_y + 5.0f,
-                 cart_x + (dir > 0 ? 24.0f : -1.0f), cart_y - 1.0f);
+  SDL_RenderLine(r, cart_x + (cart_dir > 0 ? 20.0f : 3.0f), cart_y + 5.0f,
+                 cart_x + (cart_dir > 0 ? 24.0f : -1.0f), cart_y - 1.0f);
 
   /* The mop is clipped to the cart during a patrol and swept in a broad arc
    * while the janitor is working. */

@@ -85,6 +85,9 @@ typedef struct
     float x, y;
     float vx, vy;
     int dir;
+    /* The direction for which the cart is currently trailing. It can lag
+     * behind dir while the janitor makes room to turn beside a wall. */
+    int cart_dir;
     bool on_ground;
     JanitorActivity activity;
     float activity_timer;
