@@ -3049,6 +3049,7 @@ static void test_pursuing_guard_hops_small_gap(void)
         }
     }
     CHECK(reached_far_side); /* completing the jump matters, not just starting it */
+    CHECK(guard->x < 4.5f * TILE_SIZE); /* land just beyond the far edge */
 }
 
 static void test_pursuing_guard_refuses_high_drop(void)

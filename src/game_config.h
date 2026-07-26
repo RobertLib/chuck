@@ -159,6 +159,7 @@
  * same jump to clear a grounded crate when there is enough headroom and a safe
  * landing beyond it. */
 #define ENEMY_JUMP_SPEED 300.0f
+#define ENEMY_GAP_JUMP_SPEED 190.0f
 #define ENEMY_JUMP_MIN_SPEED 190.0f
 #define ENEMY_JUMP_MAX_GAP_TILES 2
 #define ENEMY_STEP_DOWN_MAX_TILES 2

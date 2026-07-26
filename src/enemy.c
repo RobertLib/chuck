@@ -667,7 +667,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             target_y < enemy_center_y + TILE_SIZE * 0.75f &&
             enemy_can_jump_gap(level, enemy, enemy->dir))
         {
-            enemy->vy = -ENEMY_JUMP_SPEED;
+            enemy->vy = -ENEMY_GAP_JUMP_SPEED;
             if (fabsf(enemy->vx) < ENEMY_JUMP_MIN_SPEED)
                 enemy->vx = (float)enemy->dir * ENEMY_JUMP_MIN_SPEED;
             enemy->on_ground = false;
