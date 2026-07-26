@@ -7,14 +7,19 @@
 #include "fx.h"
 #include "gameplay_interaction.h"
 #include "gameplay_world.h"
+#include "level_art.h"
 
 /*
  * Chuck intentionally ships without art assets.  Everything in this file is
  * assembled at runtime from small, hard-edged shapes.  The palette and the
  * lighting primitives live in fx.h and are shared with the intro and the
  * cutscenes, so the whole game reads as one production.  This file adds the
- * things only gameplay needs: the tile materials, ambient occlusion under
- * floors, warm ceiling lights, and a finishing scanline/vignette pass.
+ * things only gameplay needs: ambient occlusion under floors, warm ceiling
+ * lights, every actor and prop, and a finishing scanline/vignette pass.
+ *
+ * The wall material and the parallax backdrop are the one part that changes
+ * from sector to sector; both come from the level's theme in level_art.c, so
+ * a level's look is authored in its map file rather than hard-coded here.
  */
 
 static const SDL_Color COL_INK = {5, 7, 12, 255};
@@ -154,117 +159,11 @@ static void draw_restroom_mirror(SDL_Renderer *r, float x, float y,
              28.0f, 2.0f);
 }
 
-static void render_facade_background(Game *game, int win_w, int win_h)
-{
-  SDL_Renderer *r = game->platform.renderer;
-  float top = HUD_HEIGHT;
-  float height = (float)win_h - top;
-  float t = (float)SDL_GetTicksNS() * 1.0e-9f;
-
-  color_rect(r, (SDL_Color){5, 9, 19, 255}, 0.0f, top,
-             (float)win_w, height);
-  fx_vgrad(r, 0.0f, top, (float)win_w, height,
-           (SDL_Color){7, 12, 29, 255}, 255,
-           (SDL_Color){25, 32, 48, 255}, 255);
-
-  /* Stars and distant towers move more slowly than the climb, selling the
-   * height without letting the backdrop interfere with the route. */
-  for (int i = 0; i < 30; ++i)
-  {
-    unsigned h = tile_hash(i * 13 + 7, 211);
-    float x = (float)(h % (unsigned)win_w);
-    float y = top + fmodf((float)((h >> 8) % 700u) -
-                          game->presentation.cam_y * 0.08f + 700.0f,
-                          700.0f);
-    Uint8 glow = (Uint8)(80 + (h % 100u));
-    set_rgba(r, 155, 194, 218, glow);
-    fill_rect(r, x, y, (h & 3u) == 0u ? 2.0f : 1.0f, 1.0f);
-  }
-
-  float skyline_shift = fmodf(game->presentation.cam_y * 0.14f, 110.0f);
-  for (int i = 0; i < 9; ++i)
-  {
-    unsigned h = tile_hash(i, 307);
-    float tower_w = 74.0f + (float)(h % 58u);
-    float tower_h = 100.0f + (float)((h >> 7) % 180u);
-    float x = i * 104.0f - fmodf(game->presentation.cam_x * 0.08f, 104.0f);
-    float y = (float)win_h - tower_h + skyline_shift;
-    color_rect(r, (SDL_Color){10, 16, 28, 255}, x, y,
-               tower_w, tower_h);
-    for (float wy = y + 18.0f; wy < (float)win_h; wy += 28.0f)
-      for (float wx = x + 13.0f; wx < x + tower_w - 8.0f; wx += 22.0f)
-        if (((int)(wx + wy) + i) % 3 == 0)
-          color_rect(r, (SDL_Color){70, 69, 55, 255}, wx, wy, 5.0f, 8.0f);
-  }
-
-  /* A masonry shell, floor bands and structural bays establish one coherent
-   * building. Windows are separate fixtures rendered in those bays, never a
-   * second texture underneath gameplay objects. */
-  float face_left = FACADE_BUILDING_SIDE_INSET -
-                    game->presentation.cam_x;
-  float face_width = game->gameplay.level.map.width * (float)TILE_SIZE -
-                     FACADE_BUILDING_SIDE_INSET * 2.0f;
-  float face_right = face_left + face_width;
-  color_rect(r, (SDL_Color){43, 43, 47, 255}, face_left, top,
-             face_width, height);
-
-  int first_course = (int)floorf(game->presentation.cam_y / 16.0f) - 1;
-  int last_course = first_course + (int)(height / 16.0f) + 3;
-  for (int course = first_course; course <= last_course; ++course)
-  {
-    float y = course * 16.0f + HUD_HEIGHT - game->presentation.cam_y;
-    color_rect(r, (SDL_Color){30, 31, 35, 255}, face_left, y,
-               face_width, 1.0f);
-    float joint_offset = (course & 1) != 0 ? 32.0f : 0.0f;
-    for (float x = face_left + joint_offset; x < face_right; x += 64.0f)
-    {
-      color_rect(r, (SDL_Color){35, 35, 39, 255}, x, y,
-                 1.0f, 16.0f);
-    }
-  }
-
-  /* Five window bays are separated by shallow stone pilasters. */
-  for (int col = 6; col < game->gameplay.level.map.width - 3; col += 4)
-  {
-    float x = (col + 0.5f) * (float)TILE_SIZE -
-              game->presentation.cam_x;
-    color_rect(r, (SDL_Color){27, 28, 32, 255}, x - 4.0f, top,
-               9.0f, height);
-    color_rect(r, (SDL_Color){59, 58, 60, 255}, x - 3.0f, top,
-               2.0f, height);
-  }
-
-  /* Each band sits in the wall gap between two window rows. */
-  for (int row = 3; row < game->gameplay.level.map.height; row += 3)
-  {
-    float y = (row + 2) * (float)TILE_SIZE + HUD_HEIGHT -
-              game->presentation.cam_y;
-    if (y < top - 8.0f || y > (float)win_h + 8.0f)
-      continue;
-    color_rect(r, (SDL_Color){24, 25, 29, 255}, face_left, y,
-               face_width, 6.0f);
-    color_rect(r, (SDL_Color){70, 67, 65, 255}, face_left, y,
-               face_width, 2.0f);
-  }
-
-  color_rect(r, (SDL_Color){22, 24, 29, 255}, face_left, top,
-             7.0f, height);
-  color_rect(r, (SDL_Color){67, 65, 65, 255}, face_right - 7.0f, top,
-             7.0f, height);
-  float roof_y = HUD_HEIGHT - game->presentation.cam_y;
-  if (roof_y >= top - 10.0f && roof_y <= (float)win_h)
-  {
-    color_rect(r, (SDL_Color){19, 21, 26, 255}, face_left - 5.0f,
-               roof_y, face_width + 10.0f, 10.0f);
-    color_rect(r, (SDL_Color){92, 87, 80, 255}, face_left - 5.0f,
-               roof_y, face_width + 10.0f, 3.0f);
-  }
-
-  float beacon = 0.45f + 0.55f * sinf(t * 2.2f);
-  fx_glow(r, (float)win_w - 42.0f, top + 25.0f, 20.0f,
-          (SDL_Color){228, 54, 48, 255}, (Uint8)(35.0f + beacon * 55.0f));
-}
-
+/*
+ * Every level's backdrop comes from its theme (see level_art.c). The restroom
+ * is the one exception: its interior is derived from the map's own wall
+ * bounding box, so it is built here where the room geometry is to hand.
+ */
 static void render_background(Game *game, int win_w, int win_h)
 {
   SDL_Renderer *r = game->platform.renderer;
@@ -272,13 +171,7 @@ static void render_background(Game *game, int win_w, int win_h)
   const float fh = (float)win_h - oy;
   float t = (float)SDL_GetTicksNS() * 1.0e-9f;
 
-  if (game->gameplay.level.map.mode == LEVEL_MODE_FACADE)
-  {
-    render_facade_background(game, win_w, win_h);
-    return;
-  }
-
-  if (game->gameplay.level.map.restroom_theme)
+  if (game->gameplay.level.map.theme == LEVEL_THEME_RESTROOM)
   {
     const Level *level = &game->gameplay.level;
     float cam_x = game->presentation.cam_x;
@@ -435,215 +328,10 @@ static void render_background(Game *game, int win_w, int win_h)
     return;
   }
 
-  /* Smooth atmospheric gradient: cool and dark up top, a faint teal cast
-   * toward the floor so the space feels lit from below by machinery. */
-  color_rect(r, FX_NIGHT, 0.0f, oy, (float)win_w, fh);
-  fx_vgrad(r, 0.0f, oy, (float)win_w, fh,
-           (SDL_Color){7, 10, 18, 255}, 255,
-           (SDL_Color){20, 30, 42, 255}, 255);
-
-  /* Farthest layer: hulking silhouettes of plant machinery, barely lit. */
-  float far_shift = fmodf(-game->presentation.cam_x * 0.10f, 224.0f);
-  if (far_shift > 0.0f)
-    far_shift -= 224.0f;
-  for (float x = far_shift - 48.0f; x < (float)win_w + 224.0f; x += 224.0f)
-  {
-    unsigned seed = (unsigned)((int)(x + game->presentation.cam_x * 0.10f) / 224);
-    unsigned h = fx_hash(seed * 31u + (unsigned)game->campaign.current_level * 7u);
-    float tank_h = 96.0f + (float)(h % 60u);
-    color_rect(r, (SDL_Color){13, 18, 29, 255},
-               x + 24.0f, oy + fh - tank_h, 74.0f, tank_h);
-    color_rect(r, (SDL_Color){16, 22, 34, 255},
-               x + 30.0f, oy + fh - tank_h - 14.0f, 62.0f, 14.0f);
-    color_rect(r, (SDL_Color){13, 18, 29, 255},
-               x + 128.0f, oy + fh - 64.0f, 70.0f, 64.0f);
-    /* Slim exhaust stack with a slow-blinking service light. */
-    color_rect(r, (SDL_Color){15, 21, 32, 255},
-               x + 150.0f, oy + 34.0f, 10.0f, fh - 98.0f);
-    float blink = sinf(t * 1.4f + (float)(h % 7u)) > 0.86f ? 1.0f : 0.28f;
-    color_rect(r, fx_dim((SDL_Color){194, 84, 66, 255}, blink),
-               x + 153.0f, oy + 30.0f, 4.0f, 3.0f);
-  }
-
-  /* Mid layer: service bays with pilasters, pipe runs and dim windows. */
-  float mid_shift = fmodf(-game->presentation.cam_x * 0.18f, 192.0f);
-  if (mid_shift > 0.0f)
-    mid_shift -= 192.0f;
-  for (float x = mid_shift - 32.0f; x < (float)win_w + 192.0f; x += 192.0f)
-  {
-    color_rect(r, (SDL_Color){18, 25, 38, 255},
-               x + 16.0f, oy + 26.0f, 144.0f, fh - 44.0f);
-    color_rect(r, (SDL_Color){26, 36, 50, 255},
-               x + 16.0f, oy + 26.0f, 144.0f, 3.0f);
-    color_rect(r, (SDL_Color){11, 16, 26, 255},
-               x + 28.0f, oy + 52.0f, 120.0f, 78.0f);
-    color_rect(r, (SDL_Color){31, 42, 56, 255},
-               x + 28.0f, oy + 52.0f, 120.0f, 2.0f);
-    /* Pipe run along the bay with hanging brackets. */
-    color_rect(r, (SDL_Color){24, 33, 46, 255},
-               x + 16.0f, oy + 146.0f, 144.0f, 5.0f);
-    color_rect(r, (SDL_Color){33, 45, 60, 255},
-               x + 16.0f, oy + 146.0f, 144.0f, 1.0f);
-    for (int b = 0; b < 3; ++b)
-      color_rect(r, (SDL_Color){15, 21, 32, 255},
-                 x + 34.0f + (float)b * 48.0f, oy + 130.0f, 3.0f, 16.0f);
-
-    /* Dim equipment lights; the warm ones flicker very rarely. */
-    for (int lamp = 0; lamp < 4; ++lamp)
-    {
-      unsigned h = tile_hash((int)(x + game->presentation.cam_x * 0.18f) / 8 + lamp,
-                             game->campaign.current_level + 7);
-      bool warm = (h & 1u) != 0u;
-      float flicker = warm && ((h >> 3) & 7u) == 0u &&
-                              fmodf(t * 1.7f + (float)lamp, 4.0f) < 0.09f
-                          ? 0.3f
-                          : 1.0f;
-      SDL_Color lc = warm ? fx_dim((SDL_Color){126, 88, 44, 255}, flicker)
-                          : (SDL_Color){40, 96, 104, 255};
-      color_rect(r, lc, x + 36.0f + lamp * 26.0f, oy + 70.0f, 12.0f, 4.0f);
-      fx_rect_a(r, lc, 26, x + 34.0f + lamp * 26.0f, oy + 68.0f, 16.0f, 8.0f);
-    }
-  }
-
-  /* Slow volumetric light shafts falling between the far bays. */
-  float shaft_shift = fmodf(-game->presentation.cam_x * 0.22f, 384.0f);
-  if (shaft_shift > 0.0f)
-    shaft_shift -= 384.0f;
-  for (float x = shaft_shift - 96.0f; x < (float)win_w + 384.0f; x += 384.0f)
-  {
-    float sway = sinf(t * 0.21f + x * 0.01f) * 14.0f;
-    fx_light_cone(r, x + 150.0f + sway, oy - 6.0f, 14.0f, 52.0f,
-                  fh * 0.9f, (SDL_Color){120, 190, 196, 255}, 13);
-  }
-
-  /* Near layer: wall seams and conduit shadows at a faster parallax. */
-  float near_shift = fmodf(-game->presentation.cam_x * 0.30f, 96.0f);
-  if (near_shift > 0.0f)
-    near_shift -= 96.0f;
-  for (float x = near_shift; x < (float)win_w + 96.0f; x += 96.0f)
-  {
-    fx_rect_a(r, (SDL_Color){30, 42, 56, 255}, 130,
-              x, oy, 2.0f, fh);
-    color_rect(r, (SDL_Color){12, 17, 27, 255}, x + 66.0f, oy + 8.0f, 4.0f, 86.0f);
-    color_rect(r, (SDL_Color){45, 58, 72, 255}, x + 67.0f, oy + 8.0f, 1.0f, 86.0f);
-  }
-
-  /* Tiny, low-contrast dust motes make empty rooms feel alive. */
-  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  for (int i = 0; i < 26; ++i)
-  {
-    unsigned h = tile_hash(i + game->campaign.current_level * 29, 91);
-    float x = fmodf((float)(h % (unsigned)(win_w + 80)) + t * (4.0f + (float)(i % 5)), (float)(win_w + 80)) - 40.0f;
-    float y = oy + 18.0f + (float)((h >> 8) % (unsigned)(win_h - HUD_HEIGHT - 36)) +
-              sinf(t * 0.8f + (float)i) * 2.0f;
-    Uint8 a = (Uint8)(22 + (h % 20u));
-    set_rgba(r, 130, 162, 170, a);
-    fill_rect(r, x, y, (i % 3 == 0) ? 2.0f : 1.0f, 1.0f);
-  }
-  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-
-  /* Depth haze pooling at the bottom of the frame. */
-  fx_vgrad(r, 0.0f, oy + fh - 90.0f, (float)win_w, 90.0f,
-           (SDL_Color){8, 12, 20, 255}, 0,
-           (SDL_Color){8, 12, 20, 255}, 120);
-}
-
-static void draw_wall_tile(SDL_Renderer *r, const Level *lvl,
-                           int col, int row, float x, float y)
-{
-  /* Plates span 2x2 tiles: seams and bevels only appear on panel borders,
-   * so the wall reads as riveted plating rather than a 32px checkerboard. */
-  unsigned ph = tile_hash(col >> 1, row >> 1);
-  unsigned h = tile_hash(col, row);
-  Uint8 v = (Uint8)(ph % 7u);
-  SDL_Color base = {(Uint8)(41 + v), (Uint8)(51 + v), (Uint8)(64 + v), 255};
-  bool left_edge = (col & 1) == 0;
-  bool top_edge = (row & 1) == 0;
-  bool right_edge = !left_edge;
-  bool bottom_edge = !top_edge;
-
-  color_rect(r, base, x, y, TILE_SIZE, TILE_SIZE);
-
-  /* Quiet per-tile wear keeps large walls from feeling machine-stamped. */
-  color_rect(r, (SDL_Color){(Uint8)(35 + v), (Uint8)(45 + v), (Uint8)(57 + v), 255},
-             x + (float)(h % 21u) + 4.0f, y + (float)((h >> 6) % 22u) + 4.0f,
-             4.0f, 2.0f);
-  if ((h & 3u) == 0u)
-    color_rect(r, (SDL_Color){(Uint8)(48 + v), (Uint8)(59 + v), (Uint8)(73 + v), 255},
-               x + (float)((h >> 4) % 18u) + 6.0f, y + (float)((h >> 9) % 18u) + 8.0f,
-               6.0f, 1.0f);
-
-  /* Panel bevel: lit top/left edge, shaded bottom/right edge, dark seam. */
-  if (top_edge)
-  {
-    color_rect(r, (SDL_Color){20, 27, 39, 255}, x, y, TILE_SIZE, 1.0f);
-    color_rect(r, (SDL_Color){(Uint8)(58 + v), (Uint8)(71 + v), (Uint8)(86 + v), 255},
-               x, y + 1.0f, TILE_SIZE, 1.0f);
-  }
-  if (left_edge)
-  {
-    color_rect(r, (SDL_Color){20, 27, 39, 255}, x, y, 1.0f, TILE_SIZE);
-    color_rect(r, (SDL_Color){(Uint8)(53 + v), (Uint8)(66 + v), (Uint8)(80 + v), 255},
-               x + 1.0f, y + 1.0f, 1.0f, TILE_SIZE - 1.0f);
-  }
-  if (bottom_edge)
-    color_rect(r, (SDL_Color){(Uint8)(30 + v), (Uint8)(39 + v), (Uint8)(51 + v), 255},
-               x, y + TILE_SIZE - 2.0f, TILE_SIZE, 2.0f);
-  if (right_edge)
-    color_rect(r, (SDL_Color){(Uint8)(33 + v), (Uint8)(42 + v), (Uint8)(54 + v), 255},
-               x + TILE_SIZE - 2.0f, y, 2.0f, TILE_SIZE);
-
-  /* One rivet per panel corner. */
-  if (top_edge && left_edge)
-  {
-    color_rect(r, (SDL_Color){118, 134, 148, 255}, x + 3.0f, y + 3.0f, 2.0f, 2.0f);
-    color_rect(r, (SDL_Color){22, 30, 42, 255}, x + 4.0f, y + 4.0f, 1.0f, 1.0f);
-  }
-  if (bottom_edge && right_edge)
-    color_rect(r, (SDL_Color){96, 110, 124, 255},
-               x + TILE_SIZE - 6.0f, y + TILE_SIZE - 6.0f, 2.0f, 2.0f);
-
-  /* Rare full-tile variants: a vent grille or a hairline crack. */
-  if ((h % 23u) == 0u)
-  {
-    for (int slit = 0; slit < 4; ++slit)
-    {
-      color_rect(r, (SDL_Color){17, 23, 35, 255},
-                 x + 8.0f, y + 9.0f + slit * 4.0f, 16.0f, 2.0f);
-      color_rect(r, (SDL_Color){(Uint8)(56 + v), (Uint8)(69 + v), (Uint8)(84 + v), 255},
-                 x + 8.0f, y + 11.0f + slit * 4.0f, 16.0f, 1.0f);
-    }
-  }
-  else if ((h % 11u) == 0u)
-  {
-    set_rgba(r, 26, 34, 46, 255);
-    SDL_RenderLine(r, x + 12.0f, y + 9.0f, x + 16.0f, y + 14.0f);
-    SDL_RenderLine(r, x + 16.0f, y + 14.0f, x + 14.0f, y + 20.0f);
-    set_rgba(r, 62, 76, 92, 255);
-    SDL_RenderLine(r, x + 13.0f, y + 9.0f, x + 17.0f, y + 14.0f);
-  }
-
-  /* Exposed floor tops get a bright machined lip with worn paint dashes. */
-  if (!level_is_solid(lvl, col, row - 1))
-  {
-    color_rect(r, (SDL_Color){104, 122, 136, 255}, x, y, TILE_SIZE, 3.0f);
-    color_rect(r, (SDL_Color){168, 184, 192, 255}, x + 1.0f, y, TILE_SIZE - 2.0f, 1.0f);
-    color_rect(r, (SDL_Color){58, 72, 86, 255}, x, y + 3.0f, TILE_SIZE, 1.0f);
-    if ((h & 3u) == 0u)
-      color_rect(r, FX_AMBER_DK, x + (float)(h % 14u) + 4.0f, y + 1.0f, 9.0f, 2.0f);
-  }
-
-  /* Exposed undersides fall into shadow. */
-  if (!level_is_solid(lvl, col, row + 1))
-    color_rect(r, (SDL_Color){16, 22, 33, 255},
-               x, y + TILE_SIZE - 2.0f, TILE_SIZE, 2.0f);
-
-  /* Side faces against open air get a slim machined trim. */
-  if (!level_is_solid(lvl, col - 1, row))
-    color_rect(r, (SDL_Color){74, 90, 105, 255}, x, y, 2.0f, TILE_SIZE);
-  if (!level_is_solid(lvl, col + 1, row))
-    color_rect(r, (SDL_Color){26, 34, 46, 255},
-               x + TILE_SIZE - 2.0f, y, 2.0f, TILE_SIZE);
+  LevelArtScene scene = {r, &game->gameplay.level,
+                         game->presentation.cam_x, game->presentation.cam_y,
+                         win_w, win_h, t, game->campaign.current_level};
+  level_art_backdrop(&scene);
 }
 
 /* Topmost masonry row: the room's own ceiling, which must not be mistaken
@@ -993,26 +681,32 @@ static void draw_facade_ledge(SDL_Renderer *r, const Level *level,
   }
 
   /* Stone cornice: a lit top face, a shadowed soffit, and a dark underside
-   * so the climbable gaps between runs stay obvious. */
-  color_rect(r, (SDL_Color){20, 21, 26, 255}, x, y + 1.0f, 32.0f, 31.0f);
-  color_rect(r, (SDL_Color){88, 84, 78, 255}, x, y + 2.0f, 32.0f, 9.0f);
-  color_rect(r, (SDL_Color){126, 120, 108, 255}, x, y + 2.0f, 32.0f, 3.0f);
-  color_rect(r, (SDL_Color){59, 58, 60, 255}, x, y + 11.0f, 32.0f, 13.0f);
+   * so the climbable gaps between runs stay obvious. The stone takes its
+   * colour from the climb's theme, so the same wall reads wet under the storm
+   * and warm at dawn while the silhouette the player routes around is
+   * unchanged. */
+  const LevelThemeArt *art = level_art(level->map.theme);
+  SDL_Color stone = art->trim;
+  SDL_Color soffit = fx_mix(stone, art->wall_dark, 0.55f);
+  color_rect(r, fx_mix(art->wall_dark, FX_INK, 0.4f), x, y + 1.0f, 32.0f, 31.0f);
+  color_rect(r, stone, x, y + 2.0f, 32.0f, 9.0f);
+  color_rect(r, art->trim_hi, x, y + 2.0f, 32.0f, 3.0f);
+  color_rect(r, soffit, x, y + 11.0f, 32.0f, 13.0f);
   fx_vgrad(r, x, y + 11.0f, 32.0f, 13.0f,
-           (SDL_Color){70, 68, 68, 255}, 255,
-           (SDL_Color){38, 38, 42, 255}, 255);
-  color_rect(r, (SDL_Color){26, 27, 32, 255}, x, y + 24.0f, 32.0f, 8.0f);
+           fx_mix(soffit, stone, 0.3f), 255,
+           fx_mix(soffit, FX_INK, 0.35f), 255);
+  color_rect(r, fx_mix(art->wall_dark, FX_INK, 0.3f), x, y + 24.0f, 32.0f, 8.0f);
   if ((variant & 3u) == 0u)
   {
     /* Occasional weathering keeps a long run from looking extruded. */
-    color_rect(r, (SDL_Color){46, 45, 44, 255}, x + 7.0f, y + 5.0f,
+    color_rect(r, fx_mix(stone, art->wall_dark, 0.6f), x + 7.0f, y + 5.0f,
                9.0f, 2.0f);
   }
+  SDL_Color edge = fx_mix(stone, art->trim_hi, 0.35f);
   if (!left)
-    color_rect(r, (SDL_Color){101, 96, 88, 255}, x, y + 2.0f, 2.0f, 22.0f);
+    color_rect(r, edge, x, y + 2.0f, 2.0f, 22.0f);
   if (!right)
-    color_rect(r, (SDL_Color){101, 96, 88, 255}, x + 30.0f, y + 2.0f,
-               2.0f, 22.0f);
+    color_rect(r, edge, x + 30.0f, y + 2.0f, 2.0f, 22.0f);
 }
 
 static void draw_facade_hazard_source(SDL_Renderer *r,
@@ -3021,7 +2715,7 @@ static void render_world(Game *game)
   render_background(game, win_w, win_h);
 
   /* Structural tile layer. */
-  int ceiling_row = lvl->map.restroom_theme ? restroom_ceiling_row(lvl) : 0;
+  int ceiling_row = lvl->map.theme == LEVEL_THEME_RESTROOM ? restroom_ceiling_row(lvl) : 0;
   for (int row = 0; row < lvl->map.height; ++row)
   {
     for (int col = 0; col < lvl->map.width; ++col)
@@ -3035,10 +2729,10 @@ static void render_world(Game *game)
       TileType tile = lvl->map.tiles[row][col];
       if (tile == TILE_WALL)
       {
-        if (lvl->map.restroom_theme)
+        if (lvl->map.theme == LEVEL_THEME_RESTROOM)
           draw_restroom_wall_tile(r, lvl, col, row, x, y, ceiling_row);
         else
-          draw_wall_tile(r, lvl, col, row, x, y);
+          level_art_wall_tile(r, lvl, col, row, x, y);
       }
       else if (tile == TILE_LADDER)
         draw_ladder_tile(r, x, y, row);
@@ -3055,6 +2749,11 @@ static void render_world(Game *game)
    * Because it reads the level itself, light always matches architecture. */
   if (lvl->map.mode != LEVEL_MODE_FACADE)
   {
+    /* Fixture colour and how densely a ceiling is lit both come from the
+     * theme: the clean rooms are lit end to end, the plenum barely at all. */
+    const LevelThemeArt *art = level_art(lvl->map.theme);
+    unsigned fixture_spacing =
+        art->lamp_alpha >= 90u ? 4u : (art->lamp_alpha >= 60u ? 7u : 13u);
     int first_col = (int)(cam_x / (float)TILE_SIZE) - 1;
     if (first_col < 0)
       first_col = 0;
@@ -3077,7 +2776,7 @@ static void render_world(Game *game)
         unsigned h = tile_hash(col, row);
         bool long_ceiling = level_is_solid(lvl, col - 1, row - 1) &&
                             level_is_solid(lvl, col + 1, row - 1);
-        if ((h % 7u) == 0u && long_ceiling &&
+        if ((h % fixture_spacing) == 0u && long_ceiling &&
             lvl->map.tiles[row][col] == TILE_EMPTY)
         {
           float cx = x + TILE_SIZE * 0.5f;
@@ -3085,13 +2784,13 @@ static void render_world(Game *game)
                                   fmodf(world_t * 1.9f + (float)col, 5.0f) < 0.08f
                               ? 0.35f
                               : 1.0f;
-          SDL_Color warm = fx_dim((SDL_Color){248, 202, 118, 255}, flicker);
+          SDL_Color lit = fx_dim(art->lamp, flicker);
           color_rect(r, (SDL_Color){15, 20, 30, 255}, cx - 7.0f, y - 1.0f, 14.0f, 4.0f);
-          color_rect(r, warm, cx - 5.0f, y + 1.0f, 10.0f, 2.0f);
-          fx_glow(r, cx, y + 3.0f, 12.0f, warm, (Uint8)(70.0f * flicker));
-          fx_light_cone(r, cx, y + 2.0f, 7.0f, 30.0f, 86.0f,
-                        (SDL_Color){248, 205, 130, 255},
-                        (Uint8)(30.0f * flicker));
+          color_rect(r, lit, cx - 5.0f, y + 1.0f, 10.0f, 2.0f);
+          fx_glow(r, cx, y + 3.0f, 12.0f, lit,
+                  (Uint8)((float)art->lamp_alpha * flicker));
+          fx_light_cone(r, cx, y + 2.0f, 7.0f, 30.0f, 86.0f, art->lamp,
+                        (Uint8)((float)art->lamp_alpha * 0.42f * flicker));
         }
       }
     }

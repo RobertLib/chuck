@@ -6,6 +6,27 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Authoring names for the `THEME` metadata line, indexed by LevelTheme. */
+static const char *const LEVEL_THEME_NAMES[LEVEL_THEME_COUNT] = {
+    "PLANT", "LOBBY", "OFFICE", "SERVER", "CANTEEN", "LAB",
+    "ARCHIVE", "SECURITY", "DUCTS", "PENTHOUSE", "ROOF", "RESTROOM",
+    "FACADE_NIGHT", "FACADE_STORM", "FACADE_DAWN", "FACADE_HIGH"};
+
+bool level_theme_from_name(const char *name, size_t length, LevelTheme *out)
+{
+    for (int i = 0; i < LEVEL_THEME_COUNT; ++i)
+    {
+        const char *candidate = LEVEL_THEME_NAMES[i];
+        if (strlen(candidate) != length)
+            continue;
+        if (strncmp(name, candidate, length) != 0)
+            continue;
+        *out = (LevelTheme)i;
+        return true;
+    }
+    return false;
+}
+
 static void place_item(Level *level, int col, int row, ItemType type)
 {
     if (level->runtime.item_count >= MAX_ITEMS)
@@ -286,32 +307,32 @@ bool level_load_data(Level *level, const char *name,
         case 'q':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_RESTROOM_TOILET);
-            level->map.restroom_theme = true;
+            level->map.theme = LEVEL_THEME_RESTROOM;
             break;
         case 'b':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_RESTROOM_BASIN);
-            level->map.restroom_theme = true;
+            level->map.theme = LEVEL_THEME_RESTROOM;
             break;
         case 'u':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_RESTROOM_URINAL);
-            level->map.restroom_theme = true;
+            level->map.theme = LEVEL_THEME_RESTROOM;
             break;
         case 'p':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_RESTROOM_PARTITION);
-            level->map.restroom_theme = true;
+            level->map.theme = LEVEL_THEME_RESTROOM;
             break;
         case 'o':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_RESTROOM_STALL_OPEN);
-            level->map.restroom_theme = true;
+            level->map.theme = LEVEL_THEME_RESTROOM;
             break;
         case 'z':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_RESTROOM_STALL_CLOSED);
-            level->map.restroom_theme = true;
+            level->map.theme = LEVEL_THEME_RESTROOM;
             break;
         case 'S':
             level->map.tiles[row][col] = TILE_EMPTY;
@@ -427,6 +448,38 @@ bool level_load_data(Level *level, const char *name,
             level->map.mode = LEVEL_MODE_FACADE;
             break;
         }
+    }
+
+    /* Optional `THEME <name>` metadata picks the level's art direction. A map
+     * that omits it keeps the default look for its mode, so a new sector drops
+     * in without one; a misspelt name is an error rather than a silent fall
+     * back to a look the author did not ask for. */
+    bool theme_named = false;
+    for (size_t k = 0; k + 6 <= size; ++k)
+    {
+        if (k != 0 && data[k - 1] != '\n')
+            continue;
+        if (strncmp(data + k, "THEME ", 6) != 0)
+            continue;
+        size_t name_start = k + 6;
+        size_t name_end = name_start;
+        while (name_end < size && data[name_end] != '\n' &&
+               data[name_end] != '\r')
+        {
+            name_end += 1;
+        }
+        if (!level_theme_from_name(data + name_start, name_end - name_start,
+                                   &level->map.theme))
+        {
+            fprintf(stderr, "Level '%s' names an unknown THEME\n", name);
+            return false;
+        }
+        theme_named = true;
+        break;
+    }
+    if (!theme_named && level->map.mode == LEVEL_MODE_FACADE)
+    {
+        level->map.theme = LEVEL_THEME_FACADE_NIGHT;
     }
 
     /* Office props are floor-standing and visual only. Keep them off ladders,

@@ -150,6 +150,35 @@ typedef enum
     LEVEL_MODE_FACADE
 } LevelMode;
 
+/*
+ * Art direction for one level. The theme changes nothing about the simulation
+ * — it only tells the renderer which masonry, backdrop and lighting to use, so
+ * that fifteen sectors of the same building read as a journey through it
+ * instead of fifteen runs down the same corridor. Themes are authored with a
+ * `THEME <name>` metadata line; a map that omits one keeps the default look
+ * for its mode.
+ */
+typedef enum
+{
+    LEVEL_THEME_PLANT = 0, /* interior default: service / machine floor */
+    LEVEL_THEME_LOBBY,
+    LEVEL_THEME_OFFICE,
+    LEVEL_THEME_SERVER,
+    LEVEL_THEME_CANTEEN,
+    LEVEL_THEME_LAB,
+    LEVEL_THEME_ARCHIVE,
+    LEVEL_THEME_SECURITY,
+    LEVEL_THEME_DUCTS,
+    LEVEL_THEME_PENTHOUSE,
+    LEVEL_THEME_ROOF,
+    LEVEL_THEME_RESTROOM, /* implied by restroom fittings in the map */
+    LEVEL_THEME_FACADE_NIGHT, /* facade default */
+    LEVEL_THEME_FACADE_STORM,
+    LEVEL_THEME_FACADE_DAWN,
+    LEVEL_THEME_FACADE_HIGH,
+    LEVEL_THEME_COUNT
+} LevelTheme;
+
 typedef enum
 {
     FACADE_HAZARD_THROWN_OBJECT = 0,
@@ -179,7 +208,7 @@ typedef struct
     int sublevel_entrance_col, sublevel_entrance_row;
     bool has_sublevel_return;
     int sublevel_return_col, sublevel_return_row;
-    bool restroom_theme;
+    LevelTheme theme;
     Terminal terminals[MAX_TERMINALS];
     int terminal_count;
     AlarmSwitch alarm_switches[MAX_ALARM_SWITCHES];
@@ -244,6 +273,9 @@ typedef struct
 /* Parse a level from data embedded in the executable. Returns true on success. */
 bool level_load_data(Level *level, const char *name,
                      const char *data, size_t size, Rng *rng);
+
+/* Resolve a `THEME` metadata name such as "SERVER". False if unknown. */
+bool level_theme_from_name(const char *name, size_t length, LevelTheme *out);
 
 /* Tile queries. Out-of-bounds is treated as solid wall. */
 TileType level_tile(const Level *level, int col, int row);

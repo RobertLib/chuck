@@ -81,6 +81,93 @@ static void test_level_parser_and_seeded_choices(void)
     CHECK(first.runtime.active_terminal_index == second.runtime.active_terminal_index);
 }
 
+static void test_level_theme_metadata(void)
+{
+    static const char themed[] =
+        "##########\n"
+        "#S     TE#\n"
+        "##########\n"
+        "\n"
+        "THEME ARCHIVE\n";
+    static const char unthemed[] =
+        "##########\n"
+        "#S     TE#\n"
+        "##########\n";
+    static const char facade[] =
+        "......Y..................\n"
+        "......S..................\n"
+        "\n"
+        "MODE FACADE\n";
+    static const char misspelt[] =
+        "##########\n"
+        "#S     TE#\n"
+        "##########\n"
+        "\n"
+        "THEME BASEMENT\n";
+    Level level;
+    Rng rng;
+
+    rng_seed(&rng, 7);
+    CHECK(level_load_data(&level, "themed", themed, strlen(themed), &rng));
+    CHECK(level.map.theme == LEVEL_THEME_ARCHIVE);
+
+    /* A map without the line still loads: a new sector drops in and picks up
+     * the default look for its mode rather than failing to parse. */
+    CHECK(level_load_data(&level, "plain", unthemed, strlen(unthemed), &rng));
+    CHECK(level.map.theme == LEVEL_THEME_PLANT);
+    CHECK(level_load_data(&level, "wall", facade, strlen(facade), &rng));
+    CHECK(level.map.theme == LEVEL_THEME_FACADE_NIGHT);
+
+    /* A misspelt name is an error: silently falling back would ship a level
+     * wearing a look nobody chose. */
+    CHECK(!level_load_data(&level, "expected-parse-failure", misspelt, strlen(misspelt), &rng));
+
+    LevelTheme parsed = LEVEL_THEME_PLANT;
+    CHECK(level_theme_from_name("SERVER", 6, &parsed));
+    CHECK(parsed == LEVEL_THEME_SERVER);
+    CHECK(!level_theme_from_name("SERVERS", 7, &parsed));
+    CHECK(!level_theme_from_name("SERV", 4, &parsed));
+}
+
+/*
+ * The point of the themes is that the campaign never shows the same room
+ * twice in a row. That is a property of the level set, so it is pinned here
+ * rather than left to whoever adds the next map.
+ */
+static void test_campaign_themes_keep_changing(void)
+{
+    bool used[LEVEL_THEME_COUNT] = {false};
+    LevelTheme previous = LEVEL_THEME_COUNT;
+    int distinct = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        Level level;
+        Rng rng;
+        rng_seed(&rng, 500 + i);
+        CHECK(level_load_data(&level, EMBEDDED_LEVELS[i].name,
+                              EMBEDDED_LEVELS[i].data,
+                              EMBEDDED_LEVELS[i].size, &rng));
+        LevelTheme theme = level.map.theme;
+        CHECK(theme >= 0 && theme < LEVEL_THEME_COUNT);
+        /* Back-to-back sectors must never wear the same look. */
+        CHECK(theme != previous);
+        previous = theme;
+        if (!used[theme])
+        {
+            used[theme] = true;
+            distinct++;
+        }
+
+        bool facade_theme = theme >= LEVEL_THEME_FACADE_NIGHT;
+        CHECK(facade_theme == (level.map.mode == LEVEL_MODE_FACADE));
+        /* The restroom look belongs to the sublevel, never to a sector. */
+        CHECK(theme != LEVEL_THEME_RESTROOM);
+    }
+    /* Fifteen levels, and no look reused more than once. */
+    CHECK(distinct >= 14);
+}
+
 static void test_all_embedded_levels_parse(void)
 {
     CHECK(EMBEDDED_LEVEL_COUNT == 15);
@@ -163,7 +250,7 @@ static void test_embedded_restroom_sublevel(void)
     CHECK(level_load_data(&restroom, EMBEDDED_SUBLEVELS[0].name,
                           EMBEDDED_SUBLEVELS[0].data,
                           EMBEDDED_SUBLEVELS[0].size, &rng));
-    CHECK(restroom.map.restroom_theme);
+    CHECK(restroom.map.theme == LEVEL_THEME_RESTROOM);
     CHECK(restroom.map.has_sublevel_return);
     CHECK(!restroom.map.has_exit);
     CHECK(restroom.map.door_count == 0);
@@ -2527,6 +2614,8 @@ int main(void)
 {
     test_rng_is_reproducible();
     test_level_parser_and_seeded_choices();
+    test_level_theme_metadata();
+    test_campaign_themes_keep_changing();
     test_all_embedded_levels_parse();
     test_embedded_restroom_sublevel();
     test_gameplay_reset_preserves_rng_only();

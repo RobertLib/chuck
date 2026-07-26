@@ -140,6 +140,26 @@ Makefile wildcards it in and progression is driven by `EMBEDDED_LEVEL_COUNT`.
 Level music cycles with
 `MUSIC_LEVEL_ONE + index % (MUSIC_TRACK_COUNT - MUSIC_LEVEL_ONE)`.
 
+### Level themes
+
+A `THEME <name>` metadata line picks the level's art direction; the palettes,
+wall materials and parallax backdrops all live in
+[level_art.c](src/level_art.c), which reads nothing but the immutable
+`LevelMap` and so can never change how a level plays. Fifteen sectors of one
+building would otherwise be fifteen runs down the same corridor, so every
+campaign level names a different theme — a lobby, an office floor, a server
+hall, an archive, a plenum, and four exterior climbs at different hours. Every
+theme name and what it draws is tabulated in
+[levels/LEGEND.md](levels/LEGEND.md).
+
+Two properties are pinned by `test_campaign_themes_keep_changing`: no two
+consecutive levels wear the same theme, and facade levels use the `FACADE_*`
+themes while interiors never do. A map with no `THEME` line still loads with
+its mode's default, so a new sector works before it has a look of its own;
+a misspelt name is a parse error. **New tuning belongs in the theme table, not
+in `game_render.c`** — a colour hard-coded in a draw function is a colour the
+other fourteen sectors cannot change.
+
 The campaign is fifteen levels that alternate interior sectors with exterior
 climbs: levels 3, 7, 11 and 13 are `MODE FACADE`, and each is entered through
 the `Y` window of the sector below it, whose `E` stair door is welded shut.
@@ -203,6 +223,9 @@ a railed catwalk rather than as the room's floor.
 - [fx.h](src/fx.h) is the shared palette and lighting vocabulary for every
   renderer (world, HUD, intro, cutscenes). Use its ramps instead of new literal
   colors so the screens stay one visual system.
+- [level_art.c](src/level_art.c) holds the per-level wall materials and
+  backdrops. It is the only place a level's look is decided; the themes shift
+  hue and value inside the fx.h system rather than inventing one per sector.
 - Sound effects and the three music tracks are synthesized once during
   `audio_init` and cached as PCM, replayed through a 16-voice pool. A new effect
   means: an entry in the `SoundEffect` enum in

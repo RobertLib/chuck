@@ -61,6 +61,8 @@ Notes:
   climbing mode. It uses direct four-way wall movement: no gravity, ladders,
   doors, guards, or ordinary platform simulation. Pickups do work, so items
   placed on a facade are optional detours that carry into the next sector.
+- `THEME <name>` on a metadata line picks the level's art direction — see
+  [Themes](#themes) below.
 - Facade masonry authoring: the climber box is exactly one tile tall, so a
   single `#` inside a two-row band seals that band off horizontally. Keep
   cornices to full rows with gaps of three tiles or more, and leave lone
@@ -69,6 +71,39 @@ Notes:
   `Y`. A facade level contains one `Y` and no `E`; a sublevel contains one `R`.
   When a map has both, the `Y` is the route and the `E` is dead scenery: the
   exit stays locked whatever the player does with cards or terminals.
+
+## Themes
+
+`THEME <name>` after the grid selects the wall material, backdrop and palette
+the level is drawn with (see [level_art.c](../src/level_art.c)). It is
+presentation only: no theme changes collision, spawning, lighting reach or any
+other simulated behaviour, so the same map plays identically under any of them.
+A map with no `THEME` line keeps the default for its mode — `PLANT` inside,
+`FACADE_NIGHT` on a wall — so a new sector drops in without one. A misspelt
+name is a parse error rather than a silent fall back.
+
+| Name | Walls | Interior |
+| --- | --- | --- |
+| `PLANT` | riveted steel plate | machine hall, the original look |
+| `LOBBY` | polished marble, brass reveals | glazed street front, reception |
+| `OFFICE` | painted partition board | cubicle farm, blinds, ceiling grid |
+| `SERVER` | dark plate | rack rows and status LEDs |
+| `CANTEEN` | glazed tile | servery counter under heat lamps |
+| `LAB` | pale tile | clean-room bays, fume cabinets |
+| `ARCHIVE` | brick | shelving stacks under bare bulbs |
+| `SECURITY` | dark plate | monitor wall and console desks |
+| `DUCTS` | dark plate | galvanised trunking; the darkest sector |
+| `PENTHOUSE` | hardwood panelling | panelled hall, sconces, cabinets |
+| `ROOF` | raw concrete | curtain wall over the night city |
+| `RESTROOM` | tile | implied by restroom fittings; sublevel only |
+| `FACADE_NIGHT` | — | clear night, city lights below |
+| `FACADE_STORM` | — | rain, lightning, wet stone |
+| `FACADE_DAWN` | — | sunrise, warm stone, distant birds |
+| `FACADE_HIGH` | — | above the cloud layer, neon signage |
+
+Two rules the campaign keeps, both pinned by
+`test_campaign_themes_keep_changing`: no two consecutive levels share a theme,
+and a facade level uses a `FACADE_*` theme while an interior never does.
 
 ## Authoring rules for interiors
 
