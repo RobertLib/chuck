@@ -1,9 +1,12 @@
 CC := cc
+CPPFLAGS :=
 CFLAGS := -std=c17 -Wall -Wextra -Wpedantic -O2 $(shell pkg-config --cflags sdl3)
 DEPFLAGS := -MMD -MP
 LDFLAGS := $(shell pkg-config --libs sdl3) -lm
 TEST_CFLAGS := -std=c17 -Wall -Wextra -Wpedantic -O2 -Isrc
 SANITIZER_FLAGS := -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer
+DEBUG_CFLAGS := -std=c17 -Wall -Wextra -Wpedantic -O0 -g3 $(shell pkg-config --cflags sdl3)
+DEBUG_TARGET := build/debug/chuck-debug
 
 SRC_DIR := src
 BUILD_DIR := build
@@ -24,21 +27,27 @@ OBJECTS := $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SOURCES)) \
 	$(EMBEDDED_LEVELS_OBJECT)
 DEPENDENCIES := $(OBJECTS:.o=.d)
 
-.PHONY: all clean run test sanitize
+.PHONY: all release debug run run-debug test sanitize clean
 
 all: $(TARGET)
+
+release: all
+
+debug:
+	$(MAKE) BUILD_DIR=build/debug TARGET=$(DEBUG_TARGET) \
+		CPPFLAGS="$(CPPFLAGS) -DCHUCK_DEBUG" CFLAGS="$(DEBUG_CFLAGS)" all
 
 $(TARGET): $(OBJECTS)
 	$(CC) $(OBJECTS) -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
 $(EMBEDDED_LEVELS_SOURCE): $(LEVEL_GENERATOR) $(LEVEL_FILES) $(SUBLEVEL_FILES) | $(BUILD_DIR)
 	python3 $(LEVEL_GENERATOR) $@ $(LEVEL_FILES) --sublevels $(SUBLEVEL_FILES)
 
 $(EMBEDDED_LEVELS_OBJECT): $(EMBEDDED_LEVELS_SOURCE) $(SRC_DIR)/embedded_levels.h
-	$(CC) $(CFLAGS) $(DEPFLAGS) -I$(SRC_DIR) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEPFLAGS) -I$(SRC_DIR) -c $< -o $@
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -46,8 +55,11 @@ $(BUILD_DIR):
 run: all
 	./$(TARGET)
 
+run-debug: debug
+	./$(DEBUG_TARGET)
+
 $(TEST_TARGET): $(TEST_SOURCES) $(EMBEDDED_LEVELS_SOURCE) | $(BUILD_DIR)
-	$(CC) $(TEST_CFLAGS) $(TEST_SOURCES) $(EMBEDDED_LEVELS_SOURCE) -o $@ -lm
+	$(CC) $(CPPFLAGS) $(TEST_CFLAGS) $(TEST_SOURCES) $(EMBEDDED_LEVELS_SOURCE) -o $@ -lm
 
 test: $(TEST_TARGET)
 	./$(TEST_TARGET)

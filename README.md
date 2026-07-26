@@ -151,6 +151,17 @@ To build without starting the game:
 make
 ```
 
+`make` and `make run` produce the release build, which contains no debug level
+selector. For development, build and launch the separate debug executable with:
+
+```sh
+make run-debug
+```
+
+On its title screen, use `Left` / `Right` (or `[` / `]`) to choose any campaign
+level and press `F5` to start there immediately. The debug executable is written to
+`build/debug/chuck-debug`; pressing Enter still starts the normal campaign.
+
 Run the deterministic core test suite with:
 
 ```sh

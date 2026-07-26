@@ -99,6 +99,9 @@ typedef struct
     PresentationState presentation;
     Input input;
     GameState state;
+#ifdef CHUCK_DEBUG
+    int debug_selected_level;
+#endif
 } Game;
 
 bool game_init(Game *game);
@@ -110,6 +113,12 @@ void game_shutdown(Game *game);
 
 /* Abort the current game (if any) and go back to the title screen. */
 void game_return_to_intro(Game *game);
+
+#ifdef CHUCK_DEBUG
+/* Start a clean campaign directly in one embedded level. This entry point and
+ * its callers do not exist in release builds. */
+bool game_debug_start_level(Game *game, int level_index);
+#endif
 
 /* Helper: obtain current view size (logical or window). Exposed to render
  * module so rendering and camera code can share the same behavior. */

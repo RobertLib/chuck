@@ -3,6 +3,10 @@
 #include <SDL3/SDL.h>
 #include <math.h>
 
+#ifdef CHUCK_DEBUG
+#include "embedded_levels.h"
+#endif
+
 static void open_gamepad(Game *game, SDL_JoystickID id)
 {
   if (game->platform.gamepad != NULL)
@@ -107,6 +111,36 @@ static void toggle_fullscreen(Game *game)
   else
     SDL_Log("Could not toggle fullscreen: %s", SDL_GetError());
 }
+
+#ifdef CHUCK_DEBUG
+static bool handle_debug_level_select(Game *game, SDL_Scancode scancode)
+{
+  if (game->state != STATE_INTRO || EMBEDDED_LEVEL_COUNT == 0)
+    return false;
+
+  int level_count = (int)EMBEDDED_LEVEL_COUNT;
+  if (scancode == SDL_SCANCODE_LEFT ||
+      scancode == SDL_SCANCODE_LEFTBRACKET)
+  {
+    game->debug_selected_level =
+        (game->debug_selected_level + level_count - 1) % level_count;
+    return true;
+  }
+  if (scancode == SDL_SCANCODE_RIGHT ||
+      scancode == SDL_SCANCODE_RIGHTBRACKET)
+  {
+    game->debug_selected_level =
+        (game->debug_selected_level + 1) % level_count;
+    return true;
+  }
+  if (scancode == SDL_SCANCODE_F5)
+  {
+    game_debug_start_level(game, game->debug_selected_level);
+    return true;
+  }
+  return false;
+}
+#endif
 
 static void confirm_with_gamepad(Game *game, bool allow_jump)
 {
@@ -218,6 +252,11 @@ void game_handle_event(Game *game, const SDL_Event *event)
     game->platform.gamepad_active = false;
     SDL_Keycode key = event->key.key;
     SDL_Scancode sc = event->key.scancode;
+
+#ifdef CHUCK_DEBUG
+    if (handle_debug_level_select(game, sc))
+      return;
+#endif
 
     /* Handle fullscreen before title-screen confirmation so Alt+Enter does
      * not accidentally start the game. */

@@ -9,6 +9,10 @@
 #include "gameplay_world.h"
 #include "level_art.h"
 
+#ifdef CHUCK_DEBUG
+#include "embedded_levels.h"
+#endif
+
 /*
  * Chuck intentionally ships without art assets.  Everything in this file is
  * assembled at runtime from small, hard-edged shapes.  The palette and the
@@ -3474,6 +3478,34 @@ static void draw_continue_overlay(Game *game)
   draw_text_centered(game, 365.0f, 1.5f, 210, 220, 215, remaining);
 }
 
+#ifdef CHUCK_DEBUG
+static void draw_debug_level_select(Game *game)
+{
+  SDL_Renderer *r = game->platform.renderer;
+  int win_w = 0, win_h = 0;
+  game_get_view_size(game, &win_w, &win_h);
+
+  char label[80];
+  SDL_snprintf(label, sizeof(label),
+               "DEBUG  </>: LEVEL %02d/%02d  F5: LOAD",
+               game->debug_selected_level + 1, (int)EMBEDDED_LEVEL_COUNT);
+  float text_w = draw_text_width(label, 1.0f);
+  float panel_w = text_w + 24.0f;
+  float panel_x = ((float)win_w - panel_w) * 0.5f;
+  float panel_y = (float)win_h - 126.0f;
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  set_rgba(r, 5, 9, 15, 230);
+  fill_rect(r, panel_x, panel_y, panel_w, 24.0f);
+  set_rgba(r, COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, 210);
+  fill_rect(r, panel_x, panel_y, 3.0f, 24.0f);
+  fill_rect(r, panel_x + panel_w - 3.0f, panel_y, 3.0f, 24.0f);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  draw_text(r, panel_x + 12.0f, panel_y + 8.0f, 1.0f,
+            COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, label);
+}
+#endif
+
 void game_render(Game *game)
 {
   SDL_Renderer *r = game->platform.renderer;
@@ -3505,6 +3537,9 @@ void game_render(Game *game)
   {
     intro_render(r, &game->presentation.intro, win_w, win_h,
                  game->platform.gamepad_active);
+#ifdef CHUCK_DEBUG
+    draw_debug_level_select(game);
+#endif
     SDL_RenderPresent(r);
     return;
   }
