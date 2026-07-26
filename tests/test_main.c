@@ -3051,6 +3051,45 @@ static void test_pursuing_guard_hops_small_gap(void)
     CHECK(reached_far_side); /* completing the jump matters, not just starting it */
 }
 
+static void test_pursuing_guard_refuses_high_drop(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S       #\n"
+        "# M      #\n"
+        "###      #\n"
+        "#        #\n"
+        "#       E#\n"
+        "##########\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 58);
+    CHECK(level_load_data(&level, "guard high drop", data,
+                          strlen(data), &rng));
+    CHECK(level.map.enemy_count == 1);
+
+    Enemy guard;
+    enemy_init(&guard, level.map.enemy_spawns[0].x,
+               level.map.enemy_spawns[0].y, &rng);
+    guard.on_ground = true;
+    guard.dir = 1;
+    float ledge_y = guard.y;
+    bool turned_back = false;
+
+    for (int frame = 0; frame < 180; ++frame)
+    {
+        enemy_update(&guard, &level, 1.0f / 120.0f, true, false,
+                     7.5f * TILE_SIZE, 5.5f * TILE_SIZE,
+                     false, &rng);
+        if (guard.dir < 0)
+            turned_back = true;
+        CHECK(fabsf(guard.y - ledge_y) < 0.01f);
+        CHECK(guard.on_ground);
+    }
+
+    CHECK(turned_back);
+}
+
 static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
 {
     static const char data[] =
@@ -3228,6 +3267,7 @@ int main(void)
     test_noise_draws_guards_to_investigate();
     test_guard_investigates_fallen_comrade();
     test_pursuing_guard_hops_small_gap();
+    test_pursuing_guard_refuses_high_drop();
     test_guard_rides_elevator_and_leaves_at_target_floor();
     test_pursuing_guard_walks_onto_falling_platform();
 

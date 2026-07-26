@@ -411,6 +411,30 @@ static bool enemy_can_jump_gap(const Level *level, const Enemy *enemy, int dir)
     return false;
 }
 
+/* Permit a deliberate step off a ledge only when ground is close below it.
+ * Guards still need short drops to navigate split-height floors, but should
+ * turn around instead of throwing themselves down a lift shaft or atrium. */
+static bool enemy_can_step_down(const Level *level, const Enemy *enemy,
+                                int dir)
+{
+    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f
+                            : enemy->x - 3.0f;
+    int col = (int)floorf(probe_x / TILE_SIZE);
+    int feet_row =
+        (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
+
+    if (level_is_solid(level, col, feet_row - 1))
+        return false;
+    for (int drop = 1; drop <= ENEMY_STEP_DOWN_MAX_TILES; ++drop)
+    {
+        int row = feet_row + drop;
+        if (level_is_solid(level, col, row) ||
+            level_is_ladder(level, col, row))
+            return true;
+    }
+    return false;
+}
+
 static bool enemy_box_crates_clear(const Level *level, float x, float y,
                                    int ignored_crate)
 {
@@ -635,8 +659,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         }
 
         /* While chasing, hop a short gap rather than stalling at its edge,
-         * but only when the target lies ahead and not below it (a lower target
-         * is still reached by walking off the ledge, as before). */
+         * but only when the target lies ahead and not below it. */
         if (enemy->on_ground && following_target && !hemmed_in &&
             enemy->vx != 0.0f &&
             !enemy_floor_ahead(level, enemy, enemy->dir) &&
@@ -648,6 +671,18 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             if (fabsf(enemy->vx) < ENEMY_JUMP_MIN_SPEED)
                 enemy->vx = (float)enemy->dir * ENEMY_JUMP_MIN_SPEED;
             enemy->on_ground = false;
+        }
+
+        /* A short step down is useful navigation; a blind drop through an
+         * atrium or lift shaft is not. Reverse before crossing an unsafe edge
+         * so both patrols and pursuing guards can look for another route. */
+        if (enemy->on_ground && !hemmed_in && enemy->vx != 0.0f &&
+            !enemy_floor_ahead(level, enemy, enemy->dir) &&
+            !enemy_can_step_down(level, enemy, enemy->dir))
+        {
+            enemy->dir = -enemy->dir;
+            enemy->vx = (float)enemy->dir * speed;
+            enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
         }
 
         /* Patrols use ladders occasionally. During an alarm, take a usable
