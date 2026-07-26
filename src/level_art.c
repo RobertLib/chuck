@@ -728,6 +728,118 @@ static void backdrop_plant(const LevelArtScene *s, const LevelThemeArt *art,
 }
 
 /*
+ * The way in off the street, drawn once.
+ *
+ * Everything else on this facade tiles, because a curtain wall genuinely
+ * repeats along a building. An entrance does not — a lobby has one — so it is
+ * anchored to a fixed point on the glazing layer instead of being stamped
+ * along it, and the anchor is a multiple of the mullion pitch so the jambs
+ * land on the curtain wall's own grid. The portal then takes over two bays of
+ * glass rather than cutting across the middle of them.
+ *
+ * It also has to stay the dark half of the picture: the light belongs to the
+ * canopy soffit above the doors, not to the street behind them, or the
+ * entrance turns into a lamp standing at the back of the hall.
+ */
+static void lobby_entrance(const LevelArtScene *s, const LevelThemeArt *art,
+                           float street)
+{
+    SDL_Renderer *r = s->renderer;
+    /* The mullions' own parallax and pitch: 192 is two of their bays. */
+    const float span = 192.0f;
+    float ex = -s->cam_x * 0.14f + 96.0f;
+    float cx = ex + span * 0.5f;
+    float base = street + 10.0f;      /* threshold, sat on the glazing sill */
+    float fascia = street - 88.0f;    /* underside of the transom */
+    float head = street - 76.0f;      /* door head; the gap is the canopy */
+    float opening = base - head;
+    SDL_Color jamb = fx_mix(art->near_shape, FX_INK, 0.55f);
+    SDL_Color glass = fx_mix(art->far_shape, FX_INK, 0.35f);
+
+    /* The reveal: jambs and head only. An entrance is a hole with depth, but
+     * filling it in is what turned the doors into a black panel bolted onto
+     * the glazing — the leaves have to keep showing the same city the rest of
+     * the wall shows, or the way out reads as the one place with no outside
+     * behind it. */
+    fx_rect(r, FX_INK, ex - 3.0f, fascia, 3.0f, base + 6.0f - fascia);
+    fx_rect(r, FX_INK, ex + span, fascia, 3.0f, base + 6.0f - fascia);
+
+    /* Canopy soffit and the strip light under it. */
+    fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.3f), ex, fascia, span,
+            head - fascia);
+    fx_rect(r, art->trim, ex, fascia, span, 2.0f);
+    fx_rect_a(r, art->trim_hi, 150, ex, fascia, span, 1.0f);
+    fx_rect(r, art->lamp, ex + 8.0f, head - 3.0f, span - 16.0f, 2.0f);
+
+    /* Jambs, on the mullion grid and the same width as one. */
+    fx_rect(r, jamb, ex, head, 8.0f, opening);
+    fx_rect(r, jamb, ex + span - 8.0f, head, 8.0f, opening);
+    fx_rect_a(r, art->trim, 110, ex + 2.0f, head, 4.0f, opening);
+    fx_rect_a(r, art->trim, 110, ex + span - 6.0f, head, 4.0f, opening);
+
+    /* A fixed sidelight on one flank and a swing leaf on the other — the door
+     * a lobby keeps beside the drum for whatever will not fit through it. The
+     * stile, the mid rail, the kick plate and the pull handle are the only
+     * cues for which half of the two opens. */
+    fx_rect_a(r, glass, 130, ex + 8.0f, head, 50.0f, opening);
+    fx_rect_a(r, glass, 130, ex + 134.0f, head, 50.0f, opening);
+    fx_rect_a(r, art->trim_hi, 14, ex + 14.0f, head, 16.0f, opening);
+    fx_rect_a(r, art->trim_hi, 14, ex + 140.0f, head, 16.0f, opening);
+    fx_rect(r, jamb, ex + 134.0f, head, 3.0f, opening);
+    fx_rect_a(r, jamb, 210, ex + 137.0f, head + opening * 0.52f, 47.0f, 3.0f);
+    fx_rect_a(r, fx_mix(jamb, art->trim, 0.35f), 220, ex + 137.0f,
+              base - 13.0f, 47.0f, 13.0f);
+    fx_rect_a(r, art->trim, 200, ex + 172.0f, head + 26.0f, 3.0f, 30.0f);
+
+    /* The revolving door. It turns on its own: an entrance frozen still reads
+     * as a shut building, and this is the only moving thing out at the street.
+     * A wing seen face-on is a pane and edge-on is a line, so the panel swept
+     * between the hub and the leading edge is what sells the rotation. */
+    float dl = ex + 58.0f;
+    const float dw = 76.0f;
+    float dcx = dl + dw * 0.5f;
+
+    /* Two skins of glass and an enclosed drum, so it sits denser than the
+     * single-glazed leaves beside it. */
+    fx_rect_a(r, fx_mix(glass, FX_INK, 0.25f), 190, dl, head, dw, opening);
+    fx_rect(r, jamb, dl, head, 4.0f, opening);
+    fx_rect(r, jamb, dl + dw - 4.0f, head, 4.0f, opening);
+    fx_rect_a(r, art->trim, 150, dl + 1.0f, head, 2.0f, opening);
+    fx_rect_a(r, art->trim, 150, dl + dw - 3.0f, head, 2.0f, opening);
+    for (int wing = 0; wing < 3; ++wing)
+    {
+        float angle = s->time * 0.5f + (float)wing * 2.0944f;
+        float wx = dcx + sinf(angle) * (dw * 0.5f - 6.0f);
+        bool front = cosf(angle) > 0.0f;
+        float x0 = wx < dcx ? wx : dcx;
+
+        fx_rect_a(r, front ? art->lamp : art->far_shape, front ? 30 : 42, x0,
+                  head + 2.0f, fabsf(wx - dcx), opening - 4.0f);
+        fx_rect_a(r, art->trim, front ? 210 : 90, wx - 1.0f, head + 2.0f, 2.0f,
+                  opening - 4.0f);
+    }
+    fx_rect(r, fx_mix(art->trim, FX_INK, 0.2f), dcx - 1.0f, head, 2.0f, opening);
+    /* The drum's canopy, stepped so the enclosure reads as a cylinder rather
+     * than as one more flat pane. */
+    fx_rect(r, fx_mix(art->trim, FX_INK, 0.35f), dl - 2.0f, head - 6.0f,
+            dw + 4.0f, 6.0f);
+    fx_rect(r, fx_mix(art->trim, FX_INK, 0.15f), dl + 6.0f, head - 10.0f,
+            dw - 12.0f, 5.0f);
+    fx_rect_a(r, art->trim_hi, 130, dl + 6.0f, head - 10.0f, dw - 12.0f, 1.0f);
+
+    /* Threshold: the one bright line at the foot of the opening, and the step
+     * Chuck came in over. */
+    fx_rect(r, FX_INK, ex, base, span, 5.0f);
+    fx_rect(r, fx_mix(art->trim, FX_INK, 0.2f), ex + 2.0f, base, span - 4.0f,
+            3.0f);
+    fx_rect_a(r, art->trim_hi, 170, ex + 2.0f, base, span - 4.0f, 1.0f);
+
+    /* The canopy light last, over the doors it falls on. */
+    fx_glow(r, cx, head, 58.0f, art->lamp, 44);
+    fx_light_cone(r, cx, head, 86.0f, 104.0f, opening + 6.0f, art->lamp, 20);
+}
+
+/*
  * LOBBY — a glazed street front, the city behind it, and the atrium ceiling.
  *
  * Two rules hold this composition together, and both were learned the hard
@@ -899,6 +1011,11 @@ static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
     fx_rect(r, fx_mix(art->trim, FX_INK, 0.25f), 0.0f, street + 6.0f,
             (float)s->win_w, 5.0f);
     fx_rect_a(r, art->trim_hi, 170, 0.0f, street + 6.0f, (float)s->win_w, 2.0f);
+
+    /* The main entrance, set into the glazing that has just been drawn: it
+     * interrupts the curtain wall, so it goes on after the bays, the transom
+     * and the base channel rather than being framed by them. */
+    lobby_entrance(s, art, street);
 
     /* The atrium ceiling. Without it the top of a triple-height hall is just
      * unexplained air, which is the one thing a tall room must not look like.

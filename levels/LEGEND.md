@@ -98,7 +98,7 @@ name is a parse error rather than a silent fall back.
 | Name | Walls | Interior |
 | --- | --- | --- |
 | `PLANT` | riveted steel plate | machine hall, the original look |
-| `LOBBY` | polished marble, brass reveals | glazed street front, reception |
+| `LOBBY` | polished marble, brass reveals | glazed street front with the main entrance off the street, reception |
 | `OFFICE` | painted partition board | cubicle farm, blinds, ceiling grid |
 | `SERVER` | dark plate | rack rows and status LEDs |
 | `CANTEEN` | glazed tile | servery counter under heat lamps |

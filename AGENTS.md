@@ -253,7 +253,12 @@ a railed catwalk rather than as the room's floor.
   window, so each repeat is on screen at once. A curtain wall or a rack row
   genuinely runs the length of a floor and tiles happily; one reception desk
   stamped every few hundred pixels reads as a bug. Unique furniture belongs in
-  the map as decorations, where it is placed once.
+  the map as decorations, where it is placed once. A one-off piece of
+  _architecture_ — the lobby's street entrance — cannot move to the map,
+  because a decoration sits in the world plane and would drift against the
+  glazing it is set into; anchor it to a fixed point on its own layer instead
+  (`lobby_entrance` in [level_art.c](src/level_art.c)), on a multiple of the
+  layer's period so it lands on the grid the rest of the layer tiles to.
 - **An interior seen through glass carries its own values.** A view is only a
   view if something separates it from the room: a night sky lit brighter than
   the interior air turns a distant skyline into masonry standing in the hall,
