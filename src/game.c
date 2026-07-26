@@ -1,4 +1,5 @@
 #include "game.h"
+#include "camera.h"
 #include "embedded_levels.h"
 #include "gameplay_ai.h"
 #include "gameplay_climb.h"
@@ -140,39 +141,19 @@ static void camera_target(Game *game, float *target_x, float *target_y)
     int win_w = 0, win_h = 0;
     game_get_view_size(game, &win_w, &win_h);
 
-    float desired_x = game->gameplay.player.x + PLAYER_W * 0.5f -
-                      (float)win_w * 0.5f;
-    float max_x = game->gameplay.level.map.width * (float)TILE_SIZE -
-                  (float)win_w;
-    if (max_x < 0.0f)
-        max_x = 0.0f;
-    if (desired_x < 0.0f)
-        desired_x = 0.0f;
-    if (desired_x > max_x)
-        desired_x = max_x;
-
-    float view_height = (float)(win_h - HUD_HEIGHT);
+    const Player *player = &game->gameplay.player;
+    float player_height = player->crawling ? (float)PLAYER_CRAWL_H
+                                           : (float)PLAYER_H;
+    float world_width =
+        game->gameplay.level.map.width * (float)TILE_SIZE;
     float world_height =
         game->gameplay.level.map.height * (float)TILE_SIZE;
-    float max_y = world_height - view_height;
-    float desired_y = game->gameplay.player.y + PLAYER_H * 0.5f -
-                      view_height * 0.5f;
-    /* Existing campaign maps intentionally fit with one clipped structural
-     * row. Only genuinely tall maps should begin tracking vertically. */
-    if (world_height <= view_height + TILE_SIZE)
-    {
-        max_y = 0.0f;
-        desired_y = 0.0f;
-    }
-    if (max_y < 0.0f)
-        max_y = 0.0f;
-    if (desired_y < 0.0f)
-        desired_y = 0.0f;
-    if (desired_y > max_y)
-        desired_y = max_y;
 
-    *target_x = desired_x;
-    *target_y = desired_y;
+    *target_x = camera_axis_target(player->x + PLAYER_W * 0.5f,
+                                   world_width, (float)win_w);
+    *target_y = camera_axis_target(player->y + player_height * 0.5f,
+                                   world_height,
+                                   (float)(win_h - HUD_HEIGHT));
 }
 
 static void snap_camera_to_player(Game *game)

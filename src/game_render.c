@@ -963,6 +963,182 @@ static void draw_office_equipment(SDL_Renderer *r, float x, float y,
   }
 }
 
+/*
+ * Front-of-house fittings.
+ *
+ * The public floor of the building is furnished from this set rather than from
+ * the office one: a lobby dressed in workstations and server racks reads as an
+ * office floor no matter what the walls are made of. Everything here is stone,
+ * brass, upholstery and planting, and every piece is a side profile inside one
+ * tile so a run of them still reads at a glance.
+ */
+
+static void draw_lobby_counter(SDL_Renderer *r, float x, float y,
+                               unsigned variant)
+{
+  /* Reception desk: a stone-clad front with a brass reveal, a raised
+     transaction top, and the working surface implied behind it. */
+  color_rect(r, (SDL_Color){3, 5, 9, 120}, x, y + 30.0f, 32.0f, 2.0f);
+
+  color_rect(r, COL_INK, x, y + 8.0f, 32.0f, 24.0f);
+  color_rect(r, (SDL_Color){124, 118, 108, 255}, x, y + 10.0f, 32.0f, 21.0f);
+  /* Polished stone: lit near the top where the counter light falls on it, and
+     falling away into shadow at the plinth. */
+  fx_vgrad(r, x, y + 10.0f, 32.0f, 21.0f,
+           (SDL_Color){152, 144, 131, 255}, 255,
+           (SDL_Color){70, 67, 64, 255}, 255);
+  /* Vertical stone joints; the veining is what stops the run reading as one
+     extruded box across three tiles. */
+  color_rect(r, (SDL_Color){88, 84, 78, 255}, x + 11.0f, y + 10.0f, 1.0f, 21.0f);
+  color_rect(r, (SDL_Color){88, 84, 78, 255}, x + 23.0f, y + 10.0f, 1.0f, 21.0f);
+  if ((variant & 1u) == 0u)
+  {
+    color_rect(r, (SDL_Color){170, 161, 146, 255},
+               x + 4.0f, y + 15.0f, 6.0f, 1.0f);
+  }
+
+  /* Brass reveal above the plinth and the lit counter top. */
+  color_rect(r, (SDL_Color){130, 104, 62, 255}, x, y + 27.0f, 32.0f, 2.0f);
+  color_rect(r, COL_INK, x - 1.0f, y + 5.0f, 34.0f, 4.0f);
+  color_rect(r, (SDL_Color){158, 132, 86, 255}, x - 1.0f, y + 6.0f, 34.0f, 2.0f);
+  color_rect(r, (SDL_Color){228, 206, 158, 255}, x - 1.0f, y + 6.0f, 34.0f, 1.0f);
+
+  /* One tile of the run carries the visitor terminal and a card tray. */
+  if ((variant % 3u) == 0u)
+  {
+    color_rect(r, COL_INK, x + 8.0f, y - 6.0f, 15.0f, 12.0f);
+    color_rect(r, (SDL_Color){37, 45, 52, 255}, x + 9.0f, y - 5.0f, 13.0f, 10.0f);
+    color_rect(r, (SDL_Color){96, 176, 172, 255}, x + 11.0f, y - 3.0f, 9.0f, 6.0f);
+    color_rect(r, (SDL_Color){196, 236, 230, 255},
+               x + 12.0f, y - 2.0f, 5.0f, 1.0f);
+  }
+  else
+  {
+    color_rect(r, COL_INK, x + 18.0f, y + 1.0f, 11.0f, 5.0f);
+    color_rect(r, (SDL_Color){206, 198, 178, 255},
+               x + 19.0f, y + 2.0f, 9.0f, 3.0f);
+    color_rect(r, (SDL_Color){158, 132, 86, 255},
+               x + 20.0f, y + 3.0f, 5.0f, 1.0f);
+  }
+}
+
+static void draw_lobby_sofa(SDL_Renderer *r, float x, float y)
+{
+  /* Waiting-area bench seat, seen from the side: low back, deep cushion and
+     tapered legs. Kept dark and warm so actors read over it. */
+  color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 2.0f, y + 30.0f, 28.0f, 2.0f);
+
+  color_rect(r, COL_INK, x + 2.0f, y + 12.0f, 28.0f, 10.0f);
+  color_rect(r, (SDL_Color){74, 56, 52, 255}, x + 3.0f, y + 13.0f, 26.0f, 8.0f);
+  color_rect(r, (SDL_Color){104, 78, 68, 255}, x + 4.0f, y + 13.0f, 24.0f, 2.0f);
+
+  /* Back cushion set behind the seat, and a bolster at the near arm. */
+  color_rect(r, COL_INK, x + 2.0f, y + 4.0f, 12.0f, 10.0f);
+  color_rect(r, (SDL_Color){88, 65, 58, 255}, x + 3.0f, y + 5.0f, 10.0f, 9.0f);
+  color_rect(r, (SDL_Color){118, 88, 74, 255}, x + 4.0f, y + 5.0f, 8.0f, 2.0f);
+  color_rect(r, COL_INK, x + 24.0f, y + 8.0f, 7.0f, 6.0f);
+  color_rect(r, (SDL_Color){96, 71, 62, 255}, x + 25.0f, y + 9.0f, 5.0f, 4.0f);
+
+  color_rect(r, (SDL_Color){45, 36, 34, 255}, x + 3.0f, y + 21.0f, 26.0f, 2.0f);
+  color_rect(r, COL_INK, x + 5.0f, y + 23.0f, 3.0f, 8.0f);
+  color_rect(r, COL_INK, x + 25.0f, y + 23.0f, 3.0f, 8.0f);
+  color_rect(r, (SDL_Color){130, 104, 62, 255}, x + 6.0f, y + 23.0f, 1.0f, 7.0f);
+  color_rect(r, (SDL_Color){130, 104, 62, 255}, x + 26.0f, y + 23.0f, 1.0f, 7.0f);
+}
+
+static void draw_lobby_planter(SDL_Renderer *r, float x, float y,
+                               unsigned variant, float world_t)
+{
+  /* A stone planter with a broad-leaved palm. Leaves are drawn as tapered
+     quads rather than as lines: a fan of one-pixel strokes reads as grass,
+     which is what the old backdrop planting looked like. */
+  color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 5.0f, y + 30.0f, 22.0f, 2.0f);
+
+  const int leaves = 5;
+  for (int leaf = 0; leaf < leaves; ++leaf)
+  {
+    float spread = ((float)leaf - (float)(leaves - 1) * 0.5f) / 2.0f;
+    /* Each frond sways on its own phase, so the plant never looks stamped. */
+    float sway = sinf(world_t * 0.7f + (float)leaf * 1.9f +
+                      (float)(variant % 5u)) *
+                 1.6f;
+    float tip_x = x + 16.0f + spread * 13.0f + sway;
+    float tip_y = y + 5.0f + fabsf(spread) * 7.0f;
+    float base_x = x + 16.0f - spread * 2.0f;
+    float mid_x = (base_x + tip_x) * 0.5f;
+    float mid_y = (y + 20.0f + tip_y) * 0.5f - 3.0f;
+    SDL_Color blade = leaf % 2 == 0 ? (SDL_Color){46, 86, 58, 255}
+                                    : (SDL_Color){36, 68, 48, 255};
+    color_quad(r, COL_INK, base_x - 2.0f, y + 21.0f, mid_x - 3.0f, mid_y + 3.0f,
+               tip_x, tip_y - 1.0f, mid_x + 3.0f, mid_y + 4.0f);
+    color_quad(r, blade, base_x - 1.0f, y + 20.0f, mid_x - 2.0f, mid_y + 3.0f,
+               tip_x, tip_y + 1.0f, mid_x + 2.0f, mid_y + 4.0f);
+    if (leaf % 2 == 0)
+    {
+      color_quad(r, (SDL_Color){66, 114, 74, 255},
+                 base_x, y + 20.0f, mid_x - 1.0f, mid_y + 3.0f,
+                 tip_x - 1.0f, tip_y + 2.0f, mid_x, mid_y + 4.0f);
+    }
+  }
+  color_rect(r, (SDL_Color){38, 60, 44, 255}, x + 15.0f, y + 14.0f, 2.0f, 8.0f);
+
+  /* Planter: stone box with a brass rim and dressed bark inside. */
+  color_rect(r, COL_INK, x + 5.0f, y + 18.0f, 22.0f, 14.0f);
+  color_rect(r, (SDL_Color){80, 76, 71, 255}, x + 6.0f, y + 19.0f, 20.0f, 12.0f);
+  fx_vgrad(r, x + 6.0f, y + 19.0f, 20.0f, 12.0f,
+           (SDL_Color){104, 99, 92, 255}, 255,
+           (SDL_Color){52, 50, 48, 255}, 255);
+  color_rect(r, (SDL_Color){158, 132, 86, 255}, x + 5.0f, y + 18.0f, 22.0f, 2.0f);
+  color_rect(r, (SDL_Color){228, 206, 158, 255},
+             x + 5.0f, y + 18.0f, 22.0f, 1.0f);
+  color_rect(r, (SDL_Color){33, 26, 22, 255}, x + 8.0f, y + 20.0f, 16.0f, 2.0f);
+}
+
+static void draw_lobby_turnstile(SDL_Renderer *r, float x, float y,
+                                 float world_t)
+{
+  /* Optical security gate: two waist-high pedestals with a glass leaf between
+     them and a floor-level indicator that cycles green. It is the fitting that
+     explains why the stair door upstairs wants a card. */
+  color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 2.0f, y + 30.0f, 28.0f, 2.0f);
+
+  /* Waist-high is chest-high at this scale: the pedestals run most of the tile
+     so a pair of them reads as a gate line rather than as two floor bins. */
+  for (int side = 0; side < 2; ++side)
+  {
+    float px = x + (side == 0 ? 2.0f : 20.0f);
+    color_rect(r, COL_INK, px, y + 7.0f, 12.0f, 25.0f);
+    color_rect(r, (SDL_Color){70, 74, 79, 255}, px + 1.0f, y + 8.0f, 10.0f, 23.0f);
+    fx_vgrad(r, px + 1.0f, y + 8.0f, 10.0f, 23.0f,
+             (SDL_Color){118, 123, 128, 255}, 255,
+             (SDL_Color){42, 45, 50, 255}, 255);
+    /* Brushed brass cap, and a shadowed reveal under it. */
+    color_rect(r, (SDL_Color){158, 132, 86, 255}, px, y + 7.0f, 12.0f, 3.0f);
+    color_rect(r, (SDL_Color){228, 206, 158, 255}, px, y + 7.0f, 12.0f, 1.0f);
+    color_rect(r, (SDL_Color){32, 35, 39, 255}, px + 1.0f, y + 10.0f, 10.0f, 1.0f);
+  }
+
+  /* The glass leaf standing between them, closed: a tinted pane with a bright
+     leading edge and a brass rail along the top. */
+  color_rect(r, (SDL_Color){104, 158, 156, 70},
+             x + 13.0f, y + 12.0f, 7.0f, 18.0f);
+  color_rect(r, (SDL_Color){178, 224, 216, 150},
+             x + 13.0f, y + 12.0f, 7.0f, 1.0f);
+  color_rect(r, (SDL_Color){178, 224, 216, 110},
+             x + 13.0f, y + 12.0f, 1.0f, 18.0f);
+
+  /* Reader plate on the near pedestal, and the pass indicator underfoot. */
+  bool clear = fmodf(world_t * 0.8f, 2.0f) < 1.4f;
+  SDL_Color signal = clear ? (SDL_Color){96, 226, 158, 255}
+                           : (SDL_Color){206, 168, 78, 255};
+  color_rect(r, COL_INK, x + 21.0f, y + 13.0f, 8.0f, 6.0f);
+  color_rect(r, (SDL_Color){28, 33, 36, 255}, x + 22.0f, y + 14.0f, 6.0f, 4.0f);
+  color_rect(r, signal, x + 23.0f, y + 15.0f, 4.0f, 2.0f);
+  fx_glow(r, x + 25.0f, y + 16.0f, 12.0f, signal, 52);
+  fx_glow(r, x + 16.0f, y + 30.0f, 14.0f, signal, 40);
+  color_rect(r, signal, x + 13.0f, y + 30.0f, 7.0f, 1.0f);
+}
+
 static void draw_restroom_toilet(SDL_Renderer *r, float x, float y)
 {
   /* Side profile: cistern at the wall, projecting seat and a curved pedestal.
@@ -1167,8 +1343,17 @@ static void draw_decoration(SDL_Renderer *r, const Decoration *decoration,
     draw_restroom_partition(r, x, y);
   else if (decoration->type == DECOR_RESTROOM_STALL_OPEN)
     draw_restroom_stall_open(r, x, y);
-  else
+  else if (decoration->type == DECOR_RESTROOM_STALL_CLOSED)
     draw_restroom_stall_closed(r, x, y);
+  else if (decoration->type == DECOR_LOBBY_COUNTER)
+    draw_lobby_counter(r, x, y, tile_hash(decoration->col, decoration->row));
+  else if (decoration->type == DECOR_LOBBY_SOFA)
+    draw_lobby_sofa(r, x, y);
+  else if (decoration->type == DECOR_LOBBY_PLANTER)
+    draw_lobby_planter(r, x, y,
+                       tile_hash(decoration->col, decoration->row), world_t);
+  else
+    draw_lobby_turnstile(r, x, y, world_t);
 }
 
 static void draw_card(SDL_Renderer *r, float x, float y, Uint8 alpha, bool active)
@@ -1305,13 +1490,20 @@ static void draw_ceiling_fan(SDL_Renderer *r, const CeilingFan *fan,
   float cy = fan->y + oy;
   float angle = world_t * 9.0f + (float)index * 0.83f;
 
-  /* Side-view mount: ceiling plate, vertical shaft, and motor housing. */
-  color_rect(r, COL_OUTLINE, cx - 8.0f, cy - 11.0f, 16.0f, 5.0f);
+  /* Side-view mount: ceiling plate, drop rod, and motor housing. The rod runs
+   * from whatever the map says the fan hangs off, so a fan in a hall reads as
+   * hung on a long rod rather than as one floating in the middle of the air. */
+  float plate_y = fan->mount_y + oy;
+  float rod_top = plate_y + 3.0f;
+  float rod_height = cy - rod_top;
+  if (rod_height < 2.0f)
+    rod_height = 2.0f;
+  color_rect(r, COL_OUTLINE, cx - 8.0f, plate_y, 16.0f, 5.0f);
   color_rect(r, (SDL_Color){107, 120, 121, 255},
-             cx - 6.0f, cy - 10.0f, 12.0f, 3.0f);
-  color_rect(r, COL_OUTLINE, cx - 3.0f, cy - 8.0f, 6.0f, 8.0f);
+             cx - 6.0f, plate_y + 1.0f, 12.0f, 3.0f);
+  color_rect(r, COL_OUTLINE, cx - 3.0f, rod_top, 6.0f, rod_height);
   color_rect(r, (SDL_Color){139, 151, 148, 255},
-             cx - 1.0f, cy - 7.0f, 2.0f, 7.0f);
+             cx - 1.0f, rod_top + 1.0f, 2.0f, rod_height - 1.0f);
 
   draw_ceiling_fan_blades(r, cx, cy + 2.0f, angle, false);
 

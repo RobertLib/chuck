@@ -18,7 +18,7 @@ EMBEDDED_LEVELS_SOURCE := $(BUILD_DIR)/embedded_levels.c
 EMBEDDED_LEVELS_OBJECT := $(BUILD_DIR)/embedded_levels.o
 TEST_TARGET := $(BUILD_DIR)/core_tests
 TEST_SOURCES := tests/test_main.c \
-	src/chase.c src/enemy.c src/game_event.c src/gameplay_ai.c src/gameplay_combat.c \
+	src/camera.c src/chase.c src/enemy.c src/game_event.c src/gameplay_ai.c src/gameplay_combat.c \
 	src/gameplay_climb.c src/gameplay_interaction.c src/gameplay_physics.c src/gameplay_world.c \
 	src/gameplay_state.c src/level.c src/player.c src/rng.c
 

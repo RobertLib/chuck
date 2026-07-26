@@ -1,3 +1,4 @@
+#include "camera.h"
 #include "chase.h"
 #include "embedded_levels.h"
 #include "game_event.h"
@@ -55,6 +56,21 @@ static void test_rng_is_reproducible(void)
         int value = rng_range(&first, 7);
         CHECK(value >= 0 && value < 7);
     }
+}
+
+static void test_camera_axis_target(void)
+{
+    CHECK(fabsf(camera_axis_target(100.0f, 1600.0f, 800.0f)) < 0.001f);
+    CHECK(fabsf(camera_axis_target(700.0f, 1600.0f, 800.0f) - 300.0f) <
+          0.001f);
+    CHECK(fabsf(camera_axis_target(1500.0f, 1600.0f, 800.0f) - 800.0f) <
+          0.001f);
+    CHECK(fabsf(camera_axis_target(300.0f, 640.0f, 800.0f)) < 0.001f);
+
+    /* A map only one tile taller than the playfield must expose that tile;
+     * this used to be suppressed by a special vertical-only threshold. */
+    CHECK(fabsf(camera_axis_target(520.0f, 17.0f * TILE_SIZE, 512.0f) -
+                TILE_SIZE) < 0.001f);
 }
 
 static void test_level_parser_and_seeded_choices(void)
@@ -239,6 +255,482 @@ static void test_all_embedded_levels_parse(void)
     CHECK(!climb_expected);
     CHECK(facade_levels == 4);
     CHECK(sublevel_entrances == 4);
+}
+
+/*
+ * ---- Route model -----------------------------------------------------------
+ *
+ * A deliberately conservative account of what the player can do on foot: walk,
+ * fall, step up one tile, jump a one-tile hole (two tiles with a second open
+ * row overhead), hop a single floor spike with that same clearance, ride
+ * ladders, lift shafts and moving platforms, and step through a paired door.
+ * Falling panels are left out on purpose, because a map has to still work once
+ * every one of them has gone. Everything it reaches really is reachable, so a
+ * map it calls finishable is finishable.
+ */
+#define ROUTE_MAX_NEIGHBOURS 24
+
+typedef struct
+{
+    int col;
+    int row;
+} RouteCell;
+
+typedef struct
+{
+    const Level *level;
+    bool spike[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
+} RouteMap;
+
+static bool route_seen[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
+static bool route_escapes[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
+
+static void route_map_init(RouteMap *route, const Level *level)
+{
+    memset(route, 0, sizeof(*route));
+    route->level = level;
+    for (int i = 0; i < level->map.spike_count; ++i)
+    {
+        int col = (int)(level->map.spike_spawns[i].x / TILE_SIZE);
+        int row = (int)(level->map.spike_spawns[i].y / TILE_SIZE);
+        if (col >= 0 && col < level->map.width &&
+            row >= 0 && row < level->map.height)
+        {
+            route->spike[row][col] = true;
+        }
+    }
+}
+
+static bool route_inside(const RouteMap *route, int col, int row)
+{
+    return col >= 0 && col < route->level->map.width &&
+           row >= 0 && row < route->level->map.height;
+}
+
+static bool route_passable(const RouteMap *route, int col, int row)
+{
+    if (!route_inside(route, col, row))
+        return false;
+    if (route->level->map.tiles[row][col] == TILE_WALL)
+        return false;
+    return !route->spike[row][col];
+}
+
+static bool route_support(const RouteMap *route, int col, int row)
+{
+    if (route_inside(route, col, row + 1) &&
+        route->level->map.tiles[row + 1][col] == TILE_WALL)
+    {
+        return true;
+    }
+    for (int i = 0; i < route->level->runtime.moving_platform_count; ++i)
+    {
+        const MovingPlatform *platform =
+            &route->level->runtime.moving_platforms[i];
+        if (platform->row != row + 1)
+            continue;
+        int left = (int)(platform->left_limit / TILE_SIZE);
+        int right = (int)(platform->right_limit / TILE_SIZE);
+        if (col >= left && col <= right)
+            return true;
+    }
+    return false;
+}
+
+static bool route_standing(const RouteMap *route, int col, int row)
+{
+    if (!route_passable(route, col, row))
+        return false;
+    return route_support(route, col, row) ||
+           route->level->map.tiles[row][col] == TILE_LADDER;
+}
+
+static bool route_landing(const RouteMap *route, int col, int row,
+                          RouteCell *landing)
+{
+    for (int r = row; r < route->level->map.height; ++r)
+    {
+        if (!route_passable(route, col, r))
+            return false;
+        if (route_standing(route, col, r))
+        {
+            landing->col = col;
+            landing->row = r;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* A shaft only carries anybody if its run is long enough to hold a lift. */
+static bool route_in_shaft(const RouteMap *route, int col, int row)
+{
+    const LevelMap *map = &route->level->map;
+    if (!route_inside(route, col, row) ||
+        map->tiles[row][col] != TILE_ELEVATOR_SHAFT)
+    {
+        return false;
+    }
+    return (row > 0 && map->tiles[row - 1][col] == TILE_ELEVATOR_SHAFT) ||
+           (row + 1 < map->height &&
+            map->tiles[row + 1][col] == TILE_ELEVATOR_SHAFT);
+}
+
+static int route_neighbours(const RouteMap *route, int col, int row,
+                            RouteCell *out)
+{
+    const LevelMap *map = &route->level->map;
+    int count = 0;
+    RouteCell landing;
+
+    if (map->tiles[row][col] == TILE_LADDER)
+    {
+        for (int step = -1; step <= 1; step += 2)
+        {
+            if (route_inside(route, col, row + step) &&
+                map->tiles[row + step][col] == TILE_LADDER)
+            {
+                out[count++] = (RouteCell){col, row + step};
+            }
+        }
+        if (route_standing(route, col, row - 1))
+            out[count++] = (RouteCell){col, row - 1};
+    }
+
+    if (route_in_shaft(route, col, row))
+    {
+        for (int step = -1; step <= 1; step += 2)
+        {
+            if (route_in_shaft(route, col, row + step))
+                out[count++] = (RouteCell){col, row + step};
+        }
+    }
+
+    for (int step = -1; step <= 1; step += 2)
+    {
+        int next = col + step;
+        if (route_passable(route, next, row))
+        {
+            if (route_standing(route, next, row))
+                out[count++] = (RouteCell){next, row};
+            else if (route_landing(route, next, row, &landing))
+                out[count++] = landing;
+        }
+        if (route_in_shaft(route, next, row))
+            out[count++] = (RouteCell){next, row};
+        if (route_passable(route, col, row - 1) &&
+            route_standing(route, next, row - 1))
+        {
+            out[count++] = (RouteCell){next, row - 1};
+        }
+    }
+
+    /* A hole is cleared one tile wide under a low ceiling, two with a second
+     * open row for the jump to use. */
+    for (int step = -1; step <= 1; step += 2)
+    {
+        for (int hole = 1; hole <= 2; ++hole)
+        {
+            int destination = col + step * (hole + 1);
+            if (!route_standing(route, destination, row))
+                continue;
+            bool clear = true;
+            for (int i = 1; i <= hole && clear; ++i)
+            {
+                int over = col + step * i;
+                clear = route_passable(route, over, row) &&
+                        !route_standing(route, over, row);
+            }
+            for (int i = 0; i <= hole + 1 && clear; ++i)
+            {
+                for (int head = 1; head <= hole && clear; ++head)
+                    clear = route_passable(route, col + step * i, row - head);
+            }
+            if (clear)
+                out[count++] = (RouteCell){destination, row};
+        }
+    }
+
+    for (int step = -1; step <= 1; step += 2)
+    {
+        int over = col + step;
+        int destination = col + 2 * step;
+        if (!route_inside(route, over, row) || !route->spike[row][over])
+            continue;
+        if (!route_standing(route, destination, row))
+            continue;
+        bool clear = true;
+        for (int i = 0; i <= 2 && clear; ++i)
+        {
+            for (int head = 1; head <= 2 && clear; ++head)
+                clear = route_passable(route, col + step * i, row - head);
+        }
+        if (clear)
+            out[count++] = (RouteCell){destination, row};
+    }
+
+    if (map->tiles[row][col] == TILE_DOOR)
+    {
+        for (int i = 0; i < map->door_count; ++i)
+        {
+            if (map->doors[i].col != col || map->doors[i].row != row)
+                continue;
+            int pair = i ^ 1;
+            if (pair < map->door_count)
+            {
+                out[count++] =
+                    (RouteCell){map->doors[pair].col, map->doors[pair].row};
+            }
+        }
+    }
+
+    return count;
+}
+
+static void route_flood(const RouteMap *route, RouteCell start)
+{
+    static RouteCell queue[MAX_LEVEL_HEIGHT * MAX_LEVEL_WIDTH];
+    int head = 0;
+    int tail = 0;
+
+    memset(route_seen, 0, sizeof(route_seen));
+    route_seen[start.row][start.col] = true;
+    queue[tail++] = start;
+    while (head < tail)
+    {
+        RouteCell current = queue[head++];
+        RouteCell next[ROUTE_MAX_NEIGHBOURS];
+        int count = route_neighbours(route, current.col, current.row, next);
+        for (int i = 0; i < count; ++i)
+        {
+            if (route_seen[next[i].row][next[i].col])
+                continue;
+            route_seen[next[i].row][next[i].col] = true;
+            queue[tail++] = next[i];
+        }
+    }
+}
+
+static bool route_reaches(const RouteMap *route, int col, int row)
+{
+    RouteCell landing;
+    if (route_inside(route, col, row) && route_seen[row][col])
+        return true;
+    if (!route_landing(route, col, row, &landing))
+        return false;
+    return route_seen[landing.row][landing.col];
+}
+
+/* One-way drops are fine; being dropped somewhere the exit can no longer be
+ * reached from is not. */
+static bool route_never_strands(const RouteMap *route, RouteCell goal)
+{
+    memset(route_escapes, 0, sizeof(route_escapes));
+    route_escapes[goal.row][goal.col] = true;
+
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        for (int row = 0; row < route->level->map.height; ++row)
+        {
+            for (int col = 0; col < route->level->map.width; ++col)
+            {
+                if (!route_seen[row][col] || route_escapes[row][col])
+                    continue;
+                RouteCell next[ROUTE_MAX_NEIGHBOURS];
+                int count = route_neighbours(route, col, row, next);
+                for (int i = 0; i < count; ++i)
+                {
+                    if (!route_escapes[next[i].row][next[i].col])
+                        continue;
+                    route_escapes[row][col] = true;
+                    changed = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    for (int row = 0; row < route->level->map.height; ++row)
+    {
+        for (int col = 0; col < route->level->map.width; ++col)
+        {
+            if (route_seen[row][col] && !route_escapes[row][col])
+                return false;
+        }
+    }
+    return true;
+}
+
+/*
+ * The storey rhythm of a map: the run of open rows between each pair of
+ * full-width structural slabs. It ignores furniture and ladder columns, so two
+ * sectors built on the same stack of floors produce the same rhythm however
+ * differently they are dressed - which is exactly the repetition worth
+ * forbidding.
+ */
+static int level_storey_rhythm(const LevelMap *map, int *bands, int max_bands)
+{
+    int count = 0;
+    int previous = -1;
+    for (int row = 0; row < map->height; ++row)
+    {
+        int walls = 0;
+        for (int col = 0; col < map->width; ++col)
+            walls += map->tiles[row][col] == TILE_WALL;
+        if (walls * 100 < map->width * 85)
+            continue;
+        if (previous >= 0 && count < max_bands)
+            bands[count++] = row - previous - 1;
+        previous = row;
+    }
+    return count;
+}
+
+static int level_hazard_budget(const Level *level)
+{
+    if (level->map.mode == LEVEL_MODE_FACADE)
+    {
+        int budget = 0;
+        for (int i = 0; i < level->map.facade_hazard_spawn_count; ++i)
+        {
+            budget += level->map.facade_hazard_spawns[i].type ==
+                              FACADE_HAZARD_THROWN_OBJECT
+                          ? 3
+                          : 2;
+        }
+        return budget;
+    }
+
+    int dogs = 0;
+    for (int i = 0; i < level->map.enemy_count; ++i)
+        dogs += level->map.enemy_spawns[i].has_dog;
+    return 3 * level->map.enemy_count + 2 * dogs +
+           2 * level->map.mine_count + level->map.spike_count +
+           level->map.ceiling_fan_count;
+}
+
+/*
+ * Three properties of the campaign as a whole, none of which the parser or the
+ * theme rules can see: no sector is built like another one, the pressure only
+ * ever rises, and every interior can actually be finished.
+ */
+static void test_campaign_levels_are_distinct_and_solvable(void)
+{
+#define MAX_CAMPAIGN_LEVELS 32
+    static Level levels[MAX_CAMPAIGN_LEVELS];
+    static int rhythm[MAX_CAMPAIGN_LEVELS][MAX_LEVEL_HEIGHT];
+    static int rhythm_len[MAX_CAMPAIGN_LEVELS];
+
+    CHECK(EMBEDDED_LEVEL_COUNT <= MAX_CAMPAIGN_LEVELS);
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        Rng rng;
+        rng_seed(&rng, 7000 + i);
+        CHECK(level_load_data(&levels[i], EMBEDDED_LEVELS[i].name,
+                              EMBEDDED_LEVELS[i].data,
+                              EMBEDDED_LEVELS[i].size, &rng));
+        rhythm_len[i] = level_storey_rhythm(&levels[i].map, rhythm[i],
+                                            MAX_LEVEL_HEIGHT);
+    }
+
+    for (size_t a = 0; a < EMBEDDED_LEVEL_COUNT; ++a)
+    {
+        for (size_t b = a + 1; b < EMBEDDED_LEVEL_COUNT; ++b)
+        {
+            /* Two sectors the same size are two sectors that look the same on
+             * the map screen before the player has walked a step of either. */
+            CHECK(levels[a].map.width != levels[b].map.width ||
+                  levels[a].map.height != levels[b].map.height);
+
+            if (levels[a].map.mode != levels[b].map.mode)
+                continue;
+            if (levels[a].map.mode == LEVEL_MODE_FACADE)
+                continue;
+            bool same_rhythm = rhythm_len[a] == rhythm_len[b];
+            for (int i = 0; i < rhythm_len[a] && same_rhythm; ++i)
+                same_rhythm = rhythm[a][i] == rhythm[b][i];
+            CHECK(!same_rhythm);
+        }
+    }
+
+    /* The climb gets longer and busier every time, and so does the walk. */
+    int previous_interior = -1;
+    int previous_climb = -1;
+    int previous_climb_height = -1;
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        int budget = level_hazard_budget(&levels[i]);
+        if (levels[i].map.mode == LEVEL_MODE_FACADE)
+        {
+            CHECK(budget > previous_climb);
+            CHECK(levels[i].map.height > previous_climb_height);
+            previous_climb = budget;
+            previous_climb_height = levels[i].map.height;
+            continue;
+        }
+        CHECK(budget > previous_interior);
+        previous_interior = budget;
+    }
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        const Level *level = &levels[i];
+        if (level->map.mode == LEVEL_MODE_FACADE)
+            continue; /* climbs are pinned by the bot in their own test */
+
+        RouteMap route;
+        route_map_init(&route, level);
+
+        RouteCell start = {
+            (int)((level->map.start_x + PLAYER_W * 0.5f) / TILE_SIZE),
+            (int)((level->map.start_y + PLAYER_H * 0.5f) / TILE_SIZE)};
+        RouteCell landing;
+        if (!route_standing(&route, start.col, start.row) &&
+            route_landing(&route, start.col, start.row, &landing))
+        {
+            start = landing;
+        }
+        route_flood(&route, start);
+
+        /* The way out of the sector: the window when there is one, because the
+         * stair door beside it is welded shut. */
+        RouteCell goal = level->map.has_window
+                             ? (RouteCell){level->map.window_col,
+                                           level->map.window_row}
+                             : (RouteCell){level->map.exit_col,
+                                           level->map.exit_row};
+        CHECK(route_reaches(&route, goal.col, goal.row));
+
+        /* Which card opens the door and which terminal is live is decided by
+         * the seed, so every one of them has to be gettable. */
+        for (int item = 0; item < level->runtime.item_count; ++item)
+        {
+            if (level->runtime.items[item].type != ITEM_CARD)
+                continue;
+            CHECK(route_reaches(&route,
+                                (int)(level->runtime.items[item].x / TILE_SIZE),
+                                (int)(level->runtime.items[item].y / TILE_SIZE)));
+        }
+        for (int t = 0; t < level->map.terminal_count; ++t)
+        {
+            CHECK(route_reaches(&route, level->map.terminals[t].col,
+                                level->map.terminals[t].row));
+        }
+        if (level->map.has_sublevel_entrance)
+        {
+            CHECK(route_reaches(&route, level->map.sublevel_entrance_col,
+                                level->map.sublevel_entrance_row));
+        }
+
+        if (!route_standing(&route, goal.col, goal.row) &&
+            route_landing(&route, goal.col, goal.row, &landing))
+        {
+            goal = landing;
+        }
+        CHECK(route_never_strands(&route, goal));
+    }
 }
 
 static void test_embedded_restroom_sublevel(void)
@@ -1194,6 +1686,65 @@ static void test_level_collision_stops_at_wall(void)
     level_move(&level, &x, &y, &vx, &vy,
                PLAYER_W, PLAYER_H, 0.05f, false, &on_ground, false);
     CHECK(on_ground);
+}
+
+/*
+ * Grabbing a ladder centres the player in the rung column.
+ *
+ * The player box is 26 of a 32px tile, so stopping anywhere in the outer 6px
+ * leaves it overlapping the neighbouring column. When a floor slab sits beside
+ * the ladder that overlap blocks the climb on the vertical axis and pressing up
+ * silently does nothing, from roughly the outer third of every ladder in the
+ * campaign. The snap is what makes a ladder catch from wherever the player
+ * happened to stop walking.
+ */
+static void test_ladder_mount_centres_the_player(void)
+{
+    static const char data[] =
+        "########\n"
+        "#  H  E#\n"  /* upper standing row: the run ends level with the floor */
+        "###H####\n"  /* the slab either side of the ladder is what blocks */
+        "#  H   #\n"
+        "# SH   #\n"  /* lower standing row: the run starts level with it */
+        "########\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 7);
+    CHECK(level_load_data(&level, "ladder", data, strlen(data), &rng));
+
+    const int ladder_col = 3;
+    const float centred =
+        (float)ladder_col * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+    Input up = {0};
+    up.up = true;
+
+    /* Every standing position that is genuinely inside the rung column must
+     * reach the floor above, not just the ones near its middle. */
+    int climbed = 0;
+    int tried = 0;
+    for (float offset = 0.5f; offset < (float)TILE_SIZE; offset += 0.5f)
+    {
+        float x = (float)ladder_col * TILE_SIZE - PLAYER_W * 0.5f + offset;
+        if ((int)floorf((x + PLAYER_W * 0.5f) / TILE_SIZE) != ladder_col)
+            continue;
+
+        Player player;
+        player_reset(&player, &level);
+        player.x = x;
+        player.y = 4.0f * TILE_SIZE;
+        player.on_ground = true;
+
+        player_update(&player, &level, &up, 1.0f / 60.0f);
+        CHECK(player.on_ladder);
+        CHECK(fabsf(player.x - centred) < 0.01f);
+
+        for (int frame = 0; frame < 240; ++frame)
+            player_update(&player, &level, &up, 1.0f / 60.0f);
+        tried++;
+        climbed += player.y < 2.0f * TILE_SIZE;
+    }
+    CHECK(tried > 40);
+    CHECK(climbed == tried);
 }
 
 static void test_level_reveal_finishes(void)
@@ -2612,11 +3163,13 @@ static void test_pursuing_guard_walks_onto_falling_platform(void)
 
 int main(void)
 {
+    test_camera_axis_target();
     test_rng_is_reproducible();
     test_level_parser_and_seeded_choices();
     test_level_theme_metadata();
     test_campaign_themes_keep_changing();
     test_all_embedded_levels_parse();
+    test_campaign_levels_are_distinct_and_solvable();
     test_embedded_restroom_sublevel();
     test_gameplay_reset_preserves_rng_only();
     test_chase_is_reproducible_from_a_seed();
@@ -2641,6 +3194,7 @@ int main(void)
     test_facade_wind_warns_then_pushes_unless_sheltered();
     test_facade_thrower_winds_up_before_releasing();
     test_level_collision_stops_at_wall();
+    test_ladder_mount_centres_the_player();
     test_level_reveal_finishes();
     test_event_buffer_reports_overflow();
     test_terminal_unlocks_deterministically();

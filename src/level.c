@@ -304,6 +304,22 @@ bool level_load_data(Level *level, const char *name,
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_OFFICE_EQUIPMENT);
             break;
+        case 'n':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_LOBBY_COUNTER);
+            break;
+        case 's':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_LOBBY_SOFA);
+            break;
+        case 't':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_LOBBY_PLANTER);
+            break;
+        case 'g':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_LOBBY_TURNSTILE);
+            break;
         case 'q':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_RESTROOM_TOILET);
@@ -498,6 +514,26 @@ bool level_load_data(Level *level, const char *name,
         level->map.decorations[supported_decoration_count++] = *decoration;
     }
     level->map.decoration_count = supported_decoration_count;
+
+    /* Find what each fan hangs from. Scanning up from its own tile keeps the
+     * rod honest in a hall as well as in a corridor, and a fan in a shaft with
+     * no ceiling at all still gets a plate at the top of the level. */
+    for (int i = 0; i < level->map.ceiling_fan_count; ++i)
+    {
+        CeilingFan *fan = &level->map.ceiling_fans[i];
+        int col = (int)(fan->x / TILE_SIZE);
+        int row = (int)((fan->y - CEILING_FAN_CENTER_Y) / TILE_SIZE);
+        int ceiling = 0;
+        for (int r = row - 1; r >= 0; --r)
+        {
+            if (level->map.tiles[r][col] == TILE_WALL)
+            {
+                ceiling = r + 1;
+                break;
+            }
+        }
+        fan->mount_y = ceiling * (float)TILE_SIZE;
+    }
 
     level->runtime.card_count = 0;
     for (int i = 0; i < level->runtime.item_count; ++i)

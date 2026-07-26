@@ -109,9 +109,21 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
 
     bool over_ladder = player_over_ladder(player, level);
 
-    /* Mount the ladder by pressing up/down; stay on it until we leave it. */
+    /* Mount the ladder by pressing up/down; stay on it until we leave it.
+     *
+     * Grabbing it also centres the box in the rung column. The box is 26 of a
+     * 32px tile, so a player who stops anywhere in the outer 6px of the column
+     * still overlaps the neighbouring one; a slab beside the ladder then blocks
+     * the climb on the vertical axis and pressing up appears to do nothing at
+     * all. Snapping on mount is invisible at 3px and makes every ladder in the
+     * campaign catch from wherever the player happened to stop walking. */
     if (over_ladder && (input->up || input->down))
     {
+        if (!player->on_ladder)
+        {
+            int col = (int)floorf((player->x + PLAYER_W * 0.5f) / TILE_SIZE);
+            player->x = (float)col * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+        }
         player->on_ladder = true;
     }
     if (!over_ladder)

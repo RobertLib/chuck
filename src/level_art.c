@@ -199,6 +199,25 @@ static float art_scroll(float cam_x, float factor, float period)
     return shift > 0.0f ? shift - period : shift;
 }
 
+/*
+ * The world index of the first repeat a scrolling layer draws; the loop counts
+ * up from it.
+ *
+ * Everything a layer varies per repeat - which blind is shut, which bank of
+ * ceiling lights is on, what colour a file spine is - is keyed to this index,
+ * so the index has to belong to the repeat rather than to where the repeat
+ * currently sits on screen. Recovering it as `(int)(x + cam_x * factor) /
+ * period` looks like it does: that sum is the repeat's world position, an exact
+ * multiple of the period. In floats it lands a hair either side of the multiple
+ * instead, and truncation then hands one repeat two different indices as the
+ * camera moves - which is why the backdrop used to boil while the level
+ * scrolled rather than sliding with it.
+ */
+static int art_repeat(float cam_x, float factor, float period)
+{
+    return (int)floorf(cam_x * factor / period);
+}
+
 /* ---- Wall materials -------------------------------------------------- */
 
 static void wall_plate(SDL_Renderer *r, const LevelThemeArt *art,
@@ -630,10 +649,11 @@ static void backdrop_plant(const LevelArtScene *s, const LevelThemeArt *art,
     SDL_Renderer *r = s->renderer;
 
     /* Farthest layer: hulking silhouettes of plant machinery, barely lit. */
+    int bank = art_repeat(s->cam_x, 0.10f, 224.0f);
     for (float x = art_scroll(s->cam_x, 0.10f, 224.0f) - 48.0f;
-         x < (float)s->win_w + 224.0f; x += 224.0f)
+         x < (float)s->win_w + 224.0f; x += 224.0f, ++bank)
     {
-        unsigned seed = (unsigned)((int)(x + s->cam_x * 0.10f) / 224);
+        unsigned seed = (unsigned)bank;
         unsigned h = fx_hash(seed * 31u + (unsigned)s->level_index * 7u);
         float tank_h = 96.0f + (float)(h % 60u);
         fx_rect(r, art->far_shape, x + 24.0f, oy + fh - tank_h, 74.0f, tank_h);
@@ -668,8 +688,7 @@ static void backdrop_plant(const LevelArtScene *s, const LevelThemeArt *art,
         /* Dim equipment lights; the warm ones flicker very rarely. */
         for (int lamp = 0; lamp < 4; ++lamp)
         {
-            unsigned h = art_hash((int)(x + s->cam_x * 0.18f) / 8 + lamp,
-                                  s->level_index + 7);
+            unsigned h = art_hash(bank * 4 + lamp, s->level_index + 7);
             bool warm = (h & 1u) != 0u;
             float flicker = warm && ((h >> 3) & 7u) == 0u &&
                                     fmodf(s->time * 1.7f + (float)lamp, 4.0f) <
@@ -708,96 +727,260 @@ static void backdrop_plant(const LevelArtScene *s, const LevelThemeArt *art,
     }
 }
 
+/*
+ * LOBBY — a glazed street front, the city behind it, and the atrium ceiling.
+ *
+ * Two rules hold this composition together, and both were learned the hard
+ * way. First: only architecture repeats. A curtain wall genuinely runs the
+ * length of a facade, so tiling mullions reads as a building; a reception desk
+ * tiled every few hundred pixels reads as a mistake, and the sector is barely
+ * wider than the window, so every repeat is on screen at once. The furniture
+ * lives in the map as real props instead.
+ *
+ * Second: the glazing is a hole in the wall, so it carries its own values. The
+ * night sky behind the glass has to sit clearly above the interior air or the
+ * towers vanish into it and all that is left of the city is its lit windows,
+ * floating in the dark like specks of dirt.
+ */
 static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
                            float oy, float fh)
 {
     SDL_Renderer *r = s->renderer;
-    float street = oy + fh * 0.62f;
+    /* The pavement outside sits just above the sector's floor slab, so the
+     * street reads as continuous with the ground Chuck is standing on. */
+    float street = oy + fh - 46.0f;
+    float head = oy + 52.0f; /* underside of the ceiling soffit */
+    /* Seen from a lit room at night the outside is the dark half of the
+     * picture, so the sky stays down near the interior air and only the lit
+     * windows are bright. Getting this the wrong way round makes the skyline
+     * read as masonry standing inside the hall. What separates a tower from
+     * the sky is the city glow gathered along the horizon plus a rim on its
+     * own edges, not a brighter sky. */
+    SDL_Color sky_high = {11, 15, 26, 255};
+    SDL_Color sky_low = {38, 42, 58, 255};
+    SDL_Color tower = {15, 19, 31, 255};
 
-    /* Behind the glass: the street Chuck just came off, and the city he is
-     * about to climb. Traffic keeps moving whether he is watching or not. */
-    for (float x = art_scroll(s->cam_x, 0.06f, 168.0f) - 40.0f;
-         x < (float)s->win_w + 168.0f; x += 168.0f)
+    fx_rect(r, sky_high, 0.0f, head, (float)s->win_w, street - head);
+    fx_vgrad(r, 0.0f, head, (float)s->win_w, street - head,
+             sky_high, 255, sky_low, 255);
+
+    /* Farthest towers: a low, even band that gives the skyline a floor. */
+    int far_tower = art_repeat(s->cam_x, 0.04f, 96.0f);
+    for (float x = art_scroll(s->cam_x, 0.04f, 96.0f) - 48.0f;
+         x < (float)s->win_w + 96.0f; x += 96.0f, ++far_tower)
     {
-        unsigned h = fx_hash((unsigned)((int)(x + s->cam_x * 0.06f) / 168) *
+        unsigned h = fx_hash((unsigned)far_tower *
+                             2246822519u);
+        float slab = 46.0f + (float)(h % 40u);
+        fx_rect(r, fx_mix(tower, sky_low, 0.45f), x, street - slab, 88.0f, slab);
+    }
+
+    /* Nearer towers, tall enough to break the horizon, with lit floors. A
+     * bright cap on the roofline keeps each mass separate from the next. */
+    int near_tower = art_repeat(s->cam_x, 0.07f, 176.0f);
+    for (float x = art_scroll(s->cam_x, 0.07f, 176.0f) - 40.0f;
+         x < (float)s->win_w + 176.0f; x += 176.0f, ++near_tower)
+    {
+        unsigned h = fx_hash((unsigned)near_tower *
                              2654435761u);
-        float tower_h = 90.0f + (float)(h % 120u);
-        fx_rect(r, art->far_shape, x + 12.0f, street - tower_h, 92.0f, tower_h);
-        for (float wy = street - tower_h + 12.0f; wy < street - 8.0f;
-             wy += 20.0f)
+        /* Kept below the transom: a skyline that climbs into the upper atrium
+         * competes with the room instead of sitting behind it. */
+        float tower_h = 62.0f + (float)(h % 96u);
+        float top = street - tower_h;
+        fx_rect(r, tower, x + 14.0f, top, 96.0f, street - top);
+        fx_rect(r, fx_mix(tower, sky_low, 0.7f), x + 14.0f, top, 96.0f, 1.0f);
+        fx_rect(r, fx_mix(tower, sky_low, 0.45f), x + 14.0f, top, 2.0f,
+                street - top);
+        for (float wy = top + 10.0f; wy < street - 9.0f; wy += 14.0f)
         {
-            for (float wx = x + 20.0f; wx < x + 96.0f; wx += 18.0f)
+            for (float wx = x + 22.0f; wx < x + 106.0f; wx += 12.0f)
             {
-                if ((((int)wx * 7 + (int)wy) % 5) != 0)
+                unsigned wh = fx_hash((unsigned)((int)wx * 73 + (int)wy * 31));
+                if ((wh % 3u) == 0u)
                     continue;
-                fx_rect_a(r, art->lamp, 110, wx, wy, 5.0f, 7.0f);
+                /* The lit windows are the only bright thing outside, so they
+                 * carry the whole read of "a city out there". Most are warm;
+                 * a handful are cold office fluorescent. */
+                SDL_Color lit = (wh & 8u) ? art->lamp
+                                          : (SDL_Color){170, 202, 224, 255};
+                fx_rect_a(r, lit, (Uint8)(96 + (wh >> 5) % 96u), wx, wy,
+                          5.0f, 7.0f);
             }
         }
+        /* One rooftop beacon per block, so the skyline is not a still image. */
+        if ((h & 3u) == 0u)
+        {
+            float pulse = sinf(s->time * 1.9f + (float)(h % 9u)) > 0.72f ? 1.0f
+                                                                        : 0.2f;
+            fx_rect(r, fx_dim((SDL_Color){214, 78, 62, 255}, pulse),
+                    x + 60.0f, top - 4.0f, 4.0f, 4.0f);
+        }
     }
-    fx_rect(r, fx_mix(art->far_shape, FX_INK, 0.4f), 0.0f, street,
+
+    /* The street: pavement, kerb, carriageway and a broken centre line. */
+    fx_rect(r, fx_mix(sky_low, FX_INK, 0.42f), 0.0f, street,
             (float)s->win_w, oy + fh - street);
+    fx_rect(r, fx_mix(sky_low, FX_INK, 0.25f), 0.0f, street,
+            (float)s->win_w, 7.0f);
+    fx_rect(r, fx_mix(art->trim, FX_INK, 0.4f), 0.0f, street + 7.0f,
+            (float)s->win_w, 2.0f);
+    fx_rect(r, fx_mix(sky_low, FX_INK, 0.62f), 0.0f, street + 9.0f,
+            (float)s->win_w, oy + fh - street - 9.0f);
+    for (float mark = fmodf(-s->cam_x * 0.1f, 44.0f); mark < (float)s->win_w;
+         mark += 44.0f)
+    {
+        fx_rect_a(r, (SDL_Color){208, 196, 150, 255}, 60, mark,
+                  street + 26.0f, 16.0f, 2.0f);
+    }
+
+    /* Traffic. A car needs a body: a bare pair of glows in the dark reads as
+     * lens flare, not as a vehicle passing the window. */
     for (int car = 0; car < 3; ++car)
     {
-        float speed = 46.0f + (float)car * 21.0f;
-        float x = fmodf(s->time * speed + (float)car * 190.0f,
-                        (float)s->win_w + 150.0f) -
-                  75.0f;
-        fx_glow(r, x, street + 18.0f + (float)car * 7.0f, 26.0f,
-                (SDL_Color){248, 226, 176, 255}, 58);
-        fx_glow(r, x + 44.0f, street + 18.0f + (float)car * 7.0f, 18.0f,
-                (SDL_Color){228, 82, 62, 255}, 44);
+        bool leftward = (car & 1) != 0;
+        float speed = 58.0f + (float)car * 26.0f;
+        float span = (float)s->win_w + 190.0f;
+        float travel = fmodf(s->time * speed + (float)car * 210.0f, span);
+        float x = leftward ? span - travel - 95.0f : travel - 95.0f;
+        float y = street + (leftward ? 12.0f : 26.0f);
+        SDL_Color body = car == 1 ? (SDL_Color){44, 40, 52, 255}
+                                  : (SDL_Color){36, 42, 50, 255};
+        fx_rect(r, FX_INK, x + 2.0f, y + 12.0f, 62.0f, 4.0f);
+        fx_rect(r, body, x + 4.0f, y + 4.0f, 58.0f, 9.0f);
+        fx_rect(r, fx_mix(body, sky_low, 0.5f), x + 4.0f, y + 4.0f, 58.0f, 2.0f);
+        fx_rect(r, fx_mix(body, sky_high, 0.7f), x + 20.0f, y, 26.0f, 5.0f);
+        fx_rect(r, FX_INK, x + 12.0f, y + 14.0f, 8.0f, 4.0f);
+        fx_rect(r, FX_INK, x + 46.0f, y + 14.0f, 8.0f, 4.0f);
+        float lead = leftward ? x + 2.0f : x + 64.0f;
+        float tail = leftward ? x + 64.0f : x + 2.0f;
+        fx_glow(r, lead, y + 8.0f, 22.0f, (SDL_Color){250, 232, 186, 255}, 70);
+        fx_rect(r, (SDL_Color){252, 240, 204, 255}, lead - 2.0f, y + 6.0f,
+                4.0f, 3.0f);
+        fx_glow(r, tail, y + 8.0f, 14.0f, (SDL_Color){228, 74, 58, 255}, 52);
+        /* Wet asphalt carries the lights back up at the kerb. */
+        fx_rect_a(r, (SDL_Color){250, 232, 186, 255}, 26, lead - 14.0f,
+                  y + 17.0f, 28.0f, 2.0f);
     }
 
-    /* The glazed front itself: full-height mullions, a transom, and the
-     * reflection band that tells you it is glass and not an opening. */
-    for (float x = art_scroll(s->cam_x, 0.16f, 84.0f);
-         x < (float)s->win_w + 84.0f; x += 84.0f)
+    /* One cool veil over the whole opening. This is the single cue that does
+     * the most work: without something between the room and the view, a lit
+     * window in a tower two streets away sits at exactly the same depth as a
+     * lamp on the wall behind Chuck. */
+    fx_rect_a(r, (SDL_Color){96, 126, 158, 255}, 30, 0.0f, head,
+              (float)s->win_w, street + 10.0f - head);
+
+    /* The curtain wall. Mullions land on a three-tile rhythm so the glazing
+     * agrees with the masonry it is set into instead of cutting across it, and
+     * they stay dark: a bright vertical line the height of the hall reads as a
+     * pole standing in the room. */
+    for (float x = art_scroll(s->cam_x, 0.14f, 96.0f); x < (float)s->win_w + 96.0f;
+         x += 96.0f)
     {
-        fx_rect(r, art->near_shape, x, oy, 7.0f, fh);
-        fx_rect(r, fx_mix(art->near_shape, art->trim, 0.45f), x + 1.0f, oy,
-                2.0f, fh);
-        fx_rect_a(r, art->trim_hi, 16, x + 12.0f, oy, 26.0f, fh);
+        fx_rect(r, FX_INK, x, head, 8.0f, street + 10.0f - head);
+        fx_rect(r, art->near_shape, x + 1.0f, head, 6.0f,
+                street + 10.0f - head);
+        /* The brass catches the light only at the head and the sill. A lit
+         * line running the full storey height stops reading as a mullion and
+         * starts reading as a pole standing in the hall. */
+        fx_rect_a(r, art->trim, 120, x + 1.0f, head, 6.0f, 3.0f);
+        fx_rect_a(r, art->trim, 90, x + 1.0f, street - 2.0f, 6.0f, 3.0f);
+        /* A raking sheen across each bay: flat fill alone never reads as
+         * glass, and it is the only cue that the street is behind something. */
+        fx_rect_a(r, art->trim_hi, 11, x + 16.0f, head, 30.0f,
+                  street - head);
+        fx_rect_a(r, art->trim_hi, 7, x + 58.0f, head, 14.0f, street - head);
     }
-    fx_rect(r, art->near_shape, 0.0f, oy + 74.0f, (float)s->win_w, 8.0f);
-    fx_rect(r, fx_mix(art->near_shape, art->trim, 0.5f), 0.0f, oy + 74.0f,
-            (float)s->win_w, 2.0f);
+    /* Transom at door head height, and the base channel the glass sits in. */
+    fx_rect_a(r, FX_INK, 190, 0.0f, street - 96.0f, (float)s->win_w, 8.0f);
+    fx_rect_a(r, art->near_shape, 210, 0.0f, street - 95.0f,
+              (float)s->win_w, 6.0f);
+    fx_rect_a(r, fx_mix(art->near_shape, art->trim, 0.5f), 150, 0.0f,
+              street - 95.0f, (float)s->win_w, 1.0f);
+    fx_rect(r, fx_mix(art->trim, FX_INK, 0.25f), 0.0f, street + 6.0f,
+            (float)s->win_w, 5.0f);
+    fx_rect_a(r, art->trim_hi, 170, 0.0f, street + 6.0f, (float)s->win_w, 2.0f);
 
-    /* Reception: a stone counter, a lit backing panel and planting. Read at
-     * a glance as "the building's front of house", then stays out of the way. */
-    for (float x = art_scroll(s->cam_x, 0.28f, 340.0f);
-         x < (float)s->win_w + 340.0f; x += 340.0f)
+    /* The atrium ceiling. Without it the top of a triple-height hall is just
+     * unexplained air, which is the one thing a tall room must not look like.
+     * It rides a near parallax so it reads as part of the room, not the view. */
+    fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.35f), 0.0f, oy,
+            (float)s->win_w, head - oy);
+    fx_vgrad(r, 0.0f, oy, (float)s->win_w, head - oy,
+             fx_mix(art->wall, art->wall_dark, 0.55f), 255,
+             fx_mix(art->wall_dark, FX_INK, 0.5f), 255);
+    for (float x = art_scroll(s->cam_x, 0.3f, 64.0f); x < (float)s->win_w + 64.0f;
+         x += 64.0f)
     {
-        float desk_y = oy + fh - 118.0f;
-        fx_rect_a(r, art->trim_hi, 26, x + 30.0f, oy + 40.0f, 150.0f, 90.0f);
-        fx_rect(r, fx_mix(art->wall, art->wall_dark, 0.4f), x + 30.0f,
-                oy + 40.0f, 150.0f, 90.0f);
-        fx_rect(r, art->trim, x + 30.0f, oy + 40.0f, 150.0f, 3.0f);
-        for (int letter = 0; letter < 5; ++letter)
-            fx_rect_a(r, art->trim_hi, 150, x + 58.0f + (float)letter * 20.0f,
-                      oy + 74.0f, 12.0f, 18.0f);
+        /* Coffers: a recessed panel between two beams. Only shaded enough to
+         * show the relief — a black recess reads as a hole in the ceiling. */
+        fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.15f), x + 6.0f, oy + 6.0f,
+                52.0f, head - oy - 18.0f);
+        fx_rect(r, fx_mix(art->wall_dark, art->wall, 0.5f), x + 6.0f, oy + 6.0f,
+                52.0f, 2.0f);
+        fx_rect(r, fx_mix(art->wall, art->wall_light, 0.3f), x, oy,
+                5.0f, head - oy);
+        fx_rect(r, fx_mix(art->wall_light, art->trim_hi, 0.35f), x + 1.0f, oy,
+                2.0f, head - oy);
+    }
+    fx_rect(r, art->trim, 0.0f, head - 6.0f, (float)s->win_w, 6.0f);
+    fx_rect(r, art->trim_hi, 0.0f, head - 6.0f, (float)s->win_w, 2.0f);
 
-        fx_rect(r, fx_mix(art->wall, art->wall_light, 0.25f), x + 46.0f, desk_y,
-                120.0f, 46.0f);
-        fx_rect(r, art->trim, x + 42.0f, desk_y, 128.0f, 5.0f);
-        fx_rect(r, art->trim_hi, x + 42.0f, desk_y, 128.0f, 2.0f);
-        fx_glow(r, x + 106.0f, desk_y - 4.0f, 60.0f, art->lamp, 40);
+    /* Banners suspended in the volume. A hall this tall needs something
+     * hanging in it at mid height, or the space between the ceiling and the
+     * galleries is just distance. */
+    int banner = art_repeat(s->cam_x, 0.24f, 288.0f);
+    for (float x = art_scroll(s->cam_x, 0.24f, 288.0f) - 144.0f;
+         x < (float)s->win_w + 288.0f; x += 288.0f, ++banner)
+    {
+        unsigned h = fx_hash((unsigned)banner *
+                             1103515245u);
+        float bx = x + 118.0f;
+        float by = head + 14.0f;
+        float bh = 132.0f + (float)(h % 3u) * 34.0f;
+        /* A slow breathing sway, as if the air handling were running. */
+        float lean = sinf(s->time * 0.5f + (float)(h % 7u)) * 2.0f;
+        float sx = bx + lean * 0.3f;
+        fx_rect(r, fx_mix(art->trim, FX_INK, 0.45f), bx - 12.0f, by, 26.0f, 3.0f);
+        fx_rect(r, FX_INK, sx - 10.0f, by + 3.0f, 21.0f, bh);
+        /* Deep bronze cloth. A banner is background: lit up to the value of
+         * the brass it hangs from, it becomes the brightest thing in the hall
+         * and pulls the eye off the floor Chuck is walking on. */
+        fx_rect(r, fx_mix(art->wall_dark, art->accent, 0.13f),
+                sx - 9.0f, by + 4.0f, 19.0f, bh - 2.0f);
+        fx_vgrad(r, sx - 9.0f, by + 4.0f, 19.0f, bh - 2.0f,
+                 fx_mix(art->wall_dark, art->accent, 0.2f), 255,
+                 fx_mix(art->wall_dark, FX_INK, 0.35f), 255);
+        /* Slack folds down one side, and the light edge facing the glass. */
+        fx_rect_a(r, art->trim_hi, 26, sx - 9.0f, by + 4.0f, 3.0f, bh - 2.0f);
+        fx_rect_a(r, FX_INK, 70, sx + 3.0f, by + 4.0f, 4.0f, bh - 2.0f);
+        for (float fold = by + 26.0f; fold < by + bh - 8.0f; fold += 21.0f)
+            fx_rect_a(r, FX_INK, 55, sx - 8.0f, fold, 17.0f, 2.0f);
+        /* The building's mark, woven rather than printed on. */
+        fx_rect_a(r, art->trim, 120, sx - 5.0f, by + 12.0f, 11.0f, 11.0f);
+        fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.2f), sx - 3.0f,
+                by + 15.0f, 7.0f, 5.0f);
+        fx_rect(r, fx_mix(art->trim, FX_INK, 0.4f), sx - 10.0f + lean * 0.7f,
+                by + bh + 1.0f, 21.0f, 3.0f);
+    }
 
-        /* Two palms in stone planters, the universal lobby plant. */
-        for (int plant = 0; plant < 2; ++plant)
-        {
-            float px = x + 210.0f + (float)plant * 58.0f;
-            float py = oy + fh - 74.0f;
-            fx_rect(r, fx_mix(art->wall, art->wall_dark, 0.3f), px, py,
-                    26.0f, 30.0f);
-            fx_rect(r, art->trim, px, py, 26.0f, 3.0f);
-            for (int frond = 0; frond < 5; ++frond)
-            {
-                float lean = ((float)frond - 2.0f) * 9.0f +
-                             sinf(s->time * 0.6f + (float)frond) * 2.0f;
-                fx_set(r, (SDL_Color){44, 74, 52, 255});
-                SDL_RenderLine(r, px + 13.0f, py, px + 13.0f + lean, py - 34.0f);
-            }
-        }
+    /* Pendant luminaires dropped into the volume, and the light they put on
+     * the atrium floor. This is what a lobby looks like at night. */
+    int pendant = art_repeat(s->cam_x, 0.3f, 192.0f);
+    for (float x = art_scroll(s->cam_x, 0.3f, 192.0f) - 96.0f;
+         x < (float)s->win_w + 192.0f; x += 192.0f, ++pendant)
+    {
+        unsigned h = fx_hash((unsigned)pendant * 40503u);
+        float drop = 26.0f + (float)(h % 3u) * 14.0f;
+        float cx = x + 96.0f;
+        float cy = head + drop;
+        fx_rect(r, fx_mix(art->trim, FX_INK, 0.3f), cx - 1.0f, head - 2.0f,
+                2.0f, drop);
+        fx_rect(r, FX_INK, cx - 13.0f, cy, 26.0f, 5.0f);
+        fx_rect(r, art->trim, cx - 12.0f, cy, 24.0f, 3.0f);
+        fx_rect(r, art->lamp, cx - 10.0f, cy + 3.0f, 20.0f, 2.0f);
+        fx_glow(r, cx, cy + 4.0f, 40.0f, art->lamp, 58);
+        fx_light_cone(r, cx, cy + 4.0f, 18.0f, 92.0f, street - cy - 10.0f,
+                      art->lamp, 15);
     }
 }
 
@@ -806,34 +989,68 @@ static void backdrop_office(const LevelArtScene *s, const LevelThemeArt *art,
 {
     SDL_Renderer *r = s->renderer;
 
+    /* The window wall, as a band rather than as full-height texture. The
+     * glazing needs a head and a sill: run the blinds the whole depth of the
+     * floor and they stop reading as something hanging in a window and start
+     * reading as corrugation laid over the sector. */
+    const float glass_top = oy + 26.0f;
+    const float glass_h = fh - 188.0f;
+    const float glass_bottom = glass_top + glass_h;
+
     /* A window band with the neighbouring tower behind it: enough city to
      * place the floor in the building, dim enough to stay background. */
+    int tower = art_repeat(s->cam_x, 0.07f, 150.0f);
     for (float x = art_scroll(s->cam_x, 0.07f, 150.0f);
-         x < (float)s->win_w + 150.0f; x += 150.0f)
+         x < (float)s->win_w + 150.0f; x += 150.0f, ++tower)
     {
-        fx_rect(r, art->far_shape, x, oy + 30.0f, 128.0f, fh - 60.0f);
-        for (float wy = oy + 42.0f; wy < oy + fh - 60.0f; wy += 22.0f)
-            for (float wx = x + 10.0f; wx < x + 118.0f; wx += 20.0f)
-                if ((((int)wx + (int)wy) % 7) == 0)
+        fx_rect(r, art->far_shape, x, glass_top + 8.0f, 128.0f,
+                glass_h - 8.0f);
+        /* Which windows are lit is a property of the tower, not of where the
+         * tower currently is: keying it to the screen made the lights crawl
+         * across the facade as the level scrolled. */
+        int floor_index = 0;
+        for (float wy = glass_top + 20.0f; wy < glass_bottom - 10.0f;
+             wy += 22.0f, ++floor_index)
+        {
+            int bay = 0;
+            for (float wx = x + 10.0f; wx < x + 118.0f; wx += 20.0f, ++bay)
+                if ((fx_hash((unsigned)(tower * 64 + floor_index * 8 + bay)) %
+                     7u) == 0u)
                     fx_rect_a(r, art->lamp, 70, wx, wy, 6.0f, 8.0f);
+        }
     }
-    /* Vertical blinds, half of them closed. */
-    for (float x = art_scroll(s->cam_x, 0.12f, 14.0f);
-         x < (float)s->win_w + 14.0f; x += 14.0f)
+    /* Vertical blinds, half of them turned closed, hung inside that band. */
+    int blind = art_repeat(s->cam_x, 0.12f, 22.0f);
+    for (float x = art_scroll(s->cam_x, 0.12f, 22.0f);
+         x < (float)s->win_w + 22.0f; x += 22.0f, ++blind)
     {
-        unsigned h = fx_hash((unsigned)((int)(x + s->cam_x * 0.12f) / 14));
-        fx_rect_a(r, art->trim_hi, (h & 1u) ? 34 : 16, x, oy + 24.0f, 9.0f,
-                  fh * 0.55f);
+        unsigned h = fx_hash((unsigned)blind);
+        fx_rect_a(r, art->trim_hi, (h & 1u) ? 30 : 13, x, glass_top + 5.0f,
+                  13.0f, glass_h - 10.0f);
     }
+    /* Head rail and sill, and the mullions the glazing is divided by. */
+    int mullion = art_repeat(s->cam_x, 0.12f, 132.0f);
+    for (float x = art_scroll(s->cam_x, 0.12f, 132.0f);
+         x < (float)s->win_w + 132.0f; x += 132.0f, ++mullion)
+    {
+        fx_rect_a(r, art->near_shape, 210, x, glass_top, 5.0f, glass_h);
+    }
+    fx_rect(r, art->near_shape, 0.0f, glass_top, (float)s->win_w, 6.0f);
+    fx_rect(r, fx_mix(art->near_shape, art->wall, 0.45f), 0.0f, glass_top,
+            (float)s->win_w, 2.0f);
+    fx_rect(r, art->near_shape, 0.0f, glass_bottom - 5.0f, (float)s->win_w,
+            5.0f);
+    fx_rect_a(r, art->trim_hi, 40, 0.0f, glass_bottom - 5.0f,
+              (float)s->win_w, 1.0f);
 
     /* The cubicle farm. Screens left logged in are the only light source at
      * this hour, so they carry the layer. */
+    int cubicle = art_repeat(s->cam_x, 0.22f, 176.0f);
     for (float x = art_scroll(s->cam_x, 0.22f, 176.0f) - 20.0f;
-         x < (float)s->win_w + 176.0f; x += 176.0f)
+         x < (float)s->win_w + 176.0f; x += 176.0f, ++cubicle)
     {
         float top = oy + fh - 150.0f;
-        unsigned bay = fx_hash((unsigned)((int)(x + s->cam_x * 0.22f) / 176) +
-                               (unsigned)s->level_index);
+        unsigned bay = fx_hash((unsigned)cubicle + (unsigned)s->level_index);
         fx_rect(r, art->near_shape, x, top, 160.0f, 96.0f);
         fx_rect(r, fx_mix(art->near_shape, art->wall, 0.4f), x, top,
                 160.0f, 3.0f);
@@ -864,11 +1081,12 @@ static void backdrop_office(const LevelArtScene *s, const LevelThemeArt *art,
 
     /* Suspended ceiling: a grid of panels with one bank still on. */
     fx_rect(r, art->near_shape, 0.0f, oy, (float)s->win_w, 20.0f);
+    int panel = art_repeat(s->cam_x, 0.3f, 60.0f);
     for (float x = art_scroll(s->cam_x, 0.3f, 60.0f);
-         x < (float)s->win_w + 60.0f; x += 60.0f)
+         x < (float)s->win_w + 60.0f; x += 60.0f, ++panel)
     {
         fx_rect(r, fx_mix(art->near_shape, FX_INK, 0.4f), x, oy, 2.0f, 20.0f);
-        unsigned h = fx_hash((unsigned)((int)(x + s->cam_x * 0.3f) / 60));
+        unsigned h = fx_hash((unsigned)panel);
         if ((h % 3u) != 0u)
             continue;
         fx_rect(r, art->lamp, x + 8.0f, oy + 6.0f, 44.0f, 5.0f);
@@ -891,12 +1109,13 @@ static void backdrop_server(const LevelArtScene *s, const LevelThemeArt *art,
                 78.0f, 2.0f);
     }
 
+    int row = art_repeat(s->cam_x, 0.24f, 132.0f);
     for (float x = art_scroll(s->cam_x, 0.24f, 132.0f) - 30.0f;
-         x < (float)s->win_w + 132.0f; x += 132.0f)
+         x < (float)s->win_w + 132.0f; x += 132.0f, ++row)
     {
         float top = oy + 46.0f;
         float height = fh - 108.0f;
-        unsigned rack = fx_hash((unsigned)((int)(x + s->cam_x * 0.24f) / 132) +
+        unsigned rack = fx_hash((unsigned)row +
                                 (unsigned)s->level_index * 13u);
         fx_rect(r, art->near_shape, x, top, 104.0f, height);
         fx_rect(r, fx_mix(art->near_shape, art->wall_light, 0.4f), x, top,
@@ -1019,11 +1238,12 @@ static void backdrop_lab(const LevelArtScene *s, const LevelThemeArt *art,
                 oy + 22.0f, 4.0f, fh - 60.0f);
     }
 
+    int cell = art_repeat(s->cam_x, 0.24f, 216.0f);
     for (float x = art_scroll(s->cam_x, 0.24f, 216.0f);
-         x < (float)s->win_w + 216.0f; x += 216.0f)
+         x < (float)s->win_w + 216.0f; x += 216.0f, ++cell)
     {
         float bench = oy + fh - 104.0f;
-        unsigned bay = fx_hash((unsigned)((int)(x + s->cam_x * 0.24f) / 216));
+        unsigned bay = fx_hash((unsigned)cell);
 
         /* Fume cabinet: a lit glass box, sash half open, extract duct up. */
         fx_rect(r, art->near_shape, x + 14.0f, bench - 92.0f, 96.0f, 92.0f);
@@ -1076,8 +1296,9 @@ static void backdrop_archive(const LevelArtScene *s, const LevelThemeArt *art,
         float top = oy + (rank == 0 ? 40.0f : 62.0f);
         float height = fh - (rank == 0 ? 76.0f : 110.0f);
         SDL_Color body = rank == 0 ? art->far_shape : art->near_shape;
+        int stack = art_repeat(s->cam_x, factor, period);
         for (float x = art_scroll(s->cam_x, factor, period) - 30.0f;
-             x < (float)s->win_w + period; x += period)
+             x < (float)s->win_w + period; x += period, ++stack)
         {
             fx_rect(r, body, x, top, period - 26.0f, height);
             fx_rect(r, fx_mix(body, art->wall_light, 0.3f), x, top,
@@ -1091,9 +1312,7 @@ static void backdrop_archive(const LevelArtScene *s, const LevelThemeArt *art,
                  * papers, which is all a shelf of files ever looks like. The
                  * key is the bay and the slot, so a spine does not change
                  * colour when the shelf scrolls. */
-                unsigned bay = (unsigned)((int)(x + s->cam_x * factor) /
-                                          (int)period) +
-                               (unsigned)rank * 977u;
+                unsigned bay = (unsigned)stack + (unsigned)rank * 977u;
                 int slot = 0;
                 for (float box = x + 3.0f; box < x + period - 32.0f;
                      box += 9.0f, ++slot)
@@ -1134,8 +1353,9 @@ static void backdrop_security(const LevelArtScene *s, const LevelThemeArt *art,
 
     /* The monitor wall. Feeds are the light source, and a couple of them are
      * dead — the building watches itself badly. */
+    int wall = art_repeat(s->cam_x, 0.16f, 150.0f);
     for (float x = art_scroll(s->cam_x, 0.16f, 150.0f) - 20.0f;
-         x < (float)s->win_w + 150.0f; x += 150.0f)
+         x < (float)s->win_w + 150.0f; x += 150.0f, ++wall)
     {
         float top = oy + 34.0f;
         fx_rect(r, art->far_shape, x, top, 132.0f, 132.0f);
@@ -1143,9 +1363,7 @@ static void backdrop_security(const LevelArtScene *s, const LevelThemeArt *art,
         {
             float sx = x + 6.0f + (float)(screen % 3) * 42.0f;
             float sy = top + 6.0f + (float)(screen / 3) * 42.0f;
-            unsigned h = fx_hash((unsigned)((int)(x + s->cam_x * 0.16f) / 150) *
-                                     31u +
-                                 (unsigned)screen);
+            unsigned h = fx_hash((unsigned)wall * 31u + (unsigned)screen);
             fx_rect(r, fx_mix(art->far_shape, FX_INK, 0.6f), sx, sy,
                     36.0f, 36.0f);
             if ((h % 9u) == 0u)
@@ -1290,10 +1508,11 @@ static void backdrop_penthouse(const LevelArtScene *s,
     fx_rect(r, art->trim, 0.0f, oy + 26.0f, (float)s->win_w, 4.0f);
     fx_rect(r, art->trim_hi, 0.0f, oy + 26.0f, (float)s->win_w, 1.0f);
 
+    int room = art_repeat(s->cam_x, 0.2f, 260.0f);
     for (float x = art_scroll(s->cam_x, 0.2f, 260.0f);
-         x < (float)s->win_w + 260.0f; x += 260.0f)
+         x < (float)s->win_w + 260.0f; x += 260.0f, ++room)
     {
-        unsigned h = fx_hash((unsigned)((int)(x + s->cam_x * 0.2f) / 260) +
+        unsigned h = fx_hash((unsigned)room +
                              (unsigned)s->level_index);
         /* Framed canvas: gilt frame, dark painting, picture light above. */
         float py = oy + 62.0f;
@@ -1355,10 +1574,11 @@ static void backdrop_roof(const LevelArtScene *s, const LevelThemeArt *art,
         float y = oy + (float)((h >> 9) % (unsigned)star_band);
         fx_rect_a(r, art->haze, (Uint8)(60 + h % 90u), x, y, 1.0f, 1.0f);
     }
+    int block = art_repeat(s->cam_x, 0.05f, 132.0f);
     for (float x = art_scroll(s->cam_x, 0.05f, 132.0f) - 40.0f;
-         x < (float)s->win_w + 132.0f; x += 132.0f)
+         x < (float)s->win_w + 132.0f; x += 132.0f, ++block)
     {
-        unsigned h = fx_hash((unsigned)((int)(x + s->cam_x * 0.05f) / 132) * 71u);
+        unsigned h = fx_hash((unsigned)block * 71u);
         float tower_h = 120.0f + (float)(h % 150u);
         float base = oy + fh * 0.78f;
         fx_rect(r, art->far_shape, x, base - tower_h, 84.0f, tower_h);

@@ -140,6 +140,28 @@ Makefile wildcards it in and progression is driven by `EMBEDDED_LEVEL_COUNT`.
 Level music cycles with
 `MUSIC_LEVEL_ONE + index % (MUSIC_TRACK_COUNT - MUSIC_LEVEL_ONE)`.
 
+### One plan per sector
+
+The campaign used to be one floor plan fifteen times: a sealed rectangle
+stacked out of "slab plus two open rows" storeys, drilled with ladder columns
+and sprinkled with props at a constant density. Levels 1 and 2, 10 and 14, and
+12 and 15 had byte-identical storey rhythms, so the sectors could only differ
+in width and in how much was in them.
+
+Every sector now has a plan that belongs to its theme — a lobby atrium,
+partitioned office floors, serpentine server aisles, catwalk towers, a galley,
+a spine of sealed bays, shelving canyons, a ring around a bunker, branching
+crawl ducts, a symmetrical suite, a rooftop skyline — and
+`test_campaign_levels_are_distinct_and_solvable`
+([tests/test_main.c](tests/test_main.c)) pins three things the parser cannot
+see: no two sectors share a size or a storey rhythm, the hazard budget rises
+strictly from sector to sector (and from climb to climb, along with the climb's
+height), and a conservative model of the player can reach the way out, every
+key card, every terminal and the restroom door without ever being stranded by a
+one-way drop. That model never stands on a falling panel, so a sector has to
+work once every `F` has gone. [levels/LEGEND.md](levels/LEGEND.md) tabulates
+the plans, the budgets and what the model will and will not do.
+
 ### Level themes
 
 A `THEME <name>` metadata line picks the level's art direction; the palettes,
@@ -226,6 +248,18 @@ a railed catwalk rather than as the room's floor.
 - [level_art.c](src/level_art.c) holds the per-level wall materials and
   backdrops. It is the only place a level's look is decided; the themes shift
   hue and value inside the fx.h system rather than inventing one per sector.
+- **Only repeating architecture belongs in a backdrop.** Every backdrop layer
+  tiles at a fixed parallax period, and a sector is often barely wider than the
+  window, so each repeat is on screen at once. A curtain wall or a rack row
+  genuinely runs the length of a floor and tiles happily; one reception desk
+  stamped every few hundred pixels reads as a bug. Unique furniture belongs in
+  the map as decorations, where it is placed once.
+- **An interior seen through glass carries its own values.** A view is only a
+  view if something separates it from the room: a night sky lit brighter than
+  the interior air turns a distant skyline into masonry standing in the hall,
+  and towers drawn at the value of the air behind them disappear, leaving their
+  lit windows floating like dirt on the screen. Keep the outside dark, let the
+  lit windows carry it, and put one tinted veil over the opening.
 - Sound effects and the three music tracks are synthesized once during
   `audio_init` and cached as PCM, replayed through a 16-voice pool. A new effect
   means: an entry in the `SoundEffect` enum in

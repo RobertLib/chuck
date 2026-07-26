@@ -78,7 +78,13 @@ typedef enum
     DECOR_RESTROOM_URINAL,
     DECOR_RESTROOM_PARTITION,
     DECOR_RESTROOM_STALL_OPEN,
-    DECOR_RESTROOM_STALL_CLOSED
+    DECOR_RESTROOM_STALL_CLOSED,
+    /* Front-of-house fittings. A lobby furnished out of the office set reads
+     * as an office, so the public floor gets its own vocabulary. */
+    DECOR_LOBBY_COUNTER,
+    DECOR_LOBBY_SOFA,
+    DECOR_LOBBY_PLANTER,
+    DECOR_LOBBY_TURNSTILE
 } DecorationType;
 
 typedef struct
@@ -128,6 +134,10 @@ typedef struct
 typedef struct
 {
     float x, y; /* world-space centre of the rotating blades */
+    /* Underside of the first solid tile above the fan. A fan hung in a hall
+     * rather than tight under a slab still has to read as hung, so the
+     * renderer drops a rod from here instead of leaving it in mid-air. */
+    float mount_y;
 } CeilingFan;
 
 typedef struct

@@ -1,27 +1,22 @@
 ############################################################
-#       H      O             O H          O             O  #
-#       H            O         H   O              O        #
-#E d   cH  i   ^^   d   c    i H  d   M    i   d    c    C #
-########H######################H############################
-#       H             V        H            H              #
-#Dc   d H  M   i   d  V  c   G H i   L   d  HW    c   i   D#
-######################V#####################H###############
-#       O    H        V O              O    H   V     O    #
-#i  d    c   HX   i  dV   M   c   i   d   C H c V B   i   N#
-#############H########V#########################V###### P ##
-#          O H        V   H O                 O V          #
-#            H        V   H                     V          #
-#A c    d   iH    ^^  V d H  c   M    i   d    cV  X   i  G#
-######################V###H###FFF###############V###########
-#                H    V   H                     V    H     #
-#d   c   i   L   Hd  cV   HM   i   d        c  TV  i H d  N#
-#################H#####################  P  ####V####H######
-#         H   O  H             O    H        O  V    H     #
-#Di   c   Hd   B H i      c   W   d H  i   T   cV  X H d  D#
-##########H#########  P   ##########H###########V###########
-#         H                         H           V          #
-# S   d   HJ   c   i   G   d    B   Hc   M   i  VL   d   CA#
+#                                                          #
+#                                                          #
+#                                                          #
+#                                                          #
+#                   O               O                      #
+#                                                          #
+#                        HAdEcMH                   O       #
+#                        H#####H                           #
+#            O           H#####H                HWdTcXH    #
+#         HdMc^Ci        H#####H                H#####H    #
+#   O     H######        H#####HdMcXi^KBH       H#####H    #
+#         H######  O     H##############H   O   H#####H    #
+#dScJiHdMcH######iXdBcHWLH##############HMH^N  GH#####Hi^Cc#
+######H###############H###################H# P #############
+#     H     #         H   #           #   H       #        #
+#     H     #         H   #           #   H       #        #
+#     H     O         H   #   O       #   H       O        #
+#dcLidKciMdc iXdcBidTcHdMc iXdcLidWcAd cCiHdBXiMdc iXdcNiGd#
 ############################################################
 
-SPAWNS 2 2 2 2
 THEME ROOF

@@ -18,7 +18,9 @@ This file describes the meaning of characters used in the level text files.
 - `J` : Ambient janitor with a cleaning cart and mop (visual-only NPC).
 - `X` : Mine (places an explosive mine).
 - `^` : Spike / hazard (instant damage when stepped on).
-- `O` : Rotating ceiling fan (lethal on contact with the blades).
+- `O` : Rotating ceiling fan (lethal on contact with the blades). It is drawn
+  hanging on a drop rod from the first solid tile above it, so it never floats
+  however far below the ceiling it is placed.
 - `B` : Pushable crate (can be shoved or destroyed by shots/explosions).
 - `L` : Small gas canister. A standing shot passes over it; crawl and shoot it to cause an explosion that can kill nearby enemies.
 - `T` : Access terminal. One randomly selected terminal is active; the rest are decorative.
@@ -26,6 +28,12 @@ This file describes the meaning of characters used in the level text files.
 - `c` : Decorative office chair (non-solid).
 - `d` : Decorative office desk with a computer (non-solid).
 - `i` : Decorative office equipment; its visual variant is selected from a filing cabinet, printer, or server rack (non-solid).
+- `n` : Decorative reception counter in stone and brass; one tile of a run also
+  carries the visitor terminal (non-solid).
+- `s` : Decorative waiting-area bench seat (non-solid).
+- `t` : Decorative palm in a stone planter (non-solid).
+- `g` : Decorative optical security gate; the fitting that explains why the
+  stair door upstairs wants a card (non-solid).
 - `S` : Player start position.
 - `E` : Normal security-door exit. When the map also contains `Y`, this door
   is physically blocked and cannot be unlocked by a card or terminal.
@@ -49,8 +57,13 @@ This file describes the meaning of characters used in the level text files.
 
 Notes:
 
-- Office decorations are loaded only when placed directly above a static `#`
-  wall tile; unsupported decorations are ignored so they cannot float in air.
+- Decorations are loaded only when placed directly above a static `#` wall tile;
+  unsupported ones are ignored so they cannot float in air.
+- The office set (`c` `d` `i`) and the front-of-house set (`n` `s` `t` `g`) are
+  not interchangeable dressing. A public floor furnished out of the office set
+  reads as an office floor whatever its walls are made of, so keep desks and
+  server racks to the staff side of a lobby and counters, seating and planting
+  to the visitor side.
 - Hold `E` near the visibly active terminal to hack it and unlock the exit.
 - Alarm switches are operated by guards. An active alarm alerts every guard
   and dog, then shuts itself off after nobody has seen the player for a short time.
@@ -105,6 +118,58 @@ Two rules the campaign keeps, both pinned by
 `test_campaign_themes_keep_changing`: no two consecutive levels share a theme,
 and a facade level uses a `FACADE_*` theme while an interior never does.
 
+## Sector plans
+
+No two sectors are laid out the same way. A stack of full-width corridor bands
+joined by ladder columns is the one plan the campaign does not use twice: it is
+what every sector used to be, and fifteen of them played as one level repeated.
+Each sector now has a floor plan that belongs to its theme, and
+`test_campaign_levels_are_distinct_and_solvable` pins that no two share a size
+or a storey rhythm.
+
+| # | Theme | Plan |
+| --- | --- | --- |
+| 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the atrium to a mezzanine gallery, a service ladder to the security wing, a short lift to the staff corridor behind the stair |
+| 2 | `OFFICE` | three open-plan floors cut into blocks by floor-to-ceiling partitions, the ladders staggered so every partition is passed by changing floor; a welded stair core at the far end, the executive gallery back across the top, and a service crawl underneath reached by one ladder |
+| 3 | `FACADE_NIGHT` | one wide breach per course, walking slowly from side to side |
+| 4 | `SERVER` | cold aisles blocked at alternating ends: one long serpentine, plus two fenced pockets joined by a cable tunnel |
+| 5 | `PLANT` | catwalk towers either side of a solid plant block, goods lift onto its roof, crane platform across the hall |
+| 6 | `CANTEEN` | a double-height dining hall against a tight galley stack; the way up is the kitchen and its dumbwaiter |
+| 7 | `FACADE_STORM` | short balconies instead of courses, so cover for the wind is sparse |
+| 8 | `LAB` | a spine corridor with sealed clean-room bays combed off it above and below |
+| 9 | `ARCHIVE` | a grid of canyons between blocks of shelving, linked only where an aisle was cut through |
+| 10 | `SECURITY` | a patrol ring around the control bunker; both corridors are bricked up, so the bunker is the only way across |
+| 11 | `FACADE_DAWN` | two breaches that braid, swapping sides as the climb rises |
+| 12 | `DUCTS` | six crawl levels chopped into runs, one riser each; climb, drop through a missing panel, climb again |
+| 13 | `FACADE_HIGH` | offset stubs laid like brickwork: every band is a lateral detour |
+| 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall |
+| 15 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, service level beneath the deck |
+
+Two campaign-wide rules go with it, both pinned by the same test:
+
+- **Pressure only rises.** A sector's hazard budget —
+  `3·guards + 2·dogs + 2·mines + spikes + fans` — must exceed the previous
+  interior's; a climb's budget (`3·throwers + 2·birds`) and its height must
+  exceed the previous climb's. The campaign runs 6, 14, 20, 24, 30, 37, 48, 53,
+  59, 64, 67 inside and 20, 25, 30, 35 on the walls. Sector 1 spends its whole
+  budget on two guards and carries no hazard at all: it is where the player
+  finds out what the controls do.
+- **Every interior is finishable.** The test walks a conservative model of the
+  player — walk, fall, step up one tile, jump a one-tile hole (two with a
+  second open row overhead), hop one spike with that clearance, ladders, lift
+  shafts, moving platforms, paired doors — and requires that it reaches the way
+  out, every key card, every terminal and the restroom door, and that no tile
+  it can reach strands it away from the exit.
+
+Three things that model deliberately will not do, so do not require them:
+
+- **Stand on a falling panel.** `F` is never counted as floor, so the sector
+  has to work once every panel has gone.
+- **Stand on a door that hangs over a ladder.** A `D` needs a wall under it;
+  put doors on the floor row, not on top of a riser.
+- **Land two tiles up, or cross two spikes.** Anything the rules below say is
+  out of reach really is out of reach.
+
 ## Authoring rules for interiors
 
 A storey is a solid `#` slab with an open band above it. Entities stand in the
@@ -126,7 +191,15 @@ a hall. These rules come from the tuning in
   tile. Placed in an air row they only catch a jumping player, which is the
   intent — but the blades overhang the neighbouring columns, so keep `O` at
   least two columns clear of any `H` or `V` a climber passes through, and never
-  put one directly above a `B` the player can stand on.
+  put one directly above a `B` the player can stand on. A fan belongs in the
+  top row of its band, hard under the slab: the drop rod is then a rod rather
+  than a mast, and the band's own ceiling is what the fan hangs from. One in
+  the standing row kills anyone who walks into it, crawling included.
+- **Never hang a fan over a gap that has to be jumped.** The blades make the
+  jump lethal while the route model, which knows nothing about fans, still
+  reports the gap as crossed — the one way to build a sector the test calls
+  finishable and the player cannot finish. Keep `O` at least two columns clear
+  of any hole in the floor below it.
 - **Ladders need not run the full height.** A run from the destination floor's
   headroom down to the source floor's standing row can be mounted and left at
   both ends; staggering short runs is what turns a floor plan into a route.
