@@ -29,6 +29,33 @@
 #define JANITOR_WET_SPOTS 6
 #define JANITOR_WET_LIFETIME 7.0f
 
+/* Fleeing civilians are the same kind of visual-only NPC, but they play once:
+ * the moment a level starts they bolt for the way the player came in and are
+ * gone. Nothing in the simulation can see them, and they can neither block
+ * anything nor be hurt by it, so the evacuation is staging and never a rule.
+ * The startle beat is staggered per person so the room empties in ones and
+ * twos rather than as one drilled column. */
+#define MAX_CIVILIANS 8
+#define CIVILIAN_W 24
+#define CIVILIAN_H 32
+#define CIVILIAN_VARIANTS 3
+#define CIVILIAN_RUN_SPEED 118.0f
+#define CIVILIAN_RUN_SPEED_SPREAD 46.0f
+#define CIVILIAN_STARTLE_MIN 0.12f
+#define CIVILIAN_STARTLE_SPREAD 2.40f
+/* One trip each at most: a panic that keeps falling over reads as a bug. */
+#define CIVILIAN_STUMBLE_CHANCE 45
+#define CIVILIAN_STUMBLE_DELAY_MIN 0.30f
+#define CIVILIAN_STUMBLE_DELAY_SPREAD 1.10f
+#define CIVILIAN_STUMBLE_TIME 0.62f
+/* They dissolve into the doorway instead of popping out of the room, and are
+ * counted out for good just short of the tile the player entered on. */
+#define CIVILIAN_FADE_DISTANCE 130.0f
+#define CIVILIAN_EXIT_REACH 60.0f
+#define CIVILIAN_HOP_SPEED 250.0f
+#define CIVILIAN_STUCK_TIME 1.20f
+#define CIVILIAN_STUCK_FADE_TIME 0.45f
+
 /* Mines */
 #define MAX_MINES 32
 #define MINE_W 16

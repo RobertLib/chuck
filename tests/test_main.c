@@ -242,6 +242,19 @@ static void test_all_embedded_levels_parse(void)
         if (level.map.has_sublevel_entrance)
             sublevel_entrances++;
 
+        /* The lobby is the sector the kidnappers came through, so it is the
+         * one that empties as Chuck walks in. Anyone planted inside the
+         * dissolve radius of the way in would fade out before running
+         * anywhere, so the evacuation has to start further into the room. */
+        CHECK(i != 0 || level.map.civilian_count >= 4);
+        for (int person = 0; person < level.map.civilian_count; ++person)
+        {
+            float centre = level.map.civilian_spawns[person].x +
+                           CIVILIAN_W * 0.5f;
+            float way_in = level.map.start_x + PLAYER_W * 0.5f;
+            CHECK(fabsf(centre - way_in) > CIVILIAN_FADE_DISTANCE);
+        }
+
         int bazooka_count = 0;
         for (int item = 0; item < level.runtime.item_count; ++item)
             if (level.runtime.items[item].type == ITEM_BAZOOKA)
@@ -1185,6 +1198,7 @@ static void test_gameplay_reset_preserves_rng_only(void)
     Rng expected = state.rng;
     state.enemy_count = 3;
     state.janitor_count = 2;
+    state.civilian_count = 2;
     state.grenade_count = 2;
     state.terminal_hacking = true;
     state.events.count = 4;
@@ -1205,6 +1219,7 @@ static void test_gameplay_reset_preserves_rng_only(void)
     CHECK(state.rng.state == expected.state);
     CHECK(state.enemy_count == 0);
     CHECK(state.janitor_count == 0);
+    CHECK(state.civilian_count == 0);
     CHECK(state.grenade_count == 0);
     CHECK(!state.terminal_hacking);
     CHECK(state.events.count == 0);
@@ -2933,6 +2948,86 @@ static void test_janitor_ai_is_seeded_and_visual_only(void)
     CHECK(first.janitors[0].wet_spots[0].active);
 }
 
+static void test_civilians_flee_to_the_way_in_and_vanish(void)
+{
+    static const char data[] =
+        "################\n"
+        "#S     f    f E#\n"
+        "################\n";
+    GameplayState first = {0};
+    GameplayState second = {0};
+    rng_seed(&first.rng, 8642);
+    rng_seed(&second.rng, 8642);
+    CHECK(level_load_data(&first.level, "flee", data, strlen(data),
+                          &first.rng));
+    CHECK(level_load_data(&second.level, "flee", data, strlen(data),
+                          &second.rng));
+    CHECK(first.level.map.civilian_count == 2);
+    gameplay_ai_spawn_level_entities(&first);
+    gameplay_ai_spawn_level_entities(&second);
+    CHECK(first.civilian_count == 2);
+    /* One seed, one evacuation: who bolts first and who trips is fixed. */
+    CHECK(first.civilians[0].activity_timer ==
+          second.civilians[0].activity_timer);
+    CHECK(first.civilians[1].speed == second.civilians[1].speed);
+    /* Both start turned toward what came through the door, and both leave
+     * towards the tile the player entered on. */
+    CHECK(first.civilians[0].activity == CIVILIAN_STARTLED);
+    CHECK(first.civilians[0].flee_dir == -1);
+    CHECK(first.civilians[0].dir == 1);
+
+    float player_x = first.player.x;
+    float player_y = first.player.y;
+    bool shouted = false;
+    bool ran = false;
+    for (int frame = 0; frame < 600; ++frame)
+    {
+        gameplay_ai_update_movement(&first, 1.0f / 60.0f);
+        shouted = shouted ||
+                  events_have_sound(&first.events, GAME_EVENT_WORLD_SOUND,
+                                    SFX_CIVILIAN_SHOUT) ||
+                  events_have_sound(&first.events, GAME_EVENT_WORLD_SOUND,
+                                    SFX_CIVILIAN_SCREAM);
+        ran = ran || first.civilians[0].activity == CIVILIAN_FLEEING;
+        game_events_clear(&first.events);
+    }
+    CHECK(shouted);
+    CHECK(ran);
+    /* The room is empty afterwards, and the evacuation moved nothing else. */
+    CHECK(first.civilians[0].activity == CIVILIAN_GONE);
+    CHECK(first.civilians[1].activity == CIVILIAN_GONE);
+    CHECK(first.civilians[0].fade == 0.0f);
+    CHECK(first.player.x == player_x);
+    CHECK(first.player.y == player_y);
+    /* Nobody walks over the tile the player is standing on to get out. */
+    CHECK(first.civilians[0].x > first.level.map.start_x);
+}
+
+static void test_walled_in_civilian_leaves_instead_of_running_on_the_spot(void)
+{
+    static const char data[] =
+        "############\n"
+        "#S  #E    f#\n"
+        "############\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 24680);
+    CHECK(level_load_data(&state.level, "walled flee", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.civilian_count == 1);
+
+    Civilian *civilian = &state.civilians[0];
+    civilian->activity_timer = 0.0f;
+    float wall_right = 5.0f * TILE_SIZE;
+    for (int frame = 0; frame < 600; ++frame)
+    {
+        gameplay_ai_update_movement(&state, 1.0f / 60.0f);
+        game_events_clear(&state.events);
+        CHECK(civilian->x >= wall_right - 1.0f);
+    }
+    CHECK(civilian->activity == CIVILIAN_GONE);
+}
+
 static void test_janitor_cart_stays_clear_when_turning_at_wall(void)
 {
     static const char data[] =
@@ -3448,6 +3543,8 @@ int main(void)
     test_hazards_emit_specific_impact_sounds();
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();
+    test_civilians_flee_to_the_way_in_and_vanish();
+    test_walled_in_civilian_leaves_instead_of_running_on_the_spot();
     test_janitor_cart_stays_clear_when_turning_at_wall();
     test_enemy_vision_cone_stealth_and_walls();
     test_enemy_fires_vertical_shot_up_a_shaft();

@@ -97,6 +97,37 @@ typedef struct
     JanitorWetSpot wet_spots[JANITOR_WET_SPOTS];
 } Janitor;
 
+/* A civilian caught in the building when the kidnappers came through it. The
+ * whole part is four beats long: freeze, run, trip, gone. */
+typedef enum
+{
+    CIVILIAN_STARTLED = 0,
+    CIVILIAN_FLEEING,
+    CIVILIAN_STUMBLING,
+    CIVILIAN_GONE
+} CivilianActivity;
+
+typedef struct
+{
+    float x, y;
+    float vx, vy;
+    int dir;      /* facing: the danger while startled, the way out after */
+    int flee_dir; /* which way the way out lies, decided once at spawn */
+    bool on_ground;
+    CivilianActivity activity;
+    float activity_timer;
+    /* Counts down to this person's one trip; zero once it has been used or
+     * was never rolled. */
+    float stumble_timer;
+    /* How long the run has been going nowhere. A civilian walled in by an
+     * unlucky map leaves the shot rather than running on the spot. */
+    float stuck_timer;
+    float anim_time;
+    float speed;
+    float fade;
+    int variant;
+} Civilian;
+
 typedef struct
 {
     int current_level;
@@ -127,6 +158,8 @@ typedef struct
     int dog_count;
     Janitor janitors[MAX_JANITORS];
     int janitor_count;
+    Civilian civilians[MAX_CIVILIANS];
+    int civilian_count;
     Mine mines[MAX_MINES];
     int mine_count;
     Grenade grenades[MAX_GRENADES];

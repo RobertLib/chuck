@@ -237,6 +237,26 @@ is derived from the map's own wall bounding box, so the room can be reshaped
 without touching the renderer; a slab with open air above and below is drawn as
 a railed catwalk rather than as the room's floor.
 
+### People who are not in the fight
+
+Two kinds of NPC live in the gameplay core without taking part in it: the
+ambient janitor (`J`) and the fleeing civilian (`f`), both in
+[gameplay_ai.c](src/gameplay_ai.c) beside the guards. They collide with the
+static map so they stay grounded, and that is the whole of their contact with
+the simulation — no perception, no damage, no collision against the player, no
+scoring. Guards do not see them and bullets pass through them. Keep it that
+way: the moment one of them can be shot or can block a route, every level
+holding one has to be re-solved.
+
+Level 1 is the lobby the kidnappers came through, so it empties as Chuck walks
+in: five civilians freeze, shout and run for the tile the player started on —
+the street entrance — dissolving into the doorway rather than stepping out of
+frame, because the entrance itself is painted on a parallax layer
+(`lobby_entrance`) and nothing in the world plane can line up with it for long.
+The part plays once, at `gameplay_ai_spawn_level_entities`, and stops mattering
+a few seconds later. Their shouts go through the ordinary event buffer, so the
+tests can assert on the evacuation without any audio.
+
 ### Tuning, art, audio
 
 - **All tuning constants live in [game_config.h](src/game_config.h)** — speeds,

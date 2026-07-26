@@ -16,6 +16,11 @@ This file describes the meaning of characters used in the level text files.
 - `M` : Enemy spawn (enemy is placed here).
 - `W` : Enemy spawn with a guard dog.
 - `J` : Ambient janitor with a cleaning cart and mop (visual-only NPC).
+- `f` : Fleeing civilian (visual-only NPC). The level starts with him frozen
+  facing the way the player came in; after a staggered beat he shouts and runs
+  for it, dissolving as he reaches it, and the part is over. He falls off
+  ledges rather than turning at them, so a route down a stair or off a
+  mezzanine is walked without help; see the authoring rule below.
 - `X` : Mine (places an explosive mine).
 - `^` : Spike / hazard (instant damage when stepped on).
 - `O` : Rotating ceiling fan (lethal on contact with the blades). It is drawn
@@ -64,6 +69,14 @@ Notes:
   reads as an office floor whatever its walls are made of, so keep desks and
   server racks to the staff side of a lobby and counters, seating and planting
   to the visitor side.
+- Fleeing civilians (`f`) run for the player's own start tile — in the lobby
+  that is the street entrance he came in through — and dissolve about four
+  tiles short of it, so plant them further into the room than that or they fade
+  before they have run anywhere; `test_all_embedded_levels_parse` pins it. They
+  walk and fall only: a stair, a step or a drop off a mezzanine is route enough,
+  a ladder or a door is not. One walled in by the geometry gives up and fades
+  out rather than jogging against the wall for the rest of the level, but that
+  is a safety net, not a placement.
 - Hold `E` near the visibly active terminal to hack it and unlock the exit.
 - Alarm switches are operated by guards. An active alarm alerts every guard
   and dog, then shuts itself off after nobody has seen the player for a short time.
@@ -129,7 +142,7 @@ or a storey rhythm.
 
 | # | Theme | Plan |
 | --- | --- | --- |
-| 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the atrium to a mezzanine gallery, a service ladder to the security wing, a short lift to the staff corridor behind the stair |
+| 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the atrium to a mezzanine gallery, a service ladder to the security wing, a short lift to the staff corridor behind the stair. The hall empties past Chuck as he walks in — see `f` |
 | 2 | `OFFICE` | three open-plan floors cut into blocks by floor-to-ceiling partitions, the ladders staggered so every partition is passed by changing floor; a welded stair core at the far end, the executive gallery back across the top, and a service crawl underneath reached by one ladder |
 | 3 | `FACADE_NIGHT` | one wide breach per course, walking slowly from side to side |
 | 4 | `SERVER` | cold aisles blocked at alternating ends: one long serpentine, plus two fenced pockets joined by a cable tunnel |

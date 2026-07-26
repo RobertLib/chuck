@@ -64,6 +64,16 @@ static void place_janitor(Level *level, int col, int row)
     janitor->y = (row + 1) * TILE_SIZE - JANITOR_H;
 }
 
+static void place_civilian(Level *level, int col, int row)
+{
+    if (level->map.civilian_count >= MAX_CIVILIANS)
+        return;
+    CivilianSpawn *civilian =
+        &level->map.civilian_spawns[level->map.civilian_count++];
+    civilian->x = col * TILE_SIZE + (TILE_SIZE - CIVILIAN_W) * 0.5f;
+    civilian->y = (row + 1) * TILE_SIZE - CIVILIAN_H;
+}
+
 static void place_mine(Level *level, int col, int row)
 {
     if (level->map.mine_count >= MAX_MINES)
@@ -263,6 +273,10 @@ bool level_load_data(Level *level, const char *name,
         case 'J':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_janitor(level, col, row);
+            break;
+        case 'f':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_civilian(level, col, row);
             break;
         case 'X':
             level->map.tiles[row][col] = TILE_EMPTY;

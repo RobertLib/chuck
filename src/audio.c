@@ -924,6 +924,36 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.25f, 0.14f, 165.0f, 205.0f, 0.42f, WAVE_TRIANGLE, 0.008f, 0.08f);
         add_noise(s, 0.00f, 0.44f, 0.09f, 0.35f, 0.012f, 0.09f, 0x5aa5u);
         break;
+    case SFX_CIVILIAN_SCREAM:
+        if (!begin_sound(audio, effect, 0.68f, 0.22f, 220))
+            return false;
+        /* A cry has to move the whole way through, or it turns into an alarm
+         * tone: the pitch climbs into the shriek, holds, then sags away. The
+         * octave partial supplies the rasp and the breath layer underneath is
+         * what keeps it a person rather than a siren. */
+        add_tone(s, 0.00f, 0.13f, 430.0f, 880.0f, 0.30f,
+                 WAVE_SAW, 0.006f, 0.05f);
+        add_tone(s, 0.11f, 0.33f, 900.0f, 790.0f, 0.38f,
+                 WAVE_SAW, 0.010f, 0.15f);
+        add_tone(s, 0.11f, 0.33f, 1790.0f, 1560.0f, 0.14f,
+                 WAVE_TRIANGLE, 0.010f, 0.15f);
+        add_tone(s, 0.41f, 0.24f, 760.0f, 505.0f, 0.24f,
+                 WAVE_SAW, 0.008f, 0.19f);
+        add_noise(s, 0.00f, 0.62f, 0.06f, 0.55f, 0.010f, 0.24f, 0x7c31u);
+        break;
+    case SFX_CIVILIAN_SHOUT:
+        if (!begin_sound(audio, effect, 0.46f, 0.24f, 220))
+            return false;
+        /* The same voice an octave down and half as long: two barked
+         * syllables instead of a held cry. */
+        add_tone(s, 0.00f, 0.15f, 268.0f, 208.0f, 0.44f,
+                 WAVE_SAW, 0.006f, 0.06f);
+        add_tone(s, 0.00f, 0.15f, 536.0f, 424.0f, 0.17f,
+                 WAVE_TRIANGLE, 0.006f, 0.06f);
+        add_tone(s, 0.19f, 0.23f, 305.0f, 186.0f, 0.40f,
+                 WAVE_SAW, 0.006f, 0.13f);
+        add_noise(s, 0.00f, 0.42f, 0.07f, 0.42f, 0.008f, 0.15f, 0x2ba9u);
+        break;
     case SFX_DOG_BARK:
         if (!begin_sound(audio, effect, 0.39f, 0.44f, 420))
             return false;

@@ -2386,6 +2386,207 @@ static void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
   }
 }
 
+/* Three people, not three palettes of the same person: the office worker, the
+ * receptionist off the front desk, and a visitor still holding his case. */
+typedef struct
+{
+  SDL_Color cloth;
+  SDL_Color cloth_hi;
+  SDL_Color legs;
+  SDL_Color legs_hi;
+  SDL_Color shoe;
+  SDL_Color hair;
+  SDL_Color skin;
+  SDL_Color accent;
+  bool carries_case;
+} CivilianLook;
+
+static const CivilianLook CIVILIAN_LOOKS[CIVILIAN_VARIANTS] = {
+    {{212, 218, 226, 255},
+     {236, 240, 245, 255},
+     {46, 54, 74, 255},
+     {58, 68, 90, 255},
+     {24, 26, 32, 255},
+     {62, 44, 33, 255},
+     {214, 166, 124, 255},
+     {150, 52, 54, 255},
+     false},
+    {{128, 58, 72, 255},
+     {160, 78, 94, 255},
+     {58, 34, 44, 255},
+     {74, 46, 58, 255},
+     {30, 22, 26, 255},
+     {172, 122, 66, 255},
+     {224, 178, 138, 255},
+     {226, 214, 198, 255},
+     false},
+    {{88, 94, 92, 255},
+     {112, 120, 116, 255},
+     {52, 52, 50, 255},
+     {66, 66, 62, 255},
+     {28, 26, 24, 255},
+     {40, 34, 30, 255},
+     {162, 118, 88, 255},
+     {126, 132, 126, 255},
+     true}};
+
+static SDL_Color civilian_fade(SDL_Color c, float fade)
+{
+  float alpha = (float)c.a * fade;
+  c.a = (Uint8)(alpha < 0.0f ? 0.0f : (alpha > 255.0f ? 255.0f : alpha));
+  return c;
+}
+
+/*
+ * A civilian getting out of the building. The pose carries the whole read at
+ * this size: a panicked run is forward pitch, a long stride and raised hands,
+ * where the walk the guards and the janitor share is deliberately level. The
+ * dissolve at the doors is drawn as plain alpha rather than as a shrink or a
+ * step out of frame, because the doorway itself is on a parallax layer and
+ * anything else would have to agree with it.
+ */
+static void draw_civilian(SDL_Renderer *r, const Civilian *civilian,
+                          float cam_x, float oy)
+{
+  if (civilian->activity == CIVILIAN_GONE || civilian->fade <= 0.0f)
+    return;
+
+  const CivilianLook *look = &CIVILIAN_LOOKS[civilian->variant %
+                                             CIVILIAN_VARIANTS];
+  float fade = civilian->fade;
+  float x = civilian->x - cam_x;
+  float y = civilian->y + oy;
+  int dir = civilian->dir;
+  bool running = civilian->activity == CIVILIAN_FLEEING;
+  bool fallen = civilian->activity == CIVILIAN_STUMBLING;
+  bool startled = civilian->activity == CIVILIAN_STARTLED;
+  float phase = civilian->anim_time * 2.6f;
+  float step = running ? sinf(phase) : 0.0f;
+  /* How far into the sprawl this frame is: 1 while down, easing to 0 as the
+     last of the beat is spent scrambling up. */
+  float down = fallen ? fminf(1.0f, civilian->activity_timer /
+                                        (CIVILIAN_STUMBLE_TIME * 0.35f))
+                      : 0.0f;
+  float drop = down * 9.0f;
+  float bob = running ? fabsf(step) * 1.2f - 0.6f
+                      : sinf(civilian->anim_time * 2.2f) * 0.3f;
+  float lean = running ? 2.5f : (startled ? -1.5f : 3.0f * down);
+  float body = bob + drop;
+  SDL_Color cloth = civilian_fade(look->cloth, fade);
+  SDL_Color cloth_hi = civilian_fade(look->cloth_hi, fade);
+  SDL_Color legs = civilian_fade(look->legs, fade);
+  SDL_Color legs_hi = civilian_fade(look->legs_hi, fade);
+  SDL_Color shoe = civilian_fade(look->shoe, fade);
+  SDL_Color skin = civilian_fade(look->skin, fade);
+  SDL_Color outline = civilian_fade(COL_OUTLINE, fade);
+
+  if (fade < 1.0f)
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+
+  /* Contact shadow only while there is contact: these are the one kind of NPC
+     that leaves the floor, dropping down the lobby stair on the way out. */
+  if (civilian->on_ground)
+    color_rect(r, civilian_fade((SDL_Color){6, 9, 13, 255}, fade),
+               x + 3.0f, y + 30.0f, 18.0f, 2.0f);
+
+  if (fallen)
+  {
+    /* Down on one knee with the trailing leg stretched out behind. */
+    sprite_limb_segment(r, x, y, CIVILIAN_W, dir, 11.0f, 21.0f + body,
+                        6.0f - down * 3.0f, 29.0f, legs);
+    sprite_limb_segment(r, x, y, CIVILIAN_W, dir, 12.0f, 21.0f + body,
+                        16.0f, 30.0f - down * 2.0f, legs);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, 3.0f - down * 3.0f, 28.0f,
+                6.0f, 3.0f, shoe);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, 15.0f, 29.0f - down * 2.0f,
+                6.0f, 3.0f, shoe);
+  }
+  else if (running)
+  {
+    draw_walking_leg(r, x, y, CIVILIAN_W, dir, 10.0f, 21.0f + body,
+                     -step * 5.2f, legs, shoe);
+    draw_walking_leg(r, x, y, CIVILIAN_W, dir, 13.0f, 21.0f + body,
+                     step * 5.2f, legs_hi, shoe);
+  }
+  else
+  {
+    sprite_rect(r, x, y, CIVILIAN_W, dir, 8.0f, 22.0f + body, 5.0f, 9.0f,
+                legs);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, 13.0f, 22.0f + body, 5.0f, 9.0f,
+                legs);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, 7.0f, 29.0f + body, 6.0f, 3.0f,
+                shoe);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, 13.0f, 29.0f + body, 6.0f, 3.0f,
+                shoe);
+  }
+
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 5.0f + lean, 10.0f + body,
+              13.0f, 13.0f, outline);
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 6.0f + lean, 11.0f + body,
+              11.0f, 11.0f, cloth);
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 7.0f + lean, 12.0f + body,
+              4.0f, 9.0f, cloth_hi);
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 11.0f + lean, 11.0f + body,
+              2.0f, 8.0f, civilian_fade(look->accent, fade));
+
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 8.0f + lean, 2.0f + body,
+              9.0f, 9.0f, outline);
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 9.0f + lean, 3.0f + body,
+              7.0f, 7.0f, skin);
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 8.0f + lean, 1.0f + body,
+              9.0f, 4.0f, civilian_fade(look->hair, fade));
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 13.0f + lean, 4.0f + body,
+              2.0f, 2.0f, civilian_fade(COL_INK, fade));
+  /* The open mouth is the one cue that reads as fear at this scale. */
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 12.0f + lean, 7.0f + body,
+              3.0f, 3.0f, civilian_fade((SDL_Color){48, 22, 24, 255}, fade));
+
+  if (fallen)
+  {
+    /* One hand braced on the floor, the other still thrown out ahead. */
+    sprite_limb_segment(r, x, y, CIVILIAN_W, dir, 15.0f + lean, 14.0f + body,
+                        21.0f, 27.0f - down * 3.0f, cloth);
+    sprite_limb_segment(r, x, y, CIVILIAN_W, dir, 9.0f + lean, 14.0f + body,
+                        14.0f, 24.0f, cloth_hi);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, 19.0f, 25.0f - down * 3.0f,
+                4.0f, 3.0f, skin);
+  }
+  else if (look->carries_case)
+  {
+    /* The case is the joke and the tell: he has not thought to drop it. */
+    float swing = running ? step * 2.5f : 0.0f;
+    draw_walking_arm(r, x, y, CIVILIAN_W, dir, 13.0f + lean, 13.0f + body,
+                     -swing, cloth, skin);
+    float case_x = 4.0f + swing;
+    sprite_limb_segment(r, x, y, CIVILIAN_W, dir, 9.0f + lean, 13.0f + body,
+                        case_x + 2.0f, 20.0f + body, cloth_hi);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, case_x - 3.0f, 20.0f + body,
+                10.0f, 8.0f, outline);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, case_x - 2.0f, 21.0f + body,
+                8.0f, 6.0f, civilian_fade((SDL_Color){84, 56, 38, 255}, fade));
+    sprite_rect(r, x, y, CIVILIAN_W, dir, case_x - 2.0f, 23.0f + body,
+                8.0f, 1.0f, civilian_fade((SDL_Color){132, 100, 62, 255},
+                                          fade));
+  }
+  else
+  {
+    /* Hands up: to the face while startled, flung overhead once running. */
+    float flail = running ? sinf(phase * 1.35f) * 2.2f : 0.0f;
+    float reach = startled ? 9.0f : 5.0f;
+    sprite_limb_segment(r, x, y, CIVILIAN_W, dir, 9.0f + lean, 13.0f + body,
+                        6.0f + lean - flail, reach + body, cloth_hi);
+    sprite_limb_segment(r, x, y, CIVILIAN_W, dir, 15.0f + lean, 13.0f + body,
+                        18.0f + lean + flail, reach - 1.0f + body, cloth);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, 4.0f + lean - flail,
+                reach - 2.0f + body, 4.0f, 4.0f, skin);
+    sprite_rect(r, x, y, CIVILIAN_W, dir, 16.0f + lean + flail,
+                reach - 3.0f + body, 4.0f, 4.0f, skin);
+  }
+
+  if (fade < 1.0f)
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
 static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
 {
   float x = e->x - cam_x;
@@ -3095,6 +3296,10 @@ static void render_world(Game *game)
    * wall and its fixtures. Floor props and gameplay actors render later. */
   for (int i = 0; i < game->gameplay.janitor_count; ++i)
     draw_janitor(r, &game->gameplay.janitors[i], cam_x, oy);
+  /* Civilians share that layer: they belong to the room the player is walking
+   * into, so they pass behind its counters and planting rather than over it. */
+  for (int i = 0; i < game->gameplay.civilian_count; ++i)
+    draw_civilian(r, &game->gameplay.civilians[i], cam_x, oy);
 
   /* Redraw ladders as a middle layer so ambient janitors pass behind their
    * rails and rungs. Interactive actors are rendered later and remain in

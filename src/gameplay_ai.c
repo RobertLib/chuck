@@ -489,6 +489,158 @@ static void update_janitor(GameplayState *state, Janitor *janitor, float dt)
     }
 }
 
+/*
+ * The evacuation.
+ *
+ * Everyone in the room runs for the way the player just came in — in the lobby
+ * that is the street entrance behind him, which is the only door in a level
+ * that leads out of the building rather than further into it. Nothing here
+ * touches the simulation: civilians are not seen by guards, cannot be hit, and
+ * carry no collision of their own, so the scene can only ever be staging.
+ */
+static float civilian_exit_x(const GameplayState *state)
+{
+    return state->level.map.start_x + PLAYER_W * 0.5f;
+}
+
+static void civilian_init(Civilian *civilian, float x, float y,
+                          float exit_x, int order, Rng *rng)
+{
+    *civilian = (Civilian){0};
+    civilian->x = x;
+    civilian->y = y;
+    civilian->flee_dir = x + CIVILIAN_W * 0.5f < exit_x ? 1 : -1;
+    /* Caught mid-turn: still facing what came through the door, not yet
+     * running from it. */
+    civilian->dir = -civilian->flee_dir;
+    civilian->activity = CIVILIAN_STARTLED;
+    civilian->activity_timer =
+        CIVILIAN_STARTLE_MIN +
+        (float)rng_range(rng, 1000) * 0.001f * CIVILIAN_STARTLE_SPREAD;
+    civilian->speed =
+        CIVILIAN_RUN_SPEED +
+        (float)rng_range(rng, 1000) * 0.001f * CIVILIAN_RUN_SPEED_SPREAD;
+    civilian->anim_time = (float)rng_range(rng, 628) * 0.01f;
+    civilian->fade = 1.0f;
+    civilian->variant = (order + rng_range(rng, CIVILIAN_VARIANTS)) %
+                        CIVILIAN_VARIANTS;
+    if (rng_range(rng, 100) < CIVILIAN_STUMBLE_CHANCE)
+    {
+        civilian->stumble_timer =
+            CIVILIAN_STUMBLE_DELAY_MIN +
+            (float)rng_range(rng, 1000) * 0.001f *
+                CIVILIAN_STUMBLE_DELAY_SPREAD;
+    }
+}
+
+static void civilian_begin_run(GameplayState *state, Civilian *civilian)
+{
+    civilian->activity = CIVILIAN_FLEEING;
+    civilian->dir = civilian->flee_dir;
+    /* One voice per person as they break, so the room empties as a handful of
+     * separate shouts instead of a single crowd noise. */
+    gameplay_world_sound(state,
+                         civilian->variant == 1 ? SFX_CIVILIAN_SCREAM
+                                                : SFX_CIVILIAN_SHOUT,
+                         civilian->x + CIVILIAN_W * 0.5f,
+                         civilian->y + CIVILIAN_H * 0.5f);
+}
+
+static void update_civilian(GameplayState *state, Civilian *civilian, float dt)
+{
+    if (civilian->activity == CIVILIAN_GONE)
+        return;
+
+    switch (civilian->activity)
+    {
+    case CIVILIAN_STARTLED:
+        civilian->vx = 0.0f;
+        civilian->anim_time += dt * 1.4f;
+        civilian->activity_timer -= dt;
+        if (civilian->activity_timer <= 0.0f)
+            civilian_begin_run(state, civilian);
+        break;
+    case CIVILIAN_FLEEING:
+        civilian->vx = (float)civilian->flee_dir * civilian->speed;
+        civilian->anim_time += dt * 3.4f;
+        if (civilian->stumble_timer > 0.0f)
+        {
+            civilian->stumble_timer -= dt;
+            if (civilian->stumble_timer <= 0.0f)
+            {
+                civilian->stumble_timer = 0.0f;
+                civilian->activity = CIVILIAN_STUMBLING;
+                civilian->activity_timer = CIVILIAN_STUMBLE_TIME;
+            }
+        }
+        break;
+    case CIVILIAN_STUMBLING:
+        /* Sprawled, then scrambling up: the last of the beat already carries
+         * some speed so getting up flows back into the run. */
+        civilian->anim_time += dt * 2.0f;
+        civilian->activity_timer -= dt;
+        civilian->vx = civilian->activity_timer < CIVILIAN_STUMBLE_TIME * 0.3f
+                           ? (float)civilian->flee_dir * civilian->speed * 0.35f
+                           : 0.0f;
+        if (civilian->activity_timer <= 0.0f)
+        {
+            civilian->activity = CIVILIAN_FLEEING;
+            civilian->activity_timer = 0.0f;
+        }
+        break;
+    case CIVILIAN_GONE:
+        return;
+    }
+
+    civilian->vy += GRAVITY * dt;
+    if (civilian->vy > MAX_FALL_SPEED)
+        civilian->vy = MAX_FALL_SPEED;
+    float intended_vx = civilian->vx;
+    level_move(&state->level, &civilian->x, &civilian->y,
+               &civilian->vx, &civilian->vy, CIVILIAN_W, CIVILIAN_H,
+               dt, false, &civilian->on_ground, false);
+
+    /* Panic does not turn around at an obstacle the way a patrol does: hop
+     * what can be hopped. Should the way really be shut, the person leaves the
+     * shot after a moment rather than running on the spot for the whole
+     * level. */
+    if (intended_vx != 0.0f && civilian->vx == 0.0f)
+    {
+        if (civilian->on_ground && civilian->stuck_timer <= 0.0f)
+            civilian->vy = -CIVILIAN_HOP_SPEED;
+        civilian->stuck_timer += dt;
+        if (civilian->stuck_timer >= CIVILIAN_STUCK_TIME)
+            civilian->fade -= dt / CIVILIAN_STUCK_FADE_TIME;
+    }
+    else
+    {
+        civilian->stuck_timer = 0.0f;
+    }
+
+    if (civilian->activity != CIVILIAN_STARTLED)
+    {
+        /* Fade with the remaining distance rather than with a timer, so the
+         * dissolve always happens in the doorway however fast this one runs. */
+        float distance = fabsf(civilian->x + CIVILIAN_W * 0.5f -
+                               civilian_exit_x(state));
+        float reach = (distance - CIVILIAN_EXIT_REACH) /
+                      (CIVILIAN_FADE_DISTANCE - CIVILIAN_EXIT_REACH);
+        if (reach < civilian->fade)
+            civilian->fade = reach;
+        if (distance <= CIVILIAN_EXIT_REACH)
+            civilian->fade = 0.0f;
+    }
+    if (civilian->fade <= 0.0f)
+    {
+        civilian->fade = 0.0f;
+        civilian->activity = CIVILIAN_GONE;
+    }
+    else if (civilian->fade > 1.0f)
+    {
+        civilian->fade = 1.0f;
+    }
+}
+
 static bool spawn_enemy_from_door(GameplayState *state, int door_index)
 {
     if (door_index < 0 || door_index >= state->level.map.door_count)
@@ -548,6 +700,14 @@ void gameplay_ai_spawn_level_entities(GameplayState *state)
             janitor->dir = -janitor->dir;
             janitor->cart_dir = janitor->dir;
         }
+    }
+    state->civilian_count = state->level.map.civilian_count;
+    for (int i = 0; i < state->civilian_count; ++i)
+    {
+        civilian_init(&state->civilians[i],
+                      state->level.map.civilian_spawns[i].x,
+                      state->level.map.civilian_spawns[i].y,
+                      civilian_exit_x(state), i, &state->rng);
     }
     state->mine_count = state->level.map.mine_count;
     for (int i = 0; i < state->mine_count; ++i)
@@ -1002,6 +1162,8 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
 {
     for (int i = 0; i < state->janitor_count; ++i)
         update_janitor(state, &state->janitors[i], dt);
+    for (int i = 0; i < state->civilian_count; ++i)
+        update_civilian(state, &state->civilians[i], dt);
 
     for (int i = 0; i < state->enemy_count; ++i)
     {
