@@ -10,6 +10,7 @@ void player_reset(Player *player, const Level *level)
     player->vy = 0.0f;
     player->on_ground = false;
     player->on_ladder = false;
+    player->ladder_direction = 0;
     player->facade_climbing = false;
     player->facing = 1;
     player->bullets = MAX_AMMO;
@@ -129,6 +130,7 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
     if (!over_ladder)
     {
         player->on_ladder = false;
+        player->ladder_direction = 0;
     }
 
     if (player->on_ladder)
@@ -142,6 +144,10 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
         {
             climb += 1.0f;
         }
+        if (climb < 0.0f)
+            player->ladder_direction = -1;
+        else if (climb > 0.0f)
+            player->ladder_direction = 1;
         player->vy = climb * PLAYER_CLIMB_SPEED;
 
         /* Jump off the ladder */
@@ -149,6 +155,7 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
         {
             player->vy = -PLAYER_JUMP_SPEED;
             player->on_ladder = false;
+            player->ladder_direction = 0;
         }
     }
     else

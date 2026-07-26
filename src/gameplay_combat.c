@@ -9,6 +9,22 @@ static float player_height(const GameplayState *state)
     return state->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
 }
 
+/* A released climb key must not turn the next ladder shot sideways. Explicit
+ * vertical input takes priority, while left/right still selects a side shot. */
+static int player_ladder_shot_direction(const Player *player,
+                                        const Input *input)
+{
+    if (!player->on_ladder)
+        return 0;
+    if (input->up && !input->down)
+        return -1;
+    if (input->down && !input->up)
+        return 1;
+    if (input->up || input->down || input->left || input->right)
+        return 0;
+    return player->ladder_direction;
+}
+
 static bool within_radius(float x, float y, float center_x, float center_y,
                           float radius)
 {
@@ -478,14 +494,8 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             if (bullet->active)
                 continue;
             bullet->active = true;
-            int vertical = 0;
-            if (state->player.on_ladder)
-            {
-                if (input->up && !input->down)
-                    vertical = -1;
-                else if (input->down && !input->up)
-                    vertical = 1;
-            }
+            int vertical =
+                player_ladder_shot_direction(&state->player, input);
             if (vertical != 0)
             {
                 bullet->x = state->player.x +
@@ -522,9 +532,9 @@ void gameplay_combat_handle_player_action(GameplayState *state,
     {
         /* A knife can be used sideways from a ladder, but directional ladder
          * input is reserved for climbing; there is no vertical knife attack. */
-        bool vertical_ladder_input =
-            state->player.on_ladder && (input->up || input->down);
-        if (!vertical_ladder_input)
+        bool vertical_ladder_aim =
+            player_ladder_shot_direction(&state->player, input) != 0;
+        if (!vertical_ladder_aim)
             player_knife_attack(state, campaign);
     }
     input->shoot = false;

@@ -1747,6 +1747,60 @@ static void test_ladder_mount_centres_the_player(void)
     CHECK(climbed == tried);
 }
 
+static void test_ladder_remembers_climb_direction_for_shooting(void)
+{
+    static const char data[] =
+        "########\n"
+        "#  H  E#\n"
+        "#  H   #\n"
+        "# SH   #\n"
+        "########\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 73);
+    CHECK(level_load_data(&state.level, "ladder shooting", data,
+                          strlen(data), &state.rng));
+
+    const int ladder_col = 3;
+    const float ladder_x =
+        ladder_col * (float)TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+    for (int direction = -1; direction <= 1; direction += 2)
+    {
+        memset(state.bullets, 0, sizeof(state.bullets));
+        player_reset(&state.player, &state.level);
+        state.player.x = ladder_x;
+        state.player.y = direction < 0 ? 3.0f * TILE_SIZE : TILE_SIZE;
+
+        Input climb = {
+            .up = direction < 0,
+            .down = direction > 0};
+        player_update(&state.player, &state.level, &climb, 1.0f / 60.0f);
+        CHECK(state.player.on_ladder);
+        CHECK(state.player.ladder_direction == direction);
+
+        Input shoot = {.shoot = true};
+        gameplay_combat_handle_player_action(&state, &campaign, &shoot);
+        CHECK(state.bullets[0].active);
+        CHECK(state.bullets[0].vx == 0.0f);
+        CHECK(state.bullets[0].vy == direction * BULLET_SPEED);
+        CHECK(state.player.shot_vertical == direction);
+    }
+
+    /* A held horizontal direction remains an explicit request to fire off the
+     * side of the ladder rather than reusing the remembered climb direction. */
+    memset(state.bullets, 0, sizeof(state.bullets));
+    state.player.bullets = 1;
+    state.player.on_ladder = true;
+    state.player.ladder_direction = -1;
+    state.player.facing = 1;
+    Input side_shot = {.right = true, .shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &side_shot);
+    CHECK(state.bullets[0].active);
+    CHECK(state.bullets[0].vx == BULLET_SPEED);
+    CHECK(state.bullets[0].vy == 0.0f);
+    CHECK(state.player.shot_vertical == 0);
+}
+
 static void test_level_reveal_finishes(void)
 {
     static const char data[] =
@@ -3365,6 +3419,7 @@ int main(void)
     test_facade_thrower_winds_up_before_releasing();
     test_level_collision_stops_at_wall();
     test_ladder_mount_centres_the_player();
+    test_ladder_remembers_climb_direction_for_shooting();
     test_level_reveal_finishes();
     test_event_buffer_reports_overflow();
     test_terminal_unlocks_deterministically();
