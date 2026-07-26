@@ -2428,7 +2428,7 @@ static void test_crate_stops_at_enemy_and_triggers_counterattack(void)
                              SFX_ENEMY_ALERT));
 }
 
-static void test_enemy_moves_away_from_blocking_crate(void)
+static void test_enemy_walks_in_front_of_unjumpable_crate(void)
 {
     static const char data[] =
         "##########\n"
@@ -2452,19 +2452,24 @@ static void test_enemy_moves_away_from_blocking_crate(void)
     enemy->pursuit_target_x = state.player.x + PLAYER_W * 0.5f;
     enemy->pursuit_target_y = enemy->y + ENEMY_H * 0.5f;
 
-    float contact_x = crate->x + CRATE_W;
-    for (int frame = 0; frame < 480 && enemy->x > contact_x + 0.01f;
-         ++frame)
+    bool overlapped_crate = false;
+    bool jumped = false;
+    for (int frame = 0; frame < 720; ++frame)
     {
         gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+        if (enemy->vy < 0.0f)
+            jumped = true;
+        if (enemy->x < crate->x + CRATE_W &&
+            enemy->x + ENEMY_W > crate->x)
+            overlapped_crate = true;
+        if (enemy->x + ENEMY_W <= crate->x)
+            break;
     }
-    CHECK(fabsf(enemy->x - contact_x) < 0.02f);
 
-    for (int frame = 0; frame < 120; ++frame)
-        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
-
-    CHECK(enemy->x > contact_x + 20.0f);
-    CHECK(enemy->obstacle_avoid_timer > 0.0f);
+    CHECK(overlapped_crate);
+    CHECK(!jumped);
+    CHECK(enemy->x + ENEMY_W <= crate->x);
+    CHECK(enemy->dir < 0);
 }
 
 static void test_enemy_climbs_over_blocking_crate(void)
@@ -2492,6 +2497,8 @@ static void test_enemy_climbs_over_blocking_crate(void)
     enemy->has_pursuit_target = true;
     enemy->pursuit_target_x = state.player.x + PLAYER_W * 0.5f;
     enemy->pursuit_target_y = enemy->y + ENEMY_H * 0.5f;
+    /* The first route roll is 11, selecting the mount branch. */
+    rng_seed(&state.rng, 2);
 
     bool jumped = false;
     bool landed_on_crate = false;
@@ -2521,7 +2528,7 @@ static void test_enemy_climbs_over_blocking_crate(void)
     CHECK(enemy->obstacle_avoid_timer == 0.0f);
 }
 
-static void test_patrol_enemy_may_turn_from_jumpable_crate(void)
+static void test_patrol_enemy_may_walk_in_front_of_jumpable_crate(void)
 {
     static const char data[] =
         "##########\n"
@@ -2540,30 +2547,31 @@ static void test_patrol_enemy_may_turn_from_jumpable_crate(void)
     enemy->dir = -1;
     enemy->on_ground = true;
     enemy->aim_timer = 0.0f;
-    /* The first patrol route roll is 55, selecting the turn branch. */
+    /* The first patrol route roll is 55, selecting the foreground branch. */
     rng_seed(&state.rng, 1);
 
     bool jumped = false;
-    bool turned = false;
-    float turn_x = enemy->x;
-    for (int frame = 0; frame < 240 && !turned; ++frame)
+    bool overlapped_crate = false;
+    bool passed_crate = false;
+    for (int frame = 0; frame < 720; ++frame)
     {
         gameplay_ai_update_movement(&state, 1.0f / 120.0f);
         if (enemy->vy < 0.0f)
             jumped = true;
-        if (enemy->dir > 0 && enemy->obstacle_avoid_timer > 0.0f)
+        if (enemy->x < crate->x + CRATE_W &&
+            enemy->x + ENEMY_W > crate->x)
+            overlapped_crate = true;
+        if (enemy->x + ENEMY_W <= crate->x)
         {
-            turned = true;
-            turn_x = enemy->x;
+            passed_crate = true;
+            break;
         }
     }
-    for (int frame = 0; frame < 30; ++frame)
-        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
 
-    CHECK(turned);
     CHECK(!jumped);
-    CHECK(enemy->x > turn_x + 10.0f);
-    CHECK(enemy->obstacle_avoid_timer > 0.0f);
+    CHECK(overlapped_crate);
+    CHECK(passed_crate);
+    CHECK(enemy->dir < 0);
 }
 
 static void test_enemy_uses_ladder_while_avoiding_crate(void)
@@ -2661,8 +2669,7 @@ static void test_enemy_leaves_climb_state_when_landing_on_crate(void)
         .climb_dir = 1,
         .hp = ENEMY_HP};
 
-    gameplay_resolve_enemy_crates(&state, enemy,
-                                  enemy->x, crate->y - ENEMY_H);
+    gameplay_resolve_enemy_crates(&state, enemy, crate->y - ENEMY_H);
 
     CHECK(!enemy->climbing);
     CHECK(enemy->on_ground);
@@ -3330,9 +3337,9 @@ int main(void)
     test_ladder_knife_is_horizontal_only();
     test_crate_movement_emits_sounds();
     test_crate_stops_at_enemy_and_triggers_counterattack();
-    test_enemy_moves_away_from_blocking_crate();
+    test_enemy_walks_in_front_of_unjumpable_crate();
     test_enemy_climbs_over_blocking_crate();
-    test_patrol_enemy_may_turn_from_jumpable_crate();
+    test_patrol_enemy_may_walk_in_front_of_jumpable_crate();
     test_enemy_uses_ladder_while_avoiding_crate();
     test_patrol_enemy_does_not_immediately_leave_ladder();
     test_enemy_leaves_climb_state_when_landing_on_crate();

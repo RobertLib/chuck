@@ -276,7 +276,7 @@ void gameplay_resolve_player_crates(GameplayState *state,
 }
 
 void gameplay_resolve_enemy_crates(GameplayState *state, Enemy *enemy,
-                                   float previous_x, float previous_y)
+                                   float previous_y)
 {
     if (enemy->dead)
         return;
@@ -301,25 +301,8 @@ void gameplay_resolve_enemy_crates(GameplayState *state, Enemy *enemy,
             }
             continue;
         }
-        if (previous_x + ENEMY_W * 0.5f < crate->x + CRATE_W * 0.5f)
-        {
-            enemy->x = crate->x - ENEMY_W;
-            enemy->dir = -1;
-        }
-        else
-        {
-            enemy->x = crate->x + CRATE_W;
-            enemy->dir = 1;
-        }
-        enemy->vx = 0.0f;
-        enemy->mounting_crate = false;
-        enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
-        if (enemy->climbing)
-        {
-            enemy->climbing = false;
-            enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
-            enemy->on_ground = false;
-        }
+        /* Side overlap is intentional: guards are rendered after crates and
+         * may take the foreground route instead of mounting every box. */
     }
 }
 

@@ -628,17 +628,17 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             }
         }
 
-        /* An actively routing guard climbs onto a safe crate so it cannot
-         * stall on the way to its target. Patrols vary their route: one roll
-         * at the approach either commits to the climb or turns them away for
-         * the full obstacle-avoidance window, avoiding a per-frame re-roll or
-         * jitter. */
+        /* At a safe crate, a guard makes one choice: mount it or keep walking
+         * in the foreground. The avoidance timer commits a foreground route
+         * long enough to cross the box instead of re-rolling every frame. */
         if (!hemmed_in && enemy->vx != 0.0f &&
+            enemy->obstacle_avoid_timer <= 0.0f &&
             enemy_can_mount_crate(level, enemy, enemy->dir))
         {
-            bool jump = following_target ||
-                        rng_range(rng, 100) <
-                            ENEMY_CRATE_PATROL_JUMP_CHANCE;
+            int jump_chance = following_target
+                                  ? ENEMY_CRATE_PURSUIT_JUMP_CHANCE
+                                  : ENEMY_CRATE_PATROL_JUMP_CHANCE;
+            bool jump = rng_range(rng, 100) < jump_chance;
             if (jump)
             {
                 enemy->vy = -ENEMY_JUMP_SPEED;
@@ -649,8 +649,6 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             }
             else
             {
-                enemy->dir = -enemy->dir;
-                enemy->vx = (float)enemy->dir * speed;
                 enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
             }
         }

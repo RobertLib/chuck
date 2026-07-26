@@ -29,8 +29,8 @@ static int find_dog_slot(GameplayState *state)
     return state->dog_count < MAX_DOGS ? state->dog_count++ : -1;
 }
 
-static bool crate_or_enemy_blocks_side(const GameplayState *state,
-                                       int enemy_index, int direction)
+static bool actor_or_tile_blocks_side(const GameplayState *state,
+                                      int enemy_index, int direction)
 {
     const Enemy *enemy = &state->enemies[enemy_index];
     float x = direction < 0
@@ -40,14 +40,6 @@ static bool crate_or_enemy_blocks_side(const GameplayState *state,
     float height = ENEMY_H - 2.0f;
     if (!gameplay_box_tiles_clear(state, x, y, ENEMY_SIDE_PROBE, height))
         return true;
-    for (int i = 0; i < state->level.runtime.crate_count; ++i)
-    {
-        const Crate *crate = &state->level.runtime.crates[i];
-        if (crate->active &&
-            gameplay_boxes_overlap(x, y, ENEMY_SIDE_PROBE, height,
-                                   crate->x, crate->y, CRATE_W, CRATE_H))
-            return true;
-    }
     for (int i = 0; i < state->dog_count; ++i)
     {
         const Dog *dog = &state->dogs[i];
@@ -950,7 +942,6 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
         Enemy *enemy = &state->enemies[i];
         if (enemy->dead)
             continue;
-        float previous_x = enemy->x;
         float previous_y = enemy->y;
         bool alarm_pursuit = gameplay_alarm_active(state);
         if (alarm_pursuit && enemy->raising_alarm)
@@ -1118,12 +1109,12 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
 
         pursuing = pursuing && enemy->has_pursuit_target;
         bool hemmed_in =
-            crate_or_enemy_blocks_side(state, i, -1) &&
-            crate_or_enemy_blocks_side(state, i, 1);
+            actor_or_tile_blocks_side(state, i, -1) &&
+            actor_or_tile_blocks_side(state, i, 1);
         enemy_update(enemy, &state->level, dt, pursuing, alarm_pursuit,
                      enemy->pursuit_target_x, enemy->pursuit_target_y,
                      hemmed_in, &state->rng);
-        gameplay_resolve_enemy_crates(state, enemy, previous_x, previous_y);
+        gameplay_resolve_enemy_crates(state, enemy, previous_y);
     }
 
     for (int i = 0; i < state->dog_count; ++i)

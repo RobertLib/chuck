@@ -22,9 +22,8 @@ typedef struct
     /* Keeps a crate jump short enough to land on the box instead of sailing
      * over it. Cleared as soon as the guard is grounded again. */
     bool mounting_crate;
-    /* Temporarily keep moving away after hitting an obstacle. Without this,
-     * pursuit steering can send the guard back into the same crate every
-     * frame. */
+    /* Temporarily commits obstacle avoidance or a foreground crate route.
+     * Without this, pursuit steering can undo the decision every frame. */
     float obstacle_avoid_timer;
     int hp; /* current hit points, 1..ENEMY_HP */
     bool dead;

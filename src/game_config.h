@@ -167,8 +167,9 @@
 #define ENEMY_CRATE_MOUNT_SPEED 90.0f
 #define ENEMY_CRATE_JUMP_CLEARANCE 2.0f
 #define ENEMY_CRATE_FLOOR_TOLERANCE 3.0f
-/* Patrols vary their route at a crate; guards with an active target always
- * jump when the checked route is safe. */
+/* Guards may either mount a safe crate or walk in front of it. Pursuers are
+ * more likely to jump; patrols more often take the foreground route. */
+#define ENEMY_CRATE_PURSUIT_JUMP_CHANCE 50
 #define ENEMY_CRATE_PATROL_JUMP_CHANCE 35
 #define ENEMY_ELEVATOR_FLOOR_TOLERANCE 8.0f
 /* A search party fans out around the last sighting instead of clustering. */
