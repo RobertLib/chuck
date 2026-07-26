@@ -3060,6 +3060,76 @@ static void test_pursuing_guard_hops_small_gap(void)
     CHECK(guard->x < 4.5f * TILE_SIZE); /* land just beyond the far edge */
 }
 
+static void test_pursuing_guard_searches_away_from_blocking_wall(void)
+{
+    static const char data[] =
+        "############\n"
+        "#S M #    E#\n"
+        "############\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 54);
+    CHECK(level_load_data(&state.level, "guard blocked pursuit", data,
+                          strlen(data), &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    Enemy *guard = &state.enemies[0];
+    guard->on_ground = true;
+    guard->dir = 1;
+    guard->provoked = true;
+    guard->has_pursuit_target = true;
+    guard->pursuit_target_x = 8.5f * TILE_SIZE;
+    guard->pursuit_target_y = guard->y + ENEMY_H * 0.5f;
+    state.player.x = 5000.0f; /* keep the remembered target behind the wall */
+    state.player.y = 5000.0f;
+
+    float wall_turn_x = 5.0f * TILE_SIZE - ENEMY_W - 1.0f;
+    for (int frame = 0; frame < 480 &&
+                        guard->x < wall_turn_x - 0.01f; ++frame)
+        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+    CHECK(fabsf(guard->x - wall_turn_x) < 1.0f);
+
+    for (int frame = 0; frame < 60; ++frame)
+        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+
+    CHECK(guard->x < wall_turn_x - 20.0f);
+    CHECK(guard->obstacle_avoid_timer > 0.0f);
+}
+
+static void test_pursuing_guards_route_up_from_wall_below_player(void)
+{
+    static const char data[] =
+        "############\n"
+        "#S H      E#\n"
+        "###H########\n"
+        "#  H    MMM#\n"
+        "############\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 53);
+    CHECK(level_load_data(&state.level, "guards below player", data,
+                          strlen(data), &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 3);
+
+    float target_x = state.player.x + PLAYER_W * 0.5f;
+    float target_y = state.player.y + PLAYER_H * 0.5f;
+    for (int i = 0; i < state.enemy_count; ++i)
+    {
+        Enemy *guard = &state.enemies[i];
+        guard->on_ground = true;
+        guard->dir = 1; /* first search the dead end away from the ladder */
+        guard->provoked = true;
+        guard->has_pursuit_target = true;
+        guard->pursuit_target_x = target_x;
+        guard->pursuit_target_y = target_y;
+    }
+
+    for (int frame = 0; frame < 1800; ++frame)
+        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+
+    for (int i = 0; i < state.enemy_count; ++i)
+        CHECK(state.enemies[i].y < 2.0f * TILE_SIZE);
+}
+
 static void test_pursuing_guard_refuses_high_drop(void)
 {
     static const char data[] =
@@ -3276,6 +3346,8 @@ int main(void)
     test_noise_draws_guards_to_investigate();
     test_guard_investigates_fallen_comrade();
     test_pursuing_guard_hops_small_gap();
+    test_pursuing_guard_searches_away_from_blocking_wall();
+    test_pursuing_guards_route_up_from_wall_below_player();
     test_pursuing_guard_refuses_high_drop();
     test_guard_rides_elevator_and_leaves_at_target_floor();
     test_pursuing_guard_walks_onto_falling_platform();

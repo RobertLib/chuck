@@ -655,7 +655,9 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             }
         }
 
-        /* Reverse at walls. */
+        /* Reverse at walls and keep searching in that direction for a moment.
+         * Otherwise same-floor pursuit steering turns the guard back toward
+         * an unreachable target on the next frame and pins it to the wall. */
         int ahead_col = (enemy->dir > 0)
                             ? (int)floorf((enemy->x + ENEMY_W + 1.0f) / TILE_SIZE)
                             : (int)floorf((enemy->x - 1.0f) / TILE_SIZE);
@@ -664,6 +666,8 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         {
             enemy->dir = -enemy->dir;
             enemy->vx = (float)enemy->dir * speed;
+            if (pursuing)
+                enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
         }
 
         /* While chasing, hop a short gap rather than stalling at its edge,
