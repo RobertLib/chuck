@@ -5,6 +5,10 @@
 #define TILE_SIZE 32
 #define HUD_HEIGHT 40
 
+/* Ignore the loose center of an analogue stick so a resting gamepad cannot
+ * make Chuck or his car creep. D-pad input bypasses this threshold. */
+#define GAMEPAD_AXIS_DEAD_ZONE 8000
+
 #define MAX_LEVEL_WIDTH 128
 #define MAX_LEVEL_HEIGHT 48
 #define MAX_ITEMS 128

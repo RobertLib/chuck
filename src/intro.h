@@ -22,7 +22,8 @@ typedef struct
 
 void intro_init(Intro *intro, int win_w, int win_h);
 void intro_update(Intro *intro, float dt, int win_w, int win_h, float mouse_x, float mouse_y);
-void intro_render(SDL_Renderer *renderer, const Intro *intro, int win_w, int win_h);
+void intro_render(SDL_Renderer *renderer, const Intro *intro,
+                  int win_w, int win_h, bool gamepad_active);
 
 /* True when (x, y), in logical render coordinates, lies within the START button. */
 bool intro_hit_start_button(const Intro *intro, float x, float y);

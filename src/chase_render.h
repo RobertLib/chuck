@@ -10,6 +10,7 @@
  * while the car is being hit.
  */
 void chase_render(SDL_Renderer *renderer, const Chase *chase,
-                  int win_w, int win_h, float shake_x, float shake_y);
+                  int win_w, int win_h, float shake_x, float shake_y,
+                  bool gamepad_active);
 
 #endif /* CHUCK_CHASE_RENDER_H */

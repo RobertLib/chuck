@@ -75,7 +75,7 @@ bool opening_cutscene_update(OpeningCutscene *cutscene, float dt,
 
 void opening_cutscene_render(SDL_Renderer *renderer,
                              const OpeningCutscene *cutscene,
-                             int win_w, int win_h);
+                             int win_w, int win_h, bool gamepad_active);
 
 /*
  * The between-level report and pursuit vignette share the opening's
@@ -89,7 +89,7 @@ bool level_transition_update(LevelTransition *transition, float dt,
                              Uint32 *out_cues);
 void level_transition_render(SDL_Renderer *renderer,
                              const LevelTransition *transition,
-                             int win_w, int win_h);
+                             int win_w, int win_h, bool gamepad_active);
 
 /*
  * Final rooftop rescue. The scene remains on its thank-you frame after the
@@ -100,6 +100,6 @@ void outro_cutscene_update(OutroCutscene *cutscene, float dt,
                            Uint32 *out_cues);
 void outro_cutscene_render(SDL_Renderer *renderer,
                            const OutroCutscene *cutscene,
-                           int win_w, int win_h);
+                           int win_w, int win_h, bool gamepad_active);
 
 #endif /* CHUCK_CUTSCENE_H */

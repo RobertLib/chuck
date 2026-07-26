@@ -12,11 +12,11 @@ typedef struct
     bool right;
     bool up;
     bool down;
-    bool jump;     /* edge-triggered: set on key press, consumed each frame */
-    bool shoot;    /* edge-triggered: set on key press, consumed each frame */
-    bool use_door; /* edge-triggered: enter a door (E press while on ground) */
+    bool jump;     /* edge-triggered: set on input press, consumed each frame */
+    bool shoot;    /* edge-triggered: set on input press, consumed each frame */
+    bool use_door; /* edge-triggered: enter a door while standing in it */
     bool interact; /* held: operate the active terminal */
-    bool confirm;  /* edge-triggered: accept/start (space, enter, or a menu click) */
+    bool confirm;  /* edge-triggered: accept/start/skip */
     bool restart;  /* edge-triggered: replay after an ending */
 } Input;
 

@@ -695,7 +695,7 @@ static void render_rain(SDL_Renderer *r, float time, int win_w, int win_h)
 
 static void render_cinematic_ui(SDL_Renderer *r, float time,
                                 int win_w, int win_h,
-                                float target_x)
+                                float target_x, bool gamepad_active)
 {
     if (time > 0.55f && time < 4.5f)
     {
@@ -735,13 +735,15 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
                           (Uint8)(108.0f + pulse * 42.0f),
                           (Uint8)(106.0f + pulse * 38.0f), 255};
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f,
-                  0.75f, skip, "ENTER / SPACE TO SKIP");
+                  0.75f, skip,
+                  gamepad_active ? "A / START TO SKIP" :
+                                   "ENTER / SPACE TO SKIP");
     }
 }
 
 void opening_cutscene_render(SDL_Renderer *r,
                              const OpeningCutscene *cutscene,
-                             int win_w, int win_h)
+                             int win_w, int win_h, bool gamepad_active)
 {
     const float time = cutscene->time;
     const float ground = 437.0f;
@@ -782,7 +784,7 @@ void opening_cutscene_render(SDL_Renderer *r,
     }
 
     render_rain(r, time, win_w, win_h);
-    render_cinematic_ui(r, time, win_w, win_h, suv_x);
+    render_cinematic_ui(r, time, win_w, win_h, suv_x, gamepad_active);
 
     /* Film finish: vignette and animated grain under the letterbox bars. */
     fx_vignette(r, win_w, win_h, 74);
@@ -1103,7 +1105,8 @@ static void draw_agent_held_fire(SDL_Renderer *r, float x, float ground_y,
 
 static void render_transition_action_ui(SDL_Renderer *r, float time,
                                         float hostage_x, float ground_y,
-                                        int win_w, int win_h)
+                                        int win_w, int win_h,
+                                        bool gamepad_active)
 {
     if (time >= 2.18f && time < 3.72f)
     {
@@ -1128,13 +1131,14 @@ static void render_transition_action_ui(SDL_Renderer *r, float time,
                   (SDL_Color){(Uint8)(100.0f + pulse * 42.0f),
                               (Uint8)(108.0f + pulse * 42.0f),
                               (Uint8)(106.0f + pulse * 38.0f), 255},
-                  "SPACE / ENTER: SKIP");
+                  gamepad_active ? "A / START: SKIP" :
+                                   "SPACE / ENTER: SKIP");
     }
 }
 
 void level_transition_render(SDL_Renderer *r,
                              const LevelTransition *transition,
-                             int win_w, int win_h)
+                             int win_w, int win_h, bool gamepad_active)
 {
     float time = transition->time;
     float ground_y = 482.0f;
@@ -1183,7 +1187,7 @@ void level_transition_render(SDL_Renderer *r,
 
     draw_transition_door_foreground(r, door_x, ground_y);
     render_transition_action_ui(r, time, hostage_x, ground_y,
-                                win_w, win_h);
+                                win_w, win_h, gamepad_active);
 
     fx_vignette(r, win_w, win_h, 70);
     fx_grain(r, win_w, win_h, time, 24);
@@ -1723,7 +1727,8 @@ static void draw_reunion_pair(SDL_Renderer *r, float center_x,
 }
 
 static void render_outro_ui(SDL_Renderer *r, float time,
-                            float hostage_x, int win_w, int win_h)
+                            float hostage_x, int win_w, int win_h,
+                            bool gamepad_active)
 {
     if (time >= 4.35f && time < 7.45f)
     {
@@ -1773,13 +1778,14 @@ static void render_outro_ui(SDL_Renderer *r, float time,
                   (SDL_Color){(Uint8)(101.0f + pulse * 40.0f),
                               (Uint8)(109.0f + pulse * 40.0f),
                               (Uint8)(108.0f + pulse * 38.0f), 255},
-                  "SPACE / ENTER: SKIP");
+                  gamepad_active ? "A / START: SKIP" :
+                                   "SPACE / ENTER: SKIP");
     }
 }
 
 void outro_cutscene_render(SDL_Renderer *r,
                            const OutroCutscene *cutscene,
-                           int win_w, int win_h)
+                           int win_w, int win_h, bool gamepad_active)
 {
     const float time = cutscene->time;
     const float ground = 438.0f;
@@ -1955,7 +1961,7 @@ void outro_cutscene_render(SDL_Renderer *r,
                      agent_stop_x - 16.0f, ground - 30.0f,
                      captor_one_x + 17.0f, ground - 28.0f);
 
-    render_outro_ui(r, time, hostage_x, win_w, win_h);
+    render_outro_ui(r, time, hostage_x, win_w, win_h, gamepad_active);
 
     fx_vignette(r, win_w, win_h, 74);
     fx_grain(r, win_w, win_h, time, 24);
@@ -2006,7 +2012,8 @@ void outro_cutscene_render(SDL_Renderer *r,
                 (SDL_Color){(Uint8)(130.0f + pulse * 48.0f),
                             (Uint8)(139.0f + pulse * 48.0f),
                             (Uint8)(136.0f + pulse * 45.0f), 255},
-                "PRESS R TO REPLAY THE RESCUE");
+                gamepad_active ? "PRESS A TO REPLAY THE RESCUE" :
+                                 "PRESS R TO REPLAY THE RESCUE");
         }
     }
 

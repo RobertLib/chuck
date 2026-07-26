@@ -94,6 +94,24 @@ entrance is independent of the paired shortcut-door system.
 
 ## Controls
 
+### Gamepad
+
+Gamepads can be connected or disconnected while the game is running. Button
+names below use the Xbox layout; the same physical face-button positions are
+used on PlayStation and Nintendo controllers.
+
+- Move, climb, crawl, steer, accelerate, and brake: left stick or D-pad
+- Jump, start, continue, skip a cinematic, or replay after the ending: `A`
+  (south face button)
+- Launch a rocket, throw a grenade, shoot, or use the knife: `X` (west face
+  button)
+- Use a door or hold to hack the active terminal: `Y` (north face button)
+- Return to the title screen: `B` (east face button) or `Back`
+- Quit from the title screen: `B` or `Back`
+- Mute or unmute sound and music: left shoulder
+- Toggle fullscreen: right shoulder
+- `Start` also starts, continues, skips, or replays wherever `A` does
+
 ### Pursuit drive
 
 - Steer: `Left` / `Right` or `A` / `D`

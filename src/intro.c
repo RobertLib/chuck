@@ -876,7 +876,8 @@ static void render_building(SDL_Renderer *r, const Intro *intro, int win_w)
                x + w - 75.0f, y - 19.0f, 13.0f, 5.0f);
 }
 
-static void render_start_prompt(SDL_Renderer *r, const Intro *intro, int win_w)
+static void render_start_prompt(SDL_Renderer *r, const Intro *intro, int win_w,
+                                bool gamepad_active)
 {
     const SDL_FRect *button = &intro->start_button;
     float cx = (float)win_w * 0.5f;
@@ -916,7 +917,9 @@ static void render_start_prompt(SDL_Renderer *r, const Intro *intro, int win_w)
     color_rect(r, dim_color((SDL_Color){255, 170, 150, 255}, 0.55f + pulse * 0.45f),
                button->x + 12.0f, button->y + 13.0f, 7.0f, 2.0f);
     draw_text_centered(r, cx + 9.0f, button->y + 13.0f, 1.0f,
-                       text_color, "PRESS ENTER TO START");
+                       text_color,
+                       gamepad_active ? "PRESS A OR START" :
+                                        "PRESS ENTER TO START");
 
     float accent_w = intro->start_hovered ? 62.0f : 24.0f + pulse * 18.0f;
     color_rect(r, COL_RUST, cx - accent_w * 0.5f,
@@ -952,28 +955,40 @@ static float draw_control_hint(SDL_Renderer *r, float x, float y,
     return x + key_w + 6.0f + ch * (float)SDL_strlen(action) + 24.0f;
 }
 
-static void render_controls(SDL_Renderer *r, int win_w, int win_h)
+static void render_controls(SDL_Renderer *r, int win_w, int win_h,
+                            bool gamepad_active)
 {
-    static const char *keys[] = {"WASD", "W", "SPACE", "S", "E"};
-    static const char *actions[] = {"MOVE", "JUMP", "FIRE", "USE", "HACK"};
+    static const char *keyboard_keys[] = {"WASD", "W", "SPACE", "S", "E"};
+    static const char *keyboard_actions[] = {
+        "MOVE", "JUMP", "ATTACK", "CRAWL", "USE/HACK"
+    };
+    static const char *gamepad_keys[] = {"LS/DPAD", "A", "X", "Y"};
+    static const char *gamepad_actions[] = {
+        "MOVE", "JUMP", "ATTACK", "USE/HACK"
+    };
+    const char *const *keys = gamepad_active ? gamepad_keys : keyboard_keys;
+    const char *const *actions = gamepad_active ? gamepad_actions :
+                                                keyboard_actions;
+    int count = gamepad_active ? 4 : 5;
     float total = 0.0f;
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < count; ++i)
         total += control_hint_width(keys[i], actions[i]);
     total -= 24.0f;
 
     float x = ((float)win_w - total) * 0.5f;
     float y = (float)win_h - 30.0f;
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < count; ++i)
         x = draw_control_hint(r, x, y, keys[i], actions[i]);
 }
 
-void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h)
+void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,
+                  bool gamepad_active)
 {
     render_sky(r, intro, win_w, win_h);
     render_logo(r, intro, win_w);
     render_building(r, intro, win_w);
-    render_start_prompt(r, intro, win_w);
-    render_controls(r, win_w, win_h);
+    render_start_prompt(r, intro, win_w, gamepad_active);
+    render_controls(r, win_w, win_h, gamepad_active);
 
     /* Same finishing pass as gameplay so the menu belongs to the film. */
     fx_vignette(r, win_w, win_h, 64);

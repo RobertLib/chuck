@@ -3,22 +3,207 @@
 #include <SDL3/SDL.h>
 #include <math.h>
 
+static void open_gamepad(Game *game, SDL_JoystickID id)
+{
+  if (game->platform.gamepad != NULL)
+    return;
+
+  game->platform.gamepad = SDL_OpenGamepad(id);
+  if (game->platform.gamepad == NULL)
+  {
+    SDL_Log("Could not open gamepad: %s", SDL_GetError());
+    return;
+  }
+
+  game->platform.gamepad_id = id;
+  game->platform.gamepad_active = true;
+  const char *name = SDL_GetGamepadName(game->platform.gamepad);
+  SDL_Log("Gamepad connected: %s", name != NULL ? name : "unknown");
+}
+
+void game_input_init(Game *game)
+{
+  int count = 0;
+  SDL_JoystickID *ids = SDL_GetGamepads(&count);
+  for (int i = 0; i < count && game->platform.gamepad == NULL; ++i)
+    open_gamepad(game, ids[i]);
+  SDL_free(ids);
+}
+
+void game_input_shutdown(Game *game)
+{
+  if (game->platform.gamepad != NULL)
+  {
+    SDL_CloseGamepad(game->platform.gamepad);
+    game->platform.gamepad = NULL;
+    game->platform.gamepad_id = 0;
+  }
+}
+
+static bool gamepad_button(const Game *game, SDL_GamepadButton button)
+{
+  return game->platform.gamepad != NULL &&
+         SDL_GetGamepadButton(game->platform.gamepad, button);
+}
+
 void game_read_input(Game *game)
 {
   const bool *ks = SDL_GetKeyboardState(NULL);
-  game->input.left = ks[SDL_SCANCODE_LEFT] || ks[SDL_SCANCODE_A];
-  game->input.right = ks[SDL_SCANCODE_RIGHT] || ks[SDL_SCANCODE_D];
-  game->input.up = ks[SDL_SCANCODE_UP] || ks[SDL_SCANCODE_W];
-  game->input.down = ks[SDL_SCANCODE_DOWN] || ks[SDL_SCANCODE_S];
-  game->input.interact = ks[SDL_SCANCODE_E];
+  bool key_left = ks[SDL_SCANCODE_LEFT] || ks[SDL_SCANCODE_A];
+  bool key_right = ks[SDL_SCANCODE_RIGHT] || ks[SDL_SCANCODE_D];
+  bool key_up = ks[SDL_SCANCODE_UP] || ks[SDL_SCANCODE_W];
+  bool key_down = ks[SDL_SCANCODE_DOWN] || ks[SDL_SCANCODE_S];
+  bool key_interact = ks[SDL_SCANCODE_E];
+
+  bool pad_left = false;
+  bool pad_right = false;
+  bool pad_up = false;
+  bool pad_down = false;
+  bool pad_interact = false;
+  if (game->platform.gamepad != NULL)
+  {
+    Sint16 x = SDL_GetGamepadAxis(game->platform.gamepad,
+                                  SDL_GAMEPAD_AXIS_LEFTX);
+    Sint16 y = SDL_GetGamepadAxis(game->platform.gamepad,
+                                  SDL_GAMEPAD_AXIS_LEFTY);
+    pad_left = x < -GAMEPAD_AXIS_DEAD_ZONE ||
+               gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
+    pad_right = x > GAMEPAD_AXIS_DEAD_ZONE ||
+                gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
+    pad_up = y < -GAMEPAD_AXIS_DEAD_ZONE ||
+             gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_UP);
+    pad_down = y > GAMEPAD_AXIS_DEAD_ZONE ||
+               gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
+    pad_interact = gamepad_button(game, SDL_GAMEPAD_BUTTON_NORTH);
+  }
+
+  game->input.left = key_left || pad_left;
+  game->input.right = key_right || pad_right;
+  game->input.up = key_up || pad_up;
+  game->input.down = key_down || pad_down;
+  game->input.interact = key_interact || pad_interact;
+
+  if (key_left || key_right || key_up || key_down || key_interact)
+    game->platform.gamepad_active = false;
+  else if (pad_left || pad_right || pad_up || pad_down || pad_interact)
+    game->platform.gamepad_active = true;
+}
+
+static bool state_accepts_confirm(GameState state)
+{
+  return state == STATE_INTRO ||
+         state == STATE_CHASE ||
+         state == STATE_OPENING_CUTSCENE ||
+         state == STATE_LEVEL_TRANSITION ||
+         state == STATE_OUTRO ||
+         state == STATE_CONTINUE;
+}
+
+static void toggle_fullscreen(Game *game)
+{
+  bool target = !game->platform.fullscreen;
+  if (SDL_SetWindowFullscreen(game->platform.window, target))
+    game->platform.fullscreen = target;
+  else
+    SDL_Log("Could not toggle fullscreen: %s", SDL_GetError());
+}
+
+static void confirm_with_gamepad(Game *game, bool allow_jump)
+{
+  if (game->state == STATE_OUTRO &&
+      game->presentation.outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)
+  {
+    game->input.restart = true;
+  }
+  else if (state_accepts_confirm(game->state))
+  {
+    game->input.confirm = true;
+  }
+  else if (allow_jump && game->state == STATE_PLAYING)
+  {
+    game->input.jump = true;
+  }
+}
+
+static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
+{
+  game->platform.gamepad_active = true;
+  switch (button)
+  {
+  case SDL_GAMEPAD_BUTTON_SOUTH:
+    confirm_with_gamepad(game, true);
+    break;
+  case SDL_GAMEPAD_BUTTON_START:
+    confirm_with_gamepad(game, false);
+    break;
+  case SDL_GAMEPAD_BUTTON_EAST:
+  case SDL_GAMEPAD_BUTTON_BACK:
+    if (game->state == STATE_INTRO)
+      game->platform.quit_requested = true;
+    else
+      game_return_to_intro(game);
+    break;
+  case SDL_GAMEPAD_BUTTON_WEST:
+    if (game->state == STATE_PLAYING)
+      game->input.shoot = true;
+    break;
+  case SDL_GAMEPAD_BUTTON_NORTH:
+    if (game->state == STATE_PLAYING)
+      game->input.use_door = true;
+    break;
+  case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
+    audio_toggle_mute(&game->platform.audio);
+    break;
+  case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
+    toggle_fullscreen(game);
+    break;
+  default:
+    break;
+  }
 }
 
 void game_handle_event(Game *game, const SDL_Event *event)
 {
+  if (event->type == SDL_EVENT_GAMEPAD_ADDED)
+  {
+    open_gamepad(game, event->gdevice.which);
+    return;
+  }
+
+  if (event->type == SDL_EVENT_GAMEPAD_REMOVED &&
+      game->platform.gamepad != NULL &&
+      game->platform.gamepad_id == event->gdevice.which)
+  {
+    SDL_Log("Gamepad disconnected");
+    game_input_shutdown(game);
+    game->platform.gamepad_active = false;
+    game_input_init(game);
+    return;
+  }
+
+  if (event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION &&
+      game->platform.gamepad != NULL &&
+      game->platform.gamepad_id == event->gaxis.which &&
+      (event->gaxis.value < -GAMEPAD_AXIS_DEAD_ZONE ||
+       event->gaxis.value > GAMEPAD_AXIS_DEAD_ZONE))
+  {
+    game->platform.gamepad_active = true;
+    return;
+  }
+
+  if (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN &&
+      game->platform.gamepad != NULL &&
+      game->platform.gamepad_id == event->gbutton.which)
+  {
+    handle_gamepad_button(game, (SDL_GamepadButton)event->gbutton.button);
+    return;
+  }
+
   if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
       event->button.button == SDL_BUTTON_LEFT &&
       game->state == STATE_INTRO)
   {
+    game->platform.gamepad_active = false;
     float mx = 0.0f, my = 0.0f;
     SDL_RenderCoordinatesFromWindow(game->platform.renderer, event->button.x, event->button.y, &mx, &my);
     if (intro_hit_start_button(&game->presentation.intro, mx, my))
@@ -30,6 +215,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
 
   if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat)
   {
+    game->platform.gamepad_active = false;
     SDL_Keycode key = event->key.key;
     SDL_Scancode sc = event->key.scancode;
 
@@ -38,15 +224,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
     if (sc == SDL_SCANCODE_F ||
         (sc == SDL_SCANCODE_RETURN && (event->key.mod & SDL_KMOD_ALT) != 0))
     {
-      bool target = !game->platform.fullscreen;
-      if (SDL_SetWindowFullscreen(game->platform.window, target))
-      {
-        game->platform.fullscreen = target;
-      }
-      else
-      {
-        SDL_Log("Could not toggle fullscreen: %s", SDL_GetError());
-      }
+      toggle_fullscreen(game);
       return;
     }
 

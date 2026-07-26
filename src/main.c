@@ -44,6 +44,10 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
     }
 
     game_handle_event(game, event);
+    if (game->platform.quit_requested)
+    {
+        return SDL_APP_SUCCESS;
+    }
     return SDL_APP_CONTINUE;
 }
 

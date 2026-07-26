@@ -28,8 +28,12 @@ typedef struct
 {
     SDL_Window *window;
     SDL_Renderer *renderer;
+    SDL_Gamepad *gamepad;
+    SDL_JoystickID gamepad_id;
     AudioSystem audio;
     bool fullscreen;
+    bool gamepad_active;
+    bool quit_requested;
     Uint64 last_tick;
 } PlatformState;
 
@@ -111,7 +115,11 @@ void game_return_to_intro(Game *game);
  * module so rendering and camera code can share the same behavior. */
 void game_get_view_size(Game *game, int *out_w, int *out_h);
 
-/* Read current keyboard state into `game->input`. */
+/* Open/close the first available gamepad and track hot-plug events. */
+void game_input_init(Game *game);
+void game_input_shutdown(Game *game);
+
+/* Read current keyboard and gamepad state into `game->input`. */
 void game_read_input(Game *game);
 
 #endif /* CHUCK_GAME_H */

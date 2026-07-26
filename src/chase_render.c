@@ -711,7 +711,8 @@ static void draw_car_pip(SDL_Renderer *r, float x, float y, bool intact)
     fx_rect(r, roof, x + 2.0f, y + 4.0f, 5.0f, 5.0f);
 }
 
-static void render_hud(SDL_Renderer *r, const Chase *chase, int win_w)
+static void render_hud(SDL_Renderer *r, const Chase *chase, int win_w,
+                       bool gamepad_active)
 {
     const SDL_Color label = {108, 128, 148, 255};
 
@@ -725,7 +726,9 @@ static void render_hud(SDL_Renderer *r, const Chase *chase, int win_w)
     fx_rect(r, FX_RED, 0.0f, 0.0f, 3.0f, 37.0f);
     draw_text(r, 12.0f, 8.0f, 1.35f, FX_CREAM, "PURSUIT");
     fx_rect(r, (SDL_Color){170, 52, 46, 255}, 12.0f, 23.0f, 74.0f, 2.0f);
-    draw_text(r, 12.0f, 27.0f, 0.65f, label, "ARROWS / WASD  DRIVE");
+    draw_text(r, 12.0f, 27.0f, 0.65f, label,
+              gamepad_active ? "LEFT STICK / DPAD  DRIVE" :
+                               "ARROWS / WASD  DRIVE");
 
     draw_text(r, 196.0f, 8.0f, 0.7f, label, "CAR");
     for (int i = 0; i < CHASE_INTEGRITY; ++i)
@@ -803,7 +806,8 @@ static void render_junction_warning(SDL_Renderer *r, const ChaseView *view,
 }
 
 static void render_overlays(SDL_Renderer *r, const ChaseView *view,
-                            const Chase *chase, int win_w, int win_h)
+                            const Chase *chase, int win_w, int win_h,
+                            bool gamepad_active)
 {
     float center_x = (float)win_w * 0.5f;
     render_junction_warning(r, view, chase, win_w);
@@ -834,7 +838,9 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
                            fx_dim(FX_CREAM, fade), caption);
         float blink = 0.45f + 0.55f * sinf(chase->time * 2.0f);
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f, 0.75f,
-                  fx_dim(FX_STEEL_LT, blink), "ENTER / SPACE TO SKIP");
+                  fx_dim(FX_STEEL_LT, blink),
+                  gamepad_active ? "A / START TO SKIP" :
+                                   "ENTER / SPACE TO SKIP");
     }
 
     if (chase->phase == CHASE_PHASE_FAILED)
@@ -864,7 +870,7 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
 }
 
 void chase_render(SDL_Renderer *r, const Chase *chase, int win_w, int win_h,
-                  float shake_x, float shake_y)
+                  float shake_x, float shake_y, bool gamepad_active)
 {
     ChaseView view;
     view.road_left = ((float)win_w - CHASE_ROAD_WIDTH) * 0.5f;
@@ -900,8 +906,8 @@ void chase_render(SDL_Renderer *r, const Chase *chase, int win_w, int win_h,
     draw_chuck_on_foot(r, &view, chase);
     render_speed_streaks(r, &view, chase);
 
-    render_overlays(r, &view, chase, win_w, win_h);
-    render_hud(r, chase, win_w);
+    render_overlays(r, &view, chase, win_w, win_h, gamepad_active);
+    render_hud(r, chase, win_w, gamepad_active);
 
     /* Same finishing pass as every other screen in the game. */
     fx_vignette(r, win_w, win_h, 64);

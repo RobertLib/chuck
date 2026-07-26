@@ -335,7 +335,7 @@ bool game_init_seeded(Game *game, uint64_t seed)
     SDL_zerop(game);
     rng_seed(&game->gameplay.rng, seed);
 
-    if (!SDL_Init(SDL_INIT_VIDEO))
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return false;
@@ -367,6 +367,8 @@ bool game_init_seeded(Game *game, uint64_t seed)
         SDL_Quit();
         return false;
     }
+
+    game_input_init(game);
 
     /* Sound is optional. If no playback device exists, gameplay stays intact. */
     audio_init(&game->platform.audio);
@@ -1136,6 +1138,7 @@ void game_update(Game *game, float dt)
 
 void game_shutdown(Game *game)
 {
+    game_input_shutdown(game);
     audio_shutdown(&game->platform.audio);
     if (game->platform.renderer)
     {

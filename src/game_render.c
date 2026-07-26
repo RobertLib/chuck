@@ -3654,19 +3654,28 @@ static void render_interaction_prompt(Game *game, int win_w, int win_h)
   }
   else if (terminal_available)
   {
-    SDL_snprintf(label, sizeof(label), "HOLD E TO HACK ACTIVE TERMINAL");
+    SDL_snprintf(label, sizeof(label),
+                 game->platform.gamepad_active ?
+                     "HOLD Y TO HACK ACTIVE TERMINAL" :
+                     "HOLD E TO HACK ACTIVE TERMINAL");
   }
   else if (sublevel_action == SUBLEVEL_DOOR_ENTER)
   {
-    SDL_snprintf(label, sizeof(label), "PRESS E TO ENTER WC");
+    SDL_snprintf(label, sizeof(label),
+                 game->platform.gamepad_active ? "PRESS Y TO ENTER WC" :
+                                                 "PRESS E TO ENTER WC");
   }
   else if (sublevel_action == SUBLEVEL_DOOR_RETURN)
   {
-    SDL_snprintf(label, sizeof(label), "PRESS E TO LEAVE WC");
+    SDL_snprintf(label, sizeof(label),
+                 game->platform.gamepad_active ? "PRESS Y TO LEAVE WC" :
+                                                 "PRESS E TO LEAVE WC");
   }
   else
   {
-    SDL_snprintf(label, sizeof(label), "PRESS E TO ENTER DOOR");
+    SDL_snprintf(label, sizeof(label),
+                 game->platform.gamepad_active ? "PRESS Y TO ENTER DOOR" :
+                                                 "PRESS E TO ENTER DOOR");
   }
 
   const float text_scale = 1.25f;
@@ -3752,7 +3761,9 @@ static void draw_overlay_panel(Game *game, float y, SDL_Color accent,
 static void draw_continue_overlay(Game *game)
 {
   draw_overlay_panel(game, 190.0f, (SDL_Color){248, 188, 74, 255},
-                     "CONTINUE?", "PRESS ENTER OR SPACE");
+                     "CONTINUE?",
+                     game->platform.gamepad_active ? "PRESS A OR START" :
+                                                     "PRESS ENTER OR SPACE");
 
   int seconds = (int)ceilf(game->campaign.continue_timer);
   char countdown[16];
@@ -3777,35 +3788,40 @@ void game_render(Game *game)
   {
     chase_render(r, &game->chase, win_w, win_h,
                  game->presentation.camera_shake_x,
-                 game->presentation.camera_shake_y);
+                 game->presentation.camera_shake_y,
+                 game->platform.gamepad_active);
     SDL_RenderPresent(r);
     return;
   }
 
   if (game->state == STATE_OPENING_CUTSCENE)
   {
-    opening_cutscene_render(r, &game->presentation.opening_cutscene, win_w, win_h);
+    opening_cutscene_render(r, &game->presentation.opening_cutscene,
+                            win_w, win_h, game->platform.gamepad_active);
     SDL_RenderPresent(r);
     return;
   }
 
   if (game->state == STATE_INTRO)
   {
-    intro_render(r, &game->presentation.intro, win_w, win_h);
+    intro_render(r, &game->presentation.intro, win_w, win_h,
+                 game->platform.gamepad_active);
     SDL_RenderPresent(r);
     return;
   }
 
   if (game->state == STATE_LEVEL_TRANSITION)
   {
-    level_transition_render(r, &game->presentation.level_transition, win_w, win_h);
+    level_transition_render(r, &game->presentation.level_transition,
+                            win_w, win_h, game->platform.gamepad_active);
     SDL_RenderPresent(r);
     return;
   }
 
   if (game->state == STATE_OUTRO)
   {
-    outro_cutscene_render(r, &game->presentation.outro_cutscene, win_w, win_h);
+    outro_cutscene_render(r, &game->presentation.outro_cutscene,
+                          win_w, win_h, game->platform.gamepad_active);
     SDL_RenderPresent(r);
     return;
   }
