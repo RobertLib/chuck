@@ -903,11 +903,21 @@ static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
         fx_rect(r, fx_mix(tower, sky_low, 0.7f), x + 14.0f, top, 96.0f, 1.0f);
         fx_rect(r, fx_mix(tower, sky_low, 0.45f), x + 14.0f, top, 2.0f,
                 street - top);
-        for (float wy = top + 10.0f; wy < street - 9.0f; wy += 14.0f)
+        int window_row = 0;
+        for (float wy = top + 10.0f; wy < street - 9.0f;
+             wy += 14.0f, ++window_row)
         {
-            for (float wx = x + 22.0f; wx < x + 106.0f; wx += 12.0f)
+            int window_col = 0;
+            for (float wx = x + 22.0f; wx < x + 106.0f;
+                 wx += 12.0f, ++window_col)
             {
-                unsigned wh = fx_hash((unsigned)((int)wx * 73 + (int)wy * 31));
+                /* A window belongs to a tower, floor and bay. Screen-space
+                 * coordinates change whenever the camera scrolls, so hashing
+                 * wx/wy here made the entire skyline switch its lights while
+                 * Chuck walked. Keep the identity in the layer's stable
+                 * repeat space instead. */
+                unsigned wh = art_hash(near_tower * 11 + window_col,
+                                       window_row + s->level_index * 17);
                 if ((wh % 3u) == 0u)
                     continue;
                 /* The lit windows are the only bright thing outside, so they
@@ -915,6 +925,16 @@ static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
                  * a handful are cold office fluorescent. */
                 SDL_Color lit = (wh & 8u) ? art->lamp
                                           : (SDL_Color){170, 202, 224, 255};
+                /* One light in a few has a brief, time-driven fluorescent
+                 * flutter. It is deliberately rare and keyed to the same
+                 * stable identity, so movement can never trigger it. */
+                if (((wh >> 9) % 19u) == 0u)
+                {
+                    float period = 7.0f + (float)((wh >> 15) % 5u);
+                    float phase = (float)((wh >> 20) & 255u) / 255.0f * period;
+                    if (fmodf(s->time + phase, period) < 0.08f)
+                        lit = fx_dim(lit, 0.35f);
+                }
                 fx_rect_a(r, lit, (Uint8)(96 + (wh >> 5) % 96u), wx, wy,
                           5.0f, 7.0f);
             }
