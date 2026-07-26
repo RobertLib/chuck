@@ -151,10 +151,18 @@
 /* Posted-up guards hold and fire from range instead of crowding into melee. */
 #define ENEMY_KEEP_DISTANCE (3.2f * TILE_SIZE)
 
-/* Pursuit movement: guards hop small gaps while chasing (patrol is unchanged). */
+/* Pursuit movement: guards hop small gaps while chasing. Guards also use the
+ * same jump to clear a grounded crate when there is enough headroom and a safe
+ * landing beyond it. */
 #define ENEMY_JUMP_SPEED 300.0f
 #define ENEMY_JUMP_MIN_SPEED 190.0f
 #define ENEMY_JUMP_MAX_GAP_TILES 2
+#define ENEMY_CRATE_JUMP_LOOKAHEAD 26.0f
+#define ENEMY_CRATE_JUMP_CLEARANCE 2.0f
+#define ENEMY_CRATE_FLOOR_TOLERANCE 3.0f
+/* Patrols vary their route at a crate; guards with an active target always
+ * jump when the checked route is safe. */
+#define ENEMY_CRATE_PATROL_JUMP_CHANCE 35
 #define ENEMY_ELEVATOR_FLOOR_TOLERANCE 8.0f
 /* A search party fans out around the last sighting instead of clustering. */
 #define ENEMY_SEARCH_FAN 1.5f

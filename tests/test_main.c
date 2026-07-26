@@ -1829,6 +1829,97 @@ static void test_enemy_moves_away_from_blocking_crate(void)
     CHECK(enemy->obstacle_avoid_timer > 0.0f);
 }
 
+static void test_enemy_jumps_over_blocking_crate(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#        #\n"
+        "#S B  M E#\n"
+        "##########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 2719);
+    CHECK(level_load_data(&state.level, "enemy crate jump", data,
+                          strlen(data), &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.level.runtime.crate_count == 1);
+    CHECK(state.enemy_count == 1);
+
+    Crate *crate = &state.level.runtime.crates[0];
+    Enemy *enemy = &state.enemies[0];
+    crate->on_ground = true;
+    enemy->dir = -1;
+    enemy->on_ground = true;
+    enemy->aim_timer = 0.0f;
+    enemy->provoked = true;
+    enemy->has_pursuit_target = true;
+    enemy->pursuit_target_x = state.player.x + PLAYER_W * 0.5f;
+    enemy->pursuit_target_y = enemy->y + ENEMY_H * 0.5f;
+
+    bool jumped = false;
+    bool landed_beyond_crate = false;
+    for (int frame = 0; frame < 720; ++frame)
+    {
+        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+        if (enemy->vy < 0.0f)
+            jumped = true;
+        if (jumped && enemy->on_ground &&
+            enemy->x + ENEMY_W <= crate->x + 0.01f)
+        {
+            landed_beyond_crate = true;
+            break;
+        }
+    }
+
+    CHECK(jumped);
+    CHECK(landed_beyond_crate);
+    CHECK(enemy->obstacle_avoid_timer == 0.0f);
+}
+
+static void test_patrol_enemy_may_turn_from_jumpable_crate(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#        #\n"
+        "#S B  M E#\n"
+        "##########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 2720);
+    CHECK(level_load_data(&state.level, "patrol crate choice", data,
+                          strlen(data), &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+
+    Crate *crate = &state.level.runtime.crates[0];
+    Enemy *enemy = &state.enemies[0];
+    crate->on_ground = true;
+    enemy->dir = -1;
+    enemy->on_ground = true;
+    enemy->aim_timer = 0.0f;
+    /* The first patrol route roll is 55, selecting the turn branch. */
+    rng_seed(&state.rng, 1);
+
+    bool jumped = false;
+    bool turned = false;
+    float turn_x = enemy->x;
+    for (int frame = 0; frame < 240 && !turned; ++frame)
+    {
+        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+        if (enemy->vy < 0.0f)
+            jumped = true;
+        if (enemy->dir > 0 && enemy->obstacle_avoid_timer > 0.0f)
+        {
+            turned = true;
+            turn_x = enemy->x;
+        }
+    }
+    for (int frame = 0; frame < 30; ++frame)
+        gameplay_ai_update_movement(&state, 1.0f / 120.0f);
+
+    CHECK(turned);
+    CHECK(!jumped);
+    CHECK(enemy->x > turn_x + 10.0f);
+    CHECK(enemy->obstacle_avoid_timer > 0.0f);
+}
+
 static void test_enemy_uses_ladder_while_avoiding_crate(void)
 {
     static const char data[] =
@@ -2479,6 +2570,8 @@ int main(void)
     test_crate_movement_emits_sounds();
     test_crate_stops_at_enemy_and_triggers_counterattack();
     test_enemy_moves_away_from_blocking_crate();
+    test_enemy_jumps_over_blocking_crate();
+    test_patrol_enemy_may_turn_from_jumpable_crate();
     test_enemy_uses_ladder_while_avoiding_crate();
     test_patrol_enemy_does_not_immediately_leave_ladder();
     test_enemy_leaves_climb_state_when_landing_on_crate();

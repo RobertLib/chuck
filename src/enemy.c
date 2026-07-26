@@ -411,6 +411,75 @@ static bool enemy_can_jump_gap(const Level *level, const Enemy *enemy, int dir)
     return false;
 }
 
+static bool enemy_box_crates_clear(const Level *level, float x, float y,
+                                   int ignored_crate)
+{
+    for (int i = 0; i < level->runtime.crate_count; ++i)
+    {
+        const Crate *crate = &level->runtime.crates[i];
+        if (i == ignored_crate || !crate->active)
+            continue;
+        if (x < crate->x + CRATE_W && x + ENEMY_W > crate->x &&
+            y < crate->y + CRATE_H && y + ENEMY_H > crate->y)
+            return false;
+    }
+    return true;
+}
+
+/* Start the jump before touching the crate: a guard needs enough horizontal
+ * runway for its feet to rise above the box before their collision shapes
+ * overlap. Refuse the jump when a low ceiling, stacked crate, wall, or missing
+ * floor would make the landing unsafe. */
+static bool enemy_can_jump_crate(const Level *level, const Enemy *enemy,
+                                 int dir)
+{
+    float enemy_feet = enemy->y + ENEMY_H;
+    int floor_row = (int)floorf((enemy_feet + 2.0f) / TILE_SIZE);
+    for (int i = 0; i < level->runtime.crate_count; ++i)
+    {
+        const Crate *crate = &level->runtime.crates[i];
+        if (!crate->active || !crate->on_ground ||
+            fabsf(crate->y + CRATE_H - enemy_feet) >
+                ENEMY_CRATE_FLOOR_TOLERANCE)
+            continue;
+
+        float gap = dir > 0
+                        ? crate->x - (enemy->x + ENEMY_W)
+                        : enemy->x - (crate->x + CRATE_W);
+        if (gap < 0.0f || gap > ENEMY_CRATE_JUMP_LOOKAHEAD)
+            continue;
+
+        float landing_x = dir > 0
+                              ? crate->x + CRATE_W +
+                                    ENEMY_CRATE_JUMP_CLEARANCE
+                              : crate->x - ENEMY_W -
+                                    ENEMY_CRATE_JUMP_CLEARANCE;
+        float landing_center_x = landing_x + ENEMY_W * 0.5f;
+        int landing_col = (int)floorf(landing_center_x / TILE_SIZE);
+        if ((!level_is_solid(level, landing_col, floor_row) &&
+             !level_is_ladder(level, landing_col, floor_row)) ||
+            !enemy_box_tiles_clear(level, landing_x, enemy->y,
+                                   ENEMY_W, ENEMY_H) ||
+            !enemy_box_crates_clear(level, landing_x, enemy->y, i))
+            continue;
+
+        float raised_y = enemy->y - CRATE_H -
+                         ENEMY_CRATE_JUMP_CLEARANCE;
+        float over_x = crate->x + (CRATE_W - ENEMY_W) * 0.5f;
+        if (enemy_box_tiles_clear(level, enemy->x, raised_y,
+                                  ENEMY_W, ENEMY_H) &&
+            enemy_box_tiles_clear(level, over_x, raised_y,
+                                  ENEMY_W, ENEMY_H) &&
+            enemy_box_tiles_clear(level, landing_x, raised_y,
+                                  ENEMY_W, ENEMY_H) &&
+            enemy_box_crates_clear(level, enemy->x, raised_y, i) &&
+            enemy_box_crates_clear(level, over_x, raised_y, i) &&
+            enemy_box_crates_clear(level, landing_x, raised_y, i))
+            return true;
+    }
+    return false;
+}
+
 static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                                  bool pursuing, bool alarmed, float target_x,
                                  float target_y, bool hemmed_in, Rng *rng)
@@ -529,11 +598,36 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             }
         }
 
+        /* An actively routing guard clears a safe crate so it cannot stall on
+         * the way to its target. Patrols vary their route: one roll at the
+         * approach either commits to the jump or turns them away for the full
+         * obstacle-avoidance window, avoiding a per-frame re-roll or jitter. */
+        if (!hemmed_in && enemy->vx != 0.0f &&
+            enemy_can_jump_crate(level, enemy, enemy->dir))
+        {
+            bool jump = following_target ||
+                        rng_range(rng, 100) <
+                            ENEMY_CRATE_PATROL_JUMP_CHANCE;
+            if (jump)
+            {
+                enemy->vy = -ENEMY_JUMP_SPEED;
+                if (fabsf(enemy->vx) < ENEMY_JUMP_MIN_SPEED)
+                    enemy->vx = (float)enemy->dir * ENEMY_JUMP_MIN_SPEED;
+                enemy->on_ground = false;
+            }
+            else
+            {
+                enemy->dir = -enemy->dir;
+                enemy->vx = (float)enemy->dir * speed;
+                enemy->obstacle_avoid_timer = ENEMY_OBSTACLE_AVOID_TIME;
+            }
+        }
+
         /* Reverse at walls. */
         int ahead_col = (enemy->dir > 0)
                             ? (int)floorf((enemy->x + ENEMY_W + 1.0f) / TILE_SIZE)
                             : (int)floorf((enemy->x - 1.0f) / TILE_SIZE);
-        if (!hemmed_in && enemy->vx != 0.0f &&
+        if (enemy->on_ground && !hemmed_in && enemy->vx != 0.0f &&
             level_is_solid(level, ahead_col, foot_row))
         {
             enemy->dir = -enemy->dir;
@@ -543,7 +637,8 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         /* While chasing, hop a short gap rather than stalling at its edge,
          * but only when the target lies ahead and not below it (a lower target
          * is still reached by walking off the ledge, as before). */
-        if (following_target && !hemmed_in && enemy->vx != 0.0f &&
+        if (enemy->on_ground && following_target && !hemmed_in &&
+            enemy->vx != 0.0f &&
             !enemy_floor_ahead(level, enemy, enemy->dir) &&
             target_dx * (float)enemy->dir > 0.0f &&
             target_y < enemy_center_y + TILE_SIZE * 0.75f &&
@@ -559,7 +654,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
          * ladder immediately when it leads toward the player's floor. */
         enemy->climb_cooldown -= dt;
         bool ladder_here = level_is_ladder(level, center_col, center_row);
-        if (ladder_here &&
+        if (enemy->on_ground && ladder_here &&
             (pursuing || enemy->climb_cooldown <= 0.0f))
         {
             bool up_ok = level_is_ladder(level, center_col, center_row - 1);
