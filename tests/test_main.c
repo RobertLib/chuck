@@ -1762,6 +1762,36 @@ static void test_ladder_mount_centres_the_player(void)
     CHECK(climbed == tried);
 }
 
+/* A ladder tile is also a one-way platform. When its run ends flush with the
+ * landing, the player standing on top does not overlap the rung: it begins
+ * immediately below his feet. Down must grab that rung instead of selecting
+ * the grounded crawling posture. */
+static void test_player_descends_from_top_of_ladder(void)
+{
+    static const char data[] =
+        "########\n"
+        "#      #\n"
+        "#  S  E#\n"
+        "#  H   #\n"
+        "########\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 17);
+    CHECK(level_load_data(&level, "ladder descent", data, strlen(data), &rng));
+
+    Player player;
+    player_reset(&player, &level);
+    player.on_ground = true;
+    float start_y = player.y;
+    Input down = {.down = true};
+
+    player_update(&player, &level, &down, 1.0f / 60.0f);
+
+    CHECK(player.on_ladder);
+    CHECK(!player.crawling);
+    CHECK(player.y > start_y);
+}
+
 static void test_ladder_remembers_climb_direction_for_shooting(void)
 {
     static const char data[] =
@@ -3663,6 +3693,7 @@ int main(void)
     test_facade_thrower_winds_up_before_releasing();
     test_level_collision_stops_at_wall();
     test_ladder_mount_centres_the_player();
+    test_player_descends_from_top_of_ladder();
     test_ladder_remembers_climb_direction_for_shooting();
     test_ladder_explosives_follow_aim_direction();
     test_vertical_rocket_hits_targets();

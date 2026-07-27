@@ -88,6 +88,16 @@ static bool player_over_ladder(const Player *player, const Level *level)
            level_is_ladder(level, col, row_feet);
 }
 
+/* A player standing on the top edge of a ladder does not overlap its tile.
+ * Sample immediately below the collision box so Down can still grab it. */
+static bool player_has_ladder_below(const Player *player, const Level *level)
+{
+    int col = (int)floorf((player->x + PLAYER_W * 0.5f) / TILE_SIZE);
+    float ph = player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+    int row = (int)floorf((player->y + ph) / TILE_SIZE);
+    return level_is_ladder(level, col, row);
+}
+
 void player_update(Player *player, Level *level, const Input *input, float dt)
 {
     if (player->action_timer > 0.0f)
@@ -116,7 +126,10 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
     }
     /* Horizontal speed depends on crawling state */
     /* Determine crawling intent: holding down while on ground and not on ladder */
-    bool want_crawl = input->down && player->on_ground && !player->on_ladder;
+    bool descend_from_top = input->down && player->on_ground &&
+                            player_has_ladder_below(player, level);
+    bool want_crawl = input->down && player->on_ground && !player->on_ladder &&
+                      !descend_from_top;
     if (want_crawl && !player->crawling)
     {
         /* Enter crawling: lower the collision box while keeping feet in place */
@@ -170,7 +183,7 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
      * the climb on the vertical axis and pressing up appears to do nothing at
      * all. Snapping on mount is invisible at 3px and makes every ladder in the
      * campaign catch from wherever the player happened to stop walking. */
-    if (over_ladder && (input->up || input->down))
+    if ((over_ladder && (input->up || input->down)) || descend_from_top)
     {
         if (!player->on_ladder)
         {
@@ -179,7 +192,7 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
         }
         player->on_ladder = true;
     }
-    if (!over_ladder)
+    if (!over_ladder && !descend_from_top)
     {
         player->on_ladder = false;
         player->ladder_direction = 0;
