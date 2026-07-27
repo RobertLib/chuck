@@ -895,7 +895,6 @@ static void update_playing(Game *game, float dt)
         !game->gameplay.terminal_hacking &&
         game->input.jump &&
         game->gameplay.player.on_ground;
-    float player_fall_speed = game->gameplay.player.vy;
     int previous_elevator = game->gameplay.player_on_elevator;
     int previous_moving_platform =
         game->gameplay.player_on_moving_platform;
@@ -951,7 +950,9 @@ static void update_playing(Game *game, float dt)
         game->input.switch_weapon = false;
         game->gameplay.player.vx = 0.0f;
     }
-    player_update(&game->gameplay.player, &game->gameplay.level, &player_input, dt);
+    float player_fall_speed =
+        player_update(&game->gameplay.player, &game->gameplay.level,
+                      &player_input, dt);
     game->input.jump = false;
 
     if (gameplay_advance_terminal(&game->gameplay, &game->campaign, dt))
@@ -1014,11 +1015,8 @@ static void update_playing(Game *game, float dt)
 
     if (jump_requested && game->gameplay.player.vy < -1.0f)
         game_events_sound(&game->gameplay.events, SFX_JUMP);
-    if (!player_was_grounded && game->gameplay.player.on_ground &&
-        player_fall_speed > 150.0f)
-    {
-        game_events_sound(&game->gameplay.events, SFX_LAND);
-    }
+    gameplay_handle_player_landing(&game->gameplay, player_was_grounded,
+                                   player_fall_speed);
     if (game->gameplay.player_on_elevator >= 0 && previous_elevator < 0)
         game_events_sound(&game->gameplay.events, SFX_ELEVATOR);
     if (game->gameplay.player_on_moving_platform >= 0 &&

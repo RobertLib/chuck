@@ -113,6 +113,22 @@ void gameplay_hit_player(GameplayState *state)
     state->player.death_timer = 0.75f;
 }
 
+void gameplay_handle_player_landing(GameplayState *state, bool was_grounded,
+                                    float fall_speed)
+{
+    if (was_grounded || !state->player.on_ground)
+        return;
+
+    if (fall_speed >= PLAYER_FATAL_FALL_SPEED)
+    {
+        gameplay_hit_player(state);
+        return;
+    }
+
+    if (fall_speed > PLAYER_LAND_SOUND_SPEED)
+        game_events_sound(&state->events, SFX_LAND);
+}
+
 void gameplay_unlock_exit(GameplayState *state)
 {
     /* In an interior with an escape window the security door is physically

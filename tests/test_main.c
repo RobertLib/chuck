@@ -1703,6 +1703,49 @@ static void test_level_collision_stops_at_wall(void)
     CHECK(on_ground);
 }
 
+static void test_player_dies_from_a_high_fall(void)
+{
+    GameplayState safe = {0};
+    safe.player.on_ground = true;
+    safe.player.facing = 1;
+
+    gameplay_handle_player_landing(&safe, false,
+                                   PLAYER_FATAL_FALL_SPEED - 1.0f);
+    CHECK(!safe.player.dying);
+    CHECK(events_have_sound(&safe.events, GAME_EVENT_SOUND, SFX_LAND));
+
+    static const char data[] =
+        "#####\n"
+        "#S E#\n"
+        "#   #\n"
+        "#   #\n"
+        "#   #\n"
+        "#   #\n"
+        "#   #\n"
+        "#   #\n"
+        "#   #\n"
+        "#####\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 81);
+    CHECK(level_load_data(&state.level, "fatal fall", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+    Input input = {0};
+
+    for (int frame = 0; frame < 120 && !state.player.dying; ++frame)
+    {
+        bool was_grounded = state.player.on_ground;
+        float fall_speed =
+            player_update(&state.player, &state.level, &input, 1.0f / 60.0f);
+        gameplay_handle_player_landing(&state, was_grounded, fall_speed);
+    }
+
+    CHECK(state.player.dying);
+    CHECK(state.player.death_timer > 0.0f);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_PLAYER_HIT));
+}
+
 /*
  * Grabbing a ladder centres the player in the rung column.
  *
@@ -3692,6 +3735,7 @@ int main(void)
     test_facade_wind_warns_then_pushes_unless_sheltered();
     test_facade_thrower_winds_up_before_releasing();
     test_level_collision_stops_at_wall();
+    test_player_dies_from_a_high_fall();
     test_ladder_mount_centres_the_player();
     test_player_descends_from_top_of_ladder();
     test_ladder_remembers_climb_direction_for_shooting();

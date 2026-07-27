@@ -139,6 +139,10 @@
 #define PLAYER_CRAWL_SPEED 60.0f
 #define PLAYER_KNIFE_RANGE 18.0f
 #define PLAYER_KNIFE_ACTION_TIME 0.18f
+/* A landing becomes audible well before it becomes dangerous. The fatal
+ * threshold is about five tiles of uninterrupted free fall. */
+#define PLAYER_LAND_SOUND_SPEED 150.0f
+#define PLAYER_FATAL_FALL_SPEED 560.0f
 
 /* Enemy tuning */
 #define ENEMY_W 26

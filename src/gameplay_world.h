@@ -13,6 +13,8 @@ void gameplay_trigger_alarm(GameplayState *state, float source_x,
 void gameplay_refresh_alarm_from_player(GameplayState *state);
 void gameplay_update_alarm(GameplayState *state, float dt);
 void gameplay_hit_player(GameplayState *state);
+void gameplay_handle_player_landing(GameplayState *state, bool was_grounded,
+                                    float fall_speed);
 void gameplay_unlock_exit(GameplayState *state);
 bool gameplay_player_near_active_terminal(const GameplayState *state);
 void gameplay_provoke_enemy(GameplayState *state, int enemy_index);

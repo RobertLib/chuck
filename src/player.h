@@ -55,7 +55,9 @@ typedef struct
 } Player;
 
 void player_reset(Player *player, const Level *level);
-void player_update(Player *player, Level *level, const Input *input, float dt);
+/* Returns the downward speed immediately before collision resolution, so the
+ * caller can classify a landing that occurred on any kind of platform. */
+float player_update(Player *player, Level *level, const Input *input, float dt);
 bool player_weapon_available(const Player *player, PlayerWeapon weapon);
 void player_select_next_weapon(Player *player);
 

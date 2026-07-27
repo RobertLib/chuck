@@ -98,7 +98,7 @@ static bool player_has_ladder_below(const Player *player, const Level *level)
     return level_is_ladder(level, col, row);
 }
 
-void player_update(Player *player, Level *level, const Input *input, float dt)
+float player_update(Player *player, Level *level, const Input *input, float dt)
 {
     if (player->action_timer > 0.0f)
     {
@@ -236,6 +236,7 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
         }
     }
 
+    float fall_speed = player->vy > 0.0f ? player->vy : 0.0f;
     float ph = player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
     level_move(level, &player->x, &player->y, &player->vx, &player->vy,
                PLAYER_W, ph, dt, player->on_ladder, &player->on_ground,
@@ -255,4 +256,6 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
         player->anim_time += dt * (3.0f + fabsf(player->vx) * 0.025f);
     else
         player->anim_time += dt;
+
+    return fall_speed;
 }
