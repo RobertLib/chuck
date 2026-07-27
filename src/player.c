@@ -213,6 +213,10 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
             player->ladder_direction = -1;
         else if (climb > 0.0f)
             player->ladder_direction = 1;
+        else if (move != 0.0f)
+            /* Facing already remembers which side was pressed. Clear the
+             * vertical aim so the next idle attack follows that side. */
+            player->ladder_direction = 0;
         player->vy = climb * PLAYER_CLIMB_SPEED;
 
         /* Jump off the ladder */

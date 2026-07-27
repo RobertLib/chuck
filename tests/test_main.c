@@ -1892,6 +1892,39 @@ static void test_ladder_remembers_climb_direction_for_shooting(void)
     CHECK(state.bullets[0].vx == BULLET_SPEED);
     CHECK(state.bullets[0].vy == 0.0f);
     CHECK(state.player.shot_vertical == 0);
+
+    /* Moving sideways without firing replaces the remembered vertical aim,
+     * so a later idle shot follows the last side step. */
+    for (int direction = -1; direction <= 1; direction += 2)
+    {
+        memset(state.bullets, 0, sizeof(state.bullets));
+        player_reset(&state.player, &state.level);
+        state.player.x = ladder_x;
+        state.player.y = 3.0f * TILE_SIZE;
+
+        Input climb = {.up = true};
+        player_update(&state.player, &state.level, &climb, 1.0f / 60.0f);
+        CHECK(state.player.on_ladder);
+        CHECK(state.player.ladder_direction == -1);
+
+        Input side_step = {
+            .left = direction < 0,
+            .right = direction > 0};
+        player_update(&state.player, &state.level, &side_step,
+                      1.0f / 60.0f);
+        CHECK(state.player.on_ladder);
+        CHECK(state.player.facing == direction);
+        CHECK(state.player.ladder_direction == 0);
+
+        Input idle = {0};
+        player_update(&state.player, &state.level, &idle, 1.0f / 60.0f);
+        Input idle_shot = {.shoot = true};
+        gameplay_combat_handle_player_action(&state, &campaign, &idle_shot);
+        CHECK(state.bullets[0].active);
+        CHECK(state.bullets[0].vx == direction * BULLET_SPEED);
+        CHECK(state.bullets[0].vy == 0.0f);
+        CHECK(state.player.shot_vertical == 0);
+    }
 }
 
 static void test_ladder_explosives_follow_aim_direction(void)
