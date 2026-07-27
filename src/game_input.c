@@ -189,7 +189,8 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
     audio_toggle_mute(&game->platform.audio);
     break;
   case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
-    toggle_fullscreen(game);
+    if (game->state == STATE_PLAYING)
+      game->input.switch_weapon = true;
     break;
   default:
     break;
@@ -287,6 +288,11 @@ void game_handle_event(Game *game, const SDL_Event *event)
     if (key == SDLK_SPACE)
     {
       game->input.shoot = true;
+    }
+    if ((sc == SDL_SCANCODE_Q || sc == SDL_SCANCODE_TAB) &&
+        game->state == STATE_PLAYING)
+    {
+      game->input.switch_weapon = true;
     }
     /* Jump on Up arrow, but avoid interfering with ladders: only trigger
      * jump edge when player is on the ground and not overlapping a ladder.

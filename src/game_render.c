@@ -1766,7 +1766,8 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
   float shove = (fabsf(p->vx) > 1.0f) ? sinf(phase) * 2.0f : 0.0f;
   bool knife = p->action_timer > 0.0f && p->knife_attacking;
   bool firing = p->action_timer > 0.0f && !knife;
-  bool bazooka = p->bazooka_rockets > 0 ||
+  bool bazooka = (p->active_weapon == PLAYER_WEAPON_BAZOOKA &&
+                   p->bazooka_rockets > 0) ||
                  (firing && p->bazooka_firing);
 
   /* Ground shadow and rear boot. */
@@ -1804,7 +1805,8 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
     draw_bazooka_weapon(r, x, y, PLAYER_W, dir,
                         15.0f, 5.0f, p->bazooka_firing);
   }
-  else if (p->bullets > 0 || firing)
+  else if ((p->active_weapon == PLAYER_WEAPON_PISTOL && p->bullets > 0) ||
+           firing)
   {
     sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 10.0f,
                 firing ? 7.0f : 5.0f, 3.0f,
@@ -1931,7 +1933,8 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
   bool airborne = !p->on_ground && !climbing;
   bool knife = p->action_timer > 0.0f && p->knife_attacking;
   bool firing = p->action_timer > 0.0f && !knife;
-  bool bazooka = p->bazooka_rockets > 0 ||
+  bool bazooka = (p->active_weapon == PLAYER_WEAPON_BAZOOKA &&
+                   p->bazooka_rockets > 0) ||
                  (firing && p->bazooka_firing);
   float step = moving && p->on_ground ? sinf(phase) : 0.0f;
   float bob = moving && p->on_ground ? fabsf(step) * 0.55f
@@ -2217,7 +2220,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
       draw_walking_arm(r, x, y, PLAYER_W, dir, 14.0f, 13.0f + bob,
                        arm_swing, (SDL_Color){42, 118, 153, 255},
                        (SDL_Color){209, 154, 105, 255});
-      if (p->bullets > 0)
+      if (p->active_weapon == PLAYER_WEAPON_PISTOL && p->bullets > 0)
       {
         float hand_x = 14.0f + arm_swing * 3.0f;
         sprite_rect(r, x, y, PLAYER_W, dir, hand_x, 20.0f + bob,
@@ -3502,6 +3505,24 @@ static void draw_hud_heart(SDL_Renderer *r, float x, float y, bool filled)
   }
 }
 
+static const char *player_weapon_label(PlayerWeapon weapon)
+{
+  switch (weapon)
+  {
+  case PLAYER_WEAPON_PISTOL:
+    return "PISTOL";
+  case PLAYER_WEAPON_KNIFE:
+    return "KNIFE";
+  case PLAYER_WEAPON_GRENADE:
+    return "GRENADE";
+  case PLAYER_WEAPON_BAZOOKA:
+    return "BAZOOKA";
+  case PLAYER_WEAPON_COUNT:
+    return "NONE";
+  }
+  return "NONE";
+}
+
 static void render_facade_hud(Game *game, int win_w)
 {
   SDL_Renderer *r = game->platform.renderer;
@@ -3572,9 +3593,12 @@ static void render_facade_hud(Game *game, int win_w)
   draw_text(r, 618.0f, 8.0f, 1.0f, 225, 198, 112, remaining);
 
   /* What Chuck is carrying up the wall is what he will have inside. */
-  char loadout[32];
-  SDL_snprintf(loadout, sizeof(loadout), "AMMO %d  GREN %d",
-               game->gameplay.player.bullets, game->gameplay.player.grenades);
+  char loadout[48];
+  SDL_snprintf(loadout, sizeof(loadout), "WPN %s  A%d G%d R%d",
+               player_weapon_label(game->gameplay.player.active_weapon),
+               game->gameplay.player.bullets,
+               game->gameplay.player.grenades,
+               game->gameplay.player.bazooka_rockets);
   draw_text(r, 618.0f, 24.0f, 0.7f, 132, 152, 170, loadout);
 }
 
@@ -3619,8 +3643,12 @@ static void render_hud(Game *game)
   }
   draw_hud_separator(r, 190.0f);
 
-  /* Ammunition as brass rounds standing in a rack. */
-  draw_text(r, 201.0f, 8.0f, 0.7f, label_r, label_g, label_b, "AMMO");
+  /* All carried ammunition remains visible; the label names the weapon that
+   * the next attack will actually use. */
+  char weapon_buf[20];
+  SDL_snprintf(weapon_buf, sizeof(weapon_buf), "WPN %s",
+               player_weapon_label(game->gameplay.player.active_weapon));
+  draw_text(r, 201.0f, 8.0f, 0.7f, label_r, label_g, label_b, weapon_buf);
   for (int i = 0; i < MAX_AMMO; ++i)
   {
     float ammo_x = 202.0f + i * 7.0f;

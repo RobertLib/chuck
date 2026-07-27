@@ -428,10 +428,22 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                                           CampaignState *campaign,
                                           Input *input)
 {
+    if (input->switch_weapon)
+    {
+        player_select_next_weapon(&state->player);
+        input->switch_weapon = false;
+    }
     if (!input->shoot)
         return;
 
-    if (state->player.bazooka_rockets > 0)
+    if (!player_weapon_available(&state->player,
+                                 state->player.active_weapon))
+    {
+        player_select_next_weapon(&state->player);
+    }
+
+    if (state->player.active_weapon == PLAYER_WEAPON_BAZOOKA &&
+        state->player.bazooka_rockets > 0)
     {
         int slot = find_rocket_slot(state);
         if (slot >= 0)
@@ -452,9 +464,12 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             gameplay_world_sound(state, SFX_ROCKET_LAUNCH,
                                  rocket->x + ROCKET_W * 0.5f,
                                  rocket->y + ROCKET_H * 0.5f);
+            if (state->player.bazooka_rockets == 0)
+                player_select_next_weapon(&state->player);
         }
     }
-    else if (state->player.grenades > 0)
+    else if (state->player.active_weapon == PLAYER_WEAPON_GRENADE &&
+             state->player.grenades > 0)
     {
         int slot = find_grenade_slot(state);
         if (slot >= 0)
@@ -484,9 +499,11 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             state->player.bazooka_firing = false;
             state->player.action_timer = 0.18f;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
+            player_select_next_weapon(&state->player);
         }
     }
-    else if (state->player.bullets > 0)
+    else if (state->player.active_weapon == PLAYER_WEAPON_PISTOL &&
+             state->player.bullets > 0)
     {
         for (int i = 0; i < MAX_BULLETS; ++i)
         {
@@ -525,6 +542,8 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                 state, state->player.x + PLAYER_W * 0.5f,
                 state->player.y + player_height(state) * 0.5f,
                 ENEMY_HEAR_RADIUS_SHOT);
+            if (state->player.bullets == 0)
+                player_select_next_weapon(&state->player);
             break;
         }
     }

@@ -133,6 +133,7 @@ static void transfer_player_loadout(Player *destination,
     destination->bullets = source->bullets;
     destination->grenades = source->grenades;
     destination->bazooka_rockets = source->bazooka_rockets;
+    destination->active_weapon = source->active_weapon;
     destination->facing = source->facing;
 }
 
@@ -444,6 +445,7 @@ static void clear_edge_input(Game *game)
     game->input.use_door = false;
     game->input.confirm = false;
     game->input.restart = false;
+    game->input.switch_weapon = false;
 }
 
 static void game_enter_state(Game *game, GameState next_state)
@@ -855,6 +857,7 @@ static void update_facade_playing(Game *game, float dt)
     game->input.jump = false;
     game->input.shoot = false;
     game->input.use_door = false;
+    game->input.switch_weapon = false;
     gameplay_climb_update(&game->gameplay, dt);
     /* Loadout carried up the wall is spent inside the next sector, so the
      * detour to a pickup is the climb's own risk/reward decision. */
@@ -942,8 +945,10 @@ static void update_playing(Game *game, float dt)
         player_input.jump = false;
         player_input.shoot = false;
         player_input.use_door = false;
+        player_input.switch_weapon = false;
         game->input.shoot = false;
         game->input.use_door = false;
+        game->input.switch_weapon = false;
         game->gameplay.player.vx = 0.0f;
     }
     player_update(&game->gameplay.player, &game->gameplay.level, &player_input, dt);

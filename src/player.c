@@ -2,6 +2,55 @@
 
 #include <math.h>
 
+bool player_weapon_available(const Player *player, PlayerWeapon weapon)
+{
+    switch (weapon)
+    {
+    case PLAYER_WEAPON_PISTOL:
+        return player->bullets > 0;
+    case PLAYER_WEAPON_KNIFE:
+        return true;
+    case PLAYER_WEAPON_GRENADE:
+        return player->grenades > 0;
+    case PLAYER_WEAPON_BAZOOKA:
+        return player->bazooka_rockets > 0;
+    case PLAYER_WEAPON_COUNT:
+        return false;
+    }
+    return false;
+}
+
+void player_select_next_weapon(Player *player)
+{
+    /* This order makes one press after a temporary pickup return to the
+     * ordinary sidearm, while still keeping the always-available knife in
+     * the cycle. */
+    static const PlayerWeapon cycle[] = {
+        PLAYER_WEAPON_KNIFE,
+        PLAYER_WEAPON_BAZOOKA,
+        PLAYER_WEAPON_GRENADE,
+        PLAYER_WEAPON_PISTOL};
+    int current = -1;
+    for (int i = 0; i < PLAYER_WEAPON_COUNT; ++i)
+    {
+        if (cycle[i] == player->active_weapon)
+        {
+            current = i;
+            break;
+        }
+    }
+    for (int offset = 1; offset <= PLAYER_WEAPON_COUNT; ++offset)
+    {
+        PlayerWeapon candidate =
+            cycle[(current + offset) % PLAYER_WEAPON_COUNT];
+        if (player_weapon_available(player, candidate))
+        {
+            player->active_weapon = candidate;
+            return;
+        }
+    }
+}
+
 void player_reset(Player *player, const Level *level)
 {
     player->x = level->map.start_x;
@@ -16,6 +65,7 @@ void player_reset(Player *player, const Level *level)
     player->bullets = MAX_AMMO;
     player->grenades = 0;
     player->bazooka_rockets = 0;
+    player->active_weapon = PLAYER_WEAPON_PISTOL;
     player->dying = false;
     player->death_timer = 0.0f;
     player->crawling = false;

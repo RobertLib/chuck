@@ -958,18 +958,19 @@ static float draw_control_hint(SDL_Renderer *r, float x, float y,
 static void render_controls(SDL_Renderer *r, int win_w, int win_h,
                             bool gamepad_active)
 {
-    static const char *keyboard_keys[] = {"WASD", "W", "SPACE", "S", "E"};
+    static const char *keyboard_keys[] = {
+        "WASD", "W", "SPACE", "TAB", "S", "E"};
     static const char *keyboard_actions[] = {
-        "MOVE", "JUMP", "ATTACK", "CRAWL", "USE/HACK"
+        "MOVE", "JUMP", "ATTACK", "WEAPON", "CRAWL", "USE/HACK"
     };
-    static const char *gamepad_keys[] = {"LS/DPAD", "A", "X", "Y"};
+    static const char *gamepad_keys[] = {"LS/DPAD", "A", "X", "RB", "Y"};
     static const char *gamepad_actions[] = {
-        "MOVE", "JUMP", "ATTACK", "USE/HACK"
+        "MOVE", "JUMP", "ATTACK", "WEAPON", "USE/HACK"
     };
     const char *const *keys = gamepad_active ? gamepad_keys : keyboard_keys;
     const char *const *actions = gamepad_active ? gamepad_actions :
                                                 keyboard_actions;
-    int count = gamepad_active ? 4 : 5;
+    int count = gamepad_active ? 5 : 6;
     float total = 0.0f;
     for (int i = 0; i < count; ++i)
         total += control_hint_width(keys[i], actions[i]);

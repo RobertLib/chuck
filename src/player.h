@@ -18,7 +18,17 @@ typedef struct
     bool interact; /* held: operate the active terminal */
     bool confirm;  /* edge-triggered: accept/start/skip */
     bool restart;  /* edge-triggered: replay after an ending */
+    bool switch_weapon; /* edge-triggered: select the next usable weapon */
 } Input;
+
+typedef enum
+{
+    PLAYER_WEAPON_PISTOL = 0,
+    PLAYER_WEAPON_KNIFE,
+    PLAYER_WEAPON_GRENADE,
+    PLAYER_WEAPON_BAZOOKA,
+    PLAYER_WEAPON_COUNT
+} PlayerWeapon;
 
 typedef struct
 {
@@ -32,6 +42,7 @@ typedef struct
     int bullets;  /* current ammo, 0..MAX_AMMO */
     int grenades; /* current grenades carried (0 or 1) */
     int bazooka_rockets; /* one-shot bazooka carried when non-zero */
+    PlayerWeapon active_weapon;
     bool dying;   /* true while death animation plays */
     float death_timer;
     bool crawling; /* true while player is crawling (lower) */
@@ -44,5 +55,7 @@ typedef struct
 
 void player_reset(Player *player, const Level *level);
 void player_update(Player *player, Level *level, const Input *input, float dt);
+bool player_weapon_available(const Player *player, PlayerWeapon weapon);
+void player_select_next_weapon(Player *player);
 
 #endif /* CHUCK_PLAYER_H */

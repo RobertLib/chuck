@@ -209,10 +209,12 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                 break;
             case ITEM_GUN:
                 state->player.bullets = MAX_AMMO;
+                state->player.active_weapon = PLAYER_WEAPON_PISTOL;
                 game_events_sound(&state->events, SFX_PICKUP_AMMO);
                 break;
             case ITEM_GRENADE:
                 state->player.grenades = 1;
+                state->player.active_weapon = PLAYER_WEAPON_GRENADE;
                 game_events_sound(&state->events, SFX_PICKUP_GRENADE);
                 break;
             case ITEM_MEDKIT:
@@ -222,6 +224,7 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                 break;
             case ITEM_BAZOOKA:
                 state->player.bazooka_rockets = BAZOOKA_AMMO;
+                state->player.active_weapon = PLAYER_WEAPON_BAZOOKA;
                 game_events_sound(&state->events, SFX_PICKUP_BAZOOKA);
                 break;
             }

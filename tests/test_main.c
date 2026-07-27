@@ -2220,6 +2220,7 @@ static void test_bazooka_pickup_and_rocket_explosion(void)
     gameplay_collect_items(&state, &campaign, 0.0f);
     CHECK(bazooka->collected);
     CHECK(state.player.bazooka_rockets == BAZOOKA_AMMO);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_BAZOOKA);
     CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
                             SFX_PICKUP_BAZOOKA));
 
@@ -2233,6 +2234,7 @@ static void test_bazooka_pickup_and_rocket_explosion(void)
     gameplay_combat_handle_player_action(&state, &campaign, &input);
     CHECK(!input.shoot);
     CHECK(state.player.bazooka_rockets == 0);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_PISTOL);
     CHECK(state.player.bazooka_firing);
     CHECK(state.rockets[0].active);
     CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
@@ -2249,6 +2251,51 @@ static void test_bazooka_pickup_and_rocket_explosion(void)
     CHECK(!state.player.dying);
     CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
                             SFX_EXPLOSION));
+}
+
+static void test_player_can_switch_between_carried_weapons(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    state.player.x = 100.0f;
+    state.player.y = 64.0f;
+    state.player.facing = 1;
+    state.player.bullets = 2;
+    state.player.grenades = 1;
+    state.player.bazooka_rockets = 1;
+    state.player.active_weapon = PLAYER_WEAPON_BAZOOKA;
+
+    Input input = {.switch_weapon = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(!input.switch_weapon);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_GRENADE);
+
+    input = (Input){.switch_weapon = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_PISTOL);
+
+    input = (Input){.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.bullets == 1);
+    CHECK(state.player.grenades == 1);
+    CHECK(state.player.bazooka_rockets == 1);
+    CHECK(state.bullets[0].active);
+    CHECK(!state.rockets[0].active);
+
+    input = (Input){.switch_weapon = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_KNIFE);
+    input = (Input){.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.knife_attacking);
+    CHECK(state.player.bullets == 1);
+
+    state.player.bullets = 0;
+    state.player.grenades = 0;
+    state.player.bazooka_rockets = 0;
+    input = (Input){.switch_weapon = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_KNIFE);
 }
 
 static void test_gas_canister_requires_crawling_shot(void)
@@ -3527,6 +3574,7 @@ int main(void)
     test_mine_damage_emits_feedback();
     test_grenade_fuse_and_explosion_emit_sounds();
     test_bazooka_pickup_and_rocket_explosion();
+    test_player_can_switch_between_carried_weapons();
     test_gas_canister_requires_crawling_shot();
     test_empty_pistol_uses_close_range_knife();
     test_ladder_knife_is_horizontal_only();
