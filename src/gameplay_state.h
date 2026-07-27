@@ -128,6 +128,41 @@ typedef struct
     int variant;
 } Civilian;
 
+/* Front-desk staff. Unlike the janitor, who wanders wherever the floor lets
+ * him, this one has a post and an errand and does nothing else: stand at the
+ * counter, walk out to something, deal with it, walk back. */
+typedef enum
+{
+    RECEPTIONIST_DESK = 0,
+    RECEPTIONIST_WALK,
+    RECEPTIONIST_ERRAND
+} ReceptionistActivity;
+
+typedef struct
+{
+    float x, y;
+    float vx, vy;
+    int dir;      /* facing */
+    int desk_dir; /* the way the counter faces, decided once at spawn */
+    bool on_ground;
+    ReceptionistActivity activity;
+    float activity_timer;
+    /* The spawn tile, and the only place a walk ever ends up. Errand targets
+     * are measured from here so a round trip cannot drift off the counter. */
+    float post_x;
+    float target_x;
+    /* Latched when a walk starts. Deriving it from the target every frame
+     * instead would make crossing the target unrepresentable: the sign flips
+     * with the overshoot and the walk oscillates on the spot forever. */
+    int walk_dir;
+    bool heading_home;
+    /* Counts down to the next glance away from the floor while on post, then
+     * counts the glance itself out. */
+    float glance_timer;
+    bool glancing;
+    float anim_time;
+} Receptionist;
+
 typedef struct
 {
     int current_level;
@@ -160,6 +195,8 @@ typedef struct
     int janitor_count;
     Civilian civilians[MAX_CIVILIANS];
     int civilian_count;
+    Receptionist receptionists[MAX_RECEPTIONISTS];
+    int receptionist_count;
     Mine mines[MAX_MINES];
     int mine_count;
     Grenade grenades[MAX_GRENADES];

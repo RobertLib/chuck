@@ -56,6 +56,33 @@
 #define CIVILIAN_STUCK_TIME 1.20f
 #define CIVILIAN_STUCK_FADE_TIME 0.45f
 
+/* The receptionist is the third visual-only NPC, and the only one with a place
+ * to be: the post at the front counter is left for an errand and always
+ * returned to, so the desk still reads as staffed however long the player
+ * spends in the lobby. Like the other two this is scenery — no perception, no
+ * collision against the player, nothing that can hit it. */
+#define MAX_RECEPTIONISTS 4
+#define RECEPTIONIST_W 24
+#define RECEPTIONIST_H 32
+#define RECEPTIONIST_WALK_SPEED 44.0f
+/* Long enough on the desk that leaving it is an event rather than a pacing. */
+#define RECEPTIONIST_DESK_TIME_MIN 7.0f
+#define RECEPTIONIST_DESK_TIME_SPREAD 8.0f
+#define RECEPTIONIST_ERRAND_TIME_MIN 2.6f
+#define RECEPTIONIST_ERRAND_TIME_SPREAD 3.4f
+/* Errands stay inside the room the counter is in; the walk out is measured
+ * from the post so a round trip always lands back on the same tile. */
+#define RECEPTIONIST_ERRAND_MIN_REACH (2.0f * TILE_SIZE)
+#define RECEPTIONIST_ERRAND_REACH_SPREAD (3.0f * TILE_SIZE)
+/* How far ahead a side is probed for walkable floor when deciding which way
+ * the counter faces and which way an errand can go. */
+#define RECEPTIONIST_OPEN_RUN_PROBE 6
+/* On post the floor is watched and the work behind the counter is turned to
+ * now and then; the glance is what stops the pose reading as a mannequin. */
+#define RECEPTIONIST_GLANCE_MIN 2.2f
+#define RECEPTIONIST_GLANCE_SPREAD 4.0f
+#define RECEPTIONIST_GLANCE_TIME 1.3f
+
 /* Mines */
 #define MAX_MINES 32
 #define MINE_W 16

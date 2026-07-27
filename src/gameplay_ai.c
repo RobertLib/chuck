@@ -641,6 +641,222 @@ static void update_civilian(GameplayState *state, Civilian *civilian, float dt)
     }
 }
 
+/*
+ * The front desk.
+ *
+ * The janitor's patrol is a walk that happens to be interrupted; this one is a
+ * post that is left and returned to. Every errand target is measured from
+ * post_x rather than from wherever the walk happened to stop, so a level the
+ * player spends ten minutes in still has someone standing at the counter
+ * afterwards instead of a receptionist who has wandered into the next room.
+ *
+ * Like the janitor and the civilians this touches nothing: no perception, no
+ * player collision, no damage, no scoring, no events.
+ */
+static int receptionist_floor_row(const Receptionist *receptionist)
+{
+    return (int)floorf((receptionist->y + RECEPTIONIST_H + 3.0f) / TILE_SIZE);
+}
+
+static bool receptionist_column_walkable(const GameplayState *state,
+                                         const Receptionist *receptionist,
+                                         int col)
+{
+    int floor_row = receptionist_floor_row(receptionist);
+    if (!level_is_solid(&state->level, col, floor_row) &&
+        !level_is_ladder(&state->level, col, floor_row))
+        return false;
+    int top = (int)floorf((receptionist->y + 1.0f) / TILE_SIZE);
+    int bottom =
+        (int)floorf((receptionist->y + RECEPTIONIST_H - 1.0f) / TILE_SIZE);
+    for (int row = top; row <= bottom; ++row)
+    {
+        TileType tile = level_tile(&state->level, col, row);
+        if (tile == TILE_WALL || tile == TILE_DOOR)
+            return false;
+    }
+    return true;
+}
+
+/* How many whole tiles of standing room there are on one side of the post. */
+static int receptionist_open_run(const GameplayState *state,
+                                 const Receptionist *receptionist, int dir)
+{
+    int col = (int)floorf((receptionist->x + RECEPTIONIST_W * 0.5f) /
+                          TILE_SIZE);
+    int run = 0;
+    for (int step = 1; step <= RECEPTIONIST_OPEN_RUN_PROBE; ++step)
+    {
+        if (!receptionist_column_walkable(state, receptionist,
+                                          col + dir * step))
+            break;
+        run++;
+    }
+    return run;
+}
+
+static bool receptionist_can_step(const GameplayState *state,
+                                  const Receptionist *receptionist, int dir)
+{
+    float edge = dir > 0 ? receptionist->x + RECEPTIONIST_W : receptionist->x;
+    int col = (int)floorf((edge + (float)dir * 3.0f) / TILE_SIZE);
+    return receptionist_column_walkable(state, receptionist, col);
+}
+
+static float receptionist_roll(Rng *rng, float minimum, float spread)
+{
+    return minimum + (float)rng_range(rng, 1000) * 0.001f * spread;
+}
+
+static void receptionist_set_activity(Receptionist *receptionist,
+                                      ReceptionistActivity activity, Rng *rng)
+{
+    receptionist->activity = activity;
+    receptionist->vx = 0.0f;
+    switch (activity)
+    {
+    case RECEPTIONIST_DESK:
+        receptionist->activity_timer =
+            receptionist_roll(rng, RECEPTIONIST_DESK_TIME_MIN,
+                              RECEPTIONIST_DESK_TIME_SPREAD);
+        receptionist->glance_timer =
+            receptionist_roll(rng, RECEPTIONIST_GLANCE_MIN,
+                              RECEPTIONIST_GLANCE_SPREAD);
+        receptionist->glancing = false;
+        break;
+    case RECEPTIONIST_WALK:
+        /* A walk ends where it arrives, not when a clock runs out. */
+        receptionist->activity_timer = 0.0f;
+        receptionist->walk_dir =
+            receptionist->target_x >= receptionist->x ? 1 : -1;
+        break;
+    case RECEPTIONIST_ERRAND:
+        receptionist->activity_timer =
+            receptionist_roll(rng, RECEPTIONIST_ERRAND_TIME_MIN,
+                              RECEPTIONIST_ERRAND_TIME_SPREAD);
+        break;
+    }
+}
+
+static void receptionist_begin_errand(GameplayState *state,
+                                      Receptionist *receptionist)
+{
+    int dir = rng_range(&state->rng, 2) == 0 ? -1 : 1;
+    /* A counter tucked into a corner still gets its errand: when the rolled
+     * side is a wall, take the side the room is on. */
+    if (receptionist_open_run(state, receptionist, dir) < 2 &&
+        receptionist_open_run(state, receptionist, -dir) >= 2)
+        dir = -dir;
+    float reach = receptionist_roll(&state->rng, RECEPTIONIST_ERRAND_MIN_REACH,
+                                    RECEPTIONIST_ERRAND_REACH_SPREAD);
+    receptionist->target_x = receptionist->post_x + (float)dir * reach;
+    receptionist->heading_home = false;
+    receptionist_set_activity(receptionist, RECEPTIONIST_WALK, &state->rng);
+}
+
+static void receptionist_arrive(GameplayState *state,
+                                Receptionist *receptionist, bool on_target)
+{
+    /* Landing exactly on the target is what keeps the post from drifting off
+     * the counter over a long level. It is only ever a fraction of a frame's
+     * travel back into ground already walked, so it cannot enter geometry. */
+    if (on_target)
+        receptionist->x = receptionist->target_x;
+    receptionist_set_activity(receptionist,
+                              receptionist->heading_home
+                                  ? RECEPTIONIST_DESK
+                                  : RECEPTIONIST_ERRAND,
+                              &state->rng);
+}
+
+static void receptionist_head_home(GameplayState *state,
+                                   Receptionist *receptionist)
+{
+    receptionist->target_x = receptionist->post_x;
+    receptionist->heading_home = true;
+    receptionist_set_activity(receptionist, RECEPTIONIST_WALK, &state->rng);
+}
+
+static void receptionist_init(GameplayState *state, Receptionist *receptionist,
+                              float x, float y)
+{
+    *receptionist = (Receptionist){0};
+    receptionist->x = x;
+    receptionist->y = y;
+    receptionist->post_x = x;
+    receptionist->target_x = x;
+    /* The counter is looked over, not turned away from: face whichever side
+     * has room to stand in, so a desk backed against a wall still faces the
+     * room rather than the masonry. */
+    int left = receptionist_open_run(state, receptionist, -1);
+    int right = receptionist_open_run(state, receptionist, 1);
+    receptionist->desk_dir = right > left ? 1 : -1;
+    receptionist->dir = receptionist->desk_dir;
+    receptionist->anim_time = (float)rng_range(&state->rng, 628) * 0.01f;
+    receptionist_set_activity(receptionist, RECEPTIONIST_DESK, &state->rng);
+}
+
+static void update_receptionist(GameplayState *state,
+                                Receptionist *receptionist, float dt)
+{
+    switch (receptionist->activity)
+    {
+    case RECEPTIONIST_DESK:
+        receptionist->dir = receptionist->glancing
+                                ? -receptionist->desk_dir
+                                : receptionist->desk_dir;
+        receptionist->anim_time += dt * 1.1f;
+        receptionist->glance_timer -= dt;
+        if (receptionist->glance_timer <= 0.0f)
+        {
+            receptionist->glancing = !receptionist->glancing;
+            receptionist->glance_timer =
+                receptionist->glancing
+                    ? RECEPTIONIST_GLANCE_TIME
+                    : receptionist_roll(&state->rng, RECEPTIONIST_GLANCE_MIN,
+                                        RECEPTIONIST_GLANCE_SPREAD);
+        }
+        receptionist->activity_timer -= dt;
+        if (receptionist->activity_timer <= 0.0f)
+            receptionist_begin_errand(state, receptionist);
+        break;
+    case RECEPTIONIST_WALK:
+        receptionist->dir = receptionist->walk_dir;
+        receptionist->anim_time += dt * 2.4f;
+        if ((receptionist->target_x - receptionist->x) *
+                (float)receptionist->walk_dir <= 0.0f)
+            receptionist_arrive(state, receptionist, true);
+        else if (receptionist->on_ground &&
+                 !receptionist_can_step(state, receptionist,
+                                        receptionist->walk_dir))
+            receptionist_arrive(state, receptionist, false);
+        else
+            receptionist->vx =
+                (float)receptionist->walk_dir * RECEPTIONIST_WALK_SPEED;
+        break;
+    case RECEPTIONIST_ERRAND:
+        receptionist->anim_time += dt * 1.6f;
+        receptionist->activity_timer -= dt;
+        if (receptionist->activity_timer <= 0.0f)
+            receptionist_head_home(state, receptionist);
+        break;
+    }
+
+    receptionist->vy += GRAVITY * dt;
+    if (receptionist->vy > MAX_FALL_SPEED)
+        receptionist->vy = MAX_FALL_SPEED;
+    float intended_vx = receptionist->vx;
+    level_move(&state->level, &receptionist->x, &receptionist->y,
+               &receptionist->vx, &receptionist->vy,
+               RECEPTIONIST_W, RECEPTIONIST_H, dt, false,
+               &receptionist->on_ground, false);
+    /* Whatever the probes missed, being stopped dead by the map is the end of
+     * the walk; standing there pushing into a wall is not a pose. */
+    if (receptionist->activity == RECEPTIONIST_WALK && intended_vx != 0.0f &&
+        receptionist->vx == 0.0f)
+        receptionist_arrive(state, receptionist, false);
+}
+
 static bool spawn_enemy_from_door(GameplayState *state, int door_index)
 {
     if (door_index < 0 || door_index >= state->level.map.door_count)
@@ -708,6 +924,13 @@ void gameplay_ai_spawn_level_entities(GameplayState *state)
                       state->level.map.civilian_spawns[i].x,
                       state->level.map.civilian_spawns[i].y,
                       civilian_exit_x(state), i, &state->rng);
+    }
+    state->receptionist_count = state->level.map.receptionist_count;
+    for (int i = 0; i < state->receptionist_count; ++i)
+    {
+        receptionist_init(state, &state->receptionists[i],
+                          state->level.map.receptionist_spawns[i].x,
+                          state->level.map.receptionist_spawns[i].y);
     }
     state->mine_count = state->level.map.mine_count;
     for (int i = 0; i < state->mine_count; ++i)
@@ -1164,6 +1387,8 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
         update_janitor(state, &state->janitors[i], dt);
     for (int i = 0; i < state->civilian_count; ++i)
         update_civilian(state, &state->civilians[i], dt);
+    for (int i = 0; i < state->receptionist_count; ++i)
+        update_receptionist(state, &state->receptionists[i], dt);
 
     for (int i = 0; i < state->enemy_count; ++i)
     {

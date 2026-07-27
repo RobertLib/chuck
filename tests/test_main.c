@@ -247,6 +247,9 @@ static void test_all_embedded_levels_parse(void)
          * dissolve radius of the way in would fade out before running
          * anywhere, so the evacuation has to start further into the room. */
         CHECK(i != 0 || level.map.civilian_count >= 4);
+        /* Once they have gone the hall would be empty, which is not what a
+         * building with a staffed front desk looks like at any hour. */
+        CHECK(i != 0 || level.map.receptionist_count == 1);
         for (int person = 0; person < level.map.civilian_count; ++person)
         {
             float centre = level.map.civilian_spawns[person].x +
@@ -1199,6 +1202,7 @@ static void test_gameplay_reset_preserves_rng_only(void)
     state.enemy_count = 3;
     state.janitor_count = 2;
     state.civilian_count = 2;
+    state.receptionist_count = 1;
     state.grenade_count = 2;
     state.terminal_hacking = true;
     state.events.count = 4;
@@ -1220,6 +1224,7 @@ static void test_gameplay_reset_preserves_rng_only(void)
     CHECK(state.enemy_count == 0);
     CHECK(state.janitor_count == 0);
     CHECK(state.civilian_count == 0);
+    CHECK(state.receptionist_count == 0);
     CHECK(state.grenade_count == 0);
     CHECK(!state.terminal_hacking);
     CHECK(state.events.count == 0);
@@ -3295,6 +3300,109 @@ static void test_janitor_cart_stays_clear_when_turning_at_wall(void)
     CHECK(janitor->cart_dir == -1);
 }
 
+/*
+ * The desk post. What is being pinned is that the errand is a round trip: the
+ * receptionist leaves the counter, gets far enough away for it to be worth
+ * watching, and is back on the exact spawn tile afterwards. A patrol that
+ * merely happens to pass the desk would leave the lobby unstaffed for the
+ * second half of the level.
+ */
+static void test_receptionist_works_a_post_and_returns_to_it(void)
+{
+    static const char data[] =
+        "###############\n"
+        "#SE        nnk#\n"
+        "###############\n";
+    GameplayState first = {0};
+    GameplayState second = {0};
+    rng_seed(&first.rng, 9182);
+    rng_seed(&second.rng, 9182);
+    CHECK(level_load_data(&first.level, "desk", data, strlen(data),
+                          &first.rng));
+    CHECK(level_load_data(&second.level, "desk", data, strlen(data),
+                          &second.rng));
+    CHECK(first.level.map.receptionist_count == 1);
+    gameplay_ai_spawn_level_entities(&first);
+    gameplay_ai_spawn_level_entities(&second);
+    CHECK(first.receptionist_count == 1);
+    CHECK(second.receptionist_count == 1);
+
+    Receptionist *desk = &first.receptionists[0];
+    /* The post is against the right-hand wall, so the room — and the only way
+     * an errand can go — is to the left. */
+    CHECK(desk->desk_dir == -1);
+    CHECK(desk->activity == RECEPTIONIST_DESK);
+    CHECK(desk->post_x == first.level.map.receptionist_spawns[0].x);
+    CHECK(fabsf(desk->activity_timer -
+                second.receptionists[0].activity_timer) < 0.0001f);
+
+    first.player.x = 48.0f;
+    first.player.y = 32.0f;
+    bool left_the_desk = false;
+    bool ran_an_errand = false;
+    bool came_back = false;
+    float furthest = 0.0f;
+    for (int frame = 0; frame < 2400; ++frame)
+    {
+        gameplay_ai_update_movement(&first, 0.05f);
+        gameplay_ai_update_movement(&second, 0.05f);
+        float away = fabsf(desk->x - desk->post_x);
+        if (away > furthest)
+            furthest = away;
+        if (desk->activity == RECEPTIONIST_WALK)
+            left_the_desk = true;
+        if (desk->activity == RECEPTIONIST_ERRAND)
+            ran_an_errand = true;
+        if (left_the_desk && ran_an_errand &&
+            desk->activity == RECEPTIONIST_DESK)
+            came_back = true;
+        /* An errand that walks off the map, or through the counter's wall,
+         * would be a route rather than staging. */
+        CHECK(desk->x > (float)TILE_SIZE);
+        CHECK(desk->x + RECEPTIONIST_W < 14.0f * TILE_SIZE);
+        CHECK(desk->x == second.receptionists[0].x);
+    }
+    CHECK(left_the_desk);
+    CHECK(ran_an_errand);
+    CHECK(came_back);
+    /* Worth watching: the walk out clears the counter run itself. */
+    CHECK(furthest >= RECEPTIONIST_ERRAND_MIN_REACH - 1.0f);
+    /* And the post is the spawn tile again, not near it. */
+    CHECK(desk->activity != RECEPTIONIST_DESK ||
+          fabsf(desk->x - desk->post_x) < 0.001f);
+
+    /* Scenery, like the janitor and the civilians: nothing was touched and
+     * nothing was announced. */
+    CHECK(first.player.x == 48.0f);
+    CHECK(first.player.y == 32.0f);
+    CHECK(first.events.count == 0);
+}
+
+/* A post with no room either side is a waste of the part, not a crash: the
+ * errand ends where it started and the desk goes on being staffed. */
+static void test_boxed_in_receptionist_stays_on_the_desk(void)
+{
+    static const char data[] =
+        "########\n"
+        "#S E #k#\n"
+        "########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 3141);
+    CHECK(level_load_data(&state.level, "boxed desk", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.receptionist_count == 1);
+
+    Receptionist *desk = &state.receptionists[0];
+    float post_x = desk->post_x;
+    for (int frame = 0; frame < 1200; ++frame)
+    {
+        gameplay_ai_update_movement(&state, 0.05f);
+        CHECK(fabsf(desk->x - post_x) < (float)TILE_SIZE);
+    }
+    CHECK(state.events.count == 0);
+}
+
 static void test_enemy_vision_cone_stealth_and_walls(void)
 {
     /* Open corridor: a standing Chuck five tiles ahead is spotted and aimed at;
@@ -3771,6 +3879,8 @@ int main(void)
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();
     test_civilians_flee_to_the_way_in_and_vanish();
+    test_receptionist_works_a_post_and_returns_to_it();
+    test_boxed_in_receptionist_stays_on_the_desk();
     test_walled_in_civilian_leaves_instead_of_running_on_the_spot();
     test_janitor_cart_stays_clear_when_turning_at_wall();
     test_enemy_vision_cone_stealth_and_walls();

@@ -2723,6 +2723,148 @@ static void draw_civilian(SDL_Renderer *r, const Civilian *civilian,
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
+/*
+ * The desk, staffed.
+ *
+ * This one renders on the ambient-staff layer with the janitor and the
+ * civilians, so the counter passes in front of it and the post reads as being
+ * behind the desk rather than standing on the visitor side of it. Four poses
+ * carry the whole part at this size: hands on the keyboard while on post,
+ * turned around over a folder during a glance, walking with the folder
+ * tucked, and reading it out on the floor. The suit is navy and brass so the
+ * figure belongs to the same room as the stone-and-brass counter instead of
+ * reading as another guard.
+ */
+static void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
+                              float cam_x, float oy)
+{
+  float x = rec->x - cam_x;
+  float y = rec->y + oy;
+  int dir = rec->dir;
+  bool walking = rec->activity == RECEPTIONIST_WALK &&
+                 fabsf(rec->vx) > 2.0f;
+  bool on_post = rec->activity == RECEPTIONIST_DESK && !rec->glancing;
+  bool reading = rec->activity == RECEPTIONIST_ERRAND || rec->glancing;
+  float phase = rec->anim_time * 2.4f;
+  float step = walking ? sinf(phase) : 0.0f;
+  float bob = walking ? fabsf(step) * 0.5f
+                      : sinf(rec->anim_time * 1.7f) * 0.3f;
+  /* One pixel of shift in the clasped hands is all the movement a 32-pixel
+     figure needs to read as waiting on someone rather than as parked. */
+  float shift = on_post && sinf(rec->anim_time * 2.9f) > 0.6f ? 1.0f : 0.0f;
+  SDL_Color suit = {44, 54, 82, 255};
+  SDL_Color suit_hi = {60, 73, 106, 255};
+  SDL_Color trouser = {33, 38, 56, 255};
+  SDL_Color blouse = {202, 208, 218, 255};
+  SDL_Color skin = {201, 154, 116, 255};
+  SDL_Color hair = {58, 41, 33, 255};
+  SDL_Color brass = {158, 132, 86, 255};
+
+  color_rect(r, (SDL_Color){6, 9, 13, 255}, x + 4.0f, y + 30.0f, 16.0f, 2.0f);
+
+  if (walking)
+  {
+    draw_walking_leg(r, x, y, RECEPTIONIST_W, dir, 11.0f, 21.0f + bob,
+                     -step * 3.0f, trouser, COL_INK);
+    draw_walking_leg(r, x, y, RECEPTIONIST_W, dir, 13.0f, 21.0f + bob,
+                     step * 3.0f, (SDL_Color){42, 48, 68, 255}, COL_INK);
+  }
+  else
+  {
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 7.0f, 22.0f, 5.0f, 9.0f,
+                trouser);
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 12.0f, 22.0f, 5.0f, 9.0f,
+                (SDL_Color){42, 48, 68, 255});
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 6.0f, 29.0f, 6.0f, 3.0f,
+                COL_INK);
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 12.0f, 29.0f, 6.0f, 3.0f,
+                COL_INK);
+  }
+
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 5.0f, 10.0f + bob, 14.0f, 14.0f,
+              COL_OUTLINE);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 6.0f, 11.0f + bob, 12.0f, 12.0f,
+              suit);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 7.0f, 12.0f + bob, 4.0f, 9.0f,
+              suit_hi);
+  /* Open collar and the lanyard every visitor is handed one of: the two cues
+     that separate front-of-house staff from a guard in a dark jacket. */
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 12.0f, 11.0f + bob, 4.0f, 7.0f,
+              blouse);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 11.0f, 11.0f + bob, 1.0f, 8.0f,
+              brass);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 10.0f, 18.0f + bob, 4.0f, 3.0f,
+              COL_OUTLINE);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 10.0f, 19.0f + bob, 4.0f, 2.0f,
+              (SDL_Color){222, 218, 204, 255});
+
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 8.0f, 2.0f + bob, 10.0f, 10.0f,
+              COL_OUTLINE);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 9.0f, 4.0f + bob, 8.0f, 7.0f,
+              skin);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 8.0f, 1.0f + bob, 10.0f, 4.0f,
+              hair);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 6.0f, 4.0f + bob, 3.0f, 5.0f,
+              hair);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 14.0f, 6.0f + bob, 2.0f, 2.0f,
+              (SDL_Color){20, 24, 30, 255});
+  /* Headset: band, earpiece and a boom down to the mouth. It is what makes a
+     figure standing still at a counter read as answering the switchboard. */
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 8.0f, 0.0f + bob, 9.0f, 2.0f,
+              (SDL_Color){28, 32, 38, 255});
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 8.0f, 5.0f + bob, 3.0f, 3.0f,
+              (SDL_Color){28, 32, 38, 255});
+  sprite_segment(r, x, y, RECEPTIONIST_W, dir, 11.0f, 7.0f + bob,
+                 15.0f, 9.0f + bob, 1, (SDL_Color){28, 32, 38, 255});
+
+  if (on_post)
+  {
+    /* Hands clasped in front at the waist. The counter is chin high on this
+       figure, so there is nothing to rest an arm on and nothing above it to
+       reach for: standing to it is the pose, and the headset and the lanyard
+       are what say which side of it this is. */
+    sprite_limb_segment(r, x, y, RECEPTIONIST_W, dir, 11.0f, 14.0f + bob,
+                        16.0f, 20.0f + shift, suit_hi);
+    sprite_limb_segment(r, x, y, RECEPTIONIST_W, dir, 14.0f, 14.0f + bob,
+                        17.0f, 20.0f + shift, suit);
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 15.0f, 19.0f + shift,
+                5.0f, 3.0f, skin);
+  }
+  else if (reading)
+  {
+    /* The folder, held up and read. Whatever the errand is, this is the only
+       part of it the player ever sees. */
+    float leaf = sinf(rec->anim_time * 2.6f) * 1.0f;
+    sprite_limb_segment(r, x, y, RECEPTIONIST_W, dir, 11.0f, 14.0f + bob,
+                        16.0f, 18.0f + bob, suit_hi);
+    sprite_limb_segment(r, x, y, RECEPTIONIST_W, dir, 14.0f, 14.0f + bob,
+                        18.0f, 17.0f + bob, suit);
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 15.0f, 14.0f + bob, 9.0f, 9.0f,
+                COL_OUTLINE);
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 16.0f, 15.0f + bob, 7.0f, 7.0f,
+                (SDL_Color){186, 178, 158, 255});
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 17.0f, 16.0f + leaf + bob,
+                5.0f, 1.0f, (SDL_Color){232, 228, 214, 255});
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 17.0f, 19.0f + bob, 4.0f, 1.0f,
+                (SDL_Color){232, 228, 214, 255});
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 14.0f, 17.0f + bob, 3.0f, 3.0f,
+                skin);
+  }
+  else
+  {
+    /* Walking the errand with the folder tucked under the far arm. */
+    float swing = walking ? -step : 0.0f;
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 4.0f, 16.0f + bob, 7.0f, 8.0f,
+                COL_OUTLINE);
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 5.0f, 17.0f + bob, 5.0f, 6.0f,
+                (SDL_Color){186, 178, 158, 255});
+    sprite_limb_segment(r, x, y, RECEPTIONIST_W, dir, 11.0f, 14.0f + bob,
+                        8.0f, 20.0f + bob, suit);
+    draw_walking_arm(r, x, y, RECEPTIONIST_W, dir, 14.0f, 13.0f + bob,
+                     swing, suit_hi, skin);
+  }
+}
+
 static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
 {
   float x = e->x - cam_x;
@@ -3436,6 +3578,11 @@ static void render_world(Game *game)
    * into, so they pass behind its counters and planting rather than over it. */
   for (int i = 0; i < game->gameplay.civilian_count; ++i)
     draw_civilian(r, &game->gameplay.civilians[i], cam_x, oy);
+  /* The front desk belongs on that layer for the same reason, and for one
+   * more: the post is behind the counter, so the counter has to be drawn over
+   * it or the staff side and the visitor side look the same. */
+  for (int i = 0; i < game->gameplay.receptionist_count; ++i)
+    draw_receptionist(r, &game->gameplay.receptionists[i], cam_x, oy);
 
   /* Redraw ladders as a middle layer so ambient janitors pass behind their
    * rails and rungs. Interactive actors are rendered later and remain in

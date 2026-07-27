@@ -21,6 +21,12 @@ This file describes the meaning of characters used in the level text files.
   for it, dissolving as he reaches it, and the part is over. He falls off
   ledges rather than turning at them, so a route down a stair or off a
   mezzanine is walked without help; see the authoring rule below.
+- `k` : Receptionist working the front desk (visual-only NPC). The tile is a
+  post, not a patrol: they stand on it facing whichever side has room to stand
+  in, leave every ten seconds or so on an errand two to five tiles out, deal
+  with whatever it was, and walk back to the same tile. Place it on the staff
+  side of an `n` run — the counter renders over the staff, which is what makes
+  the post read as being behind it.
 - `X` : Mine (places an explosive mine).
 - `^` : Spike / hazard (instant damage when stepped on).
 - `O` : Rotating ceiling fan (lethal on contact with the blades). It is drawn
@@ -77,6 +83,10 @@ Notes:
   a ladder or a door is not. One walled in by the geometry gives up and fades
   out rather than jogging against the wall for the rest of the level, but that
   is a safety net, not a placement.
+- A receptionist (`k`) needs floor either side of the counter to do anything
+  with: an errand walks out along the same storey and stops at the first ledge
+  or wall, so a post with two tiles of room in neither direction just stands
+  there. Being boxed in is not a fault, only a waste of the part.
 - Hold `E` near the visibly active terminal to hack it and unlock the exit.
 - Alarm switches are operated by guards. An active alarm alerts every guard
   and dog, then shuts itself off after nobody has seen the player for a short time.
@@ -142,7 +152,7 @@ or a storey rhythm.
 
 | # | Theme | Plan |
 | --- | --- | --- |
-| 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the atrium to a mezzanine gallery, a service ladder to the security wing, a short lift to the staff corridor behind the stair. The hall empties past Chuck as he walks in — see `f` |
+| 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the atrium to a mezzanine gallery, a service ladder to the security wing, a short lift to the staff corridor behind the stair. The hall empties past Chuck as he walks in — see `f` — and the front desk stays staffed after it has, see `k` |
 | 2 | `OFFICE` | three open-plan floors cut into blocks by floor-to-ceiling partitions, the ladders staggered so every partition is passed by changing floor; a welded stair core at the far end, the executive gallery back across the top, and a service crawl underneath reached by one ladder |
 | 3 | `FACADE_NIGHT` | one wide breach per course, walking slowly from side to side |
 | 4 | `SERVER` | cold aisles blocked at alternating ends: one long serpentine, plus two fenced pockets joined by a cable tunnel |

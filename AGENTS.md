@@ -239,14 +239,14 @@ a railed catwalk rather than as the room's floor.
 
 ### People who are not in the fight
 
-Two kinds of NPC live in the gameplay core without taking part in it: the
-ambient janitor (`J`) and the fleeing civilian (`f`), both in
-[gameplay_ai.c](src/gameplay_ai.c) beside the guards. They collide with the
-static map so they stay grounded, and that is the whole of their contact with
-the simulation — no perception, no damage, no collision against the player, no
-scoring. Guards do not see them and bullets pass through them. Keep it that
-way: the moment one of them can be shot or can block a route, every level
-holding one has to be re-solved.
+Three kinds of NPC live in the gameplay core without taking part in it: the
+ambient janitor (`J`), the fleeing civilian (`f`) and the receptionist (`k`),
+all in [gameplay_ai.c](src/gameplay_ai.c) beside the guards. They collide with
+the static map so they stay grounded, and that is the whole of their contact
+with the simulation — no perception, no damage, no collision against the
+player, no scoring. Guards do not see them and bullets pass through them. Keep
+it that way: the moment one of them can be shot or can block a route, every
+level holding one has to be re-solved.
 
 Level 1 is the lobby the kidnappers came through, so it empties as Chuck walks
 in: five civilians freeze, shout and run for the tile the player started on —
@@ -256,6 +256,16 @@ frame, because the entrance itself is painted on a parallax layer
 The part plays once, at `gameplay_ai_spawn_level_entities`, and stops mattering
 a few seconds later. Their shouts go through the ordinary event buffer, so the
 tests can assert on the evacuation without any audio.
+
+The receptionist is what the room has left once they have gone, and is the one
+ambient NPC with a place to be rather than a route to walk: a post at the
+counter, an errand two to five tiles out every ten seconds or so, and a walk
+back. Every target is measured from `post_x`, never from wherever the last walk
+stopped, so the desk is still staffed after ten minutes in the sector instead
+of empty with someone standing in the next room —
+`test_receptionist_works_a_post_and_returns_to_it` pins the round trip. Drawn
+on the same layer as the janitor, so the `n` counter renders over the post and
+the staff side of the desk stays legible.
 
 ### Tuning, art, audio
 

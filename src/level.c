@@ -74,6 +74,16 @@ static void place_civilian(Level *level, int col, int row)
     civilian->y = (row + 1) * TILE_SIZE - CIVILIAN_H;
 }
 
+static void place_receptionist(Level *level, int col, int row)
+{
+    if (level->map.receptionist_count >= MAX_RECEPTIONISTS)
+        return;
+    ReceptionistSpawn *receptionist =
+        &level->map.receptionist_spawns[level->map.receptionist_count++];
+    receptionist->x = col * TILE_SIZE + (TILE_SIZE - RECEPTIONIST_W) * 0.5f;
+    receptionist->y = (row + 1) * TILE_SIZE - RECEPTIONIST_H;
+}
+
 static void place_mine(Level *level, int col, int row)
 {
     if (level->map.mine_count >= MAX_MINES)
@@ -277,6 +287,10 @@ bool level_load_data(Level *level, const char *name,
         case 'f':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_civilian(level, col, row);
+            break;
+        case 'k':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_receptionist(level, col, row);
             break;
         case 'X':
             level->map.tiles[row][col] = TILE_EMPTY;
