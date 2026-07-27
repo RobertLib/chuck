@@ -1635,6 +1635,39 @@ static void draw_rocket_sprite(SDL_Renderer *r, float x, float y, int dir,
   }
 }
 
+/* Rotate the horizontal rocket's local rectangles into screen space. The
+   collision box rotates with it, so a vertical rocket is ROCKET_H pixels wide
+   and ROCKET_W pixels tall. */
+static void vertical_rocket_rect(SDL_Renderer *r, float bx, float by, int dir,
+                                 float lx, float ly, float w, float h,
+                                 SDL_Color color)
+{
+  float y = dir > 0 ? by + lx : by + ROCKET_W - lx - w;
+  color_rect(r, color, bx + ly, y, h, w);
+}
+
+static void draw_vertical_rocket_sprite(SDL_Renderer *r, float x, float y,
+                                        int dir, bool flame)
+{
+  vertical_rocket_rect(r, x, y, dir, 0.0f, 1.0f,
+                       12.0f, 5.0f, COL_OUTLINE);
+  vertical_rocket_rect(r, x, y, dir, 2.0f, 2.0f,
+                       10.0f, 3.0f, (SDL_Color){112, 132, 91, 255});
+  vertical_rocket_rect(r, x, y, dir, 12.0f, 2.0f,
+                       4.0f, 3.0f, (SDL_Color){213, 187, 111, 255});
+  vertical_rocket_rect(r, x, y, dir, 1.0f, 0.0f,
+                       4.0f, 2.0f, (SDL_Color){73, 91, 65, 255});
+  vertical_rocket_rect(r, x, y, dir, 1.0f, 5.0f,
+                       4.0f, 1.0f, (SDL_Color){73, 91, 65, 255});
+  if (flame)
+  {
+    vertical_rocket_rect(r, x, y, dir, -5.0f, 1.0f,
+                         5.0f, 5.0f, (SDL_Color){226, 70, 38, 210});
+    vertical_rocket_rect(r, x, y, dir, -3.0f, 2.0f,
+                         4.0f, 3.0f, (SDL_Color){255, 218, 91, 255});
+  }
+}
+
 static void draw_bazooka_weapon(SDL_Renderer *r, float x, float y,
                                 float sprite_w, int dir,
                                 float lx, float ly, bool firing)
@@ -1658,6 +1691,31 @@ static void draw_bazooka_weapon(SDL_Renderer *r, float x, float y,
                 6.0f, 7.0f, (SDL_Color){223, 65, 38, 190});
     sprite_rect(r, x, y, sprite_w, dir, lx - 5.0f + recoil, ly + 3.0f,
                 4.0f, 3.0f, (SDL_Color){255, 218, 94, 255});
+  }
+}
+
+static void draw_vertical_bazooka_weapon(SDL_Renderer *r, float x, float y,
+                                         int dir, bool firing)
+{
+  float bx = x + 16.0f;
+  float by = dir < 0 ? y - 7.0f : y + 15.0f;
+  color_rect(r, COL_OUTLINE, bx, by, 8.0f, 24.0f);
+  color_rect(r, (SDL_Color){51, 75, 48, 255},
+             bx + 1.0f, by + 1.0f, 6.0f, 21.0f);
+  color_rect(r, (SDL_Color){106, 135, 79, 255},
+             bx + 3.0f, by + 3.0f, 2.0f, 17.0f);
+  color_rect(r, (SDL_Color){139, 151, 111, 255},
+             bx - 1.0f, dir < 0 ? by : by + 19.0f, 10.0f, 5.0f);
+  color_rect(r, COL_OUTLINE, bx - 5.0f, by + 9.0f, 6.0f, 5.0f);
+  color_rect(r, (SDL_Color){73, 60, 43, 255},
+             bx - 4.0f, by + 10.0f, 5.0f, 3.0f);
+  if (firing)
+  {
+    float flame_y = dir < 0 ? by + 24.0f : by - 6.0f;
+    color_rect(r, (SDL_Color){223, 65, 38, 190},
+               bx, flame_y, 8.0f, 6.0f);
+    color_rect(r, (SDL_Color){255, 218, 94, 255},
+               bx + 2.0f, flame_y, 4.0f, 4.0f);
   }
 }
 
@@ -1932,6 +1990,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
     dir = 1;
   bool airborne = !p->on_ground && !climbing;
   bool knife = p->action_timer > 0.0f && p->knife_attacking;
+  bool grenade = p->action_timer > 0.0f && p->grenade_throwing;
   bool firing = p->action_timer > 0.0f && !knife;
   bool bazooka = (p->active_weapon == PLAYER_WEAPON_BAZOOKA &&
                    p->bazooka_rockets > 0) ||
@@ -2009,45 +2068,109 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
   {
     if (knife)
     {
-      /* One hand keeps its grip while the other stabs sideways.  The ladder
-         pose remains rear-facing, so only the attacking arm is mirrored. */
-      if (p->facing > 0)
+      /* One hand stays on the ladder while the other follows the selected
+         attack direction. */
+      if (p->shot_vertical != 0)
       {
+        float hand_y = p->shot_vertical < 0 ? 6.0f : 22.0f;
+        float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
+                           ? 2.0f
+                           : 0.0f;
         draw_climbing_arm(r, x, y, PLAYER_W, dir,
                           8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
                           (SDL_Color){42, 118, 153, 255},
                           (SDL_Color){209, 154, 105, 255});
+        sprite_limb_segment(r, x, y, PLAYER_W, dir,
+                            18.0f, 14.0f + bob, 21.0f, hand_y,
+                            (SDL_Color){42, 118, 153, 255});
+        sprite_rect(r, x, y, PLAYER_W, dir,
+                    19.0f, hand_y - 2.0f, 5.0f, 5.0f, COL_OUTLINE);
+        sprite_rect(r, x, y, PLAYER_W, dir,
+                    20.0f, hand_y - 1.0f, 3.0f, 3.0f,
+                    (SDL_Color){209, 154, 105, 255});
+        float handle_y = p->shot_vertical < 0
+                             ? hand_y - 6.0f - thrust
+                             : hand_y + 2.0f + thrust;
+        float blade_y = p->shot_vertical < 0
+                            ? handle_y - 8.0f
+                            : handle_y + 5.0f;
+        sprite_rect(r, x, y, PLAYER_W, dir,
+                    19.0f, handle_y, 5.0f, 6.0f,
+                    (SDL_Color){55, 43, 31, 255});
+        sprite_rect(r, x, y, PLAYER_W, dir,
+                    20.0f, blade_y, 3.0f, 8.0f,
+                    (SDL_Color){205, 221, 225, 255});
       }
       else
       {
-        draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                          18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
-                          (SDL_Color){42, 118, 153, 255},
-                          (SDL_Color){209, 154, 105, 255});
-      }
+        /* The rear-facing ladder pose is fixed, so only the attacking arm is
+           mirrored for a sideways stab. */
+        if (p->facing > 0)
+        {
+          draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                            8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
+                            (SDL_Color){42, 118, 153, 255},
+                            (SDL_Color){209, 154, 105, 255});
+        }
+        else
+        {
+          draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                            18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
+                            (SDL_Color){42, 118, 153, 255},
+                            (SDL_Color){209, 154, 105, 255});
+        }
 
-      int knife_dir = p->facing;
-      float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
-                         ? 2.0f
-                         : 0.0f;
-      sprite_limb_segment(r, x, y, PLAYER_W, knife_dir,
-                          17.0f, 14.0f + bob,
-                          21.0f + thrust, 15.0f + bob,
-                          (SDL_Color){42, 118, 153, 255});
-      sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                  20.0f + thrust, 13.0f + bob, 6.0f, 5.0f, COL_OUTLINE);
-      sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                  21.0f + thrust, 14.0f + bob, 5.0f, 3.0f,
-                  (SDL_Color){209, 154, 105, 255});
-      sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                  25.0f + thrust, 13.0f + bob, 3.0f, 5.0f,
-                  (SDL_Color){55, 43, 31, 255});
-      sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                  28.0f + thrust, 14.0f + bob, 6.0f, 2.0f,
-                  (SDL_Color){205, 221, 225, 255});
-      sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                  34.0f + thrust, 14.5f + bob, 1.0f, 1.0f,
-                  (SDL_Color){241, 247, 239, 255});
+        int knife_dir = p->facing;
+        float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
+                           ? 2.0f
+                           : 0.0f;
+        sprite_limb_segment(r, x, y, PLAYER_W, knife_dir,
+                            17.0f, 14.0f + bob,
+                            21.0f + thrust, 15.0f + bob,
+                            (SDL_Color){42, 118, 153, 255});
+        sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                    20.0f + thrust, 13.0f + bob,
+                    6.0f, 5.0f, COL_OUTLINE);
+        sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                    21.0f + thrust, 14.0f + bob, 5.0f, 3.0f,
+                    (SDL_Color){209, 154, 105, 255});
+        sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                    25.0f + thrust, 13.0f + bob, 3.0f, 5.0f,
+                    (SDL_Color){55, 43, 31, 255});
+        sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                    28.0f + thrust, 14.0f + bob, 6.0f, 2.0f,
+                    (SDL_Color){205, 221, 225, 255});
+        sprite_rect(r, x, y, PLAYER_W, knife_dir,
+                    34.0f + thrust, 14.5f + bob, 1.0f, 1.0f,
+                    (SDL_Color){241, 247, 239, 255});
+      }
+    }
+    else if (grenade)
+    {
+      draw_climbing_arm(r, x, y, PLAYER_W, dir,
+                        8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
+                        (SDL_Color){42, 118, 153, 255},
+                        (SDL_Color){209, 154, 105, 255});
+      if (p->shot_vertical != 0)
+      {
+        float hand_y = p->shot_vertical < 0 ? 5.0f : 22.0f;
+        sprite_limb_segment(r, x, y, PLAYER_W, dir,
+                            18.0f, 14.0f + bob, 21.0f, hand_y,
+                            (SDL_Color){42, 118, 153, 255});
+        draw_grenade(r, x + 17.0f,
+                     p->shot_vertical < 0 ? y - 5.0f : y + 23.0f, 0.0f);
+      }
+      else
+      {
+        int throw_dir = p->facing;
+        sprite_limb_segment(r, x, y, PLAYER_W, throw_dir,
+                            17.0f, 14.0f + bob, 23.0f, 10.0f + bob,
+                            (SDL_Color){42, 118, 153, 255});
+        draw_grenade(r,
+                     throw_dir > 0 ? x + PLAYER_W + 2.0f
+                                   : x - GRENADE_W - 2.0f,
+                     y + 5.0f + bob, 0.0f);
+      }
     }
     else if (firing && p->shot_vertical == 0)
     {
@@ -2112,7 +2235,6 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
       if (firing && p->shot_vertical != 0)
       {
         float hand_y = p->shot_vertical < 0 ? 8.0f : 20.0f;
-        float gun_y = p->shot_vertical < 0 ? 1.0f : 18.0f;
         sprite_limb_segment(r, x, y, PLAYER_W, dir,
                             18.0f, 14.0f + bob, 21.0f, hand_y,
                             (SDL_Color){42, 118, 153, 255});
@@ -2121,17 +2243,28 @@ static void draw_player(SDL_Renderer *r, const Player *p, float cam_x, float oy,
         sprite_rect(r, x, y, PLAYER_W, dir,
                     20.0f, hand_y - 1.0f, 3.0f, 3.0f,
                     (SDL_Color){209, 154, 105, 255});
-        sprite_rect(r, x, y, PLAYER_W, dir,
-                    19.0f, gun_y, 5.0f, 8.0f, (SDL_Color){31, 38, 43, 255});
-        if (p->action_timer > 0.055f)
+        if (bazooka)
         {
-          float flash_y = p->shot_vertical < 0 ? -5.0f : 26.0f;
+          draw_vertical_bazooka_weapon(r, x, y, p->shot_vertical, true);
+        }
+        else
+        {
+          float gun_y = p->shot_vertical < 0 ? 1.0f : 18.0f;
           sprite_rect(r, x, y, PLAYER_W, dir,
-                      18.0f, flash_y, 7.0f, 5.0f, COL_AMBER);
-          sprite_rect(r, x, y, PLAYER_W, dir,
-                      20.0f,
-                      p->shot_vertical < 0 ? flash_y - 3.0f : flash_y + 5.0f,
-                      3.0f, 3.0f, (SDL_Color){255, 242, 184, 255});
+                      19.0f, gun_y, 5.0f, 8.0f,
+                      (SDL_Color){31, 38, 43, 255});
+          if (p->action_timer > 0.055f)
+          {
+            float flash_y = p->shot_vertical < 0 ? -5.0f : 26.0f;
+            sprite_rect(r, x, y, PLAYER_W, dir,
+                        18.0f, flash_y, 7.0f, 5.0f, COL_AMBER);
+            sprite_rect(r, x, y, PLAYER_W, dir,
+                        20.0f,
+                        p->shot_vertical < 0
+                            ? flash_y - 3.0f
+                            : flash_y + 5.0f,
+                        3.0f, 3.0f, (SDL_Color){255, 242, 184, 255});
+          }
         }
       }
       else
@@ -3396,13 +3529,26 @@ static void render_world(Game *game)
       continue;
     float x = rocket->x - cam_x;
     float y = rocket->y + oy;
-    int dir = rocket->vx >= 0.0f ? 1 : -1;
-    fx_glow(r, x + ROCKET_W * 0.5f, y + ROCKET_H * 0.5f, 18.0f,
+    bool vertical = fabsf(rocket->vy) > fabsf(rocket->vx);
+    float width = vertical ? (float)ROCKET_H : (float)ROCKET_W;
+    float height = vertical ? (float)ROCKET_W : (float)ROCKET_H;
+    int dir = vertical ? (rocket->vy >= 0.0f ? 1 : -1)
+                       : (rocket->vx >= 0.0f ? 1 : -1);
+    fx_glow(r, x + width * 0.5f, y + height * 0.5f, 18.0f,
             (SDL_Color){255, 132, 45, 255}, 125);
     set_rgba(r, 122, 132, 124, 70);
-    fill_rect(r, x - (dir > 0 ? 15.0f : -15.0f), y + 1.0f,
-              16.0f, 4.0f);
-    draw_rocket_sprite(r, x, y, dir, true);
+    if (vertical)
+    {
+      fill_rect(r, x + 1.0f,
+                y - (dir > 0 ? 15.0f : -15.0f), 4.0f, 16.0f);
+      draw_vertical_rocket_sprite(r, x, y, dir, true);
+    }
+    else
+    {
+      fill_rect(r, x - (dir > 0 ? 15.0f : -15.0f), y + 1.0f,
+                16.0f, 4.0f);
+      draw_rocket_sprite(r, x, y, dir, true);
+    }
   }
   for (int i = 0; i < MAX_BULLETS; ++i)
   {

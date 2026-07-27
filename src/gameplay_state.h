@@ -27,7 +27,7 @@ typedef struct
 typedef struct
 {
     float x, y;
-    float vx;
+    float vx, vy;
     bool active;
 } Rocket;
 

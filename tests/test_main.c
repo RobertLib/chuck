@@ -1816,6 +1816,93 @@ static void test_ladder_remembers_climb_direction_for_shooting(void)
     CHECK(state.player.shot_vertical == 0);
 }
 
+static void test_ladder_explosives_follow_aim_direction(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2)
+    {
+        GameplayState rocket_state = {0};
+        CampaignState campaign = {0};
+        rocket_state.player.x = 100.0f;
+        rocket_state.player.y = 96.0f;
+        rocket_state.player.on_ladder = true;
+        rocket_state.player.facing = 1;
+        rocket_state.player.bazooka_rockets = 1;
+        rocket_state.player.active_weapon = PLAYER_WEAPON_BAZOOKA;
+        Input rocket_input = {
+            .up = direction < 0,
+            .down = direction > 0,
+            .shoot = true};
+
+        gameplay_combat_handle_player_action(&rocket_state, &campaign,
+                                             &rocket_input);
+
+        CHECK(rocket_state.rockets[0].active);
+        CHECK(rocket_state.rockets[0].vx == 0.0f);
+        CHECK(rocket_state.rockets[0].vy == direction * ROCKET_SPEED);
+        CHECK(rocket_state.player.shot_vertical == direction);
+        CHECK(rocket_state.player.bazooka_firing);
+
+        GameplayState grenade_state = {0};
+        grenade_state.player.x = 100.0f;
+        grenade_state.player.y = 96.0f;
+        grenade_state.player.on_ladder = true;
+        grenade_state.player.facing = 1;
+        grenade_state.player.grenades = 1;
+        grenade_state.player.active_weapon = PLAYER_WEAPON_GRENADE;
+        Input grenade_input = {
+            .up = direction < 0,
+            .down = direction > 0,
+            .shoot = true};
+
+        gameplay_combat_handle_player_action(&grenade_state, &campaign,
+                                             &grenade_input);
+
+        CHECK(grenade_state.grenade_count == 1);
+        CHECK(grenade_state.grenades[0].active);
+        CHECK(grenade_state.grenades[0].vx == 0.0f);
+        CHECK(grenade_state.grenades[0].vy ==
+              direction * GRENADE_THROW_SPEED);
+        CHECK(grenade_state.player.shot_vertical == direction);
+        CHECK(grenade_state.player.grenade_throwing);
+    }
+}
+
+static void test_vertical_rocket_hits_targets(void)
+{
+    for (int direction = -1; direction <= 1; direction += 2)
+    {
+        GameplayState state = {0};
+        CampaignState campaign = {0};
+        state.level.map.width = 20;
+        state.level.map.height = 20;
+        state.player.x = 100.0f;
+        state.player.y = 160.0f;
+        state.player.on_ladder = true;
+        state.player.bazooka_rockets = 1;
+        state.player.active_weapon = PLAYER_WEAPON_BAZOOKA;
+        state.enemy_count = 1;
+        state.enemies[0] = (Enemy){
+            .x = state.player.x,
+            .y = direction < 0 ? 50.0f : 270.0f,
+            .dir = -1,
+            .hp = ENEMY_HP};
+        Input input = {
+            .up = direction < 0,
+            .down = direction > 0,
+            .shoot = true};
+
+        gameplay_combat_handle_player_action(&state, &campaign, &input);
+        gameplay_combat_update_player_bullets(&state, &campaign, 0.20f);
+
+        CHECK(!state.rockets[0].active);
+        CHECK(state.enemies[0].dead);
+        CHECK(campaign.score == 150);
+        CHECK(!state.player.dying);
+        CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                                SFX_EXPLOSION));
+    }
+}
+
 static void test_level_reveal_finishes(void)
 {
     static const char data[] =
@@ -2407,7 +2494,7 @@ static void test_empty_pistol_uses_close_range_knife(void)
         CHECK(!state.bullets[i].active);
 }
 
-static void test_ladder_knife_is_horizontal_only(void)
+static void test_ladder_knife_attacks_in_aimed_direction(void)
 {
     GameplayState state = {0};
     CampaignState campaign = {0};
@@ -2434,7 +2521,20 @@ static void test_ladder_knife_is_horizontal_only(void)
     {
         state.player.knife_attacking = false;
         state.player.action_timer = 0.0f;
-        state.enemies[0].hp = ENEMY_HP;
+        state.player.shot_vertical = 0;
+        state.enemy_count = 2;
+        state.enemies[0] = (Enemy){
+            .x = state.player.x,
+            .y = vertical < 0
+                     ? state.player.y - ENEMY_H - 1.0f
+                     : state.player.y + PLAYER_H + 2.0f,
+            .dir = -1,
+            .hp = ENEMY_HP};
+        state.enemies[1] = (Enemy){
+            .x = state.player.x + PLAYER_W + 2.0f,
+            .y = state.player.y,
+            .dir = -1,
+            .hp = ENEMY_HP};
         game_events_clear(&state.events);
         input = (Input){
             .up = vertical < 0,
@@ -2444,11 +2544,13 @@ static void test_ladder_knife_is_horizontal_only(void)
         gameplay_combat_handle_player_action(&state, &campaign, &input);
 
         CHECK(!input.shoot);
-        CHECK(!state.player.knife_attacking);
-        CHECK(state.player.action_timer == 0.0f);
-        CHECK(state.enemies[0].hp == ENEMY_HP);
-        CHECK(!events_have_sound(&state.events, GAME_EVENT_SOUND,
-                                 SFX_KNIFE_SWING));
+        CHECK(state.player.knife_attacking);
+        CHECK(state.player.action_timer == PLAYER_KNIFE_ACTION_TIME);
+        CHECK(state.player.shot_vertical == vertical);
+        CHECK(state.enemies[0].hp == ENEMY_HP - 1);
+        CHECK(state.enemies[1].hp == ENEMY_HP);
+        CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                                SFX_KNIFE_SWING));
     }
 }
 
@@ -3562,6 +3664,8 @@ int main(void)
     test_level_collision_stops_at_wall();
     test_ladder_mount_centres_the_player();
     test_ladder_remembers_climb_direction_for_shooting();
+    test_ladder_explosives_follow_aim_direction();
+    test_vertical_rocket_hits_targets();
     test_level_reveal_finishes();
     test_event_buffer_reports_overflow();
     test_terminal_unlocks_deterministically();
@@ -3577,7 +3681,7 @@ int main(void)
     test_player_can_switch_between_carried_weapons();
     test_gas_canister_requires_crawling_shot();
     test_empty_pistol_uses_close_range_knife();
-    test_ladder_knife_is_horizontal_only();
+    test_ladder_knife_attacks_in_aimed_direction();
     test_crate_movement_emits_sounds();
     test_crate_stops_at_enemy_and_triggers_counterattack();
     test_enemy_walks_in_front_of_unjumpable_crate();

@@ -72,6 +72,7 @@ void player_reset(Player *player, const Level *level)
     player->anim_time = 0.0f;
     player->action_timer = 0.0f;
     player->knife_attacking = false;
+    player->grenade_throwing = false;
     player->bazooka_firing = false;
     player->shot_vertical = 0;
 }
@@ -96,6 +97,7 @@ void player_update(Player *player, Level *level, const Input *input, float dt)
         {
             player->action_timer = 0.0f;
             player->knife_attacking = false;
+            player->grenade_throwing = false;
             player->bazooka_firing = false;
         }
     }

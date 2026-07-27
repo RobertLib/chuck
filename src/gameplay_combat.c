@@ -9,10 +9,10 @@ static float player_height(const GameplayState *state)
     return state->player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
 }
 
-/* A released climb key must not turn the next ladder shot sideways. Explicit
- * vertical input takes priority, while left/right still selects a side shot. */
-static int player_ladder_shot_direction(const Player *player,
-                                        const Input *input)
+/* A released climb key must not turn the next ladder attack sideways. Explicit
+ * vertical input takes priority, while left/right still selects a side attack. */
+static int player_ladder_attack_direction(const Player *player,
+                                          const Input *input)
 {
     if (!player->on_ladder)
         return 0;
@@ -49,6 +49,21 @@ static int find_rocket_slot(GameplayState *state)
         if (!state->rockets[i].active)
             return i;
     return -1;
+}
+
+static bool rocket_is_vertical(const Rocket *rocket)
+{
+    return fabsf(rocket->vy) > fabsf(rocket->vx);
+}
+
+static float rocket_width(const Rocket *rocket)
+{
+    return rocket_is_vertical(rocket) ? (float)ROCKET_H : (float)ROCKET_W;
+}
+
+static float rocket_height(const Rocket *rocket)
+{
+    return rocket_is_vertical(rocket) ? (float)ROCKET_W : (float)ROCKET_H;
 }
 
 static void damage_dog(GameplayState *state, CampaignState *campaign,
@@ -96,15 +111,34 @@ static void damage_enemy(GameplayState *state, CampaignState *campaign,
 }
 
 static void player_knife_attack(GameplayState *state,
-                                CampaignState *campaign)
+                                CampaignState *campaign, int vertical)
 {
     float height = player_height(state);
-    float attack_x = state->player.facing > 0
-                         ? state->player.x + PLAYER_W
-                         : state->player.x - PLAYER_KNIFE_RANGE;
+    float attack_x = state->player.x;
+    float attack_y = state->player.y;
+    float attack_w = PLAYER_W;
+    float attack_h = PLAYER_KNIFE_RANGE;
+    if (vertical < 0)
+    {
+        attack_y -= PLAYER_KNIFE_RANGE;
+    }
+    else if (vertical > 0)
+    {
+        attack_y += height;
+    }
+    else
+    {
+        attack_x = state->player.facing > 0
+                       ? state->player.x + PLAYER_W
+                       : state->player.x - PLAYER_KNIFE_RANGE;
+        attack_w = PLAYER_KNIFE_RANGE;
+        attack_h = height;
+    }
 
-    state->player.shot_vertical = 0;
+    state->player.shot_vertical = vertical;
     state->player.knife_attacking = true;
+    state->player.grenade_throwing = false;
+    state->player.bazooka_firing = false;
     state->player.action_timer = PLAYER_KNIFE_ACTION_TIME;
     game_events_sound(&state->events, SFX_KNIFE_SWING);
 
@@ -112,8 +146,7 @@ static void player_knife_attack(GameplayState *state,
     {
         Dog *dog = &state->dogs[i];
         if (!dog->dead &&
-            gameplay_boxes_overlap(attack_x, state->player.y,
-                                   PLAYER_KNIFE_RANGE, height,
+            gameplay_boxes_overlap(attack_x, attack_y, attack_w, attack_h,
                                    dog->x, dog->y, DOG_W, DOG_H))
         {
             damage_dog(state, campaign, dog);
@@ -124,8 +157,7 @@ static void player_knife_attack(GameplayState *state,
     {
         Enemy *enemy = &state->enemies[i];
         if (!enemy->dead &&
-            gameplay_boxes_overlap(attack_x, state->player.y,
-                                   PLAYER_KNIFE_RANGE, height,
+            gameplay_boxes_overlap(attack_x, attack_y, attack_w, attack_h,
                                    enemy->x, enemy->y, ENEMY_W, ENEMY_H))
         {
             damage_enemy(state, campaign, i);
@@ -274,9 +306,11 @@ static void explode_grenade(GameplayState *state, CampaignState *campaign,
 static void explode_rocket(GameplayState *state, CampaignState *campaign,
                            Rocket *rocket)
 {
+    float width = rocket_width(rocket);
+    float height = rocket_height(rocket);
     rocket->active = false;
-    float x = rocket->x + ROCKET_W * 0.5f;
-    float y = rocket->y + ROCKET_H * 0.5f;
+    float x = rocket->x + width * 0.5f;
+    float y = rocket->y + height * 0.5f;
     game_events_explosion(&state->events, x, y, 88);
     gameplay_world_sound(state, SFX_EXPLOSION, x, y);
     game_events_camera_shake(&state->events, 10.0f, 0.38f);
@@ -449,16 +483,33 @@ void gameplay_combat_handle_player_action(GameplayState *state,
         if (slot >= 0)
         {
             Rocket *rocket = &state->rockets[slot];
+            int vertical =
+                player_ladder_attack_direction(&state->player, input);
             rocket->active = true;
-            rocket->vx = state->player.facing * ROCKET_SPEED;
-            rocket->x = state->player.facing > 0
-                            ? state->player.x + PLAYER_W + 3.0f
-                            : state->player.x - ROCKET_W - 3.0f;
-            rocket->y = state->player.y + player_height(state) * 0.38f -
-                        ROCKET_H * 0.5f;
+            if (vertical != 0)
+            {
+                rocket->x = state->player.x +
+                            (PLAYER_W - ROCKET_H) * 0.5f;
+                rocket->y = vertical < 0
+                                ? state->player.y - ROCKET_W - 3.0f
+                                : state->player.y + PLAYER_H + 3.0f;
+                rocket->vx = 0.0f;
+                rocket->vy = vertical * ROCKET_SPEED;
+            }
+            else
+            {
+                rocket->vx = state->player.facing * ROCKET_SPEED;
+                rocket->vy = 0.0f;
+                rocket->x = state->player.facing > 0
+                                ? state->player.x + PLAYER_W + 3.0f
+                                : state->player.x - ROCKET_W - 3.0f;
+                rocket->y = state->player.y + player_height(state) * 0.38f -
+                            ROCKET_H * 0.5f;
+            }
             state->player.bazooka_rockets--;
-            state->player.shot_vertical = 0;
+            state->player.shot_vertical = vertical;
             state->player.knife_attacking = false;
+            state->player.grenade_throwing = false;
             state->player.bazooka_firing = true;
             state->player.action_timer = ROCKET_ACTION_TIME;
             gameplay_world_sound(state, SFX_ROCKET_LAUNCH,
@@ -479,23 +530,40 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             grenade->timer = GRENADE_FUSE_TIME;
             grenade->fuse_sound_timer = 0.22f;
             grenade->grounded = false;
-            grenade->y = state->player.y + player_height(state) * 0.45f;
-            float speed = GRENADE_THROW_SPEED * 0.9f;
-            grenade->vx = state->player.facing > 0 ? speed : -speed;
-            grenade->x = state->player.x +
-                         (state->player.facing > 0
-                              ? PLAYER_W + 6.0f
-                              : -(GRENADE_W + 6.0f));
-            float vertical = 160.0f * GRAVITY /
-                             (2.0f * fabsf(grenade->vx));
-            if (vertical < 30.0f)
-                vertical = 30.0f;
-            if (vertical > 220.0f)
-                vertical = 220.0f;
-            grenade->vy = -vertical;
+            int vertical =
+                player_ladder_attack_direction(&state->player, input);
+            if (vertical != 0)
+            {
+                grenade->x = state->player.x +
+                             (PLAYER_W - GRENADE_W) * 0.5f;
+                grenade->y = vertical < 0
+                                 ? state->player.y - GRENADE_H - 3.0f
+                                 : state->player.y + PLAYER_H + 3.0f;
+                grenade->vx = 0.0f;
+                grenade->vy = vertical * GRENADE_THROW_SPEED;
+            }
+            else
+            {
+                grenade->y =
+                    state->player.y + player_height(state) * 0.45f;
+                float speed = GRENADE_THROW_SPEED * 0.9f;
+                grenade->vx = state->player.facing > 0 ? speed : -speed;
+                grenade->x = state->player.x +
+                             (state->player.facing > 0
+                                  ? PLAYER_W + 6.0f
+                                  : -(GRENADE_W + 6.0f));
+                float arc_speed = 160.0f * GRAVITY /
+                                  (2.0f * fabsf(grenade->vx));
+                if (arc_speed < 30.0f)
+                    arc_speed = 30.0f;
+                if (arc_speed > 220.0f)
+                    arc_speed = 220.0f;
+                grenade->vy = -arc_speed;
+            }
             state->player.grenades = 0;
-            state->player.shot_vertical = 0;
+            state->player.shot_vertical = vertical;
             state->player.knife_attacking = false;
+            state->player.grenade_throwing = true;
             state->player.bazooka_firing = false;
             state->player.action_timer = 0.18f;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
@@ -512,7 +580,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                 continue;
             bullet->active = true;
             int vertical =
-                player_ladder_shot_direction(&state->player, input);
+                player_ladder_attack_direction(&state->player, input);
             if (vertical != 0)
             {
                 bullet->x = state->player.x +
@@ -535,6 +603,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             state->player.bullets--;
             state->player.shot_vertical = vertical;
             state->player.knife_attacking = false;
+            state->player.grenade_throwing = false;
             state->player.bazooka_firing = false;
             state->player.action_timer = 0.12f;
             game_events_sound(&state->events, SFX_PLAYER_SHOT);
@@ -549,12 +618,9 @@ void gameplay_combat_handle_player_action(GameplayState *state,
     }
     else
     {
-        /* A knife can be used sideways from a ladder, but directional ladder
-         * input is reserved for climbing; there is no vertical knife attack. */
-        bool vertical_ladder_aim =
-            player_ladder_shot_direction(&state->player, input) != 0;
-        if (!vertical_ladder_aim)
-            player_knife_attack(state, campaign);
+        int vertical =
+            player_ladder_attack_direction(&state->player, input);
+        player_knife_attack(state, campaign, vertical);
     }
     input->shoot = false;
 }
@@ -606,35 +672,49 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
             continue;
 
         float previous_x = rocket->x;
+        float previous_y = rocket->y;
         rocket->x += rocket->vx * dt;
+        rocket->y += rocket->vy * dt;
+        float width = rocket_width(rocket);
+        float height = rocket_height(rocket);
         bool impact = false;
 
-        if (rocket->x + ROCKET_W < 0.0f ||
-            rocket->x > state->level.map.width * (float)TILE_SIZE)
+        if (rocket->x + width < 0.0f ||
+            rocket->x > state->level.map.width * (float)TILE_SIZE ||
+            rocket->y + height < 0.0f ||
+            rocket->y > state->level.map.height * (float)TILE_SIZE)
         {
             impact = true;
         }
         else
         {
-            float leading_x = rocket->vx > 0.0f
-                                  ? rocket->x + ROCKET_W - 1.0f
-                                  : rocket->x;
-            float leading_y = rocket->y + ROCKET_H * 0.5f;
+            float leading_x = rocket->x + width * 0.5f;
+            float leading_y = rocket->y + height * 0.5f;
+            if (rocket->vx > 0.0f)
+                leading_x = rocket->x + width - 1.0f;
+            else if (rocket->vx < 0.0f)
+                leading_x = rocket->x;
+            if (rocket->vy > 0.0f)
+                leading_y = rocket->y + height - 1.0f;
+            else if (rocket->vy < 0.0f)
+                leading_y = rocket->y;
             impact = level_is_solid(&state->level,
                                     (int)floorf(leading_x / TILE_SIZE),
                                     (int)floorf(leading_y / TILE_SIZE));
         }
 
         float swept_x = fminf(previous_x, rocket->x);
-        float swept_w = ROCKET_W + fabsf(rocket->x - previous_x);
+        float swept_y = fminf(previous_y, rocket->y);
+        float swept_w = width + fabsf(rocket->x - previous_x);
+        float swept_h = height + fabsf(rocket->y - previous_y);
         if (!impact)
         {
             for (int j = 0; j < state->level.runtime.crate_count; ++j)
             {
                 const Crate *crate = &state->level.runtime.crates[j];
                 if (crate->active &&
-                    gameplay_boxes_overlap(swept_x, rocket->y,
-                                           swept_w, ROCKET_H,
+                    gameplay_boxes_overlap(swept_x, swept_y,
+                                           swept_w, swept_h,
                                            crate->x, crate->y,
                                            CRATE_W, CRATE_H))
                 {
@@ -650,8 +730,8 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
                 const GasCanister *canister =
                     &state->level.runtime.gas_canisters[j];
                 if (canister->active &&
-                    gameplay_boxes_overlap(swept_x, rocket->y,
-                                           swept_w, ROCKET_H,
+                    gameplay_boxes_overlap(swept_x, swept_y,
+                                           swept_w, swept_h,
                                            canister->x, canister->y,
                                            GAS_CANISTER_W, GAS_CANISTER_H))
                 {
@@ -666,8 +746,8 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
             {
                 const Dog *dog = &state->dogs[j];
                 if (!dog->dead &&
-                    gameplay_boxes_overlap(swept_x, rocket->y,
-                                           swept_w, ROCKET_H,
+                    gameplay_boxes_overlap(swept_x, swept_y,
+                                           swept_w, swept_h,
                                            dog->x, dog->y, DOG_W, DOG_H))
                 {
                     impact = true;
@@ -681,8 +761,8 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
             {
                 const Enemy *enemy = &state->enemies[j];
                 if (!enemy->dead &&
-                    gameplay_boxes_overlap(swept_x, rocket->y,
-                                           swept_w, ROCKET_H,
+                    gameplay_boxes_overlap(swept_x, swept_y,
+                                           swept_w, swept_h,
                                            enemy->x, enemy->y,
                                            ENEMY_W, ENEMY_H))
                 {

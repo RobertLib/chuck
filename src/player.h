@@ -49,8 +49,9 @@ typedef struct
     float anim_time;    /* local visual animation clock */
     float action_timer; /* short attack/throw follow-through timer */
     bool knife_attacking; /* current action is a close-range knife swing */
+    bool grenade_throwing; /* current action is a grenade throw */
     bool bazooka_firing; /* current action is the bazooka launch recoil */
-    int shot_vertical;  /* -1 = last shot went up, +1 = down, 0 = horizontal */
+    int shot_vertical;  /* -1 = last attack went up, +1 = down, 0 = horizontal */
 } Player;
 
 void player_reset(Player *player, const Level *level);
