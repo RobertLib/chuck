@@ -314,6 +314,19 @@ the staff side of the desk stays legible.
   and towers drawn at the value of the air behind them disappear, leaving their
   lit windows floating like dirt on the screen. Keep the outside dark, let the
   lit windows carry it, and put one tinted veil over the opening.
+- **The title screen is key art, not a menu over a diagram.**
+  [intro.c](src/intro.c) is the first thing anyone sees, and it is built as one
+  deep image — sky, two skylines, the mid-ground slabs, the tower, the wet
+  street — where each plane sits a step darker or lighter than the plane behind
+  it. Two rules it paid for: a foreground figure cannot be a silhouette when
+  the ground plane is the darkest thing in the frame (Chuck keeps his colours,
+  dimmed to night, and stands in the lamp's pool), and every window that is lit
+  on the tower is asked for twice, once by the facade and once by the pavement
+  reflecting it, so the two can never disagree.
+- **`SDL_RenderDebugText` is an 8x8 bitmap: draw it at scale 1.0 or a multiple
+  of it.** Any other scale resamples the glyphs, and a line of mushy type
+  cheapens a screen faster than anything else on it. If a row does not fit at
+  1.0, cut words, not scale.
 - Sound effects are synthesized once during `audio_init` and cached as PCM,
   replayed through a 16-voice pool. A new effect means: an entry in the
   `SoundEffect` enum in [sound_id.h](src/sound_id.h) (before `SFX_COUNT`) plus
