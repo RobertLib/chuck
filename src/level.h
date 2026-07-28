@@ -301,6 +301,9 @@ bool level_load_data(Level *level, const char *name,
 /* Resolve a `THEME` metadata name such as "SERVER". False if unknown. */
 bool level_theme_from_name(const char *name, size_t length, LevelTheme *out);
 
+/* The authoring name a theme is written with. Never NULL. */
+const char *level_theme_name(LevelTheme theme);
+
 /* Tile queries. Out-of-bounds is treated as solid wall. */
 TileType level_tile(const Level *level, int col, int row);
 bool level_is_solid(const Level *level, int col, int row);

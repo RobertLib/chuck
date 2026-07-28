@@ -114,11 +114,10 @@ void game_shutdown(Game *game);
 /* Abort the current game (if any) and go back to the title screen. */
 void game_return_to_intro(Game *game);
 
-#ifdef CHUCK_DEBUG
-/* Start a clean campaign directly in one embedded level. This entry point and
- * its callers do not exist in release builds. */
-bool game_debug_start_level(Game *game, int level_index);
-#endif
+/* Start a clean campaign directly in one embedded level, skipping the title
+ * screen and the prologue. The debug level picker uses it, and so does the
+ * `--level N` switch the editor's playtest button launches the game with. */
+bool game_start_at_level(Game *game, int level_index);
 
 /* Helper: obtain current view size (logical or window). Exposed to render
  * module so rendering and camera code can share the same behavior. */

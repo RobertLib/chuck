@@ -162,6 +162,13 @@ On its title screen, use `Left` / `Right` (or `[` / `]`) to choose any campaign
 level and press `F5` to start there immediately. The debug executable is written to
 `build/debug/chuck-debug`; pressing Enter still starts the normal campaign.
 
+Any build can also be sent straight into one sector, skipping the title screen
+and the prologue:
+
+```sh
+./chuck --level 7
+```
+
 Run the deterministic core test suite with:
 
 ```sh
@@ -188,6 +195,27 @@ live under `levels/sublevels/`. During every build they are converted into C
 arrays and linked into the `chuck` executable. The executable therefore does
 not need the `levels` directory (or any other runtime asset files) when it is
 distributed.
+
+## The level editor
+
+The maps are plain text and can be edited in anything, but the campaign holds
+rules a text editor cannot see — whether a sector can actually be finished,
+whether it repeats another one's storey rhythm, whether the pressure still
+rises. `chuck-editor` is a separate binary that draws a map the way the game
+draws it and answers those questions while it is being drawn:
+
+```sh
+make editor          # build ./chuck-editor
+make run-editor      # build and launch it
+./chuck-editor levels/level7.txt   # open one map straight away
+```
+
+It paints with every character in
+[levels/LEGEND.md](levels/LEGEND.md), renders the level through the game's own
+parser and art direction, and reports what `make test` would report: unreachable
+key cards, exits nothing can get to, tiles a one-way drop strands the player in,
+hazard budgets that no longer rise, two sectors the same size, a theme repeated
+next door. `F5` saves the map, rebuilds the game and drops you into that sector.
 
 ## Architecture
 

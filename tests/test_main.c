@@ -1,5 +1,7 @@
 #include "camera.h"
 #include "chase.h"
+#include "editor_doc.h"
+#include "editor_validate.h"
 #include "embedded_levels.h"
 #include "game_event.h"
 #include "gameplay_ai.h"
@@ -10,6 +12,7 @@
 #include "gameplay_state.h"
 #include "gameplay_world.h"
 #include "level.h"
+#include "level_route.h"
 #include "rng.h"
 
 #include <math.h>
@@ -274,360 +277,6 @@ static void test_all_embedded_levels_parse(void)
 }
 
 /*
- * ---- Route model -----------------------------------------------------------
- *
- * A deliberately conservative account of what the player can do on foot: walk,
- * fall, step up one tile, jump a one-tile hole (two tiles with a second open
- * row overhead), hop a single floor spike with that same clearance, ride
- * ladders, lift shafts and moving platforms, and step through a paired door.
- * Falling panels are left out on purpose, because a map has to still work once
- * every one of them has gone. Everything it reaches really is reachable, so a
- * map it calls finishable is finishable.
- */
-#define ROUTE_MAX_NEIGHBOURS 24
-
-typedef struct
-{
-    int col;
-    int row;
-} RouteCell;
-
-typedef struct
-{
-    const Level *level;
-    bool spike[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
-} RouteMap;
-
-static bool route_seen[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
-static bool route_escapes[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
-
-static void route_map_init(RouteMap *route, const Level *level)
-{
-    memset(route, 0, sizeof(*route));
-    route->level = level;
-    for (int i = 0; i < level->map.spike_count; ++i)
-    {
-        int col = (int)(level->map.spike_spawns[i].x / TILE_SIZE);
-        int row = (int)(level->map.spike_spawns[i].y / TILE_SIZE);
-        if (col >= 0 && col < level->map.width &&
-            row >= 0 && row < level->map.height)
-        {
-            route->spike[row][col] = true;
-        }
-    }
-}
-
-static bool route_inside(const RouteMap *route, int col, int row)
-{
-    return col >= 0 && col < route->level->map.width &&
-           row >= 0 && row < route->level->map.height;
-}
-
-static bool route_passable(const RouteMap *route, int col, int row)
-{
-    if (!route_inside(route, col, row))
-        return false;
-    if (route->level->map.tiles[row][col] == TILE_WALL)
-        return false;
-    return !route->spike[row][col];
-}
-
-static bool route_support(const RouteMap *route, int col, int row)
-{
-    if (route_inside(route, col, row + 1) &&
-        route->level->map.tiles[row + 1][col] == TILE_WALL)
-    {
-        return true;
-    }
-    for (int i = 0; i < route->level->runtime.moving_platform_count; ++i)
-    {
-        const MovingPlatform *platform =
-            &route->level->runtime.moving_platforms[i];
-        if (platform->row != row + 1)
-            continue;
-        int left = (int)(platform->left_limit / TILE_SIZE);
-        int right = (int)(platform->right_limit / TILE_SIZE);
-        if (col >= left && col <= right)
-            return true;
-    }
-    return false;
-}
-
-static bool route_standing(const RouteMap *route, int col, int row)
-{
-    if (!route_passable(route, col, row))
-        return false;
-    return route_support(route, col, row) ||
-           route->level->map.tiles[row][col] == TILE_LADDER;
-}
-
-static bool route_landing(const RouteMap *route, int col, int row,
-                          RouteCell *landing)
-{
-    for (int r = row; r < route->level->map.height; ++r)
-    {
-        if (!route_passable(route, col, r))
-            return false;
-        if (route_standing(route, col, r))
-        {
-            landing->col = col;
-            landing->row = r;
-            return true;
-        }
-    }
-    return false;
-}
-
-/* A shaft only carries anybody if its run is long enough to hold a lift. */
-static bool route_in_shaft(const RouteMap *route, int col, int row)
-{
-    const LevelMap *map = &route->level->map;
-    if (!route_inside(route, col, row) ||
-        map->tiles[row][col] != TILE_ELEVATOR_SHAFT)
-    {
-        return false;
-    }
-    return (row > 0 && map->tiles[row - 1][col] == TILE_ELEVATOR_SHAFT) ||
-           (row + 1 < map->height &&
-            map->tiles[row + 1][col] == TILE_ELEVATOR_SHAFT);
-}
-
-static int route_neighbours(const RouteMap *route, int col, int row,
-                            RouteCell *out)
-{
-    const LevelMap *map = &route->level->map;
-    int count = 0;
-    RouteCell landing;
-
-    if (map->tiles[row][col] == TILE_LADDER)
-    {
-        for (int step = -1; step <= 1; step += 2)
-        {
-            if (route_inside(route, col, row + step) &&
-                map->tiles[row + step][col] == TILE_LADDER)
-            {
-                out[count++] = (RouteCell){col, row + step};
-            }
-        }
-        if (route_standing(route, col, row - 1))
-            out[count++] = (RouteCell){col, row - 1};
-    }
-
-    if (route_in_shaft(route, col, row))
-    {
-        for (int step = -1; step <= 1; step += 2)
-        {
-            if (route_in_shaft(route, col, row + step))
-                out[count++] = (RouteCell){col, row + step};
-        }
-    }
-
-    for (int step = -1; step <= 1; step += 2)
-    {
-        int next = col + step;
-        if (route_passable(route, next, row))
-        {
-            if (route_standing(route, next, row))
-                out[count++] = (RouteCell){next, row};
-            else if (route_landing(route, next, row, &landing))
-                out[count++] = landing;
-        }
-        if (route_in_shaft(route, next, row))
-            out[count++] = (RouteCell){next, row};
-        if (route_passable(route, col, row - 1) &&
-            route_standing(route, next, row - 1))
-        {
-            out[count++] = (RouteCell){next, row - 1};
-        }
-    }
-
-    /* A hole is cleared one tile wide under a low ceiling, two with a second
-     * open row for the jump to use. */
-    for (int step = -1; step <= 1; step += 2)
-    {
-        for (int hole = 1; hole <= 2; ++hole)
-        {
-            int destination = col + step * (hole + 1);
-            if (!route_standing(route, destination, row))
-                continue;
-            bool clear = true;
-            for (int i = 1; i <= hole && clear; ++i)
-            {
-                int over = col + step * i;
-                clear = route_passable(route, over, row) &&
-                        !route_standing(route, over, row);
-            }
-            for (int i = 0; i <= hole + 1 && clear; ++i)
-            {
-                for (int head = 1; head <= hole && clear; ++head)
-                    clear = route_passable(route, col + step * i, row - head);
-            }
-            if (clear)
-                out[count++] = (RouteCell){destination, row};
-        }
-    }
-
-    for (int step = -1; step <= 1; step += 2)
-    {
-        int over = col + step;
-        int destination = col + 2 * step;
-        if (!route_inside(route, over, row) || !route->spike[row][over])
-            continue;
-        if (!route_standing(route, destination, row))
-            continue;
-        bool clear = true;
-        for (int i = 0; i <= 2 && clear; ++i)
-        {
-            for (int head = 1; head <= 2 && clear; ++head)
-                clear = route_passable(route, col + step * i, row - head);
-        }
-        if (clear)
-            out[count++] = (RouteCell){destination, row};
-    }
-
-    if (map->tiles[row][col] == TILE_DOOR)
-    {
-        for (int i = 0; i < map->door_count; ++i)
-        {
-            if (map->doors[i].col != col || map->doors[i].row != row)
-                continue;
-            int pair = i ^ 1;
-            if (pair < map->door_count)
-            {
-                out[count++] =
-                    (RouteCell){map->doors[pair].col, map->doors[pair].row};
-            }
-        }
-    }
-
-    return count;
-}
-
-static void route_flood(const RouteMap *route, RouteCell start)
-{
-    static RouteCell queue[MAX_LEVEL_HEIGHT * MAX_LEVEL_WIDTH];
-    int head = 0;
-    int tail = 0;
-
-    memset(route_seen, 0, sizeof(route_seen));
-    route_seen[start.row][start.col] = true;
-    queue[tail++] = start;
-    while (head < tail)
-    {
-        RouteCell current = queue[head++];
-        RouteCell next[ROUTE_MAX_NEIGHBOURS];
-        int count = route_neighbours(route, current.col, current.row, next);
-        for (int i = 0; i < count; ++i)
-        {
-            if (route_seen[next[i].row][next[i].col])
-                continue;
-            route_seen[next[i].row][next[i].col] = true;
-            queue[tail++] = next[i];
-        }
-    }
-}
-
-static bool route_reaches(const RouteMap *route, int col, int row)
-{
-    RouteCell landing;
-    if (route_inside(route, col, row) && route_seen[row][col])
-        return true;
-    if (!route_landing(route, col, row, &landing))
-        return false;
-    return route_seen[landing.row][landing.col];
-}
-
-/* One-way drops are fine; being dropped somewhere the exit can no longer be
- * reached from is not. */
-static bool route_never_strands(const RouteMap *route, RouteCell goal)
-{
-    memset(route_escapes, 0, sizeof(route_escapes));
-    route_escapes[goal.row][goal.col] = true;
-
-    bool changed = true;
-    while (changed)
-    {
-        changed = false;
-        for (int row = 0; row < route->level->map.height; ++row)
-        {
-            for (int col = 0; col < route->level->map.width; ++col)
-            {
-                if (!route_seen[row][col] || route_escapes[row][col])
-                    continue;
-                RouteCell next[ROUTE_MAX_NEIGHBOURS];
-                int count = route_neighbours(route, col, row, next);
-                for (int i = 0; i < count; ++i)
-                {
-                    if (!route_escapes[next[i].row][next[i].col])
-                        continue;
-                    route_escapes[row][col] = true;
-                    changed = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    for (int row = 0; row < route->level->map.height; ++row)
-    {
-        for (int col = 0; col < route->level->map.width; ++col)
-        {
-            if (route_seen[row][col] && !route_escapes[row][col])
-                return false;
-        }
-    }
-    return true;
-}
-
-/*
- * The storey rhythm of a map: the run of open rows between each pair of
- * full-width structural slabs. It ignores furniture and ladder columns, so two
- * sectors built on the same stack of floors produce the same rhythm however
- * differently they are dressed - which is exactly the repetition worth
- * forbidding.
- */
-static int level_storey_rhythm(const LevelMap *map, int *bands, int max_bands)
-{
-    int count = 0;
-    int previous = -1;
-    for (int row = 0; row < map->height; ++row)
-    {
-        int walls = 0;
-        for (int col = 0; col < map->width; ++col)
-            walls += map->tiles[row][col] == TILE_WALL;
-        if (walls * 100 < map->width * 85)
-            continue;
-        if (previous >= 0 && count < max_bands)
-            bands[count++] = row - previous - 1;
-        previous = row;
-    }
-    return count;
-}
-
-static int level_hazard_budget(const Level *level)
-{
-    if (level->map.mode == LEVEL_MODE_FACADE)
-    {
-        int budget = 0;
-        for (int i = 0; i < level->map.facade_hazard_spawn_count; ++i)
-        {
-            budget += level->map.facade_hazard_spawns[i].type ==
-                              FACADE_HAZARD_THROWN_OBJECT
-                          ? 3
-                          : 2;
-        }
-        return budget;
-    }
-
-    int dogs = 0;
-    for (int i = 0; i < level->map.enemy_count; ++i)
-        dogs += level->map.enemy_spawns[i].has_dog;
-    return 3 * level->map.enemy_count + 2 * dogs +
-           2 * level->map.mine_count + level->map.spike_count +
-           level->map.ceiling_fan_count;
-}
-
-/*
  * Three properties of the campaign as a whole, none of which the parser or the
  * theme rules can see: no sector is built like another one, the pressure only
  * ever rises, and every interior can actually be finished.
@@ -696,19 +345,11 @@ static void test_campaign_levels_are_distinct_and_solvable(void)
         if (level->map.mode == LEVEL_MODE_FACADE)
             continue; /* climbs are pinned by the bot in their own test */
 
-        RouteMap route;
+        static RouteMap route;
         route_map_init(&route, level);
 
-        RouteCell start = {
-            (int)((level->map.start_x + PLAYER_W * 0.5f) / TILE_SIZE),
-            (int)((level->map.start_y + PLAYER_H * 0.5f) / TILE_SIZE)};
         RouteCell landing;
-        if (!route_standing(&route, start.col, start.row) &&
-            route_landing(&route, start.col, start.row, &landing))
-        {
-            start = landing;
-        }
-        route_flood(&route, start);
+        route_flood(&route, route_player_start(&route));
 
         /* The way out of the sector: the window when there is one, because the
          * stair door beside it is welded shut. */
@@ -818,6 +459,320 @@ static void test_embedded_restroom_sublevel(void)
             restroom.map.sublevel_return_row * (float)TILE_SIZE)
             high_items++;
     CHECK(high_items == 2);
+}
+
+/* ---- Level editor ------------------------------------------------------ */
+
+/*
+ * The editor keeps a map as the characters it was authored with and hands the
+ * text back to `level_load_data` to find out what it means. That only holds if
+ * a load followed by a save is a no-op: the moment saving reflows a map, using
+ * the editor on one sector would rewrite it wholesale and bury the actual edit
+ * in the diff.
+ */
+static void test_editor_round_trips_every_map_file(void)
+{
+    static EditorDoc doc;
+    static char text[MAX_LEVEL_WIDTH * MAX_LEVEL_HEIGHT * 2];
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT + EMBEDDED_SUBLEVEL_COUNT; ++i)
+    {
+        const EmbeddedLevelData *source =
+            i < EMBEDDED_LEVEL_COUNT
+                ? &EMBEDDED_LEVELS[i]
+                : &EMBEDDED_SUBLEVELS[i - EMBEDDED_LEVEL_COUNT];
+
+        CHECK(editor_doc_parse(&doc, source->data, source->size));
+        size_t length = editor_doc_serialize(&doc, text, sizeof(text));
+        CHECK(length == source->size);
+        CHECK(memcmp(text, source->data, source->size) == 0);
+
+        /* And the document agrees with the parser about what it holds. */
+        Level from_doc;
+        Level from_file;
+        Rng doc_rng;
+        Rng file_rng;
+        rng_seed(&doc_rng, 31);
+        rng_seed(&file_rng, 31);
+        CHECK(editor_doc_build_level(&doc, &from_doc, 31));
+        CHECK(level_load_data(&from_file, source->name, source->data,
+                              source->size, &file_rng));
+        (void)doc_rng;
+        CHECK(from_doc.map.width == from_file.map.width);
+        CHECK(from_doc.map.height == from_file.map.height);
+        CHECK(from_doc.map.mode == from_file.map.mode);
+        CHECK(from_doc.map.theme == from_file.map.theme);
+        CHECK(from_doc.map.enemy_count == from_file.map.enemy_count);
+        CHECK(from_doc.map.door_count == from_file.map.door_count);
+        for (int door = 0; door < from_file.map.door_count; ++door)
+        {
+            CHECK(from_doc.map.door_spawn_counts[door] ==
+                  from_file.map.door_spawn_counts[door]);
+        }
+    }
+
+    /* A campaign path carries its sector number; anything else does not. */
+    CHECK(editor_path_level_number("levels/level7.txt") == 7);
+    CHECK(editor_path_level_number("levels/level15.txt") == 15);
+    CHECK(editor_path_level_number("levels/sublevels/restroom.txt") == 0);
+    CHECK(editor_path_level_number("levels/level7.bak") == 0);
+}
+
+static void test_editor_edits_and_undo(void)
+{
+    static EditorDoc doc;
+    editor_doc_new(&doc, 12, 8, false, LEVEL_THEME_OFFICE);
+
+    /* A new interior is a sealed box the player can already stand in. */
+    CHECK(editor_doc_get(&doc, 0, 0) == '#');
+    CHECK(editor_doc_get(&doc, 5, 7) == '#');
+    CHECK(editor_doc_get(&doc, 2, 6) == 'S');
+
+    editor_doc_checkpoint(&doc);
+    CHECK(editor_doc_set(&doc, 5, 6, 'M'));
+    CHECK(editor_doc_get(&doc, 5, 6) == 'M');
+    CHECK(editor_doc_undo(&doc));
+    CHECK(editor_doc_get(&doc, 5, 6) == ' ');
+    CHECK(editor_doc_redo(&doc));
+    CHECK(editor_doc_get(&doc, 5, 6) == 'M');
+
+    /* Inserting a row pushes the floor down rather than overwriting it. */
+    editor_doc_checkpoint(&doc);
+    CHECK(editor_doc_insert_row(&doc, 6));
+    CHECK(doc.grid.height == 9);
+    CHECK(editor_doc_get(&doc, 5, 7) == 'M');
+    CHECK(editor_doc_get(&doc, 5, 6) == ' ');
+    CHECK(editor_doc_undo(&doc));
+    CHECK(doc.grid.height == 8);
+    CHECK(editor_doc_get(&doc, 5, 6) == 'M');
+
+    /* Column geometry works the same way, and mirroring is its own edit. */
+    editor_doc_checkpoint(&doc);
+    CHECK(editor_doc_insert_col(&doc, 3));
+    CHECK(doc.grid.width == 13);
+    CHECK(editor_doc_get(&doc, 6, 6) == 'M');
+    CHECK(editor_doc_delete_col(&doc, 3));
+    CHECK(doc.grid.width == 12);
+    CHECK(editor_doc_get(&doc, 5, 6) == 'M');
+
+    editor_doc_mirror(&doc, 0, 6, 11, 6, true);
+    CHECK(editor_doc_get(&doc, 6, 6) == 'M');
+    CHECK(editor_doc_get(&doc, 9, 6) == 'S');
+
+    /* A facade pads with '.' so a blank column reads as sky, not as a hole. */
+    editor_doc_new(&doc, 10, 10, true, LEVEL_THEME_FACADE_STORM);
+    CHECK(editor_doc_fill_char(&doc) == '.');
+    CHECK(editor_doc_get(&doc, 0, 0) == '.');
+
+    static char text[4096];
+    size_t length = editor_doc_serialize(&doc, text, sizeof(text));
+    CHECK(length > 0);
+    CHECK(strstr(text, "\nMODE FACADE\n") != NULL);
+    CHECK(strstr(text, "\nTHEME FACADE_STORM\n") != NULL);
+
+    Level level;
+    CHECK(editor_doc_build_level(&doc, &level, 5));
+    CHECK(level.map.mode == LEVEL_MODE_FACADE);
+    CHECK(level.map.theme == LEVEL_THEME_FACADE_STORM);
+}
+
+/*
+ * The editor's report is the test suite's own opinion, given while the map is
+ * being drawn. These pin that the checks actually fire: a report that says
+ * nothing about a broken map is worse than no report, because the author
+ * believes it.
+ */
+static bool report_mentions(const EdReport *report, EdSeverity severity,
+                            const char *fragment)
+{
+    for (int i = 0; i < report->count; ++i)
+    {
+        if (report->findings[i].severity != severity)
+            continue;
+        if (strstr(report->findings[i].text, fragment) != NULL)
+            return true;
+    }
+    return false;
+}
+
+static void validate_text(const char *text, const char *path, EdReport *report)
+{
+    static EditorDoc doc;
+    static Level level;
+    static EdCampaign campaign;
+    CHECK(editor_doc_parse(&doc, text, strlen(text)));
+    if (path != NULL)
+        snprintf(doc.path, sizeof(doc.path), "%s", path);
+    bool parsed = editor_doc_build_level(&doc, &level, 11);
+    editor_validate(&doc, &level, parsed, &campaign, report);
+}
+
+static void test_editor_report_catches_broken_maps(void)
+{
+    static EdReport report;
+
+    /* A sealed room with the exit behind a wall: it loads, and it cannot be
+     * finished. The route model is what knows the difference. */
+    validate_text("##########\n"
+                  "#S     # E#\n"
+                  "##########\n"
+                  "\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(report.parsed);
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "way out cannot be reached"));
+
+    /* Open the wall and the same map is clean. */
+    validate_text("##########\n"
+                  "#S       E#\n"
+                  "##########\n"
+                  "\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(report.errors == 0);
+    CHECK(report.route_valid);
+    CHECK(report.goal_reached);
+
+    /* A character nobody has heard of is air in the game and silence in the
+     * diff, so it has to be loud here. */
+    validate_text("##########\n"
+                  "#S  @    E#\n"
+                  "##########\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "not in the legend"));
+
+    /* Two exits, which the loader itself rejects. */
+    validate_text("###########\n"
+                  "#S   E   E#\n"
+                  "###########\n",
+                  NULL, &report);
+    CHECK(!report.parsed);
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "exactly one exit"));
+
+    /* A fan two columns from a hole the route model calls crossed. */
+    validate_text("############\n"
+                  "#          #\n"
+                  "#S   O    E#\n"
+                  "#### #######\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "hole in the floor"));
+
+    /* SPAWNS has to name every door. */
+    validate_text("############\n"
+                  "#S D    D E#\n"
+                  "############\n"
+                  "\n"
+                  "SPAWNS 1\n"
+                  "THEME LAB\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "SPAWNS lists"));
+
+    /* A prop with nothing under it is dropped by the loader. */
+    validate_text("############\n"
+                  "#S   d    E#\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "no wall under it"));
+
+    /* On a wall, a lone block seals the band it sits in. */
+    validate_text("....Y....\n"
+                  ".........\n"
+                  "..##.##..\n"
+                  ".........\n"
+                  ".....#...\n"
+                  ".........\n"
+                  "....S....\n"
+                  "\n"
+                  "MODE FACADE\n"
+                  "THEME FACADE_HIGH\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "lone block"));
+
+    /* And a climb whose masonry closes the wall off has no route up. */
+    validate_text("....Y....\n"
+                  ".........\n"
+                  ".#######.\n"
+                  ".........\n"
+                  "....S....\n"
+                  "\n"
+                  "MODE FACADE\n"
+                  "THEME FACADE_DAWN\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "cannot be climbed to"));
+}
+
+static void test_editor_report_reads_the_campaign(void)
+{
+    static EdCampaign campaign;
+    static EditorDoc doc;
+    static Level level;
+    static EdReport report;
+    static Level neighbour;
+
+    /* Build the campaign context out of the shipped sectors, then hand the
+     * editor a sector 2 that repeats sector 1's theme. */
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        Rng rng;
+        rng_seed(&rng, 4000 + i);
+        CHECK(level_load_data(&neighbour, EMBEDDED_LEVELS[i].name,
+                              EMBEDDED_LEVELS[i].data, EMBEDDED_LEVELS[i].size,
+                              &rng));
+        editor_campaign_record(&campaign, (int)i + 1, &neighbour);
+    }
+    CHECK(campaign.count == (int)EMBEDDED_LEVEL_COUNT);
+
+    /* Sector 1 is the lobby, so a second LOBBY next door is a repeat, and a
+     * tiny map is both under-budget and the wrong shape. */
+    const char *repeat = "##########\n"
+                         "#S      E#\n"
+                         "##########\n"
+                         "\n"
+                         "THEME LOBBY\n";
+    CHECK(editor_doc_parse(&doc, repeat, strlen(repeat)));
+    snprintf(doc.path, sizeof(doc.path), "levels/level2.txt");
+    CHECK(editor_doc_build_level(&doc, &level, 3));
+    editor_validate(&doc, &level, true, &campaign, &report);
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "already wears LOBBY"));
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "does not beat the previous"));
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "alarm switches"));
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "bazookas"));
+
+    /* The shipped sector 2 itself has nothing to answer for. */
+    CHECK(editor_doc_parse(&doc, EMBEDDED_LEVELS[1].data,
+                           EMBEDDED_LEVELS[1].size));
+    snprintf(doc.path, sizeof(doc.path), "levels/level2.txt");
+    CHECK(editor_doc_build_level(&doc, &level, 3));
+    editor_validate(&doc, &level, true, &campaign, &report);
+    CHECK(report.errors == 0);
+
+    /* Every shipped sector, in fact: the editor and `make test` have to agree
+     * about the campaign that is already in the tree. */
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        char path[64];
+        snprintf(path, sizeof(path), "levels/level%d.txt", (int)i + 1);
+        CHECK(editor_doc_parse(&doc, EMBEDDED_LEVELS[i].data,
+                               EMBEDDED_LEVELS[i].size));
+        snprintf(doc.path, sizeof(doc.path), "%s", path);
+        CHECK(editor_doc_build_level(&doc, &level, 3));
+        editor_validate(&doc, &level, true, &campaign, &report);
+        if (report.errors != 0)
+            printf("%s: %s\n", path, report.findings[0].text);
+        CHECK(report.errors == 0);
+    }
+
+    /* The restroom is not a sector, so none of the campaign rules apply to it
+     * and it still has to be finishable. */
+    CHECK(editor_doc_parse(&doc, EMBEDDED_SUBLEVELS[0].data,
+                           EMBEDDED_SUBLEVELS[0].size));
+    snprintf(doc.path, sizeof(doc.path), "levels/sublevels/restroom.txt");
+    CHECK(editor_doc_build_level(&doc, &level, 3));
+    editor_validate(&doc, &level, true, &campaign, &report);
+    CHECK(report.route_valid);
+    CHECK(report.goal_reached);
+    CHECK(report.errors == 0);
 }
 
 /* ---- Prologue car chase ---------------------------------------------- */
@@ -3853,6 +3808,10 @@ int main(void)
     test_all_embedded_levels_parse();
     test_campaign_levels_are_distinct_and_solvable();
     test_embedded_restroom_sublevel();
+    test_editor_round_trips_every_map_file();
+    test_editor_edits_and_undo();
+    test_editor_report_catches_broken_maps();
+    test_editor_report_reads_the_campaign();
     test_gameplay_reset_preserves_rng_only();
     test_chase_is_reproducible_from_a_seed();
     test_chase_departure_hands_over_to_the_drive();

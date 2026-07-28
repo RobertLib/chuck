@@ -2,6 +2,12 @@
 
 This file describes the meaning of characters used in the level text files.
 
+`make editor` builds a tool that paints with every one of them, draws the map
+the way the game draws it, and checks the rules on this page while the map is
+being edited. Its palette is the same list in code
+([editor/editor_legend.c](../editor/editor_legend.c)); a character added here
+has to be added there as well, or it is a character the editor cannot paint.
+
 - `#` : Wall (solid, impassable tile). In a `MODE FACADE` level it is exterior
   masonry: a stone cornice or plant the climber must route around, and cover
   that shatters thrown objects and turns birds away.
@@ -92,7 +98,8 @@ Notes:
   and dog, then shuts itself off after nobody has seen the player for a short time.
 - A `SPAWNS n0 n1 ...` line may appear after the grid. When present, it must
   contain exactly one spawn count for every door, in the order the doors
-  appear in the file.
+  appear in the file. `F9` in the editor rewrites the line for the doors the
+  map currently has.
 - `MODE FACADE` on a metadata line after the grid selects the separate exterior
   climbing mode. It uses direct four-way wall movement: no gravity, ladders,
   doors, guards, or ordinary platform simulation. Pickups do work, so items

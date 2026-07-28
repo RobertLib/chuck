@@ -4,11 +4,25 @@
 
 #include "game.h"
 
+/* `--level N` boots straight into campaign sector N (1-based), skipping the
+ * title screen and the prologue. It is how the level editor playtests the map
+ * being drawn; N is otherwise reached only by playing there. */
+static int parse_start_level(int argc, char *argv[])
+{
+    for (int i = 1; i < argc; ++i)
+    {
+        if (SDL_strcmp(argv[i], "--level") != 0 || i + 1 >= argc)
+            continue;
+        int level = SDL_atoi(argv[i + 1]);
+        if (level >= 1)
+            return level - 1;
+        SDL_Log("--level expects a sector number of 1 or more");
+    }
+    return -1;
+}
+
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
-    (void)argc;
-    (void)argv;
-
     Game *game = (Game *)SDL_calloc(1, sizeof(Game));
     if (game == NULL)
     {
@@ -19,6 +33,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     {
         SDL_free(game);
         return SDL_APP_FAILURE;
+    }
+
+    int start_level = parse_start_level(argc, argv);
+    if (start_level >= 0)
+    {
+        game_start_at_level(game, start_level);
     }
 
     *appstate = game;

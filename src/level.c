@@ -27,6 +27,13 @@ bool level_theme_from_name(const char *name, size_t length, LevelTheme *out)
     return false;
 }
 
+const char *level_theme_name(LevelTheme theme)
+{
+    if (theme < 0 || theme >= LEVEL_THEME_COUNT)
+        return LEVEL_THEME_NAMES[LEVEL_THEME_PLANT];
+    return LEVEL_THEME_NAMES[theme];
+}
+
 static void place_item(Level *level, int col, int row, ItemType type)
 {
     if (level->runtime.item_count >= MAX_ITEMS)

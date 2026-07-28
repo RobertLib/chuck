@@ -57,3 +57,4 @@ dkms.conf
 # Build output
 build/
 chuck
+chuck-editor

@@ -380,14 +380,13 @@ void game_return_to_intro(Game *game)
     game_enter_state(game, STATE_INTRO);
 }
 
-#ifdef CHUCK_DEBUG
-bool game_debug_start_level(Game *game, int level_index)
+bool game_start_at_level(Game *game, int level_index)
 {
     campaign_reset(&game->campaign);
     audio_stop_effects(&game->platform.audio);
     if (!load_level(game, level_index))
     {
-        SDL_Log("Could not debug-start level %d", level_index + 1);
+        SDL_Log("Could not start at level %d", level_index + 1);
         audio_play_music(&game->platform.audio, MUSIC_INTRO);
         game_enter_state(game, STATE_INTRO);
         return false;
@@ -396,7 +395,6 @@ bool game_debug_start_level(Game *game, int level_index)
     audio_play(&game->platform.audio, SFX_MENU_START);
     return true;
 }
-#endif
 
 static void advance_level(Game *game)
 {

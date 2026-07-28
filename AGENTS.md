@@ -12,10 +12,15 @@ build time.
 ```sh
 make          # build ./chuck
 make run      # build and launch
+make editor   # build ./chuck-editor, the level editor
+make run-editor # build and launch the editor
 make test     # build and run the core test suite (build/core_tests)
 make sanitize # rebuild game + tests with ASan/UBSan into build/sanitize
-make clean    # remove build/ and ./chuck
+make clean    # remove build/, ./chuck and ./chuck-editor
 ```
+
+`./chuck --level N` boots straight into campaign sector N, skipping the title
+screen and the prologue; it is what the editor's playtest button launches.
 
 SDL3 must be discoverable through `pkg-config`. The **test binary links no SDL**
 (`TEST_CFLAGS` omits the SDL flags), so `make test` works even where SDL3 is
@@ -39,10 +44,14 @@ Two layers, and the split is the most important invariant in the codebase:
   [intro.c](src/intro.c), [cutscene.c](src/cutscene.c),
   [particle.c](src/particle.c).
 - **Gameplay core** (no SDL, no knowledge of `Game`): `src/gameplay_*.c`,
-  [level.c](src/level.c), [player.c](src/player.c), [enemy.c](src/enemy.c),
+  [level.c](src/level.c), [level_route.c](src/level_route.c),
+  [player.c](src/player.c), [enemy.c](src/enemy.c),
   [chase.c](src/chase.c), [rng.c](src/rng.c),
   [game_event.c](src/game_event.c). These only include each other plus libc.
   That is what makes them deterministic and directly testable.
+
+There is a second SDL binary, the level editor in [editor/](editor/); see
+[The level editor](#the-level-editor) below.
 
 Gameplay code never plays a sound, spawns a particle, or shakes the camera
 itself. It appends to `GameplayState.events` (a `GameEventBuffer`, see
@@ -138,7 +147,9 @@ them into `build/embedded_levels.c` on every build. **Adding
 `levels/level16.txt` is all that is needed for a new campaign level** — the
 Makefile wildcards it in and progression is driven by `EMBEDDED_LEVEL_COUNT`.
 A level is scored by its theme, not by its index, so the new sector's music
-comes with the `THEME` line.
+comes with the `THEME` line. Maps are text and can be edited as text, but
+`make editor` is the tool that knows the rules — see
+[The level editor](#the-level-editor).
 
 ### One plan per sector
 
@@ -161,6 +172,11 @@ key card, every terminal and the restroom door without ever being stranded by a
 one-way drop. That model never stands on a falling panel, so a sector has to
 work once every `F` has gone. [levels/LEGEND.md](levels/LEGEND.md) tabulates
 the plans, the budgets and what the model will and will not do.
+
+That route model lives in [level_route.c](src/level_route.c) rather than in the
+test file, because the editor asks it the same question about a map that is
+still being drawn. Two copies would drift, and a sector the editor calls
+solvable that `make test` then rejects is worse than no check at all.
 
 ### Level themes
 
@@ -318,6 +334,50 @@ the staff side of the desk stays legible.
   mapping; because it is one to one, `test_campaign_themes_keep_changing`
   already pins that no two consecutive sectors share a score.
 
+## The level editor
+
+`make editor` builds `./chuck-editor` from [editor/](editor/). It is a separate
+binary, but deliberately not a separate idea of what a level is: it links
+[level.c](src/level.c) to parse the map, [level_art.c](src/level_art.c) to draw
+it, and [level_route.c](src/level_route.c) to judge it. What the canvas shows is
+what the game will show, and what the report says is what `make test` will say.
+An editor with its own parser and its own opinion of "solvable" would be a
+second source of truth about the campaign, and the one that is wrong would be
+the one being used.
+
+Four modules, and the split is by what needs SDL:
+
+- [editor_doc.c](editor/editor_doc.c) — the document: a map *as characters*,
+  not as a parsed `LevelMap`. A file says things a `LevelMap` cannot say back —
+  a space against a `.`, a decoration the loader drops, an absent `THEME` line —
+  so the editor keeps the text and hands it to `level_load_data` to find out
+  what it means. Undo is two stacks of whole-grid snapshots.
+- [editor_legend.c](editor/editor_legend.c) — every character in
+  [levels/LEGEND.md](levels/LEGEND.md) as a table: name, the sentence the legend
+  gives it, colour, which mode it belongs to. **Both files change together**;
+  a character in one and not the other is either an unpaintable tile or a typo
+  the editor calls an error.
+- [editor_validate.c](editor/editor_validate.c) — the report. Structure the
+  loader insists on, the caps in [game_config.h](src/game_config.h), the
+  authoring rules in the legend, the route model, and the campaign-wide rules
+  `test_all_embedded_levels_parse` and
+  `test_campaign_levels_are_distinct_and_solvable` pin.
+- [editor_app.c](editor/editor_app.c), [editor_ui.c](editor/editor_ui.c),
+  [editor_render.c](editor/editor_render.c) — SDL: state and input, the chrome,
+  the canvas.
+
+The first three have no SDL in them, so `TEST_SOURCES` links them and the suite
+pins two things the editor cannot be allowed to get wrong. `test_editor_round_trips_every_map_file`
+requires that loading and saving every shipped map leaves the file byte
+identical — the moment saving reflows a map, editing one sector rewrites it
+wholesale and buries the actual change in the diff. `test_editor_report_reads_the_campaign`
+requires that the editor reports zero errors for every sector already in the
+tree, which is what keeps its rules and the test suite's rules the same rules.
+
+`F5` saves, runs `make` and launches `./chuck --level N`. That switch
+([main.c](src/main.c)) and `game_start_at_level` are the whole of the game-side
+change; the debug level picker calls the same entry point.
+
 ## Conventions
 
 - C17, built with `-Wall -Wextra -Wpedantic`; the tree is warning-free, keep it
@@ -328,6 +388,8 @@ the staff side of the desk stays legible.
 - Adding a new gameplay `.c` file: the game build picks it up via
   `$(wildcard src/*.c)`, but `TEST_SOURCES` in the [Makefile](Makefile) is an
   explicit list — add the file there as well or the tests will fail to link.
+  The editor wildcards `editor/*.c` but names the `src/` files it links, so a
+  new dependency of the editor's goes in `EDITOR_SOURCES` too.
 - Tests build levels from small inline map strings and drive the gameplay
   modules directly with a fixed seed, asserting on state and emitted events.
   New behavior in a gameplay module should get a test in that style.

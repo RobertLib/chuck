@@ -135,7 +135,7 @@ static bool handle_debug_level_select(Game *game, SDL_Scancode scancode)
   }
   if (scancode == SDL_SCANCODE_F5)
   {
-    game_debug_start_level(game, game->debug_selected_level);
+    game_start_at_level(game, game->debug_selected_level);
     return true;
   }
   return false;
