@@ -137,8 +137,8 @@ Maps live as text in `levels/level*.txt` (campaign, natural-sorted) and
 them into `build/embedded_levels.c` on every build. **Adding
 `levels/level16.txt` is all that is needed for a new campaign level** — the
 Makefile wildcards it in and progression is driven by `EMBEDDED_LEVEL_COUNT`.
-Level music cycles with
-`MUSIC_LEVEL_ONE + index % (MUSIC_TRACK_COUNT - MUSIC_LEVEL_ONE)`.
+A level is scored by its theme, not by its index, so the new sector's music
+comes with the `THEME` line.
 
 ### One plan per sector
 
@@ -164,15 +164,18 @@ the plans, the budgets and what the model will and will not do.
 
 ### Level themes
 
-A `THEME <name>` metadata line picks the level's art direction; the palettes,
-wall materials and parallax backdrops all live in
+A `THEME <name>` metadata line picks the level's art direction and its score;
+the palettes, wall materials and parallax backdrops all live in
 [level_art.c](src/level_art.c), which reads nothing but the immutable
 `LevelMap` and so can never change how a level plays. Fifteen sectors of one
 building would otherwise be fifteen runs down the same corridor, so every
 campaign level names a different theme — a lobby, an office floor, a server
 hall, an archive, a plenum, and four exterior climbs at different hours. Every
-theme name and what it draws is tabulated in
-[levels/LEGEND.md](levels/LEGEND.md).
+theme name, what it draws and what it sounds like is tabulated in
+[levels/LEGEND.md](levels/LEGEND.md). A server aisle and a rooftop are not the
+same place; one loop for the whole building would say they were, so the same
+table that gives a sector its palette gives it its music
+(`level_theme_music`).
 
 Two properties are pinned by `test_campaign_themes_keep_changing`: no two
 consecutive levels wear the same theme, and facade levels use the `FACADE_*`
@@ -295,12 +298,25 @@ the staff side of the desk stays legible.
   and towers drawn at the value of the air behind them disappear, leaving their
   lit windows floating like dirt on the screen. Keep the outside dark, let the
   lit windows carry it, and put one tinted veil over the opening.
-- Sound effects and the three music tracks are synthesized once during
-  `audio_init` and cached as PCM, replayed through a 16-voice pool. A new effect
-  means: an entry in the `SoundEffect` enum in
-  [sound_id.h](src/sound_id.h) (before `SFX_COUNT`) plus a case in
-  `synth_sound` ([audio.c](src/audio.c)). Audio init failure is non-fatal by
-  design — the game runs silently.
+- Sound effects are synthesized once during `audio_init` and cached as PCM,
+  replayed through a 16-voice pool. A new effect means: an entry in the
+  `SoundEffect` enum in [sound_id.h](src/sound_id.h) (before `SFX_COUNT`) plus
+  a case in `synth_sound` ([audio.c](src/audio.c)). Audio init failure is
+  non-fatal by design — the game runs silently.
+- **Music is one score per level theme**, and a score is a table row rather
+  than a hand-sequenced routine: a `MusicPlan` in [audio.c](src/audio.c) names
+  a key, a tempo, the 1/16 rhythms of each part and a colour (sweep, clank,
+  sparkle, wind, tick, drip), and `synth_music_plan` reads the loop as four
+  sections — a statement, a full one, a breakdown that hands the bar to the pad
+  and the drone, and a last one that pushes hardest. Only the hand-written
+  title theme is built during `audio_init`; a level's loop is built the first
+  time it is asked for, and only the title theme, the current track and the one
+  before it stay resident (eighteen forty-second loops would not). That is why
+  the restroom can be scored as its own room — the door switches away and
+  straight back without rebuilding the sector's music.
+  `level_theme_music` ([level_art.c](src/level_art.c)) owns the theme-to-track
+  mapping; because it is one to one, `test_campaign_themes_keep_changing`
+  already pins that no two consecutive sectors share a score.
 
 ## Conventions
 

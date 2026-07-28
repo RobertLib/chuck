@@ -179,6 +179,41 @@ const LevelThemeArt *level_art(LevelTheme theme)
     return &THEME_ART[theme];
 }
 
+/* ---- Scores ---------------------------------------------------------- */
+
+/*
+ * What the sector sounds like, decided by the same thing that decides what it
+ * looks like. One track per theme, so a floor is never scored by the corridor
+ * two sectors down and no two consecutive levels can share a loop — the
+ * themes already never repeat back to back
+ * (`test_campaign_themes_keep_changing`). The tracks themselves are described
+ * in the plan table in audio.c.
+ */
+static const MusicTrack THEME_MUSIC[LEVEL_THEME_COUNT] = {
+    [LEVEL_THEME_PLANT] = MUSIC_PLANT,
+    [LEVEL_THEME_LOBBY] = MUSIC_LOBBY,
+    [LEVEL_THEME_OFFICE] = MUSIC_OFFICE,
+    [LEVEL_THEME_SERVER] = MUSIC_SERVER,
+    [LEVEL_THEME_CANTEEN] = MUSIC_CANTEEN,
+    [LEVEL_THEME_LAB] = MUSIC_LAB,
+    [LEVEL_THEME_ARCHIVE] = MUSIC_ARCHIVE,
+    [LEVEL_THEME_SECURITY] = MUSIC_SECURITY,
+    [LEVEL_THEME_DUCTS] = MUSIC_DUCTS,
+    [LEVEL_THEME_PENTHOUSE] = MUSIC_PENTHOUSE,
+    [LEVEL_THEME_ROOF] = MUSIC_ROOF,
+    [LEVEL_THEME_RESTROOM] = MUSIC_RESTROOM,
+    [LEVEL_THEME_FACADE_NIGHT] = MUSIC_FACADE_NIGHT,
+    [LEVEL_THEME_FACADE_STORM] = MUSIC_FACADE_STORM,
+    [LEVEL_THEME_FACADE_DAWN] = MUSIC_FACADE_DAWN,
+    [LEVEL_THEME_FACADE_HIGH] = MUSIC_FACADE_HIGH};
+
+MusicTrack level_theme_music(LevelTheme theme)
+{
+    if (theme < 0 || theme >= LEVEL_THEME_COUNT)
+        return THEME_MUSIC[LEVEL_THEME_PLANT];
+    return THEME_MUSIC[theme];
+}
+
 /* ---- Shared helpers -------------------------------------------------- */
 
 static unsigned art_hash(int x, int y)

@@ -12,8 +12,13 @@
  *
  * Palettes still come from the fx.h vocabulary — themes shift hue and value
  * inside that system rather than inventing a new one per level.
+ *
+ * The theme also names the level's score, for the same reason it names the
+ * palette: a server aisle and a rooftop are not the same place, and one loop
+ * for the whole building would say they were.
  */
 
+#include "audio.h"
 #include "fx.h"
 #include "level.h"
 
@@ -81,6 +86,9 @@ typedef struct
 /* Art for a theme. Never NULL: an out-of-range theme falls back to the
  * interior default, so a renderer never has to branch on validity. */
 const LevelThemeArt *level_art(LevelTheme theme);
+
+/* The music the sector is scored with. One track per theme. */
+MusicTrack level_theme_music(LevelTheme theme);
 
 /* Everything a themed layer needs to place itself on screen. */
 typedef struct

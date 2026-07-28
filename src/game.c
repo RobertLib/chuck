@@ -7,6 +7,7 @@
 #include "gameplay_interaction.h"
 #include "gameplay_physics.h"
 #include "gameplay_world.h"
+#include "level_art.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -197,6 +198,11 @@ static void swap_gameplay_areas(Game *game)
     GameplayState temporary = game->gameplay;
     game->gameplay = game->inactive_gameplay;
     game->inactive_gameplay = temporary;
+    /* The restroom is a room of its own, not a corner of the sector, so it is
+     * scored as one. Both directions of the door come through here, which is
+     * why this is the only place that has to know. */
+    audio_play_music(&game->platform.audio,
+                     level_theme_music(game->gameplay.level.map.theme));
 }
 
 static bool enter_restroom(Game *game)
@@ -256,10 +262,8 @@ static bool load_level(Game *game, int index)
         return false;
     }
     game->campaign.current_level = index;
-    int gameplay_track_count = MUSIC_TRACK_COUNT - MUSIC_LEVEL_ONE;
-    MusicTrack track = (MusicTrack)(MUSIC_LEVEL_ONE +
-                                    index % gameplay_track_count);
-    audio_play_music(&game->platform.audio, track);
+    audio_play_music(&game->platform.audio,
+                     level_theme_music(game->gameplay.level.map.theme));
 
     player_reset(&game->gameplay.player, &game->gameplay.level);
 
@@ -461,7 +465,7 @@ static void game_enter_state(Game *game, GameState next_state)
         chase_init(&game->chase, seed);
         reset_level_presentation(game);
         audio_stop_effects(&game->platform.audio);
-        audio_play_music(&game->platform.audio, MUSIC_LEVEL_TWO);
+        audio_play_music(&game->platform.audio, MUSIC_PURSUIT);
         break;
     }
     case STATE_OPENING_CUTSCENE:

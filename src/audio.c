@@ -380,241 +380,809 @@ static bool synth_music_intro(CachedSound *track)
     return true;
 }
 
-static bool synth_music_track_one(CachedSound *track)
-{
-    const float beat = 60.0f / 96.0f;
-    const float step = beat * 0.25f;
-    const float duration = LEVEL_MUSIC_BARS * 4.0f * beat;
-    static const int roots[LEVEL_MUSIC_BARS] = {
-        40, 40, 43, 38, 40, 45, 43, 38,
-        40, 36, 38, 43, 40, 45, 38, 40};
-    static const int motif_a[16] = {
-        24, -1, -1, 27, -1, 31, -1, 29,
-        -1, 27, -1, 24, -1, 22, -1, -1};
-    static const int motif_b[16] = {
-        -1, 19, -1, 24, -1, -1, 27, -1,
-        31, -1, 29, -1, -1, 27, 24, -1};
-    static const int bass_a[] = {0, 3, 6, 10, 14};
-    static const int bass_b[] = {0, 2, 5, 8, 11, 14};
+/* ---- Themed level scores -------------------------------------------- */
 
-    if (!begin_music(track, duration, 0.235f))
+/*
+ * Every level theme names its own score, and eighteen hand-sequenced synth
+ * routines would be eighteen places to keep in tune with one another. A track
+ * is therefore described rather than written out: a key, a tempo, a set of
+ * 1/16 rhythms and a colour, which `synth_music_plan` turns into PCM. A new
+ * sector's music is a table row beside its palette, not another function.
+ *
+ * Rhythms are sixteen 1/16 steps written as four beats, earliest step in the
+ * low bit of each beat: MUSIC_BEATS(0x1, 0x1, 0x1, 0x1) is four on the floor,
+ * 0x5 is straight eighths, 0x4 is the offbeat on its own, 0xF is sixteenths.
+ */
+#define MUSIC_BEATS(one, two, three, four)                                   \
+    ((Uint16)((one) | ((two) << 4) | ((three) << 8) | ((four) << 12)))
+#define MUSIC_BAR(index) (1u << (index))
+
+/* The one detail of a track that is not a rhythm or a pitch: what the room
+ * itself sounds like underneath the parts. */
+typedef enum
+{
+    MUSIC_COLOUR_SWEEP = 1 << 0,   /* noise rise out of each section */
+    MUSIC_COLOUR_CLANK = 1 << 1,   /* struck metal on an offbeat */
+    MUSIC_COLOUR_SPARKLE = 1 << 2, /* high glints: glass, brass, stars */
+    MUSIC_COLOUR_WIND = 1 << 3,    /* air moving past a wall */
+    MUSIC_COLOUR_TICK = 1 << 4,    /* dry digital blip */
+    MUSIC_COLOUR_DRIP = 1 << 5     /* a wet plink in a hard room */
+} MusicColour;
+
+typedef struct
+{
+    float bpm;
+    int bars;               /* loop length; a multiple of four */
+    float gain;             /* playback gain of the finished loop */
+    int root;               /* MIDI note the progression is written against */
+    const int *progression; /* one offset per bar, added to the root */
+    bool minor;             /* chord quality of the pads, stabs and arps */
+    float swing;            /* how late the offbeat eighth is, in 1/16 steps */
+
+    Waveform bass_wave;
+    float bass_gain;
+    float bass_length;    /* in 1/16 steps */
+    Uint16 bass_steps[2]; /* even bars, odd bars */
+
+    int sub_note; /* absolute MIDI pedal; 0 follows the bar root, an octave down */
+    float sub_gain;
+
+    float pad_gain;
+    int pad_offset;  /* semitones from the bar root */
+    bool pad_halves; /* re-voice halfway through the bar */
+
+    Uint16 kick_steps[2];
+    Uint16 snare_steps[2];
+    Uint16 hat_steps[2];
+    float kick_gain;
+    float snare_gain;
+    float hat_gain;
+
+    const int *lead_a; /* sixteen offsets from the bar root; -1 rests */
+    const int *lead_b;
+    Uint32 lead_bars; /* which bars of the loop carry the lead */
+    float lead_gain;
+    float lead_length;
+    Waveform lead_wave;
+
+    float arp_gain;  /* four-note figure on the beats of the full sections */
+    float stab_gain; /* chord punches inside the full sections */
+    Uint8 colours;
+    Uint32 seed; /* keeps one track's noise from repeating another's */
+} MusicPlan;
+
+/* The drive: motorik saw bass and wet metal, unchanged in character from the
+ * road music the pursuit shipped with. */
+static const int PURSUIT_BARS[16] = {
+    0, 1, -2, -5, 0, 3, 1, -2, 0, -4, -2, -5, 0, 1, 3, -2};
+static const int PURSUIT_LEAD_A[16] = {
+    24, -1, 27, -1, 25, -1, -1, 22, -1, 24, -1, 20, -1, 22, -1, -1};
+static const int PURSUIT_LEAD_B[16] = {
+    -1, 19, -1, 20, -1, 24, -1, -1, 25, -1, 24, -1, 22, -1, 20, -1};
+
+/* The lobby: marble, brass and one lit street front. Nothing marches here —
+ * no snare at all, a pad that holds the room and glints off the glazing. */
+static const int LOBBY_BARS[12] = {0, 0, -4, 3, 0, 5, -2, -4, 0, 3, -2, -1};
+static const int LOBBY_LEAD_A[16] = {
+    -1, -1, 12, -1, -1, -1, 15, -1, -1, 19, -1, -1, 17, -1, -1, -1};
+static const int LOBBY_LEAD_B[16] = {
+    -1, 12, -1, -1, 16, -1, -1, -1, 19, -1, -1, 17, -1, -1, 15, -1};
+
+/* The office floor: the workaday groove the campaign shipped with. */
+static const int OFFICE_BARS[16] = {
+    0, 0, 3, -2, 0, 5, 3, -2, 0, -4, -2, 3, 0, 5, -2, 0};
+static const int OFFICE_LEAD_A[16] = {
+    24, -1, -1, 27, -1, 31, -1, 29, -1, 27, -1, 24, -1, 22, -1, -1};
+static const int OFFICE_LEAD_B[16] = {
+    -1, 19, -1, 24, -1, -1, 27, -1, 31, -1, 29, -1, -1, 27, 24, -1};
+
+/* The cold aisle: two-bar chords that barely move, a machine pulse instead of
+ * a backbeat, and sixteenths where a melody would be. */
+static const int SERVER_BARS[16] = {
+    0, 0, 3, 3, -2, -2, 5, 5, 0, 0, 3, 3, -4, -4, -1, -1};
+static const int SERVER_LEAD_A[16] = {
+    12, -1, 19, -1, 15, -1, 22, -1, 12, -1, 19, -1, 24, -1, 19, -1};
+static const int SERVER_LEAD_B[16] = {
+    -1, 19, -1, 15, -1, 12, -1, 19, -1, 22, -1, 19, -1, 24, -1, 15};
+
+/* The machine floor: half-time snare, a saw on the beats and something
+ * heavy being struck off in the dark. */
+static const int PLANT_BARS[16] = {
+    0, 0, 3, 1, 0, -4, 3, 1, 0, 0, 5, 3, 0, 1, -2, 0};
+static const int PLANT_LEAD_A[16] = {
+    12, -1, -1, -1, 15, -1, -1, -1, -1, -1, 19, -1, -1, -1, 17, -1};
+static const int PLANT_LEAD_B[16] = {
+    -1, -1, 19, -1, -1, 17, -1, -1, 15, -1, -1, -1, 12, -1, -1, -1};
+
+/* The galley: the warmest sector, so the only major key inside the building
+ * and the only swung one. */
+static const int CANTEEN_BARS[12] = {0, 5, 7, 0, -3, 5, 2, 7, 0, 5, -1, 0};
+static const int CANTEEN_LEAD_A[16] = {
+    16, -1, 19, -1, -1, 21, -1, 19, -1, 16, -1, -1, 12, -1, -1, -1};
+static const int CANTEEN_LEAD_B[16] = {
+    -1, 12, -1, 16, -1, -1, 19, -1, 21, -1, 19, -1, -1, 16, 12, -1};
+
+/* The lab: a chromatic wobble that never settles, and a tritone in the lead
+ * where the answering note should be. */
+static const int LAB_BARS[12] = {0, 0, -1, 1, 0, 6, -1, 0, 0, 3, 1, -1};
+static const int LAB_LEAD_A[16] = {
+    -1, -1, 15, -1, -1, -1, 18, -1, -1, -1, -1, 14, -1, -1, -1, -1};
+static const int LAB_LEAD_B[16] = {
+    -1, 18, -1, -1, -1, 15, -1, -1, -1, -1, 20, -1, -1, -1, 15, -1};
+
+/* The shelving canyons: slow, dusty and nearly empty. One soft pulse a bar is
+ * the whole rhythm section. */
+static const int ARCHIVE_BARS[8] = {0, 0, -2, 3, 0, -4, -2, 1};
+static const int ARCHIVE_LEAD_A[16] = {
+    -1, -1, -1, -1, 12, -1, -1, -1, -1, -1, 15, -1, -1, -1, -1, -1};
+static const int ARCHIVE_LEAD_B[16] = {
+    -1, -1, 10, -1, -1, -1, -1, -1, 12, -1, -1, -1, -1, -1, -1, -1};
+
+/* The ring around the bunker: a march. Four on the floor, a snare that rolls
+ * into the bar line and a static tonic pushed by one chromatic step. */
+static const int SECURITY_BARS[16] = {
+    0, 0, 0, -1, 0, 0, 3, 5, 0, 0, 0, -1, -4, -4, -2, -1};
+static const int SECURITY_LEAD_A[16] = {
+    12, -1, 12, -1, 15, -1, -1, -1, 17, -1, 15, -1, 12, -1, -1, -1};
+static const int SECURITY_LEAD_B[16] = {
+    -1, -1, 19, -1, 17, -1, 15, -1, -1, 12, -1, -1, 15, -1, -1, -1};
+
+/* The crawl ducts: a fan pedal that never stops, air moving past the plating
+ * and almost nothing on top of it. */
+static const int DUCTS_BARS[12] = {0, 0, 1, 0, -2, -2, 1, 0, 0, 3, 1, -1};
+static const int DUCTS_LEAD_A[16] = {
+    -1, -1, -1, 12, -1, -1, -1, -1, 13, -1, -1, -1, -1, -1, 10, -1};
+static const int DUCTS_LEAD_B[16] = {
+    -1, 10, -1, -1, -1, -1, 13, -1, -1, -1, 12, -1, -1, -1, -1, -1};
+
+/* The suite: the widest chords in the building, and the first track allowed
+ * to punch them. */
+static const int PENTHOUSE_BARS[16] = {
+    0, 0, -4, 3, 0, 5, -2, -4, 0, -1, 3, 5, 0, -4, -2, -1};
+static const int PENTHOUSE_LEAD_A[16] = {
+    -1, -1, 12, -1, -1, 15, -1, -1, 19, -1, -1, 17, -1, -1, 15, -1};
+static const int PENTHOUSE_LEAD_B[16] = {
+    19, -1, -1, 17, -1, -1, 15, -1, -1, 12, -1, -1, 15, -1, -1, -1};
+
+/* The skyline: the last sector, so the lead finally carries the loop instead
+ * of answering it, over the wind of an open roof. */
+static const int ROOF_BARS[16] = {
+    0, 0, 3, 5, -2, -2, 3, 7, 0, 0, 5, 3, -4, -4, -2, 0};
+static const int ROOF_LEAD_A[16] = {
+    12, -1, -1, 15, -1, 19, -1, -1, 22, -1, 19, -1, -1, 17, -1, -1};
+static const int ROOF_LEAD_B[16] = {
+    -1, 19, -1, 22, -1, -1, 24, -1, 22, -1, 19, -1, 17, -1, 15, -1};
+
+/* The restroom: a room to stop breathing hard in. Tiled, dripping, no kit. */
+static const int RESTROOM_BARS[8] = {0, 0, -2, 1, 0, 3, -4, -1};
+static const int RESTROOM_LEAD_A[16] = {
+    -1, -1, -1, -1, -1, -1, 12, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+static const int RESTROOM_LEAD_B[16] = {
+    -1, -1, 15, -1, -1, -1, -1, -1, -1, -1, 12, -1, -1, -1, -1, -1};
+
+/* The night wall: wide, slow and exposed, with the city glittering under it. */
+static const int FACADE_NIGHT_BARS[12] = {
+    0, 0, 3, -2, 0, 5, 3, -2, 0, -4, -1, 0};
+static const int FACADE_NIGHT_LEAD_A[16] = {
+    -1, -1, 12, -1, -1, -1, -1, 19, -1, -1, 17, -1, -1, -1, 15, -1};
+static const int FACADE_NIGHT_LEAD_B[16] = {
+    -1, 15, -1, -1, 19, -1, -1, -1, -1, 17, -1, -1, 12, -1, -1, -1};
+
+/* The storm wall: the only climb in a hurry. Rain on the cornices and a
+ * bass line that never lets go. */
+static const int FACADE_STORM_BARS[16] = {
+    0, 0, 1, -2, 0, 5, 1, -4, 0, 3, -2, 1, 0, 5, 3, -1};
+static const int FACADE_STORM_LEAD_A[16] = {
+    12, -1, -1, 13, -1, -1, 15, -1, -1, 17, -1, 15, -1, -1, 13, -1};
+static const int FACADE_STORM_LEAD_B[16] = {
+    -1, 17, -1, 15, -1, 13, -1, 12, -1, -1, 15, -1, 13, -1, -1, -1};
+
+/* The dawn wall: the one climb with the light coming, and the only major key
+ * outside the building. */
+static const int FACADE_DAWN_BARS[12] = {0, 0, 5, 7, 0, -3, 5, 2, 0, 7, 5, 0};
+static const int FACADE_DAWN_LEAD_A[16] = {
+    -1, -1, 12, -1, -1, 16, -1, -1, 19, -1, -1, -1, 16, -1, -1, -1};
+static const int FACADE_DAWN_LEAD_B[16] = {
+    -1, 19, -1, -1, 21, -1, -1, 19, -1, 16, -1, -1, 12, -1, -1, -1};
+
+/* The high wall: thin air. Barely a bass note, barely a beat, and a long way
+ * down between the phrases. */
+static const int FACADE_HIGH_BARS[8] = {0, 0, -2, 3, 0, -4, -1, 0};
+static const int FACADE_HIGH_LEAD_A[16] = {
+    -1, -1, -1, -1, 12, -1, -1, -1, -1, -1, -1, -1, 19, -1, -1, -1};
+static const int FACADE_HIGH_LEAD_B[16] = {
+    -1, -1, 19, -1, -1, -1, -1, -1, 15, -1, -1, -1, -1, -1, -1, -1};
+
+/*
+ * One row per track. MUSIC_INTRO is deliberately absent: the title theme is
+ * hand-sequenced below, and a plan with no progression means "not planned".
+ */
+static const MusicPlan MUSIC_PLANS[MUSIC_TRACK_COUNT] = {
+    [MUSIC_PURSUIT] = {
+        .bpm = 112.0f, .bars = 16, .gain = 0.225f,
+        .root = 38, .progression = PURSUIT_BARS, .minor = true,
+        .bass_wave = WAVE_SAW, .bass_gain = 0.18f, .bass_length = 1.4f,
+        .bass_steps = {MUSIC_BEATS(0x5, 0x2, 0x9, 0x4),
+                       MUSIC_BEATS(0x9, 0x4, 0x2, 0x5)},
+        .sub_note = 26, .sub_gain = 0.052f,
+        .pad_gain = 0.021f, .pad_offset = 12, .pad_halves = true,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x4, 0x8, 0x0),
+                       MUSIC_BEATS(0x1, 0x4, 0x8, 0x4)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x1, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x1, 0x0, 0x1)},
+        .hat_steps = {MUSIC_BEATS(0x2, 0x2, 0x2, 0x2),
+                      MUSIC_BEATS(0x2, 0x2, 0x2, 0x2)},
+        .kick_gain = 0.32f, .snare_gain = 0.16f, .hat_gain = 0.041f,
+        .lead_a = PURSUIT_LEAD_A, .lead_b = PURSUIT_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(3) | MUSIC_BAR(5) |
+                     MUSIC_BAR(6) | MUSIC_BAR(12) | MUSIC_BAR(14) |
+                     MUSIC_BAR(15),
+        .lead_gain = 0.057f, .lead_length = 0.72f, .lead_wave = WAVE_SQUARE,
+        .stab_gain = 0.040f,
+        .colours = MUSIC_COLOUR_CLANK | MUSIC_COLOUR_SWEEP,
+        .seed = 0x8200u},
+
+    [MUSIC_LOBBY] = {
+        .bpm = 88.0f, .bars = 12, .gain = 0.200f,
+        .root = 45, .progression = LOBBY_BARS, .minor = true,
+        .bass_wave = WAVE_TRIANGLE, .bass_gain = 0.14f, .bass_length = 2.8f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x4, 0x0)},
+        .sub_gain = 0.044f,
+        .pad_gain = 0.032f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x4, 0x0)},
+        .hat_steps = {MUSIC_BEATS(0x0, 0x4, 0x0, 0x4),
+                      MUSIC_BEATS(0x0, 0x4, 0x0, 0x4)},
+        .kick_gain = 0.20f, .hat_gain = 0.030f,
+        .lead_a = LOBBY_LEAD_A, .lead_b = LOBBY_LEAD_B,
+        .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(6) |
+                     MUSIC_BAR(7) | MUSIC_BAR(10) | MUSIC_BAR(11),
+        .lead_gain = 0.048f, .lead_length = 2.6f, .lead_wave = WAVE_TRIANGLE,
+        .colours = MUSIC_COLOUR_SPARKLE,
+        .seed = 0x1300u},
+
+    [MUSIC_OFFICE] = {
+        .bpm = 96.0f, .bars = 16, .gain = 0.235f,
+        .root = 40, .progression = OFFICE_BARS, .minor = true,
+        .bass_wave = WAVE_SQUARE, .bass_gain = 0.19f, .bass_length = 1.7f,
+        .bass_steps = {MUSIC_BEATS(0x9, 0x4, 0x4, 0x4),
+                       MUSIC_BEATS(0x5, 0x2, 0x9, 0x4)},
+        .sub_gain = 0.048f,
+        .pad_gain = 0.027f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x4, 0x0),
+                       MUSIC_BEATS(0x1, 0x4, 0x4, 0x0)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x1, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x1, 0x0, 0x1)},
+        .hat_steps = {MUSIC_BEATS(0x4, 0x4, 0x4, 0x4),
+                      MUSIC_BEATS(0x4, 0x4, 0x4, 0x4)},
+        .kick_gain = 0.33f, .snare_gain = 0.14f, .hat_gain = 0.055f,
+        .lead_a = OFFICE_LEAD_A, .lead_b = OFFICE_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(3) | MUSIC_BAR(5) |
+                     MUSIC_BAR(7) | MUSIC_BAR(9) | MUSIC_BAR(11) |
+                     MUSIC_BAR(12) | MUSIC_BAR(13) | MUSIC_BAR(14) |
+                     MUSIC_BAR(15),
+        .lead_gain = 0.054f, .lead_length = 1.1f, .lead_wave = WAVE_TRIANGLE,
+        .arp_gain = 0.038f, .stab_gain = 0.036f,
+        .colours = MUSIC_COLOUR_SWEEP,
+        .seed = 0x4100u},
+
+    [MUSIC_SERVER] = {
+        .bpm = 126.0f, .bars = 16, .gain = 0.215f,
+        .root = 35, .progression = SERVER_BARS, .minor = true,
+        .bass_wave = WAVE_SQUARE, .bass_gain = 0.17f, .bass_length = 1.0f,
+        .bass_steps = {MUSIC_BEATS(0x5, 0x5, 0x5, 0x5),
+                       MUSIC_BEATS(0x5, 0x5, 0x9, 0x5)},
+        .sub_note = 35, .sub_gain = 0.050f,
+        .pad_gain = 0.018f, .pad_offset = 24,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x1, 0x0)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x0, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x0, 0x0, 0x1)},
+        .hat_steps = {MUSIC_BEATS(0x0, 0xF, 0x0, 0xF),
+                      MUSIC_BEATS(0x0, 0xF, 0x0, 0xF)},
+        .kick_gain = 0.26f, .snare_gain = 0.09f, .hat_gain = 0.030f,
+        .lead_a = SERVER_LEAD_A, .lead_b = SERVER_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(2) | MUSIC_BAR(3) |
+                     MUSIC_BAR(5) | MUSIC_BAR(6) | MUSIC_BAR(7) |
+                     MUSIC_BAR(9) | MUSIC_BAR(10) | MUSIC_BAR(11) |
+                     MUSIC_BAR(13) | MUSIC_BAR(14) | MUSIC_BAR(15),
+        .lead_gain = 0.045f, .lead_length = 0.60f, .lead_wave = WAVE_SQUARE,
+        .colours = MUSIC_COLOUR_TICK,
+        .seed = 0x2600u},
+
+    [MUSIC_PLANT] = {
+        .bpm = 104.0f, .bars = 16, .gain = 0.230f,
+        .root = 33, .progression = PLANT_BARS, .minor = true,
+        .bass_wave = WAVE_SAW, .bass_gain = 0.20f, .bass_length = 2.0f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x1, 0x1, 0x9),
+                       MUSIC_BEATS(0x1, 0x9, 0x1, 0x1)},
+        .sub_gain = 0.058f,
+        .pad_gain = 0.022f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x1, 0x8)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x0, 0x1, 0x0),
+                        MUSIC_BEATS(0x0, 0x0, 0x1, 0x0)},
+        .hat_steps = {MUSIC_BEATS(0x0, 0x4, 0x0, 0x4),
+                      MUSIC_BEATS(0x0, 0x4, 0x0, 0x4)},
+        .kick_gain = 0.34f, .snare_gain = 0.19f, .hat_gain = 0.048f,
+        .lead_a = PLANT_LEAD_A, .lead_b = PLANT_LEAD_B,
+        .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(6) |
+                     MUSIC_BAR(7) | MUSIC_BAR(10) | MUSIC_BAR(11) |
+                     MUSIC_BAR(14) | MUSIC_BAR(15),
+        .lead_gain = 0.050f, .lead_length = 1.8f, .lead_wave = WAVE_TRIANGLE,
+        .colours = MUSIC_COLOUR_CLANK | MUSIC_COLOUR_SWEEP,
+        .seed = 0x3400u},
+
+    [MUSIC_CANTEEN] = {
+        .bpm = 108.0f, .bars = 12, .gain = 0.215f,
+        .root = 43, .progression = CANTEEN_BARS, .minor = false,
+        .swing = 0.28f,
+        .bass_wave = WAVE_TRIANGLE, .bass_gain = 0.16f, .bass_length = 1.2f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x4, 0x1, 0x4),
+                       MUSIC_BEATS(0x1, 0x4, 0x5, 0x0)},
+        .sub_gain = 0.038f,
+        .pad_gain = 0.024f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x1, 0x0)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x1, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x1, 0x0, 0x1)},
+        .hat_steps = {MUSIC_BEATS(0x5, 0x5, 0x5, 0x5),
+                      MUSIC_BEATS(0x5, 0x5, 0x5, 0x5)},
+        .kick_gain = 0.26f, .snare_gain = 0.13f, .hat_gain = 0.036f,
+        .lead_a = CANTEEN_LEAD_A, .lead_b = CANTEEN_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(2) | MUSIC_BAR(4) |
+                     MUSIC_BAR(5) | MUSIC_BAR(7) | MUSIC_BAR(8) |
+                     MUSIC_BAR(10) | MUSIC_BAR(11),
+        .lead_gain = 0.052f, .lead_length = 1.0f, .lead_wave = WAVE_TRIANGLE,
+        .arp_gain = 0.032f,
+        .colours = MUSIC_COLOUR_SPARKLE,
+        .seed = 0x5500u},
+
+    [MUSIC_LAB] = {
+        .bpm = 92.0f, .bars = 12, .gain = 0.205f,
+        .root = 36, .progression = LAB_BARS, .minor = true,
+        .bass_wave = WAVE_TRIANGLE, .bass_gain = 0.15f, .bass_length = 2.4f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x2, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x0, 0x2)},
+        .sub_gain = 0.056f,
+        .pad_gain = 0.026f, .pad_offset = 12, .pad_halves = true,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x0, 0x8)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x0, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x0, 0x0, 0x1)},
+        .hat_steps = {MUSIC_BEATS(0x0, 0x2, 0x0, 0x2),
+                      MUSIC_BEATS(0x0, 0x2, 0x0, 0x2)},
+        .kick_gain = 0.22f, .snare_gain = 0.12f, .hat_gain = 0.034f,
+        .lead_a = LAB_LEAD_A, .lead_b = LAB_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(3) | MUSIC_BAR(4) |
+                     MUSIC_BAR(7) | MUSIC_BAR(9) | MUSIC_BAR(10),
+        .lead_gain = 0.046f, .lead_length = 1.6f, .lead_wave = WAVE_SINE,
+        .colours = MUSIC_COLOUR_DRIP | MUSIC_COLOUR_TICK,
+        .seed = 0x6700u},
+
+    [MUSIC_ARCHIVE] = {
+        .bpm = 76.0f, .bars = 8, .gain = 0.190f,
+        .root = 38, .progression = ARCHIVE_BARS, .minor = true,
+        .bass_wave = WAVE_TRIANGLE, .bass_gain = 0.13f, .bass_length = 3.0f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x1, 0x0)},
+        .sub_gain = 0.050f,
+        .pad_gain = 0.030f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x0, 0x0)},
+        .hat_steps = {MUSIC_BEATS(0x0, 0x0, 0x0, 0x4),
+                      MUSIC_BEATS(0x0, 0x0, 0x0, 0x4)},
+        .kick_gain = 0.16f, .hat_gain = 0.024f,
+        .lead_a = ARCHIVE_LEAD_A, .lead_b = ARCHIVE_LEAD_B,
+        .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(6) |
+                     MUSIC_BAR(7),
+        .lead_gain = 0.040f, .lead_length = 3.0f, .lead_wave = WAVE_SINE,
+        .colours = MUSIC_COLOUR_DRIP | MUSIC_COLOUR_SPARKLE,
+        .seed = 0x7800u},
+
+    [MUSIC_SECURITY] = {
+        .bpm = 128.0f, .bars = 16, .gain = 0.235f,
+        .root = 41, .progression = SECURITY_BARS, .minor = true,
+        .bass_wave = WAVE_SQUARE, .bass_gain = 0.20f, .bass_length = 0.9f,
+        .bass_steps = {MUSIC_BEATS(0xF, 0x5, 0xF, 0x5),
+                       MUSIC_BEATS(0xF, 0x5, 0x5, 0xD)},
+        .sub_gain = 0.050f,
+        .pad_gain = 0.016f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x1, 0x1, 0x1),
+                       MUSIC_BEATS(0x1, 0x1, 0x1, 0x9)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x1, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x1, 0x0, 0x7)},
+        .hat_steps = {MUSIC_BEATS(0x5, 0x5, 0x5, 0x5),
+                      MUSIC_BEATS(0x5, 0x5, 0x5, 0x5)},
+        .kick_gain = 0.32f, .snare_gain = 0.20f, .hat_gain = 0.038f,
+        .lead_a = SECURITY_LEAD_A, .lead_b = SECURITY_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(3) | MUSIC_BAR(5) |
+                     MUSIC_BAR(7) | MUSIC_BAR(11) | MUSIC_BAR(12) |
+                     MUSIC_BAR(13) | MUSIC_BAR(14) | MUSIC_BAR(15),
+        .lead_gain = 0.058f, .lead_length = 1.0f, .lead_wave = WAVE_SQUARE,
+        .arp_gain = 0.030f,
+        .colours = MUSIC_COLOUR_SWEEP,
+        .seed = 0x9900u},
+
+    [MUSIC_DUCTS] = {
+        .bpm = 84.0f, .bars = 12, .gain = 0.200f,
+        .root = 34, .progression = DUCTS_BARS, .minor = true,
+        .bass_wave = WAVE_TRIANGLE, .bass_gain = 0.14f, .bass_length = 2.6f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x2),
+                       MUSIC_BEATS(0x1, 0x0, 0x2, 0x0)},
+        .sub_note = 29, .sub_gain = 0.060f,
+        .pad_gain = 0.020f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x1, 0x0)},
+        .hat_steps = {MUSIC_BEATS(0x0, 0x0, 0x4, 0x0),
+                      MUSIC_BEATS(0x0, 0x0, 0x4, 0x0)},
+        .kick_gain = 0.20f, .hat_gain = 0.026f,
+        .lead_a = DUCTS_LEAD_A, .lead_b = DUCTS_LEAD_B,
+        .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(7) |
+                     MUSIC_BAR(8) | MUSIC_BAR(11),
+        .lead_gain = 0.042f, .lead_length = 2.0f, .lead_wave = WAVE_SINE,
+        .colours = MUSIC_COLOUR_WIND | MUSIC_COLOUR_TICK,
+        .seed = 0xab00u},
+
+    [MUSIC_PENTHOUSE] = {
+        .bpm = 100.0f, .bars = 16, .gain = 0.230f,
+        .root = 46, .progression = PENTHOUSE_BARS, .minor = true,
+        .bass_wave = WAVE_SQUARE, .bass_gain = 0.18f, .bass_length = 1.5f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x1, 0x9, 0x4),
+                       MUSIC_BEATS(0x9, 0x4, 0x1, 0x5)},
+        .sub_gain = 0.052f,
+        .pad_gain = 0.030f, .pad_offset = 0, .pad_halves = true,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x4, 0x0),
+                       MUSIC_BEATS(0x1, 0x4, 0x4, 0x0)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x1, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x1, 0x0, 0x1)},
+        .hat_steps = {MUSIC_BEATS(0x4, 0x4, 0x4, 0x4),
+                      MUSIC_BEATS(0x4, 0x4, 0x4, 0x4)},
+        .kick_gain = 0.30f, .snare_gain = 0.17f, .hat_gain = 0.042f,
+        .lead_a = PENTHOUSE_LEAD_A, .lead_b = PENTHOUSE_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(3) | MUSIC_BAR(5) |
+                     MUSIC_BAR(7) | MUSIC_BAR(9) | MUSIC_BAR(11) |
+                     MUSIC_BAR(12) | MUSIC_BAR(13) | MUSIC_BAR(15),
+        .lead_gain = 0.056f, .lead_length = 1.4f, .lead_wave = WAVE_TRIANGLE,
+        .arp_gain = 0.030f, .stab_gain = 0.045f,
+        .colours = MUSIC_COLOUR_SWEEP | MUSIC_COLOUR_SPARKLE,
+        .seed = 0xbc00u},
+
+    [MUSIC_ROOF] = {
+        .bpm = 96.0f, .bars = 16, .gain = 0.240f,
+        .root = 42, .progression = ROOF_BARS, .minor = true,
+        .bass_wave = WAVE_SQUARE, .bass_gain = 0.19f, .bass_length = 1.6f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x5, 0x1, 0x5),
+                       MUSIC_BEATS(0x9, 0x1, 0x5, 0x9)},
+        .sub_gain = 0.054f,
+        .pad_gain = 0.034f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x1, 0x8)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x1, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x1, 0x0, 0x5)},
+        .hat_steps = {MUSIC_BEATS(0x5, 0x5, 0x5, 0x5),
+                      MUSIC_BEATS(0x5, 0x5, 0x5, 0x5)},
+        .kick_gain = 0.31f, .snare_gain = 0.18f, .hat_gain = 0.040f,
+        .lead_a = ROOF_LEAD_A, .lead_b = ROOF_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(2) | MUSIC_BAR(3) |
+                     MUSIC_BAR(5) | MUSIC_BAR(6) | MUSIC_BAR(7) |
+                     MUSIC_BAR(9) | MUSIC_BAR(10) | MUSIC_BAR(11) |
+                     MUSIC_BAR(13) | MUSIC_BAR(14) | MUSIC_BAR(15),
+        .lead_gain = 0.062f, .lead_length = 1.3f, .lead_wave = WAVE_SQUARE,
+        .arp_gain = 0.036f, .stab_gain = 0.040f,
+        .colours = MUSIC_COLOUR_SWEEP | MUSIC_COLOUR_SPARKLE |
+                   MUSIC_COLOUR_WIND,
+        .seed = 0xcd00u},
+
+    [MUSIC_RESTROOM] = {
+        .bpm = 72.0f, .bars = 8, .gain = 0.170f,
+        .root = 39, .progression = RESTROOM_BARS, .minor = true,
+        .bass_wave = WAVE_SINE, .bass_gain = 0.11f, .bass_length = 3.2f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x1, 0x0)},
+        .sub_gain = 0.046f,
+        .pad_gain = 0.028f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x0, 0x0)},
+        .kick_gain = 0.12f,
+        .lead_a = RESTROOM_LEAD_A, .lead_b = RESTROOM_LEAD_B,
+        .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(6) |
+                     MUSIC_BAR(7),
+        .lead_gain = 0.038f, .lead_length = 3.5f, .lead_wave = WAVE_SINE,
+        .colours = MUSIC_COLOUR_DRIP,
+        .seed = 0xde00u},
+
+    [MUSIC_FACADE_NIGHT] = {
+        .bpm = 90.0f, .bars = 12, .gain = 0.210f,
+        .root = 40, .progression = FACADE_NIGHT_BARS, .minor = true,
+        .bass_wave = WAVE_TRIANGLE, .bass_gain = 0.15f, .bass_length = 2.2f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x4, 0x0)},
+        .sub_gain = 0.052f,
+        .pad_gain = 0.032f, .pad_offset = 12, .pad_halves = true,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x1, 0x0)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x0, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x0, 0x0, 0x1)},
+        .hat_steps = {MUSIC_BEATS(0x0, 0x4, 0x0, 0x4),
+                      MUSIC_BEATS(0x0, 0x4, 0x0, 0x4)},
+        .kick_gain = 0.24f, .snare_gain = 0.13f, .hat_gain = 0.032f,
+        .lead_a = FACADE_NIGHT_LEAD_A, .lead_b = FACADE_NIGHT_LEAD_B,
+        .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(6) |
+                     MUSIC_BAR(7) | MUSIC_BAR(10) | MUSIC_BAR(11),
+        .lead_gain = 0.050f, .lead_length = 2.0f, .lead_wave = WAVE_TRIANGLE,
+        .colours = MUSIC_COLOUR_WIND | MUSIC_COLOUR_SPARKLE,
+        .seed = 0xef00u},
+
+    [MUSIC_FACADE_STORM] = {
+        .bpm = 116.0f, .bars = 16, .gain = 0.235f,
+        .root = 36, .progression = FACADE_STORM_BARS, .minor = true,
+        .bass_wave = WAVE_SAW, .bass_gain = 0.19f, .bass_length = 1.1f,
+        .bass_steps = {MUSIC_BEATS(0x5, 0x5, 0x5, 0xD),
+                       MUSIC_BEATS(0x9, 0x5, 0x5, 0x5)},
+        .sub_gain = 0.056f,
+        .pad_gain = 0.020f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x1, 0x1, 0x1),
+                       MUSIC_BEATS(0x1, 0x1, 0x1, 0x9)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x1, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x1, 0x0, 0x1)},
+        .hat_steps = {MUSIC_BEATS(0x5, 0x5, 0x5, 0x5),
+                      MUSIC_BEATS(0x5, 0x5, 0x5, 0x5)},
+        .kick_gain = 0.30f, .snare_gain = 0.18f, .hat_gain = 0.044f,
+        .lead_a = FACADE_STORM_LEAD_A, .lead_b = FACADE_STORM_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(2) | MUSIC_BAR(3) |
+                     MUSIC_BAR(5) | MUSIC_BAR(6) | MUSIC_BAR(7) |
+                     MUSIC_BAR(9) | MUSIC_BAR(11) | MUSIC_BAR(13) |
+                     MUSIC_BAR(14) | MUSIC_BAR(15),
+        .lead_gain = 0.056f, .lead_length = 0.90f, .lead_wave = WAVE_SQUARE,
+        .colours = MUSIC_COLOUR_WIND | MUSIC_COLOUR_SWEEP |
+                   MUSIC_COLOUR_CLANK,
+        .seed = 0x10a00u},
+
+    [MUSIC_FACADE_DAWN] = {
+        .bpm = 82.0f, .bars = 12, .gain = 0.205f,
+        .root = 45, .progression = FACADE_DAWN_BARS, .minor = false,
+        .bass_wave = WAVE_TRIANGLE, .bass_gain = 0.14f, .bass_length = 2.4f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x5, 0x0)},
+        .sub_gain = 0.048f,
+        .pad_gain = 0.034f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x1, 0x0)},
+        .snare_steps = {MUSIC_BEATS(0x0, 0x0, 0x0, 0x1),
+                        MUSIC_BEATS(0x0, 0x0, 0x0, 0x1)},
+        .hat_steps = {MUSIC_BEATS(0x0, 0x4, 0x0, 0x4),
+                      MUSIC_BEATS(0x0, 0x4, 0x0, 0x4)},
+        .kick_gain = 0.22f, .snare_gain = 0.12f, .hat_gain = 0.030f,
+        .lead_a = FACADE_DAWN_LEAD_A, .lead_b = FACADE_DAWN_LEAD_B,
+        .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(5) |
+                     MUSIC_BAR(6) | MUSIC_BAR(9) | MUSIC_BAR(10) |
+                     MUSIC_BAR(11),
+        .lead_gain = 0.052f, .lead_length = 2.2f, .lead_wave = WAVE_TRIANGLE,
+        .arp_gain = 0.030f,
+        .colours = MUSIC_COLOUR_WIND | MUSIC_COLOUR_SPARKLE,
+        .seed = 0x11b00u},
+
+    [MUSIC_FACADE_HIGH] = {
+        .bpm = 70.0f, .bars = 8, .gain = 0.180f,
+        .root = 47, .progression = FACADE_HIGH_BARS, .minor = true,
+        .bass_wave = WAVE_SINE, .bass_gain = 0.10f, .bass_length = 3.4f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x0, 0x0)},
+        .sub_gain = 0.040f,
+        .pad_gain = 0.030f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x0, 0x0)},
+        .hat_steps = {MUSIC_BEATS(0x0, 0x0, 0x4, 0x0),
+                      MUSIC_BEATS(0x0, 0x0, 0x4, 0x0)},
+        .kick_gain = 0.14f, .hat_gain = 0.022f,
+        .lead_a = FACADE_HIGH_LEAD_A, .lead_b = FACADE_HIGH_LEAD_B,
+        .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(6) |
+                     MUSIC_BAR(7),
+        .lead_gain = 0.042f, .lead_length = 3.0f, .lead_wave = WAVE_SINE,
+        .colours = MUSIC_COLOUR_WIND | MUSIC_COLOUR_SPARKLE,
+        .seed = 0x12c00u},
+};
+
+/*
+ * Turn one plan into PCM.
+ *
+ * The loop is read as four equal sections: a statement, a full one, a
+ * breakdown that hands the bar to the pad and the drone, and a last one that
+ * pushes hardest. Every track shares that arc so a level's music develops
+ * rather than repeating a bar, and the plan decides what the arc is made of.
+ */
+static bool synth_music_plan(CachedSound *track, const MusicPlan *plan)
+{
+    static const int ARP_MINOR[4] = {12, 15, 19, 22};
+    static const int ARP_MAJOR[4] = {12, 16, 19, 23};
+    const float beat = 60.0f / plan->bpm;
+    const float step = beat * 0.25f;
+    const float duration = (float)plan->bars * 4.0f * beat;
+    const int section_bars = plan->bars / 4;
+    const int third = plan->minor ? 3 : 4;
+
+    if (!begin_music(track, duration, plan->gain))
         return false;
 
-    for (int bar = 0; bar < LEVEL_MUSIC_BARS; ++bar)
+    for (int bar = 0; bar < plan->bars; ++bar)
     {
         float bar_start = (float)bar * 16.0f * step;
-        int root = roots[bar];
-        int section = bar / 4;
+        int root = plan->root + plan->progression[bar];
+        int section = bar / section_bars;
         bool breakdown = section == 2;
         bool full = section == 1 || section == 3;
-        const int *bass_steps = (bar & 1) ? bass_b : bass_a;
-        int bass_count = (bar & 1) ? 6 : 5;
+        int alternate = bar & 1;
+        Uint32 seed = plan->seed + (Uint32)bar * 101u;
 
-        add_tone(track, bar_start, 15.6f * step,
-                 midi_hz(root - 12), midi_hz(root - 12),
-                 breakdown ? 0.064f : 0.048f,
-                 WAVE_SINE, 0.08f, 0.25f);
-        add_music_pad(track, bar_start, 15.4f * step,
-                      root + 12, true, breakdown ? 0.020f : 0.027f);
-
-        if (breakdown)
+        /* The floor of the track: either its own pedal note or the bar root an
+         * octave down. It is what the breakdown leans on. */
+        if (plan->sub_gain > 0.0f)
         {
-            static const int sparse_bass[] = {0, 6, 12};
-            bass_steps = sparse_bass;
-            bass_count = 3;
+            int note = plan->sub_note != 0 ? plan->sub_note : root - 12;
+            add_tone(track, bar_start, 15.6f * step,
+                     midi_hz(note), midi_hz(note),
+                     breakdown ? plan->sub_gain * 1.25f : plan->sub_gain,
+                     WAVE_SINE, 0.08f, 0.25f);
         }
 
-        for (int i = 0; i < bass_count; ++i)
+        if (plan->pad_gain > 0.0f)
         {
-            int position = bass_steps[i];
-            int note = root;
-            if ((!breakdown && (position == 5 || position == 6)) ||
-                (breakdown && position == 6))
-                note += (bar & 2) ? 7 : 3;
-            if (position == 14)
-                note -= 2;
-            add_music_note(track, bar_start + position * step,
-                           (breakdown ? 2.4f : 1.7f) * step,
-                           note, breakdown ? 0.15f : 0.19f,
-                           WAVE_SQUARE);
+            float pad_gain =
+                breakdown ? plan->pad_gain * 1.3f : plan->pad_gain;
+            if (plan->pad_halves)
+            {
+                /* Re-voicing mid-bar leans on the leading tone in odd bars,
+                 * which keeps a slow loop from sitting still. */
+                add_music_pad(track, bar_start, 7.7f * step,
+                              root + plan->pad_offset, plan->minor, pad_gain);
+                add_music_pad(track, bar_start + 8.0f * step, 7.5f * step,
+                              root + plan->pad_offset - alternate,
+                              plan->minor, pad_gain);
+            }
+            else
+            {
+                add_music_pad(track, bar_start, 15.4f * step,
+                              root + plan->pad_offset, plan->minor, pad_gain);
+            }
+        }
+
+        Uint16 bass_mask = plan->bass_steps[alternate];
+        Uint16 kick_mask = plan->kick_steps[alternate];
+        Uint16 snare_mask = plan->snare_steps[alternate];
+        Uint16 hat_mask = plan->hat_steps[alternate];
+        if (breakdown)
+        {
+            /* Thin to the beats, and never lose the bar line. */
+            bass_mask = (Uint16)((bass_mask & MUSIC_BEATS(0x1, 0x1, 0x1, 0x1)) |
+                                 1u);
+            kick_mask &= 1u;
+            snare_mask = alternate
+                             ? (Uint16)(snare_mask &
+                                        MUSIC_BEATS(0x0, 0x0, 0x0, 0x1))
+                             : 0u;
+            hat_mask &= MUSIC_BEATS(0x0, 0x1, 0x0, 0x1);
+        }
+        else if (full)
+        {
+            hat_mask |= MUSIC_BEATS(0x4, 0x4, 0x4, 0x4);
         }
 
         for (int position = 0; position < 16; ++position)
         {
-            float at = bar_start + position * step;
-            const int *motif = (bar & 2) ? motif_b : motif_a;
-            bool kick = position == 0 || (!breakdown && position == 10) ||
-                        (full && position == 6 && (bar & 1));
-            bool snare = (!breakdown && (position == 4 || position == 12)) ||
-                         (breakdown && (bar & 1) && position == 12);
+            /* Swing pushes the offbeat eighth late and drags the sixteenths
+             * either side of it halfway along with it, so the whole bar leans
+             * instead of only the notes that happen to fall on odd steps. */
+            static const float SWING_PUSH[4] = {0.0f, 0.5f, 1.0f, 0.5f};
+            float at = bar_start +
+                       ((float)position +
+                        plan->swing * SWING_PUSH[position & 3]) * step;
+            Uint16 bit = (Uint16)(1u << position);
 
-            if (kick)
-                add_music_kick(track, at, position == 0 ? 0.33f : 0.23f,
-                               0x4100u + (Uint32)(bar * 61 + position));
-            if (snare)
-                add_music_snare(track, at, full ? 0.17f : 0.14f,
-                                0x5100u + (Uint32)(bar * 59 + position));
-            if ((!breakdown && ((full && (position & 1)) ||
-                                (!full && (position & 3) == 2))) ||
-                (breakdown && (position == 6 || position == 14)))
+            if (bass_mask & bit)
             {
-                add_music_hat(track, at, full ? 0.048f : 0.055f,
-                              0x6100u + (Uint32)(bar * 67 + position));
+                int note = root;
+                /* An answer inside the bar and a walk into the next one: the
+                 * line moves without the plan having to spell out pitches. */
+                if (position == 6 || position == 11)
+                    note += alternate ? 7 : third;
+                if (position == 14)
+                    note -= 2;
+                add_music_note(track, at,
+                               plan->bass_length * (breakdown ? 1.5f : 1.0f) *
+                                   step,
+                               note,
+                               breakdown ? plan->bass_gain * 0.8f
+                                         : plan->bass_gain,
+                               plan->bass_wave);
             }
+            if (kick_mask & bit)
+                add_music_kick(track, at,
+                               position == 0 ? plan->kick_gain
+                                             : plan->kick_gain * 0.72f,
+                               seed + (Uint32)position * 37u);
+            if (snare_mask & bit)
+                add_music_snare(track, at,
+                                full ? plan->snare_gain * 1.15f
+                                     : plan->snare_gain,
+                                seed + (Uint32)position * 41u);
+            if (hat_mask & bit)
+                add_music_hat(track, at,
+                              (position & 3) == 0 ? plan->hat_gain * 1.2f
+                                                  : plan->hat_gain,
+                              seed + (Uint32)position * 43u);
 
-            bool play_motif = (!breakdown && (bar & 1)) ||
-                              (section == 3 && (bar & 1) == 0);
-            if (play_motif && motif[position] >= 0)
-                add_music_note(track, at, 1.1f * step,
-                               root + motif[position],
-                               section == 3 ? 0.067f : 0.054f,
-                               (bar & 1) ? WAVE_TRIANGLE : WAVE_SQUARE);
-
-            if (full && (position & 3) == 0)
+            if (plan->lead_gain > 0.0f &&
+                (plan->lead_bars & (1u << bar)) != 0)
             {
-                static const int arp[] = {12, 15, 19, 22};
+                const int *lead = (bar & 2) ? plan->lead_b : plan->lead_a;
+                if (lead[position] >= 0)
+                    add_music_note(track, at, plan->lead_length * step,
+                                   root + lead[position],
+                                   section == 3 ? plan->lead_gain * 1.2f
+                                                : plan->lead_gain,
+                                   plan->lead_wave);
+            }
+            if (full && plan->arp_gain > 0.0f && (position & 3) == 0)
+            {
+                const int *arp = plan->minor ? ARP_MINOR : ARP_MAJOR;
                 add_music_note(track, at, 0.78f * step,
-                               root + arp[position / 4], 0.038f,
+                               root + arp[position / 4], plan->arp_gain,
                                WAVE_TRIANGLE);
             }
-        }
-
-        if (bar == 3 || bar == 7 || bar == 11)
-            add_noise(track, bar_start + 12.0f * step, 3.7f * step,
-                      0.052f, 0.32f, 0.42f, 0.08f,
-                      0x7100u + (Uint32)bar);
-
-        add_tone(track, bar_start + ((bar & 1) ? 7.0f : 9.0f) * step,
-                 0.055f, 1180.0f + bar * 9.0f, 590.0f,
-                 0.046f, WAVE_SQUARE, 0.002f, 0.047f);
-
-        if (section == 3 && (bar == 13 || bar == 15))
-            add_music_chord_stab(track, bar_start + 8.0f * step,
-                                 2.0f * step, root + 12, true, 0.055f);
-    }
-
-    finish_music(track);
-    return true;
-}
-
-static bool synth_music_track_two(CachedSound *track)
-{
-    const float beat = 60.0f / 112.0f;
-    const float step = beat * 0.25f;
-    const float duration = LEVEL_MUSIC_BARS * 4.0f * beat;
-    static const int roots[LEVEL_MUSIC_BARS] = {
-        38, 39, 36, 33, 38, 41, 39, 36,
-        38, 34, 36, 33, 38, 39, 41, 36};
-    static const int signal_a[16] = {
-        24, -1, 27, -1, 25, -1, -1, 22,
-        -1, 24, -1, 20, -1, 22, -1, -1};
-    static const int signal_b[16] = {
-        -1, 19, -1, 20, -1, 24, -1, -1,
-        25, -1, 24, -1, 22, -1, 20, -1};
-    static const int bass_a[] = {0, 2, 5, 8, 11, 14};
-    static const int bass_b[] = {0, 3, 6, 9, 12, 14};
-
-    if (!begin_music(track, duration, 0.225f))
-        return false;
-
-    for (int bar = 0; bar < LEVEL_MUSIC_BARS; ++bar)
-    {
-        float bar_start = (float)bar * 16.0f * step;
-        int root = roots[bar];
-        int section = bar / 4;
-        bool breakdown = section == 2;
-        bool full = section == 1 || section == 3;
-        const int *bass_steps = (bar & 1) ? bass_b : bass_a;
-        int bass_count = 6;
-
-        add_tone(track, bar_start, 15.5f * step, midi_hz(26), midi_hz(26),
-                 breakdown ? 0.070f : 0.052f,
-                 WAVE_SINE, 0.07f, 0.24f);
-        add_music_pad(track, bar_start, 7.7f * step,
-                      root + 12, true, breakdown ? 0.028f : 0.021f);
-        add_music_pad(track, bar_start + 8.0f * step, 7.5f * step,
-                      root + ((bar & 1) ? 11 : 12), true,
-                      breakdown ? 0.028f : 0.021f);
-
-        if (breakdown)
-        {
-            static const int sparse_bass[] = {0, 5, 11};
-            bass_steps = sparse_bass;
-            bass_count = 3;
-        }
-
-        for (int i = 0; i < bass_count; ++i)
-        {
-            int position = bass_steps[i];
-            int note = root;
-            if (position == 5 || position == 6 || position == 11)
-                note += (bar & 1) ? -2 : 1;
-            if (full && position == 12)
-                note += 7;
-            add_music_note(track, bar_start + position * step,
-                           (breakdown ? 2.1f : 1.4f) * step,
-                           note, breakdown ? 0.145f : 0.18f,
-                           WAVE_SAW);
-        }
-
-        for (int position = 0; position < 16; ++position)
-        {
-            float at = bar_start + position * step;
-            const int *signal = (bar & 2) ? signal_b : signal_a;
-            bool kick = position == 0 ||
-                        (!breakdown && (position == 6 || position == 11)) ||
-                        (full && position == 14 && (bar & 1));
-            bool snare = (!breakdown && (position == 4 || position == 12)) ||
-                         (breakdown && position == 12 && (bar & 1));
-
-            if (kick)
-                add_music_kick(track, at,
-                               position == 0 ? 0.32f : 0.21f,
-                               0x8200u + (Uint32)(bar * 71 + position));
-            if (snare)
-                add_music_snare(track, at, full ? 0.19f : 0.16f,
-                                0x9200u + (Uint32)(bar * 73 + position));
-            if ((!breakdown && ((full && (position & 1)) ||
-                                (!full && (position & 3) == 1))) ||
-                (breakdown && (position == 3 || position == 11)))
+            if (full && plan->stab_gain > 0.0f &&
+                (position == 2 || position == 10))
             {
-                add_music_hat(track, at,
-                              full && (position == 7 || position == 15)
-                                  ? 0.066f
-                                  : 0.041f,
-                              0xa200u + (Uint32)(bar * 79 + position));
+                add_music_chord_stab(track, at, 0.85f * step, root + 12,
+                                     plan->minor, plan->stab_gain);
             }
-
-            bool warning_phrase = (bar == 1 || bar == 3 ||
-                                   bar == 5 || bar == 6 ||
-                                   bar == 12 || bar == 14 || bar == 15);
-            if (warning_phrase && signal[position] >= 0)
-                add_music_note(track, at, 0.72f * step,
-                               root + signal[position],
-                               section == 3 ? 0.070f : 0.057f,
-                               WAVE_SQUARE);
-
-            if (full && (position == 2 || position == 10))
-                add_music_chord_stab(track, at, 0.85f * step,
-                                     root + 12, true, 0.040f);
         }
 
-        int clank_position = (bar & 1) ? 7 : 9;
-        add_noise(track, bar_start + clank_position * step,
-                  0.085f, 0.055f, 0.28f, 0.002f, 0.072f,
-                  0xb200u + (Uint32)(bar * 83));
-        add_tone(track, bar_start + clank_position * step, 0.10f,
-                 720.0f + bar * 13.0f, 310.0f, 0.040f,
-                 WAVE_SAW, 0.002f, 0.082f);
-
-        if (bar == 3 || bar == 7 || bar == 11)
+        if ((plan->colours & MUSIC_COLOUR_SWEEP) &&
+            bar % section_bars == section_bars - 1)
         {
-            add_noise(track, bar_start + 12.0f * step, 3.6f * step,
-                      0.060f, 0.38f, 0.35f, 0.07f,
-                      0xc200u + (Uint32)bar);
-            add_tone(track, bar_start + 14.0f * step, 1.4f * step,
-                     310.0f, 880.0f, 0.045f,
-                     WAVE_TRIANGLE, 0.01f, 0.07f);
+            /* A rise across the last bar of a section, so the loop reads as
+             * four phrases instead of one bar sixteen times. */
+            add_noise(track, bar_start + 12.0f * step, 3.7f * step,
+                      0.052f, 0.32f, 0.42f, 0.08f, seed + 0x51u);
+        }
+        if (plan->colours & MUSIC_COLOUR_CLANK)
+        {
+            float at = bar_start + (alternate ? 7.0f : 9.0f) * step;
+            add_noise(track, at, 0.085f, 0.052f, 0.28f, 0.002f, 0.072f,
+                      seed + 0x71u);
+            add_tone(track, at, 0.10f, 720.0f + (float)bar * 13.0f, 310.0f,
+                     0.038f, WAVE_SAW, 0.002f, 0.082f);
+        }
+        if (plan->colours & MUSIC_COLOUR_SPARKLE)
+        {
+            add_music_note(track, bar_start + 3.0f * step, 2.2f * step,
+                           root + 24, 0.030f, WAVE_SINE);
+            add_music_note(track, bar_start + 11.0f * step, 2.0f * step,
+                           root + 31, 0.024f, WAVE_SINE);
+        }
+        if (plan->colours & MUSIC_COLOUR_WIND)
+        {
+            /* Dark and wide: air moving past a wall, not a hiss over it. */
+            add_noise(track, bar_start, 16.0f * step,
+                      breakdown ? 0.030f : 0.022f, 0.004f,
+                      6.0f * step, 6.0f * step, seed + 0x91u);
+            add_noise(track, bar_start + 8.0f * step, 8.0f * step,
+                      0.012f, 0.05f, 3.0f * step, 4.0f * step, seed + 0x93u);
+        }
+        if (plan->colours & MUSIC_COLOUR_TICK)
+        {
+            add_tone(track, bar_start + 3.0f * step, 0.030f, 2100.0f, 2100.0f,
+                     0.020f, WAVE_SQUARE, 0.002f, 0.026f);
+            add_tone(track, bar_start + 11.0f * step, 0.026f, 1580.0f, 1580.0f,
+                     0.016f, WAVE_SQUARE, 0.002f, 0.022f);
+        }
+        if (plan->colours & MUSIC_COLOUR_DRIP)
+        {
+            float at = bar_start + ((bar % 3 == 0) ? 5.0f : 13.0f) * step;
+            add_tone(track, at, 0.11f, 1450.0f, 900.0f, 0.030f,
+                     WAVE_SINE, 0.002f, 0.10f);
         }
     }
 
@@ -624,9 +1192,45 @@ static bool synth_music_track_two(CachedSound *track)
 
 static bool synth_music(AudioSystem *audio)
 {
-    return synth_music_intro(&audio->music_tracks[MUSIC_INTRO]) &&
-           synth_music_track_one(&audio->music_tracks[MUSIC_LEVEL_ONE]) &&
-           synth_music_track_two(&audio->music_tracks[MUSIC_LEVEL_TWO]);
+    /*
+     * Only the title theme is built up front. It is heard before anything
+     * else and comes back at every cutscene and game over, while a level's
+     * score is built when its sector loads.
+     */
+    return synth_music_intro(&audio->music_tracks[MUSIC_INTRO]);
+}
+
+/* Build a track if it is not cached yet. False means the score stays silent —
+ * as with a failed audio device, the game itself carries on. */
+static bool ensure_music_track(AudioSystem *audio, int index)
+{
+    CachedSound *track = &audio->music_tracks[index];
+    if (track->samples != NULL)
+        return true;
+    if (index == MUSIC_INTRO)
+        return synth_music_intro(track);
+    if (MUSIC_PLANS[index].progression == NULL)
+        return false;
+    return synth_music_plan(track, &MUSIC_PLANS[index]);
+}
+
+/*
+ * Keep the title theme, the current track and the one before it; drop the
+ * rest. The previous one is worth its memory because the restroom door
+ * switches away and straight back, and rebuilding the sector's score on the
+ * way out would cost a frame for nothing.
+ */
+static void release_stale_music(AudioSystem *audio)
+{
+    for (int i = 0; i < MUSIC_TRACK_COUNT; ++i)
+    {
+        if (i == MUSIC_INTRO || i == audio->current_music ||
+            i == audio->previous_music)
+            continue;
+        SDL_free(audio->music_tracks[i].samples);
+        audio->music_tracks[i].samples = NULL;
+        audio->music_tracks[i].frame_count = 0;
+    }
 }
 
 static bool synth_sound(AudioSystem *audio, SoundEffect effect)
@@ -1235,6 +1839,7 @@ bool audio_init(AudioSystem *audio)
 {
     SDL_zerop(audio);
     audio->current_music = -1;
+    audio->previous_music = -1;
 
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
     {
@@ -1482,9 +2087,13 @@ void audio_play_music(AudioSystem *audio, MusicTrack track)
         return;
     if (audio->current_music == track_index)
         return;
+    if (!ensure_music_track(audio, track_index))
+        return;
 
     SDL_ClearAudioStream(audio->music_stream);
+    audio->previous_music = audio->current_music;
     audio->current_music = track_index;
+    release_stale_music(audio);
     SDL_SetAudioStreamGain(audio->music_stream,
                            audio->music_tracks[track_index].gain);
     queue_music_loop(audio);

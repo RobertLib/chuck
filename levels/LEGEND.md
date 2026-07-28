@@ -110,36 +110,38 @@ Notes:
 
 ## Themes
 
-`THEME <name>` after the grid selects the wall material, backdrop and palette
-the level is drawn with (see [level_art.c](../src/level_art.c)). It is
+`THEME <name>` after the grid selects the wall material, backdrop, palette and
+score the level gets (see [level_art.c](../src/level_art.c)). It is
 presentation only: no theme changes collision, spawning, lighting reach or any
 other simulated behaviour, so the same map plays identically under any of them.
 A map with no `THEME` line keeps the default for its mode — `PLANT` inside,
 `FACADE_NIGHT` on a wall — so a new sector drops in without one. A misspelt
 name is a parse error rather than a silent fall back.
 
-| Name | Walls | Interior |
-| --- | --- | --- |
-| `PLANT` | riveted steel plate | machine hall, the original look |
-| `LOBBY` | polished marble, brass reveals | glazed street front with the main entrance off the street, reception |
-| `OFFICE` | painted partition board | cubicle farm, blinds, ceiling grid |
-| `SERVER` | dark plate | rack rows and status LEDs |
-| `CANTEEN` | glazed tile | servery counter under heat lamps |
-| `LAB` | pale tile | clean-room bays, fume cabinets |
-| `ARCHIVE` | brick | shelving stacks under bare bulbs |
-| `SECURITY` | dark plate | monitor wall and console desks |
-| `DUCTS` | dark plate | galvanised trunking; the darkest sector |
-| `PENTHOUSE` | hardwood panelling | panelled hall, sconces, cabinets |
-| `ROOF` | raw concrete | curtain wall over the night city |
-| `RESTROOM` | tile | implied by restroom fittings; sublevel only |
-| `FACADE_NIGHT` | — | clear night, city lights below |
-| `FACADE_STORM` | — | rain, lightning, wet stone |
-| `FACADE_DAWN` | — | sunrise, warm stone, distant birds |
-| `FACADE_HIGH` | — | above the cloud layer, neon signage |
+| Name | Walls | Interior | Score |
+| --- | --- | --- | --- |
+| `PLANT` | riveted steel plate | machine hall, the original look | 104 bpm A minor; saw bass on the beats, half-time snare, struck metal |
+| `LOBBY` | polished marble, brass reveals | glazed street front with the main entrance off the street, reception | 88 bpm A minor; no snare at all, a pad holding the room, brass glints |
+| `OFFICE` | painted partition board | cubicle farm, blinds, ceiling grid | 96 bpm E minor; the workaday groove the campaign shipped with |
+| `SERVER` | dark plate | rack rows and status LEDs | 126 bpm B minor; two-bar chords, machine pulse, sixteenths where a tune would be |
+| `CANTEEN` | glazed tile | servery counter under heat lamps | 108 bpm G major; the only shuffle, and the only major key indoors |
+| `LAB` | pale tile | clean-room bays, fume cabinets | 92 bpm C minor; a chromatic wobble that never settles, tritone lead |
+| `ARCHIVE` | brick | shelving stacks under bare bulbs | 76 bpm D minor; one soft pulse a bar is the whole rhythm section |
+| `SECURITY` | dark plate | monitor wall and console desks | 128 bpm F minor; a march — four on the floor and a snare into the bar line |
+| `DUCTS` | dark plate | galvanised trunking; the darkest sector | 84 bpm B♭ minor; a fan pedal that never stops and air past the plating |
+| `PENTHOUSE` | hardwood panelling | panelled hall, sconces, cabinets | 100 bpm B♭ minor; the widest chords in the building, and punched |
+| `ROOF` | raw concrete | curtain wall over the night city | 96 bpm F♯ minor; the lead finally carries the loop, over open wind |
+| `RESTROOM` | tile | implied by restroom fittings; sublevel only | 72 bpm E♭ minor; tiled and dripping, no kit — the sector's score waits outside |
+| `FACADE_NIGHT` | — | clear night, city lights below | 90 bpm E minor; wide, slow and exposed, the city glittering under it |
+| `FACADE_STORM` | — | rain, lightning, wet stone | 116 bpm C minor; the only climb in a hurry, rain on the cornices |
+| `FACADE_DAWN` | — | sunrise, warm stone, distant birds | 82 bpm A major; the one climb with the light coming |
+| `FACADE_HIGH` | — | above the cloud layer, neon signage | 70 bpm B minor; thin air — barely a bass note, a long way between phrases |
 
 Two rules the campaign keeps, both pinned by
 `test_campaign_themes_keep_changing`: no two consecutive levels share a theme,
-and a facade level uses a `FACADE_*` theme while an interior never does.
+and a facade level uses a `FACADE_*` theme while an interior never does. The
+second rule is what keeps the scores changing too, since the theme-to-track
+mapping is one to one.
 
 ## Sector plans
 
