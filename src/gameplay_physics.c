@@ -369,3 +369,114 @@ bool gameplay_box_tiles_clear(const GameplayState *state,
                 return false;
     return true;
 }
+
+void gameplay_carry_player_on_elevator(GameplayState *state, float dt)
+{
+    if (state->player_on_elevator < 0 ||
+        state->player_on_elevator >= state->level.runtime.elevator_count)
+        return;
+
+    const Elevator *elevator =
+        &state->level.runtime.elevators[state->player_on_elevator];
+    if (elevator->vy >= 0.0f)
+        return;
+
+    state->player.y += elevator->vy * dt;
+    state->player.vy = 0.0f;
+}
+
+bool gameplay_resolve_player_crush(GameplayState *state)
+{
+    Player *player = &state->player;
+    float height = player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+    int col_left = (int)floorf(player->x / TILE_SIZE);
+    int col_right = (int)floorf((player->x + PLAYER_W - 1.0f) / TILE_SIZE);
+    int row_top = (int)floorf(player->y / TILE_SIZE);
+
+    bool slab_overhead = false;
+    for (int col = col_left; col <= col_right && !slab_overhead; ++col)
+        slab_overhead = level_is_solid(&state->level, col, row_top);
+    if (!slab_overhead)
+        return false;
+
+    /* An elevator shaft is one tile wide and the box is 26 of those 32 pixels,
+     * so a rider who stepped aboard off-centre keeps overlapping the
+     * neighbouring column. The overlap costs nothing in the open storeys and
+     * killed him the moment the lift carried his head into the slab the shaft
+     * runs through: the wall arrived above him rather than beside him, so
+     * horizontal collision never had the chance to push him clear. Do it here
+     * instead. The box is narrower than a tile, so it straddles at most two
+     * columns and there are at most two ways out — wholly into the left one or
+     * wholly into the right one. */
+    if (col_left != col_right)
+    {
+        float into_right = (float)col_right * TILE_SIZE;
+        float into_left = (float)(col_left + 1) * TILE_SIZE - PLAYER_W;
+        if (gameplay_box_tiles_clear(state, into_right, player->y,
+                                     PLAYER_W, height))
+        {
+            player->x = into_right;
+            return false;
+        }
+        if (gameplay_box_tiles_clear(state, into_left, player->y,
+                                     PLAYER_W, height))
+        {
+            player->x = into_left;
+            return false;
+        }
+    }
+
+    gameplay_hit_player(state);
+    return true;
+}
+
+void gameplay_ride_platforms(GameplayState *state, float dt)
+{
+    Player *player = &state->player;
+
+    state->player_on_elevator = -1;
+    for (int i = 0; i < state->level.runtime.elevator_count; ++i)
+    {
+        const Elevator *elevator = &state->level.runtime.elevators[i];
+        float plat_x = elevator->col * (float)TILE_SIZE;
+        float height =
+            player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+        float player_cx = player->x + PLAYER_W * 0.5f;
+        float player_feet = player->y + height;
+        if (player_cx > plat_x && player_cx < plat_x + TILE_SIZE &&
+            player->vy >= 0.0f &&
+            player_feet >= elevator->y - 2.0f &&
+            player_feet <= elevator->y + ELEVATOR_PLAT_H + 8.0f)
+        {
+            player->y = elevator->y - height;
+            player->vy = 0.0f;
+            player->on_ground = true;
+            state->player_on_elevator = i;
+        }
+    }
+
+    state->player_on_moving_platform = -1;
+    for (int i = 0; i < state->level.runtime.moving_platform_count; ++i)
+    {
+        const MovingPlatform *platform =
+            &state->level.runtime.moving_platforms[i];
+        float plat_top = platform->row * (float)TILE_SIZE;
+        float height =
+            player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+        float player_cx = player->x + PLAYER_W * 0.5f;
+        float player_feet = player->y + height;
+        if (player_cx > platform->x && player_cx < platform->x + TILE_SIZE &&
+            player->vy >= 0.0f &&
+            player_feet >= plat_top - 2.0f &&
+            player_feet <= plat_top + MOVING_PLATFORM_H + 8.0f)
+        {
+            player->y = plat_top - height;
+            player->vy = 0.0f;
+            player->on_ground = true;
+            state->player_on_moving_platform = i;
+            /* Carry the rider sideways with the platform. */
+            player->x += platform->vx * dt;
+            break;
+        }
+    }
+}

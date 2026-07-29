@@ -905,35 +905,8 @@ static void update_playing(Game *game, float dt)
         game->gameplay.player_on_moving_platform;
 
     /* --- Elevator: pre-carry (upward), player physics, update platforms, snap --- */
-    {
-        /* If riding an upward-moving elevator, nudge the player up before physics
-         * so gravity doesn't immediately drop them off. */
-        if (previous_elevator >= 0 &&
-            previous_elevator < game->gameplay.level.runtime.elevator_count)
-        {
-            const Elevator *el = &game->gameplay.level.runtime.elevators[previous_elevator];
-            if (el->vy < 0.0f)
-            {
-                game->gameplay.player.y += el->vy * dt;
-                game->gameplay.player.vy = 0.0f;
-            }
-        }
-    }
-
-    /* Crush detection: if anything pushed the player into a solid tile overhead, they die. */
-    {
-        int col_left = (int)floorf(game->gameplay.player.x / (float)TILE_SIZE);
-        int col_right = (int)floorf((game->gameplay.player.x + PLAYER_W - 1.0f) / (float)TILE_SIZE);
-        int row_top = (int)floorf(game->gameplay.player.y / (float)TILE_SIZE);
-        for (int c = col_left; c <= col_right; ++c)
-        {
-            if (level_is_solid(&game->gameplay.level, c, row_top))
-            {
-                gameplay_hit_player(&game->gameplay);
-                break;
-            }
-        }
-    }
+    gameplay_carry_player_on_elevator(&game->gameplay, dt);
+    gameplay_resolve_player_crush(&game->gameplay);
 
     float prev_player_x = game->gameplay.player.x;
     float prev_player_y = game->gameplay.player.y;
@@ -968,55 +941,7 @@ static void update_playing(Game *game, float dt)
     level_update_moving_platforms(&game->gameplay.level, dt);
     gameplay_update_crates(&game->gameplay, &game->campaign, dt);
     gameplay_resolve_player_crates(&game->gameplay, prev_player_x, prev_player_y, prev_player_h);
-    game->gameplay.player_on_elevator = -1;
-    for (int i = 0; i < game->gameplay.level.runtime.elevator_count; ++i)
-    {
-        const Elevator *el = &game->gameplay.level.runtime.elevators[i];
-        float plat_x = el->col * (float)TILE_SIZE;
-        float player_cx = game->gameplay.player.x + PLAYER_W * 0.5f;
-        float ph = game->gameplay.player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
-        float player_feet = game->gameplay.player.y + ph;
-        if (player_cx > plat_x && player_cx < plat_x + TILE_SIZE &&
-            game->gameplay.player.vy >= 0.0f &&
-            player_feet >= el->y - 2.0f &&
-            player_feet <= el->y + ELEVATOR_PLAT_H + 8.0f)
-        {
-            game->gameplay.player.y = el->y - ph;
-            game->gameplay.player.vy = 0.0f;
-            game->gameplay.player.on_ground = true;
-            game->gameplay.player_on_elevator = i;
-        }
-    }
-
-    /* Moving platforms: detect if player stands on one and snap/carry them. */
-    game->gameplay.player_on_moving_platform = -1;
-    for (int i = 0; i < game->gameplay.level.runtime.moving_platform_count; ++i)
-    {
-        const MovingPlatform *mp = &game->gameplay.level.runtime.moving_platforms[i];
-        float plat_x = mp->x;
-        float player_cx = game->gameplay.player.x + PLAYER_W * 0.5f;
-        float ph = game->gameplay.player.crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
-        float player_feet = game->gameplay.player.y + ph;
-        float plat_top = mp->row * (float)TILE_SIZE;
-        if (player_cx > plat_x && player_cx < plat_x + TILE_SIZE &&
-            game->gameplay.player.vy >= 0.0f &&
-            player_feet >= plat_top - 2.0f &&
-            player_feet <= plat_top + MOVING_PLATFORM_H + 8.0f)
-        {
-            game->gameplay.player.y = plat_top - ph;
-            game->gameplay.player.vy = 0.0f;
-            game->gameplay.player.on_ground = true;
-            game->gameplay.player_on_moving_platform = i;
-            break;
-        }
-    }
-
-    /* If riding a moving platform, carry the player horizontally. */
-    if (game->gameplay.player_on_moving_platform >= 0 && game->gameplay.player_on_moving_platform < game->gameplay.level.runtime.moving_platform_count)
-    {
-        const MovingPlatform *mp = &game->gameplay.level.runtime.moving_platforms[game->gameplay.player_on_moving_platform];
-        game->gameplay.player.x += mp->vx * dt;
-    }
+    gameplay_ride_platforms(&game->gameplay, dt);
 
     if (jump_requested && game->gameplay.player.vy < -1.0f)
         game_events_sound(&game->gameplay.events, SFX_JUMP);

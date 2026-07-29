@@ -1707,6 +1707,92 @@ static void test_player_dies_from_a_high_fall(void)
 }
 
 /*
+ * An elevator carries its rider through the slabs the shaft is drilled through.
+ *
+ * The shaft is one tile wide and the player box is 26 of those 32 pixels, so
+ * anyone who stepped aboard off-centre still overlaps the column next door.
+ * That overlap is free in the open storeys and used to be fatal the instant the
+ * lift lifted his head into a floor slab: the wall arrived above him rather
+ * than beside him, so nothing had pushed him clear, and the crush check killed
+ * him for it. Every position the platform will accept has to reach the top.
+ */
+static void test_elevator_carries_an_off_centre_rider_through_a_slab(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#        #\n" /* the storey the lift tops out in */
+        "#   V    #\n"
+        "####V#####\n" /* the slab the shaft is drilled through */
+        "#   V    #\n"
+        "# S V   E#\n"
+        "##########\n";
+    const int shaft_col = 4;
+
+    int tried = 0;
+    int arrived = 0;
+    for (float offset = 0.5f; offset < (float)TILE_SIZE; offset += 0.5f)
+    {
+        GameplayState state = {0};
+        rng_seed(&state.rng, 91);
+        CHECK(level_load_data(&state.level, "shaft", data, strlen(data),
+                              &state.rng));
+        CHECK(state.level.runtime.elevator_count == 1);
+        player_reset(&state.player, &state.level);
+
+        float x = (float)shaft_col * TILE_SIZE - PLAYER_W * 0.5f + offset;
+        if ((int)floorf((x + PLAYER_W * 0.5f) / TILE_SIZE) != shaft_col)
+            continue;
+        state.player.x = x;
+        state.player.y = state.level.runtime.elevators[0].y - PLAYER_H;
+        state.player.on_ground = true;
+
+        /* The order update_playing runs these in: carry, crush, physics, move
+         * the platforms, then stand the player back on his. */
+        Input idle = {0};
+        gameplay_ride_platforms(&state, 1.0f / 60.0f);
+        CHECK(state.player_on_elevator == 0);
+        bool topped_out = false;
+        for (int frame = 0; frame < 240 && !state.player.dying && !topped_out;
+             ++frame)
+        {
+            gameplay_carry_player_on_elevator(&state, 1.0f / 60.0f);
+            gameplay_resolve_player_crush(&state);
+            player_update(&state.player, &state.level, &idle, 1.0f / 60.0f);
+            level_update_elevators(&state.level, 1.0f / 60.0f);
+            gameplay_ride_platforms(&state, 1.0f / 60.0f);
+            topped_out = state.player_on_elevator == 0 &&
+                         state.player.y < 2.0f * TILE_SIZE;
+        }
+
+        tried++;
+        arrived += topped_out && !state.player.dying;
+    }
+    CHECK(tried > 40);
+    CHECK(arrived == tried);
+}
+
+/* Being squeezed aside is not the same as having nowhere to go: a player whose
+ * whole box is under a slab is still crushed. */
+static void test_player_under_a_slab_is_crushed(void)
+{
+    static const char data[] =
+        "######\n"
+        "#S  E#\n"
+        "######\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 5);
+    CHECK(level_load_data(&state.level, "crush", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+    state.player.x = (float)TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+    state.player.y -= 2.0f;
+
+    CHECK(gameplay_resolve_player_crush(&state));
+    CHECK(state.player.dying);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_PLAYER_HIT));
+}
+
+/*
  * Grabbing a ladder centres the player in the rung column.
  *
  * The player box is 26 of a 32px tile, so stopping anywhere in the outer 6px
@@ -3836,6 +3922,8 @@ int main(void)
     test_facade_thrower_winds_up_before_releasing();
     test_level_collision_stops_at_wall();
     test_player_dies_from_a_high_fall();
+    test_elevator_carries_an_off_centre_rider_through_a_slab();
+    test_player_under_a_slab_is_crushed();
     test_ladder_mount_centres_the_player();
     test_player_descends_from_top_of_ladder();
     test_ladder_remembers_climb_direction_for_shooting();
