@@ -125,6 +125,209 @@ static inline unsigned fx_hash(unsigned value)
     return value ^ (value >> 16);
 }
 
+/* ---- Character form and contact ------------------------------------- */
+
+/*
+ * A figure is a lit solid too.
+ *
+ * A wall is drawn material, then form shading, then edges, and that middle
+ * pass is what makes it read as mass rather than as a swatch. A character
+ * drawn as flat fills inside a dark outline skips it, and no amount of
+ * silhouette work stops the result reading as a sticker laid over a lit room.
+ * One three-step ramp derived from a single garment colour gives every body
+ * part the same treatment, so the whole cast gains it at once instead of
+ * thirty hand-authored literals per figure.
+ */
+typedef struct
+{
+    SDL_Color dark; /* the underside, turned away from the ceiling */
+    SDL_Color base; /* the garment as authored */
+    SDL_Color lit;  /* the crown and the leading edge */
+} FxRamp;
+
+static inline FxRamp fx_ramp(SDL_Color base)
+{
+    /* Interior light comes from the ceiling and is slightly warm, so the lit
+     * step gains a little of that warmth and the shaded step cools as it
+     * drops rather than only losing value. A ramp built by scaling one colour
+     * up and down instead reads as plastic. */
+    SDL_Color warm = {255, 236, 206, 255};
+    SDL_Color cool = {13, 19, 33, 255};
+    FxRamp ramp = {fx_mix(base, cool, 0.30f), base, fx_mix(base, warm, 0.24f)};
+    ramp.dark.a = base.a;
+    ramp.lit.a = base.a;
+    return ramp;
+}
+
+/*
+ * One body block, lit from above.
+ *
+ * Three passes and no more: the crown the ceiling reaches, the underside it
+ * does not, and a rim down the leading flank. `dir` is the figure's facing, so
+ * that rim always lands on the side turned toward the way he is going, and at
+ * twenty-six pixels across it is a large part of what tells the player which
+ * way someone is pointed.
+ *
+ * The trailing flank is deliberately left alone. It sits directly against the
+ * figure's outline, where another dark column reads as a thicker outline rather
+ * than as a surface turning away — and a block with something happening on all
+ * four sides at this scale stops being a form and becomes a frame.
+ */
+static inline void fx_form_block(SDL_Renderer *r, float x, float y,
+                                 float w, float h, FxRamp ramp, int dir)
+{
+    fx_rect(r, ramp.base, x, y, w, h);
+    if (h < 3.0f)
+    {
+        if (h >= 2.0f)
+            fx_rect(r, ramp.lit, x, y, w, 1.0f);
+        return;
+    }
+
+    float crown = h >= 10.0f ? 2.0f : 1.0f;
+
+    fx_rect(r, ramp.lit, x, y, w, crown);
+    fx_rect(r, ramp.dark, x, y + h - 1.0f, w, 1.0f);
+    /* Narrow blocks — a forearm, a trouser leg — are already almost all edge.
+     * A rim on those would leave one column of the garment itself. */
+    if (w >= 6.0f)
+        fx_rect(r, fx_mix(ramp.base, ramp.lit, 0.50f),
+                dir >= 0 ? x + w - 1.0f : x, y + crown, 1.0f,
+                h - crown - 1.0f);
+}
+
+/*
+ * How far one row of a mass is set in from its own edges.
+ *
+ * A body drawn out of rectangles reads as built rather than grown, however well
+ * each rectangle is shaded — the corners are the tell, and there are four of
+ * them on every part. This is a chamfer rather than an arc: at twenty-six
+ * pixels across, two pixels off a corner is the whole difference between a
+ * skull and a box, and anything more elaborate only muddies the silhouette.
+ *
+ * Top and bottom are given separately because a body is not symmetrical about
+ * its waist. Shoulders slope where a hem runs straight, a skull is domed where
+ * a jaw comes to a chin, and an ankle is narrower than the sole under it.
+ */
+static inline float fx_taper(int row, int rows, int top, int bottom)
+{
+    if (row < top)
+        return (float)(top - row);
+    if (row >= rows - bottom)
+        return (float)(bottom - (rows - 1 - row));
+    return 0.0f;
+}
+
+/*
+ * A mass in one flat colour, corners taken off.
+ *
+ * For the things that sit on a form and would put its corners straight back if
+ * they were rectangles: hair, a helmet, a cap, the shade along a jaw.
+ */
+static inline void fx_mass(SDL_Renderer *r, SDL_Color c, float x, float y,
+                           float w, float h, int top, int bottom)
+{
+    int rows = (int)h;
+
+    fx_set(r, c);
+    for (int i = 0; i < rows; ++i)
+    {
+        float inset = fx_taper(i, rows, top, bottom);
+        if (inset * 2.0f >= w)
+            continue;
+        fx_fill(r, x + inset, y + (float)i, w - inset * 2.0f, 1.0f);
+    }
+}
+
+/*
+ * fx_form_block's shaped counterpart: the same crown, underside and leading rim
+ * laid over a tapered mass instead of a rectangle.
+ *
+ * The rim follows the edge in and out rather than running straight down the
+ * side, which is what makes the chamfer read as a surface turning away rather
+ * than as a step cut out of a box.
+ */
+static inline void fx_form_mass(SDL_Renderer *r, float x, float y,
+                                float w, float h, FxRamp ramp, int dir,
+                                int top, int bottom)
+{
+    int rows = (int)h;
+    float crown = h >= 10.0f ? 2.0f : 1.0f;
+    SDL_Color rim = fx_mix(ramp.base, ramp.lit, 0.50f);
+
+    for (int i = 0; i < rows; ++i)
+    {
+        float inset = fx_taper(i, rows, top, bottom);
+        float rw = w - inset * 2.0f;
+        float rx = x + inset;
+        if (rw < 1.0f)
+            continue;
+
+        if ((float)i < crown)
+            fx_rect(r, ramp.lit, rx, y + (float)i, rw, 1.0f);
+        else if (i == rows - 1)
+            fx_rect(r, ramp.dark, rx, y + (float)i, rw, 1.0f);
+        else
+        {
+            fx_rect(r, ramp.base, rx, y + (float)i, rw, 1.0f);
+            if (rw >= 6.0f)
+                fx_rect(r, rim, dir >= 0 ? rx + rw - 1.0f : rx,
+                        y + (float)i, 1.0f, 1.0f);
+        }
+    }
+}
+
+/*
+ * The shadow a figure casts on the surface it stands on.
+ *
+ * A single opaque slab under the boots is the cheapest way to ground a sprite
+ * and the easiest to spot: it has a hard edge the rest of the frame does not,
+ * and it stays the same size whether the figure is standing on the floor or
+ * eight pixels above it at the top of a jump. `lift` is how far off that
+ * surface he is, 0 to 1, and it both shrinks the pool and lets the floor back
+ * through — which is most of what sells the height of a jump.
+ */
+static inline void fx_contact_shadow(SDL_Renderer *r, float cx, float y,
+                                     float half_w, float lift, Uint8 alpha)
+{
+    if (lift < 0.0f)
+        lift = 0.0f;
+    if (lift > 1.0f)
+        lift = 1.0f;
+
+    float hw = half_w * (1.0f - 0.40f * lift);
+    float fade = 1.0f - 0.55f * lift;
+    float core = (float)alpha * fade;
+
+    if (hw < 1.0f || core < 4.0f)
+        return;
+
+    /* Three overlapping passes: a wide faint skirt, the body of the pool, and
+     * a small dark core directly under the weight. Alpha accumulates where
+     * they overlap, which is what gives the edge its falloff. */
+    fx_rect_a(r, FX_INK, (Uint8)(core * 0.34f),
+              floorf(cx - hw), floorf(y), floorf(hw * 2.0f), 2.0f);
+    fx_rect_a(r, FX_INK, (Uint8)(core * 0.52f),
+              floorf(cx - hw * 0.70f), floorf(y), floorf(hw * 1.40f), 3.0f);
+    fx_rect_a(r, FX_INK, (Uint8)(core * 0.62f),
+              floorf(cx - hw * 0.36f), floorf(y + 1.0f), floorf(hw * 0.72f),
+              2.0f);
+}
+
+/*
+ * A blink, derived rather than stored.
+ *
+ * Eyes that never close are the tell that a figure is a drawing, and a blink
+ * is two frames of work. `salt` scatters the interval per figure so a room
+ * full of people never blinks in unison.
+ */
+static inline bool fx_blinking(float anim_time, unsigned salt)
+{
+    float period = 2.6f + (float)(fx_hash(salt) % 240u) * 0.01f;
+    float phase = anim_time - period * floorf(anim_time / period);
+    return phase < 0.11f;
+}
+
 /* ---- Lighting primitives ------------------------------------------- */
 
 /* Smooth vertical gradient; alpha interpolates too, so it doubles as a

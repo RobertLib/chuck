@@ -337,6 +337,69 @@ the staff side of the desk stays legible.
   glazing it is set into; anchor it to a fixed point on its own layer instead
   (`lobby_entrance` in [level_art.c](src/level_art.c)), on a multiple of the
   layer's period so it lands on the grid the rest of the layer tiles to.
+- **A figure is a mass, not a stack of rectangles.** A body built out of boxes
+  reads as assembled however well each box is shaded, and the corners are the
+  tell — four of them on every part. `fx_taper` takes one or two pixels off
+  them, with the top and the bottom given separately because a body is not
+  symmetrical about its waist: shoulders slope where a hem runs straight, a
+  skull is domed where a jaw comes to a chin, an ankle is narrower than the sole
+  under it. `sprite_body` runs the **outline** along the same taper a pixel
+  further out, which is the part that matters — a rounded fill inside a square
+  outline is still a box with something drawn in it. Anything laid over a form
+  has to follow it too (`sprite_mass`): hair, a helmet, a cap, the shade along a
+  jaw. A rectangle of hair puts the corners of the head straight back. Hair and
+  helmets go on *after* the face for the same reason, so their fill covers the
+  face's own top outline row instead of being cut in half by it. Parts narrow
+  enough that a chamfer would eat them whole — a forearm, a trouser leg — stay
+  rectangular.
+- **A figure is a lit solid too, and it is drawn out of the same three passes
+  as a wall.** Every body block in [game_render.c](src/game_render.c) goes
+  through `sprite_form`/`sprite_body` → `fx_form_block`/`fx_form_mass`, which
+  lays the garment down, puts the crown the ceiling reaches on top of it, drops
+  the underside into shade and
+  runs one rim pixel down the *leading* flank — the side the figure is facing,
+  which at twenty-six pixels across is much of what says which way someone is
+  turned. The trailing flank is deliberately left alone: it sits against the
+  sprite's own outline, where a second dark column reads as a thicker outline
+  rather than as a surface turning away. Both steps of the ramp come from
+  `fx_ramp` (warm toward the light, cool into the shade) rather than from more
+  literals, so a jacket cannot drift out of the lighting system it is drawn in.
+  Limbs get the cylinder version of the same idea in `sprite_limb_segment` —
+  outline, shaded underside, garment, one lit pixel along the top — and that one
+  function is why the whole cast gained the treatment at once instead of each
+  figure being hand-shaded.
+- **The floor casts the shadow, not the boots.** `fx_contact_shadow` is a soft
+  three-pass pool, and for the player `character_ground` finds the first solid
+  tile *below* him and puts it there, shrinking and thinning it with height. A
+  hard slab pinned under the feet travels up with a jump and so states that the
+  floor came along; the pool staying behind on the floor is most of what sells
+  how high the jump was. Keep new figures on this path — the old flat
+  `color_rect` under a sprite is a shape with a harder edge than anything else
+  in the frame.
+- **Weight is squash, stretch and dust, and none of it belongs to gameplay.**
+  The figure draws out while it is in the air and compresses for a beat after
+  the boots land; the shell derives that beat in `game.c` from the fall speed
+  `player_update` already returns and parks it in `PresentationState`
+  (`player_land_squash`), so no gameplay module has to know the figure squashes.
+  Landings and footfalls also kick `PARTICLE_DUST` off the floor — pale, hanging
+  and nearly weightless, as against the sparks the same system throws for blood.
+- **A gait is a cycle, not a sine.** `draw_walking_leg` takes each leg's own
+  place in the stride, spends the first half of it in stance tracking the ankle
+  straight back under the body and the second half swinging it forward on an
+  arc, and the other leg gets the same number half a turn along. A sine is
+  slowest exactly where the foot should be carrying the figure fastest, which is
+  what makes a sine-driven walk look like skating.
+- **A face is five rows, and every one of them has to earn its place.** Below
+  the headband there is room for a brow the fringe shades, an eye, a nose that
+  has to break the head's outline to be a profile at all, a mouth and a jaw —
+  and the pupil goes at the *front* of the white, because a dark pixel centred
+  in it reads as two eyes seen head-on. `fx_blinking` closes the eye every few
+  seconds from the animation clock alone, salted per figure so a room full of
+  people never blinks in unison.
+- **A muzzle flash lights the room.** `draw_muzzle_flash` puts an `fx_glow` at
+  the muzzle before the bright rects go down. The brightest thing in the frame
+  illuminating nothing around it is what makes a flash read as a decal stuck on
+  the gun, and it lasts two frames, so it costs nothing anyone will notice.
 - **An interior seen through glass carries its own values.** A view is only a
   view if something separates it from the room: a night sky lit brighter than
   the interior air turns a distant skyline into masonry standing in the hall,

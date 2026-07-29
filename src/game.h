@@ -49,6 +49,12 @@ typedef struct
     bool footstep_alternate;
     bool fall_platform_sounded[MAX_FALL_PLATFORMS];
 
+    /* How much of the landing squash the player figure has left to play, 1 down
+     * to 0. It is a weight cue and nothing else — the shell derives it from the
+     * fall speed the physics step already reports, so no gameplay module has to
+     * know the figure compresses when it lands. */
+    float player_land_squash;
+
     /* One-shot story setup shown only when the application first launches. */
     OpeningCutscene opening_cutscene;
 

@@ -115,6 +115,9 @@ static void reset_level_presentation(Game *game)
     game->presentation.footstep_audio_timer = 0.0f;
     game->presentation.ladder_audio_timer = 0.0f;
     game->presentation.footstep_alternate = false;
+    /* Otherwise the figure would open a sector still compressed from the drop
+     * that ended the last one. */
+    game->presentation.player_land_squash = 0.0f;
     SDL_memset(game->presentation.fall_platform_sounded, 0,
                sizeof(game->presentation.fall_platform_sounded));
 }
@@ -1019,6 +1022,24 @@ static void update_playing(Game *game, float dt)
         game_events_sound(&game->gameplay.events, SFX_JUMP);
     gameplay_handle_player_landing(&game->gameplay, player_was_grounded,
                                    player_fall_speed);
+
+    /* The landing, as the player sees it rather than hears it: the figure
+     * compresses for a beat and kicks up whatever the floor had on it. Both are
+     * scaled by the drop, so stepping off a crate does not throw up the same
+     * cloud as coming down a storey. */
+    game->presentation.player_land_squash =
+        fmaxf(0.0f, game->presentation.player_land_squash - dt * 7.0f);
+    if (!player_was_grounded && game->gameplay.player.on_ground &&
+        player_fall_speed > PLAYER_LAND_SOUND_SPEED)
+    {
+        float force = fminf(1.0f, player_fall_speed /
+                                      (PLAYER_FATAL_FALL_SPEED * 0.9f));
+        game->presentation.player_land_squash = 0.45f + force * 0.55f;
+        particle_system_dust(&game->presentation.particles,
+                             game->gameplay.player.x + PLAYER_W * 0.5f,
+                             game->gameplay.player.y + PLAYER_H - 1.0f,
+                             2 + (int)(force * 5.0f), 26.0f);
+    }
     if (game->gameplay.player_on_elevator >= 0 && previous_elevator < 0)
         game_events_sound(&game->gameplay.events, SFX_ELEVATOR);
     if (game->gameplay.player_on_moving_platform >= 0 &&
@@ -1054,6 +1075,15 @@ static void update_playing(Game *game, float dt)
         if (game->presentation.footstep_audio_timer <= 0.0f)
         {
             game_events_sound(&game->gameplay.events, game->presentation.footstep_alternate ? SFX_STEP_A : SFX_STEP_B);
+            /* A step is a sound and a scuff. One particle per footfall is
+             * enough to say the floor has something on it, and it lands on the
+             * same beat the step is heard on rather than on a timer of its
+             * own. */
+            if (!game->gameplay.player.crawling)
+                particle_system_dust(&game->presentation.particles,
+                                     game->gameplay.player.x + PLAYER_W * 0.5f,
+                                     game->gameplay.player.y + PLAYER_H - 1.0f,
+                                     2, 14.0f);
             game->presentation.footstep_alternate = !game->presentation.footstep_alternate;
             game->presentation.footstep_audio_timer = game->gameplay.player.crawling ? 0.40f : 0.27f;
         }

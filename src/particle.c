@@ -1,5 +1,7 @@
 #include "particle.h"
 
+#include "fx.h"
+
 #include <math.h>
 
 void particle_system_init(ParticleSystem *ps)
@@ -26,6 +28,7 @@ void particle_system_emit(ParticleSystem *ps, float x, float y, int count, int f
     {
       Particle *p = &ps->particles[i];
       p->active = true;
+      p->kind = PARTICLE_SPARK;
       p->x = x + frand_range(-4.0f, 4.0f);
       p->y = y + frand_range(-4.0f, 4.0f);
       /* Full-circle angle, but bias downward and slightly toward facing */
@@ -34,6 +37,7 @@ void particle_system_emit(ParticleSystem *ps, float x, float y, int count, int f
       p->vx = cosf(ang) * sp + (facing * frand_range(-10.0f, 20.0f));
       p->vy = sinf(ang) * sp * 0.6f - frand_range(10.0f, 30.0f);
       p->life = frand_range(0.35f, 0.9f);
+      p->lifespan = p->life;
       p->size = frand_range(2.0f, 4.0f);
       --count;
     }
@@ -51,6 +55,7 @@ void particle_system_explosion(ParticleSystem *ps, float x, float y, int count)
     {
       Particle *p = &ps->particles[i];
       p->active = true;
+      p->kind = PARTICLE_SPARK;
       p->x = x + frand_range(-6.0f, 6.0f);
       p->y = y + frand_range(-6.0f, 6.0f);
       float ang = frand_range(-3.14159265f, 3.14159265f);
@@ -58,7 +63,45 @@ void particle_system_explosion(ParticleSystem *ps, float x, float y, int count)
       p->vx = cosf(ang) * sp;
       p->vy = sinf(ang) * sp * 0.6f - frand_range(20.0f, 60.0f);
       p->life = frand_range(0.35f, 1.1f);
+      p->lifespan = p->life;
       p->size = frand_range(3.0f, 7.0f);
+      --count;
+    }
+  }
+}
+
+/*
+ * Dust off a floor.
+ *
+ * It leaves sideways rather than upward, because what throws it is a boot
+ * pushing air out from under itself, and it starts along the whole width of the
+ * contact rather than at one point — a puff from a single pixel reads as a
+ * spark however it is coloured.
+ */
+void particle_system_dust(ParticleSystem *ps, float x, float y, int count,
+                          float spread)
+{
+  if (count <= 0)
+    return;
+
+  float half = spread * 0.5f;
+  for (int i = 0; i < PS_MAX_PARTICLES && count > 0; ++i)
+  {
+    if (!ps->particles[i].active)
+    {
+      Particle *p = &ps->particles[i];
+      float side = frand_range(-half, half);
+      p->active = true;
+      p->kind = PARTICLE_DUST;
+      p->x = x + side;
+      p->y = y + frand_range(-1.0f, 1.0f);
+      /* Outward from the middle of the contact, faster the further out it
+       * starts, with just enough rise to clear the floor. */
+      p->vx = (side >= 0.0f ? 1.0f : -1.0f) * frand_range(14.0f, 46.0f);
+      p->vy = -frand_range(6.0f, 22.0f);
+      p->life = frand_range(0.30f, 0.55f);
+      p->lifespan = p->life;
+      p->size = frand_range(2.0f, 4.0f);
       --count;
     }
   }
@@ -71,7 +114,16 @@ void particle_system_update(ParticleSystem *ps, float dt)
     Particle *p = &ps->particles[i];
     if (!p->active)
       continue;
-    p->vy += GRAVITY * dt * 0.6f;
+    if (p->kind == PARTICLE_DUST)
+    {
+      /* Dust hangs: almost no weight, and the air takes the speed out of it. */
+      p->vy += GRAVITY * dt * 0.08f;
+      p->vx -= p->vx * fminf(1.0f, dt * 3.4f);
+    }
+    else
+    {
+      p->vy += GRAVITY * dt * 0.6f;
+    }
     p->x += p->vx * dt;
     p->y += p->vy * dt;
     p->life -= dt;
@@ -82,21 +134,37 @@ void particle_system_update(ParticleSystem *ps, float dt)
 
 void particle_system_render(ParticleSystem *ps, SDL_Renderer *r, float oy, float cam_x)
 {
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   for (int i = 0; i < PS_MAX_PARTICLES; ++i)
   {
     Particle *p = &ps->particles[i];
     if (!p->active)
       continue;
+    float left = p->lifespan > 0.0f ? p->life / p->lifespan : 0.0f;
+    float size = p->size;
+    if (p->kind == PARTICLE_DUST)
+    {
+      /* Pale, thinning, and growing as it disperses. The colour is the room's
+       * own ambient slate rather than a brown, so the same puff belongs on a
+       * lobby floor and on a plenum walkway. It has to carry against a lit
+       * stone floor as well as against a dark deck, which is why it goes on at
+       * half opacity rather than as a whisper. */
+      size = p->size * (1.0f + (1.0f - left) * 0.9f);
+      SDL_SetRenderDrawColor(r, FX_PALE.r, FX_PALE.g, FX_PALE.b,
+                             (Uint8)(left * 140.0f));
+    }
     /* Color varies by size/life to give explosion / spark variety */
-    if (p->size > 4.5f)
+    else if (p->size > 4.5f)
       SDL_SetRenderDrawColor(r, 240, 160, 30, 255);
     else if (p->size > 3.0f)
       SDL_SetRenderDrawColor(r, 220, 80, 20, 255);
     else
       SDL_SetRenderDrawColor(r, 180, 20, 20, 255);
-    SDL_FRect rect = {p->x - cam_x - p->size * 0.5f, p->y + oy - p->size * 0.5f, p->size, p->size};
+    SDL_FRect rect = {p->x - cam_x - size * 0.5f, p->y + oy - size * 0.5f,
+                      size, size};
     SDL_RenderFillRect(r, &rect);
   }
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
 void particle_system_clear(ParticleSystem *ps)
