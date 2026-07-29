@@ -35,6 +35,27 @@ typedef enum
     WALL_STYLE_WOOD       /* stile-and-rail hardwood panelling */
 } WallStyle;
 
+/*
+ * What the walkable top of a slab is finished in.
+ *
+ * Seen from the side a floor is a sliver a few pixels deep, which is exactly
+ * why it needs naming: it is the one surface the player looks at all the time,
+ * and the sliver is the difference between "a sector of the building" and "the
+ * top edge of a block". The bright arris line above it stays the theme's trim
+ * in every sector, so where Chuck can stand reads the same way throughout.
+ */
+typedef enum
+{
+    FLOOR_SCREED = 0, /* power-floated concrete or steel deck */
+    FLOOR_STONE,      /* polished stone, with the sheen that implies */
+    FLOOR_CARPET,     /* matte contract carpet tile */
+    FLOOR_PANEL,      /* perforated raised access floor */
+    FLOOR_CHEQUER,    /* stainless treadplate */
+    FLOOR_CERAMIC,    /* grouted ceramic */
+    FLOOR_BOARDS,     /* butt-jointed timber boards */
+    FLOOR_PARQUET     /* hardwood blocks with a metal inlay */
+} FloorStyle;
+
 /* Which parallax composition sits behind the tile grid. */
 typedef enum
 {
@@ -65,6 +86,7 @@ typedef enum
 typedef struct
 {
     WallStyle wall_style;
+    FloorStyle floor_style;
     BackdropStyle backdrop;
 
     SDL_Color wall;       /* base fill of a solid tile */

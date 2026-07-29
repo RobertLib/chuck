@@ -125,24 +125,30 @@ A map with no `THEME` line keeps the default for its mode — `PLANT` inside,
 `FACADE_NIGHT` on a wall — so a new sector drops in without one. A misspelt
 name is a parse error rather than a silent fall back.
 
-| Name | Walls | Interior | Score |
-| --- | --- | --- | --- |
-| `PLANT` | riveted steel plate | machine hall, the original look | 104 bpm A minor; saw bass on the beats, half-time snare, struck metal |
-| `LOBBY` | polished marble, brass reveals | glazed street front with the main entrance off the street, reception | 88 bpm A minor; no snare at all, a pad holding the room, brass glints |
-| `OFFICE` | painted partition board | cubicle farm, blinds, ceiling grid | 96 bpm E minor; the workaday groove the campaign shipped with |
-| `SERVER` | dark plate | rack rows and status LEDs | 126 bpm B minor; two-bar chords, machine pulse, sixteenths where a tune would be |
-| `CANTEEN` | glazed tile | servery counter under heat lamps | 108 bpm G major; the only shuffle, and the only major key indoors |
-| `LAB` | pale tile | clean-room bays, fume cabinets | 92 bpm C minor; a chromatic wobble that never settles, tritone lead |
-| `ARCHIVE` | brick | shelving stacks under bare bulbs | 76 bpm D minor; one soft pulse a bar is the whole rhythm section |
-| `SECURITY` | dark plate | monitor wall and console desks | 128 bpm F minor; a march — four on the floor and a snare into the bar line |
-| `DUCTS` | dark plate | galvanised trunking; the darkest sector | 84 bpm B♭ minor; a fan pedal that never stops and air past the plating |
-| `PENTHOUSE` | hardwood panelling | panelled hall, sconces, cabinets | 100 bpm B♭ minor; the widest chords in the building, and punched |
-| `ROOF` | raw concrete | curtain wall over the night city | 96 bpm F♯ minor; the lead finally carries the loop, over open wind |
-| `RESTROOM` | tile | implied by restroom fittings; sublevel only | 72 bpm E♭ minor; tiled and dripping, no kit — the sector's score waits outside |
-| `FACADE_NIGHT` | — | clear night, city lights below | 90 bpm E minor; wide, slow and exposed, the city glittering under it |
-| `FACADE_STORM` | — | rain, lightning, wet stone | 116 bpm C minor; the only climb in a hurry, rain on the cornices |
-| `FACADE_DAWN` | — | sunrise, warm stone, distant birds | 82 bpm A major; the one climb with the light coming |
-| `FACADE_HIGH` | — | above the cloud layer, neon signage | 70 bpm B minor; thin air — barely a bass note, a long way between phrases |
+The Floor column is the finish on the walkable top of a slab: a sliver a few
+pixels deep, and the one surface the player looks at for the whole level. The
+bright arris line above it is the theme's trim in every sector, because where
+Chuck can stand has to read identically throughout; the finish under it is what
+says which floor of the building he is standing on.
+
+| Name | Walls | Floor | Interior | Score |
+| --- | --- | --- | --- | --- |
+| `PLANT` | riveted steel plate | screed | machine hall, the original look | 104 bpm A minor; saw bass on the beats, half-time snare, struck metal |
+| `LOBBY` | polished marble, brass reveals | polished stone | glazed street front with the main entrance off the street, reception | 88 bpm A minor; no snare at all, a pad holding the room, brass glints |
+| `OFFICE` | painted partition board | carpet tile | cubicle farm, blinds, ceiling grid | 96 bpm E minor; the workaday groove the campaign shipped with |
+| `SERVER` | dark plate | raised access panel | rack rows and status LEDs | 126 bpm B minor; two-bar chords, machine pulse, sixteenths where a tune would be |
+| `CANTEEN` | glazed tile | treadplate | servery counter under heat lamps | 108 bpm G major; the only shuffle, and the only major key indoors |
+| `LAB` | pale tile | ceramic | clean-room bays, fume cabinets | 92 bpm C minor; a chromatic wobble that never settles, tritone lead |
+| `ARCHIVE` | brick | timber boards | shelving stacks under bare bulbs | 76 bpm D minor; one soft pulse a bar is the whole rhythm section |
+| `SECURITY` | dark plate | carpet tile | monitor wall and console desks | 128 bpm F minor; a march — four on the floor and a snare into the bar line |
+| `DUCTS` | dark plate | treadplate | galvanised trunking; the darkest sector | 84 bpm B♭ minor; a fan pedal that never stops and air past the plating |
+| `PENTHOUSE` | hardwood panelling | parquet | panelled hall, sconces, cabinets | 100 bpm B♭ minor; the widest chords in the building, and punched |
+| `ROOF` | raw concrete | screed | curtain wall over the night city | 96 bpm F♯ minor; the lead finally carries the loop, over open wind |
+| `RESTROOM` | tile | ceramic | implied by restroom fittings; sublevel only | 72 bpm E♭ minor; tiled and dripping, no kit — the sector's score waits outside |
+| `FACADE_NIGHT` | — | — | clear night, city lights below | 90 bpm E minor; wide, slow and exposed, the city glittering under it |
+| `FACADE_STORM` | — | — | rain, lightning, wet stone | 116 bpm C minor; the only climb in a hurry, rain on the cornices |
+| `FACADE_DAWN` | — | — | sunrise, warm stone, distant birds | 82 bpm A major; the one climb with the light coming |
+| `FACADE_HIGH` | — | — | above the cloud layer, neon signage | 70 bpm B minor; thin air — barely a bass note, a long way between phrases |
 
 Two rules the campaign keeps, both pinned by
 `test_campaign_themes_keep_changing`: no two consecutive levels share a theme,

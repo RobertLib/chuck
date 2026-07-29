@@ -14,7 +14,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* PLANT — the mechanical floor the game shipped with: cold steel
      * plating over a hall of half-lit machinery. */
     [LEVEL_THEME_PLANT] = {
-        WALL_STYLE_PLATE, BACKDROP_PLANT,
+        WALL_STYLE_PLATE, FLOOR_SCREED, BACKDROP_PLANT,
         {41, 51, 64, 255}, {20, 27, 39, 255}, {88, 104, 120, 255},
         {104, 122, 136, 255}, {168, 184, 192, 255}, {168, 112, 40, 255},
         {7, 10, 18, 255}, {20, 30, 42, 255},
@@ -24,7 +24,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* LOBBY — the ground floor Chuck walks in through: stone, brass and a
      * glazed street front, the only sector still lit for the public. */
     [LEVEL_THEME_LOBBY] = {
-        WALL_STYLE_MARBLE, BACKDROP_LOBBY,
+        WALL_STYLE_MARBLE, FLOOR_STONE, BACKDROP_LOBBY,
         {88, 84, 80, 255}, {38, 36, 36, 255}, {162, 154, 140, 255},
         {158, 132, 86, 255}, {228, 206, 158, 255}, {228, 186, 104, 255},
         {14, 17, 26, 255}, {32, 34, 42, 255},
@@ -34,7 +34,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* OFFICE — open plan after hours: painted partitions, blinds, and the
      * one bank of lights nobody switched off. */
     [LEVEL_THEME_OFFICE] = {
-        WALL_STYLE_DRYWALL, BACKDROP_OFFICE,
+        WALL_STYLE_DRYWALL, FLOOR_CARPET, BACKDROP_OFFICE,
         {58, 66, 78, 255}, {26, 31, 40, 255}, {112, 124, 140, 255},
         {150, 160, 172, 255}, {198, 208, 216, 255}, {84, 150, 168, 255},
         {10, 16, 26, 255}, {26, 36, 50, 255},
@@ -44,7 +44,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* SERVER — a cold aisle. Almost no white light; the room is lit by the
      * equipment it exists to hold. */
     [LEVEL_THEME_SERVER] = {
-        WALL_STYLE_PLATE, BACKDROP_SERVER,
+        WALL_STYLE_PLATE, FLOOR_PANEL, BACKDROP_SERVER,
         {26, 34, 42, 255}, {10, 15, 20, 255}, {62, 84, 96, 255},
         {66, 116, 122, 255}, {148, 214, 208, 255}, {74, 222, 212, 255},
         {4, 10, 16, 255}, {9, 23, 31, 255},
@@ -54,7 +54,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* CANTEEN — glazed tile and stainless steel under heat lamps; the
      * warmest, brightest sector of the climb. */
     [LEVEL_THEME_CANTEEN] = {
-        WALL_STYLE_TILE, BACKDROP_CANTEEN,
+        WALL_STYLE_TILE, FLOOR_CHEQUER, BACKDROP_CANTEEN,
         {126, 132, 128, 255}, {52, 58, 57, 255}, {200, 204, 192, 255},
         {126, 120, 104, 255}, {212, 202, 172, 255}, {236, 178, 84, 255},
         {18, 20, 22, 255}, {36, 38, 35, 255},
@@ -64,7 +64,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* LAB — clean room: pale tile, green-lit cabinets, everything sterile
      * and slightly too bright. */
     [LEVEL_THEME_LAB] = {
-        WALL_STYLE_TILE, BACKDROP_LAB,
+        WALL_STYLE_TILE, FLOOR_CERAMIC, BACKDROP_LAB,
         {150, 164, 162, 255}, {58, 72, 74, 255}, {218, 228, 222, 255},
         {112, 150, 148, 255}, {212, 238, 230, 255}, {110, 230, 182, 255},
         {14, 24, 28, 255}, {32, 50, 52, 255},
@@ -74,7 +74,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* ARCHIVE — old brick shell kept from the original building, filled
      * floor to ceiling with paper and dust. */
     [LEVEL_THEME_ARCHIVE] = {
-        WALL_STYLE_BRICK, BACKDROP_ARCHIVE,
+        WALL_STYLE_BRICK, FLOOR_BOARDS, BACKDROP_ARCHIVE,
         {92, 62, 48, 255}, {40, 27, 22, 255}, {146, 102, 74, 255},
         {126, 96, 58, 255}, {192, 152, 96, 255}, {224, 164, 72, 255},
         {16, 12, 12, 255}, {36, 27, 23, 255},
@@ -84,7 +84,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* SECURITY — the control wing: dark steel, a wall of monitors and a
      * standby beacon that never quite stops turning. */
     [LEVEL_THEME_SECURITY] = {
-        WALL_STYLE_PLATE, BACKDROP_SECURITY,
+        WALL_STYLE_PLATE, FLOOR_CARPET, BACKDROP_SECURITY,
         {46, 40, 44, 255}, {18, 14, 17, 255}, {92, 76, 80, 255},
         {112, 68, 62, 255}, {202, 130, 114, 255}, {232, 74, 62, 255},
         {10, 6, 10, 255}, {28, 15, 17, 255},
@@ -94,7 +94,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* DUCTS — the plenum between floors: galvanised trunking, no fixtures,
      * the darkest sector in the game. */
     [LEVEL_THEME_DUCTS] = {
-        WALL_STYLE_PLATE, BACKDROP_DUCTS,
+        WALL_STYLE_PLATE, FLOOR_CHEQUER, BACKDROP_DUCTS,
         {44, 48, 54, 255}, {18, 20, 24, 255}, {104, 112, 120, 255},
         {120, 130, 138, 255}, {186, 196, 202, 255}, {206, 166, 92, 255},
         {6, 8, 11, 255}, {17, 21, 26, 255},
@@ -104,7 +104,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* PENTHOUSE — the executive floor: hardwood panelling, sconces and
      * money, one storey below the roof. */
     [LEVEL_THEME_PENTHOUSE] = {
-        WALL_STYLE_WOOD, BACKDROP_PENTHOUSE,
+        WALL_STYLE_WOOD, FLOOR_PARQUET, BACKDROP_PENTHOUSE,
         {74, 48, 32, 255}, {32, 20, 14, 255}, {134, 90, 56, 255},
         {172, 138, 80, 255}, {230, 196, 132, 255}, {236, 196, 120, 255},
         {18, 13, 14, 255}, {40, 29, 26, 255},
@@ -114,7 +114,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* ROOF — the last sector: raw concrete plant room behind a curtain wall
      * with the whole city on the other side of the glass. */
     [LEVEL_THEME_ROOF] = {
-        WALL_STYLE_CONCRETE, BACKDROP_ROOF,
+        WALL_STYLE_CONCRETE, FLOOR_SCREED, BACKDROP_ROOF,
         {68, 72, 78, 255}, {28, 31, 36, 255}, {124, 130, 136, 255},
         {96, 104, 112, 255}, {170, 180, 188, 255}, {110, 200, 220, 255},
         {6, 10, 20, 255}, {18, 26, 42, 255},
@@ -124,7 +124,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* RESTROOM — the sublevel. Its interior is derived from the room's own
      * wall ring in game_render.c; only the tile material comes from here. */
     [LEVEL_THEME_RESTROOM] = {
-        WALL_STYLE_TILE, BACKDROP_RESTROOM,
+        WALL_STYLE_TILE, FLOOR_CERAMIC, BACKDROP_RESTROOM,
         {96, 122, 120, 255}, {38, 56, 58, 255}, {186, 206, 196, 255},
         {112, 146, 141, 255}, {203, 211, 196, 255}, {110, 230, 170, 255},
         {7, 13, 22, 255}, {19, 31, 38, 255},
@@ -137,7 +137,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
 
     /* NIGHT — the first climb: clear, cold, city lights below. */
     [LEVEL_THEME_FACADE_NIGHT] = {
-        WALL_STYLE_CONCRETE, BACKDROP_FACADE_NIGHT,
+        WALL_STYLE_CONCRETE, FLOOR_SCREED, BACKDROP_FACADE_NIGHT,
         {43, 43, 47, 255}, {30, 31, 35, 255}, {59, 58, 60, 255},
         {88, 84, 78, 255}, {126, 120, 108, 255}, {228, 54, 48, 255},
         {7, 12, 29, 255}, {25, 32, 48, 255},
@@ -146,7 +146,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
 
     /* STORM — the second: rain, wet stone and lightning off the skyline. */
     [LEVEL_THEME_FACADE_STORM] = {
-        WALL_STYLE_CONCRETE, BACKDROP_FACADE_STORM,
+        WALL_STYLE_CONCRETE, FLOOR_SCREED, BACKDROP_FACADE_STORM,
         {36, 38, 42, 255}, {24, 26, 30, 255}, {58, 62, 68, 255},
         {70, 72, 74, 255}, {114, 118, 120, 255}, {236, 84, 64, 255},
         {10, 13, 20, 255}, {32, 36, 44, 255},
@@ -155,7 +155,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
 
     /* DAWN — the third: the sun comes up mid-climb and the stone goes warm. */
     [LEVEL_THEME_FACADE_DAWN] = {
-        WALL_STYLE_CONCRETE, BACKDROP_FACADE_DAWN,
+        WALL_STYLE_CONCRETE, FLOOR_SCREED, BACKDROP_FACADE_DAWN,
         {86, 72, 64, 255}, {62, 52, 48, 255}, {118, 100, 86, 255},
         {158, 132, 104, 255}, {214, 186, 148, 255}, {232, 96, 72, 255},
         {44, 38, 74, 255}, {236, 150, 96, 255},
@@ -165,7 +165,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     /* HIGH — the last: above the weather, a sea of cloud below and the
      * building's own neon signage for company. */
     [LEVEL_THEME_FACADE_HIGH] = {
-        WALL_STYLE_CONCRETE, BACKDROP_FACADE_HIGH,
+        WALL_STYLE_CONCRETE, FLOOR_SCREED, BACKDROP_FACADE_HIGH,
         {50, 48, 58, 255}, {34, 33, 42, 255}, {76, 72, 86, 255},
         {104, 100, 112, 255}, {156, 150, 166, 255}, {236, 72, 168, 255},
         {6, 8, 24, 255}, {38, 32, 74, 255},
@@ -253,6 +253,293 @@ static int art_repeat(float cam_x, float factor, float period)
     return (int)floorf(cam_x * factor / period);
 }
 
+/*
+ * A smooth low-frequency value drift, one value per tile over a four-tile
+ * lattice.
+ *
+ * Per-tile noise on its own makes a wall grainy but no less flat: every tile
+ * averages to the same value, so a twenty-tile wall is twenty identical tiles
+ * wearing different dirt. Interpolating one value per four tiles gives the
+ * surface broad patches of light and shade instead — which is what reads as a
+ * real wall standing in real light — and because it resolves to a single value
+ * per tile it costs one blend rather than anything per pixel.
+ */
+static float art_drift(int col, int row)
+{
+    const float cell = 4.0f;
+    float gx = (float)col / cell;
+    float gy = (float)row / cell;
+    int x0 = (int)floorf(gx);
+    int y0 = (int)floorf(gy);
+    float tx = gx - (float)x0;
+    float ty = gy - (float)y0;
+    tx = tx * tx * (3.0f - 2.0f * tx);
+    ty = ty * ty * (3.0f - 2.0f * ty);
+    float top = art_unit(art_hash(x0, y0), 0) +
+                (art_unit(art_hash(x0 + 1, y0), 0) -
+                 art_unit(art_hash(x0, y0), 0)) *
+                    tx;
+    float bottom = art_unit(art_hash(x0, y0 + 1), 0) +
+                   (art_unit(art_hash(x0 + 1, y0 + 1), 0) -
+                    art_unit(art_hash(x0, y0 + 1), 0)) *
+                       tx;
+    return top + (bottom - top) * ty;
+}
+
+/* ---- Tile surroundings ----------------------------------------------- */
+
+/*
+ * Which of a tile's neighbours are open air.
+ *
+ * Nearly everything that stops a tile reading as a 32px stamp is a question
+ * about this mask: how deep inside a mass the tile sits, which of its faces
+ * point at the light, and whether a slab ends here and therefore has to show
+ * its own thickness.
+ */
+enum
+{
+    OPEN_UP = 1u << 0,
+    OPEN_DOWN = 1u << 1,
+    OPEN_LEFT = 1u << 2,
+    OPEN_RIGHT = 1u << 3
+};
+
+/*
+ * How deep inside a solid mass a tile sits, saturating at three.
+ *
+ * One darkening step for "buried" turns a wide mass into a single flat darker
+ * rectangle, which is only half the problem solved. What a mass wants is to
+ * fall away from its own surface, so the shell reads as the part standing in
+ * the room and the middle reads as the part behind it. Rings are searched
+ * outward and the search stops at the first open tile, so the common case — a
+ * two-row slab, open above or below — costs one ring.
+ */
+static int tile_depth(const Level *level, int col, int row)
+{
+    for (int radius = 1; radius <= 3; ++radius)
+    {
+        for (int dy = -radius; dy <= radius; ++dy)
+        {
+            for (int dx = -radius; dx <= radius; ++dx)
+            {
+                /* Only the ring itself: everything inside it was searched by
+                 * the previous pass. */
+                if (dx > -radius && dx < radius && dy > -radius && dy < radius)
+                    continue;
+                if (!level_is_solid(level, col + dx, row + dy))
+                    return radius - 1;
+            }
+        }
+    }
+    return 3;
+}
+
+static unsigned tile_open_mask(const Level *level, int col, int row)
+{
+    unsigned mask = 0u;
+    if (!level_is_solid(level, col, row - 1))
+        mask |= OPEN_UP;
+    if (!level_is_solid(level, col, row + 1))
+        mask |= OPEN_DOWN;
+    if (!level_is_solid(level, col - 1, row))
+        mask |= OPEN_LEFT;
+    if (!level_is_solid(level, col + 1, row))
+        mask |= OPEN_RIGHT;
+    return mask;
+}
+
+/*
+ * Form shading: what turns the material into a lit solid.
+ *
+ * The material functions describe a surface — plating, brick, ceramic — but a
+ * surface with no light on it is a texture swatch, and fifteen sectors of
+ * swatches is what a flat tile grid looks like. Three cues on top of the
+ * material do the rest, and none of them care which material it was:
+ *
+ *  - broad patches of light and shade across the whole wall (art_drift),
+ *  - a mass falling away from its own surface, so thickness is visible,
+ *  - one light direction, from the ceiling fixtures down, so each exposed face
+ *    is shaded by the way it points.
+ */
+static void wall_form_shading(SDL_Renderer *r, const LevelThemeArt *art,
+                              int col, int row, float x, float y,
+                              unsigned open, int depth)
+{
+    /* A mass has to fall away from its own face, or how thick it is stays a
+     * thing the player can only find out by walking into it. */
+    static const Uint8 DEPTH_SHADE[4] = {0u, 36u, 58u, 74u};
+
+    float drift = art_drift(col, row);
+    if (drift > 0.56f)
+        fx_rect_a(r, art->wall_light, (Uint8)((drift - 0.56f) * 58.0f),
+                  x, y, TILE_SIZE, TILE_SIZE);
+    else if (drift < 0.44f)
+        fx_rect_a(r, FX_INK, (Uint8)((0.44f - drift) * 64.0f),
+                  x, y, TILE_SIZE, TILE_SIZE);
+
+    if (depth > 0)
+        fx_rect_a(r, FX_INK, DEPTH_SHADE[depth], x, y, TILE_SIZE, TILE_SIZE);
+
+    if (open & OPEN_UP)
+        fx_vgrad(r, x, y + 6.0f, TILE_SIZE, 13.0f,
+                 art->wall_light, 26, art->wall_light, 0);
+    if (open & OPEN_DOWN)
+        fx_vgrad(r, x, y + TILE_SIZE - 16.0f, TILE_SIZE, 16.0f,
+                 FX_INK, 0, FX_INK, 88);
+    if (open & OPEN_LEFT)
+        fx_hgrad(r, x, y, 13.0f, TILE_SIZE,
+                 art->wall_light, 24, art->wall_light, 0);
+    if (open & OPEN_RIGHT)
+        fx_hgrad(r, x + TILE_SIZE - 13.0f, y, 13.0f, TILE_SIZE,
+                 FX_INK, 0, FX_INK, 68);
+}
+
+/*
+ * The walkable top of a slab.
+ *
+ * Every sector's floor used to be the same three-pixel bright line. That line
+ * is a legibility cue and nothing else: the one surface Chuck spends an entire
+ * level standing on said nothing about which floor of the building he was on.
+ * The bright arris stays exactly where it was — where you can stand has to
+ * read identically in all fifteen sectors — and the pixels beneath it carry
+ * the finish instead.
+ */
+#define ART_FLOOR_BAND 5.0f
+
+static void floor_finish(SDL_Renderer *r, const LevelThemeArt *art,
+                         int col, int row, float x, float y, unsigned h)
+{
+    const float top = y + 2.0f;
+    /* The deck sits below the lit arris, so it is the trim in its own shade
+     * rather than another highlight competing with the line above it. */
+    SDL_Color deck = fx_mix(art->trim, art->wall_dark, 0.45f);
+    SDL_Color joint = fx_mix(art->trim, art->wall_dark, 0.82f);
+
+    switch (art->floor_style)
+    {
+    case FLOOR_STONE:
+        /* Polished stone is dark and gives the light back: the deck sits well
+         * under the brass arris so the sheen travelling along it has something
+         * to be brighter than. It is the only floor in the building that
+         * reflects anything. */
+        deck = fx_mix(art->trim, FX_INK, 0.52f);
+        fx_rect(r, deck, x, top, TILE_SIZE, ART_FLOOR_BAND);
+        fx_vgrad(r, x, top, TILE_SIZE, ART_FLOOR_BAND,
+                 art->trim_hi, 44, art->trim_hi, 0);
+        fx_rect_a(r, art->trim_hi, 64, x + (float)(h % 11u), top + 1.0f,
+                  15.0f, 1.0f);
+        if ((col & 1) == 0)
+            fx_rect_a(r, FX_INK, 120, x, top, 1.0f, ART_FLOOR_BAND);
+        break;
+
+    case FLOOR_CARPET:
+        /* Matte, so it takes no specular at all: it is the one floor that has
+         * to sit darker than the wall above it, or the office reads as tiled.
+         * The nap and the tile joints are the whole of its texture. */
+        deck = fx_mix(art->trim, art->wall_dark, 0.8f);
+        fx_rect(r, deck, x, top, TILE_SIZE, ART_FLOOR_BAND);
+        for (unsigned nap = 0; nap < 5u; ++nap)
+        {
+            unsigned nh = h >> (nap * 5u);
+            fx_rect_a(r, (nh & 1u) ? art->trim : FX_INK, 26,
+                      x + (float)(nh % 30u) + 1.0f,
+                      top + (float)((nh >> 6) % 4u), 2.0f, 1.0f);
+        }
+        if ((col & 1) == 0)
+            fx_rect_a(r, FX_INK, 70, x, top, 1.0f, ART_FLOOR_BAND);
+        break;
+
+    case FLOOR_PANEL:
+        /* Raised access floor: every tile is a liftable panel, so the joint is
+         * on the tile pitch by definition, and the perforation is what tells
+         * you the cold air comes up through it. */
+        fx_rect(r, deck, x, top, TILE_SIZE, ART_FLOOR_BAND);
+        fx_rect(r, joint, x, top, 1.0f, ART_FLOOR_BAND);
+        fx_rect(r, joint, x + TILE_SIZE - 1.0f, top, 1.0f, ART_FLOOR_BAND);
+        for (int hole = 0; hole < 6; ++hole)
+            fx_rect(r, fx_mix(deck, FX_INK, 0.55f),
+                    x + 3.0f + (float)hole * 5.0f, top + 2.0f, 2.0f, 2.0f);
+        fx_rect_a(r, art->accent, 40, x + 2.0f, top + 1.0f,
+                  TILE_SIZE - 4.0f, 1.0f);
+        break;
+
+    case FLOOR_CHEQUER:
+        /* Treadplate: raised diamonds, each with a lit top and a shadow under
+         * it. Two rows staggered is all the pattern needs at this size. */
+        fx_rect(r, fx_mix(deck, art->wall_dark, 0.2f), x, top, TILE_SIZE,
+                ART_FLOOR_BAND);
+        for (int stud = 0; stud < 5; ++stud)
+        {
+            float sx = x + 2.0f + (float)stud * 6.0f;
+            float sy = top + ((stud & 1) ? 2.0f : 0.0f);
+            fx_rect(r, fx_mix(deck, art->trim_hi, 0.45f), sx, sy + 1.0f,
+                    4.0f, 1.0f);
+            fx_rect(r, fx_mix(deck, FX_INK, 0.5f), sx, sy + 2.0f, 4.0f, 1.0f);
+        }
+        break;
+
+    case FLOOR_CERAMIC:
+        /* Grouted: the joints are the whole read, so they run on the material's
+         * own eight-pixel module rather than on the tile grid. */
+        fx_rect(r, fx_mix(deck, art->trim_hi, 0.2f), x, top, TILE_SIZE,
+                ART_FLOOR_BAND);
+        for (int grout = 0; grout < 4; ++grout)
+            fx_rect(r, joint, x + (float)grout * 8.0f, top, 1.0f,
+                    ART_FLOOR_BAND);
+        fx_rect_a(r, art->trim_hi, 46, x + 1.0f, top, 7.0f, 1.0f);
+        break;
+
+    case FLOOR_BOARDS:
+        /* Timber: butt joints land where they land, and the grain runs the
+         * length of the board rather than across it. */
+        fx_rect(r, fx_mix(deck, art->wall, 0.3f), x, top, TILE_SIZE,
+                ART_FLOOR_BAND);
+        fx_rect(r, joint, x + (float)(h % 20u) + 4.0f, top, 1.0f,
+                ART_FLOOR_BAND);
+        fx_rect_a(r, FX_INK, 44, x, top + 2.0f, TILE_SIZE, 1.0f);
+        fx_rect_a(r, art->trim_hi, 30, x + 2.0f, top, TILE_SIZE - 4.0f, 1.0f);
+        break;
+
+    case FLOOR_PARQUET:
+        /* Blocks laid in alternating pairs, with the brass strip the executive
+         * floor puts along everything. */
+        for (int block = 0; block < 4; ++block)
+        {
+            float bx = x + (float)block * 8.0f;
+            bool across = ((col * 4 + block + row) & 1) != 0;
+            fx_rect(r, fx_mix(deck, art->wall, across ? 0.42f : 0.2f), bx, top,
+                    8.0f, ART_FLOOR_BAND);
+            fx_rect(r, joint, bx, top, 1.0f, ART_FLOOR_BAND);
+            if (across)
+                fx_rect_a(r, art->trim_hi, 34, bx + 1.0f, top + 1.0f, 6.0f,
+                          1.0f);
+        }
+        fx_rect_a(r, art->trim_hi, 90, x, top + ART_FLOOR_BAND - 1.0f,
+                  TILE_SIZE, 1.0f);
+        break;
+
+    case FLOOR_SCREED:
+    default:
+        /* Power-floated concrete: nothing on it but its own laitance and a saw
+         * cut every few metres to tell it where to crack. */
+        fx_rect(r, deck, x, top, TILE_SIZE, ART_FLOOR_BAND);
+        for (unsigned fleck = 0; fleck < 3u; ++fleck)
+        {
+            unsigned fh = h >> (fleck * 6u);
+            fx_rect_a(r, (fh & 2u) ? art->trim_hi : FX_INK, 40,
+                      x + (float)(fh % 29u) + 1.0f,
+                      top + (float)((fh >> 7) % 4u), 2.0f, 1.0f);
+        }
+        if ((col & 3) == 0)
+            fx_rect(r, joint, x + 1.0f, top, 1.0f, ART_FLOOR_BAND);
+        break;
+    }
+
+    /* The nosing shadow: the line that separates the surface you stand on from
+     * the face of the slab holding it up. */
+    fx_rect_a(r, FX_INK, 130, x, top + ART_FLOOR_BAND, TILE_SIZE, 1.0f);
+}
+
 /* ---- Wall materials -------------------------------------------------- */
 
 static void wall_plate(SDL_Renderer *r, const LevelThemeArt *art,
@@ -312,6 +599,23 @@ static void wall_plate(SDL_Renderer *r, const LevelThemeArt *art,
         fx_rect(r, art->wall_light, x + TILE_SIZE - 6.0f,
                 y + TILE_SIZE - 6.0f, 2.0f, 2.0f);
 
+    /* A bolted stiffener rib every fourth course. The panel grid tells the
+     * player how big a panel is; only something on a longer module tells them
+     * how big the wall is, and a wall with no scale is what makes a plated
+     * corridor read as wallpaper. */
+    if ((row & 3) == 0)
+    {
+        fx_rect(r, fx_mix(base, art->wall_dark, 0.5f), x, y + 22.0f,
+                TILE_SIZE, 5.0f);
+        fx_rect(r, fx_mix(base, art->wall_light, 0.55f), x, y + 22.0f,
+                TILE_SIZE, 1.0f);
+        fx_rect(r, fx_mix(base, art->wall_dark, 0.85f), x, y + 27.0f,
+                TILE_SIZE, 1.0f);
+        for (int bolt = 0; bolt < 3; ++bolt)
+            fx_rect(r, fx_mix(art->wall_light, art->trim_hi, 0.3f),
+                    x + 5.0f + (float)bolt * 11.0f, y + 24.0f, 2.0f, 2.0f);
+    }
+
     /* Rare full-tile variants: a vent grille or a hairline crack. */
     if ((h % 23u) == 0u)
     {
@@ -349,8 +653,15 @@ static void wall_concrete(SDL_Renderer *r, const LevelThemeArt *art,
         fx_rect(r, fx_mix(base, art->wall_light, 0.35f), x, y + 1.0f,
                 TILE_SIZE, 1.0f);
     }
-    fx_rect(r, fx_mix(base, art->wall_dark, 0.25f), x, y + 16.0f,
-            TILE_SIZE, 1.0f);
+    /* Every fourth course is where one day's pour met the next: a deeper
+     * recess with the grout that leaked out of it, and the only line on the
+     * wall that belongs to the building rather than to the shuttering. */
+    bool day_joint = (row & 3) == 0;
+    fx_rect(r, fx_mix(base, art->wall_dark, day_joint ? 0.62f : 0.25f), x,
+            y + 16.0f, TILE_SIZE, day_joint ? 2.0f : 1.0f);
+    if (day_joint)
+        fx_rect(r, fx_mix(base, art->wall_light, 0.4f), x, y + 18.0f,
+                TILE_SIZE, 1.0f);
 
     /* Aggregate speckle: three flecks is enough to break up a flat pour. */
     for (unsigned fleck = 0; fleck < 3u; ++fleck)
@@ -390,7 +701,7 @@ static void wall_concrete(SDL_Renderer *r, const LevelThemeArt *art,
 }
 
 static void wall_tile_material(SDL_Renderer *r, const LevelThemeArt *art,
-                               float x, float y, unsigned h)
+                               int row, float x, float y, unsigned h)
 {
     /* Glazed 8px tiles on a grout bed. The sheen on each tile's top-left is
      * what separates ceramic from flat paint at this size. */
@@ -415,6 +726,27 @@ static void wall_tile_material(SDL_Renderer *r, const LevelThemeArt *art,
                 fx_rect_a(r, art->trim_hi, 90, px + 1.0f, py + 1.0f, 2.0f, 2.0f);
         }
     }
+    /* A border course every fourth row. Without one, a tiled wall is an even
+     * field of eight-pixel squares whatever its size, which is exactly what
+     * makes the clean sectors read as graph paper; with one, the tiling has
+     * been set out by somebody. The band takes the theme's accent, so the lab
+     * gets a green line and the galley an amber one. */
+    if ((row & 3) == 3)
+    {
+        SDL_Color band = fx_mix(art->wall, art->accent, 0.4f);
+        fx_rect(r, fx_mix(band, art->wall_dark, 0.45f), x, y + 16.0f,
+                TILE_SIZE, 8.0f);
+        for (int strip = 0; strip < 4; ++strip)
+        {
+            float sx = x + (float)strip * 8.0f + 1.0f;
+            fx_rect(r, band, sx, y + 17.0f, 6.0f, 6.0f);
+            fx_rect(r, fx_mix(band, art->wall_light, 0.45f), sx, y + 17.0f,
+                    6.0f, 1.0f);
+            fx_rect(r, fx_mix(band, art->wall_dark, 0.4f), sx, y + 22.0f,
+                    6.0f, 1.0f);
+        }
+    }
+
     if ((h % 19u) == 0u)
     {
         /* A cracked tile, drawn across the grout so it reads as damage. */
@@ -422,6 +754,37 @@ static void wall_tile_material(SDL_Renderer *r, const LevelThemeArt *art,
         SDL_RenderLine(r, x + 6.0f, y + 7.0f, x + 14.0f, y + 17.0f);
         SDL_RenderLine(r, x + 14.0f, y + 17.0f, x + 11.0f, y + 26.0f);
     }
+}
+
+/*
+ * One vein, drawn in slab space and clipped to the tile being drawn.
+ *
+ * Veining is what separates stone from grey paint, and it is also the fastest
+ * way to give the whole lobby away as a stamp: one ruled diagonal per tile,
+ * every tile, leaning the same way. A vein has to wander, has to sit under the
+ * polish rather than being scratched on top of it, and above all has to belong
+ * to the slab — so the two tiles sharing a slab agree about where it goes and
+ * the joint is the only line that repeats.
+ */
+static void marble_vein(SDL_Renderer *r, SDL_Color c, Uint8 alpha,
+                        float tile_x, float slab_x, float y,
+                        float start, float slope, float width, unsigned h)
+{
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(r, c.r, c.g, c.b, alpha);
+    float px = slab_x + start;
+    for (int step = 0; step < TILE_SIZE / 2; ++step)
+    {
+        float t = (float)step * 2.0f;
+        unsigned sh = h >> ((unsigned)step & 15u);
+        px += slope * 2.0f + ((float)(sh & 3u) - 1.5f) * 0.7f;
+        float left = px < tile_x ? tile_x : px;
+        float right = px + width > tile_x + TILE_SIZE ? tile_x + TILE_SIZE
+                                                      : px + width;
+        if (right > left)
+            fx_fill(r, left, y + t, right - left, 2.0f);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
 static void wall_marble(SDL_Renderer *r, const LevelThemeArt *art,
@@ -437,15 +800,21 @@ static void wall_marble(SDL_Renderer *r, const LevelThemeArt *art,
              fx_mix(base, art->wall_light, 0.35f), 255,
              fx_mix(base, art->wall_dark, 0.25f), 255);
 
-    /* Veining: two slack diagonals per slab, keyed off the slab hash so the
-     * pattern continues across the two tiles that share a slab. */
-    SDL_Color vein = fx_mix(base, art->wall_light, 0.75f);
-    fx_set(r, vein);
-    float vx = x + art_unit(sh, 5) * 20.0f;
-    SDL_RenderLine(r, vx, y, vx + 11.0f, y + 15.0f);
-    SDL_RenderLine(r, vx + 11.0f, y + 15.0f, vx + 5.0f, y + TILE_SIZE);
-    fx_set(r, fx_mix(base, art->wall_dark, 0.35f));
-    SDL_RenderLine(r, vx + 14.0f, y, vx + 6.0f, y + TILE_SIZE);
+    /* Two or three veins per slab: a broad soft one that carries the figure,
+     * a fine bright one beside it, and a dark counter-vein leaning the other
+     * way. Which way the slab was cut comes off its own hash, so consecutive
+     * slabs are not combed in the same direction. */
+    float slab_x = x - (float)(col & 1) * TILE_SIZE;
+    float lean = (sh & 16u) ? 1.0f : -1.0f;
+    float slope = lean * (0.28f + art_unit(sh, 11) * 0.5f);
+    float start = 8.0f + art_unit(sh, 5) * 44.0f;
+    marble_vein(r, fx_mix(base, art->wall_light, 0.55f), 90, x, slab_x, y,
+                start, slope, 4.0f, sh);
+    marble_vein(r, fx_mix(base, art->wall_light, 0.95f), 130, x, slab_x, y,
+                start + 2.0f, slope, 1.0f, sh >> 3);
+    marble_vein(r, fx_mix(base, art->wall_dark, 0.55f), 80, x, slab_x, y,
+                start + 22.0f + art_unit(sh, 19) * 16.0f, -slope * 0.7f, 2.0f,
+                sh >> 7);
 
     /* Slab joints: a fine dark line, lit on the near side. */
     if ((col & 1) == 0)
@@ -485,6 +854,16 @@ static void wall_drywall(SDL_Renderer *r, const LevelThemeArt *art,
     }
     if ((row & 1) == 0)
         fx_rect(r, fx_mix(base, art->wall_dark, 0.22f), x, y, TILE_SIZE, 1.0f);
+
+    /* A shadow-gap reveal every third course, with the aluminium trim it is
+     * formed with. It is the one line a plasterboard partition has, and a
+     * broad flat wall with no line on it has no size. */
+    if ((row % 3) == 2)
+    {
+        fx_rect(r, fx_mix(base, FX_INK, 0.6f), x, y + 24.0f, TILE_SIZE, 2.0f);
+        fx_rect(r, fx_mix(base, art->wall_light, 0.65f), x, y + 26.0f,
+                TILE_SIZE, 1.0f);
+    }
 
     if ((h % 37u) == 0u)
     {
@@ -544,6 +923,26 @@ static void wall_brick(SDL_Renderer *r, const LevelThemeArt *art,
                     right - left, 1.0f);
         }
     }
+    /* A header course every fifth row: the string course any real brick shell
+     * has, and the thing that stops twenty courses of stretcher bond reading
+     * as wallpaper. Bricks laid end-on are half as wide and sit forward, so
+     * the course catches the light along its whole length. */
+    if ((row % 5) == 4)
+    {
+        fx_rect(r, fx_mix(art->wall, art->wall_dark, 0.45f), x, y + 24.0f,
+                TILE_SIZE, 8.0f);
+        for (int header = 0; header < 4; ++header)
+        {
+            float hx = x + (float)header * 8.0f + 1.0f;
+            unsigned hh = art_hash(col * 4 + header, row * 4 + 7);
+            fx_rect(r, fx_mix(art->wall, art->wall_light,
+                              art_unit(hh, 3) * 0.34f),
+                    hx, y + 25.0f, 6.0f, 6.0f);
+            fx_rect(r, fx_mix(art->wall, art->wall_light, 0.5f), hx, y + 25.0f,
+                    6.0f, 1.0f);
+        }
+    }
+
     /* Efflorescence and soot: the two things that age brick. */
     unsigned h = art_hash(col, row);
     if ((h % 13u) == 0u)
@@ -603,7 +1002,7 @@ void level_art_wall_tile(SDL_Renderer *r, const Level *level,
         wall_concrete(r, art, col, row, x, y, h);
         break;
     case WALL_STYLE_TILE:
-        wall_tile_material(r, art, x, y, h);
+        wall_tile_material(r, art, row, x, y, h);
         break;
     case WALL_STYLE_MARBLE:
         wall_marble(r, art, col, row, x, y, h);
@@ -623,28 +1022,64 @@ void level_art_wall_tile(SDL_Renderer *r, const Level *level,
         break;
     }
 
+    /* Form shading goes over the material and under the edges: the arris is a
+     * highlight, and a highlight that gets dimmed by the shading pass stops
+     * being one. */
+    unsigned open = tile_open_mask(level, col, row);
+    wall_form_shading(r, art, col, row, x, y, open,
+                      tile_depth(level, col, row));
+
     /* Edge treatment is shared by every material: the surfaces the player
      * actually stands on, walks past and jumps under have to read the same
      * way in all fifteen sectors or the level stops being legible. */
-    if (!level_is_solid(level, col, row - 1))
+    if (open & OPEN_UP)
     {
-        fx_rect(r, art->trim, x, y, TILE_SIZE, 3.0f);
+        fx_rect(r, art->trim, x, y, TILE_SIZE, 2.0f);
+        floor_finish(r, art, col, row, x, y, h);
         fx_rect(r, art->trim_hi, x + 1.0f, y, TILE_SIZE - 2.0f, 1.0f);
-        fx_rect(r, fx_mix(art->trim, art->wall_dark, 0.6f), x, y + 3.0f,
-                TILE_SIZE, 1.0f);
         if ((h & 3u) == 0u)
             fx_rect(r, art->accent, x + (float)(h % 14u) + 4.0f, y + 1.0f,
-                    9.0f, 2.0f);
+                    9.0f, 1.0f);
     }
-    if (!level_is_solid(level, col, row + 1))
-        fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.4f), x,
+    if (open & OPEN_DOWN)
+    {
+        /* The soffit: a dark line for the shadow it sits in, and one dim line
+         * of bounce above it so the underside is a surface rather than a hole
+         * cut in the level. */
+        fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.55f), x,
                 y + TILE_SIZE - 2.0f, TILE_SIZE, 2.0f);
-    if (!level_is_solid(level, col - 1, row))
+        fx_rect_a(r, art->wall_light, 40, x, y + TILE_SIZE - 3.0f,
+                  TILE_SIZE, 1.0f);
+    }
+    if (open & OPEN_LEFT)
+    {
         fx_rect(r, fx_mix(art->wall_light, art->trim, 0.4f), x, y,
                 2.0f, TILE_SIZE);
-    if (!level_is_solid(level, col + 1, row))
+        fx_rect_a(r, FX_INK, 60, x + 2.0f, y, 1.0f, TILE_SIZE);
+    }
+    if (open & OPEN_RIGHT)
+    {
         fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.25f),
                 x + TILE_SIZE - 2.0f, y, 2.0f, TILE_SIZE);
+        fx_rect_a(r, art->wall_light, 34, x + TILE_SIZE - 3.0f, y,
+                  1.0f, TILE_SIZE);
+    }
+
+    /* A slab that stops in mid-air has to show how thick it is: the lip
+     * returns a short way down the exposed flank instead of ending dead at the
+     * tile boundary, which is the difference between a ledge Chuck can stand
+     * on and a rectangle that happens to be lighter along the top. */
+    if ((open & OPEN_UP) && (open & OPEN_LEFT))
+    {
+        fx_rect(r, art->trim, x, y, 3.0f, ART_FLOOR_BAND + 3.0f);
+        fx_rect(r, art->trim_hi, x, y, 1.0f, ART_FLOOR_BAND + 1.0f);
+    }
+    if ((open & OPEN_UP) && (open & OPEN_RIGHT))
+    {
+        fx_rect(r, fx_mix(art->trim, art->wall_dark, 0.35f),
+                x + TILE_SIZE - 3.0f, y, 3.0f, ART_FLOOR_BAND + 3.0f);
+        fx_rect(r, art->trim_hi, x + TILE_SIZE - 3.0f, y, 3.0f, 1.0f);
+    }
 }
 
 /* ---- Interior backdrops ---------------------------------------------- */
@@ -1746,31 +2181,77 @@ static void backdrop_roof(const LevelArtScene *s, const LevelThemeArt *art,
         float y = oy + (float)((h >> 9) % (unsigned)star_band);
         fx_rect_a(r, art->haze, (Uint8)(60 + h % 90u), x, y, 1.0f, 1.0f);
     }
+    /*
+     * The city glow gathered along the horizon. This is the layer that lets the
+     * towers exist at all: the sky behind them has to stay darker than the room
+     * or the skyline walks inside the building, so what separates one tower from
+     * the next cannot be a brighter sky — it has to be the haze they stand in
+     * and a rim on their own edges.
+     */
+    float horizon = oy + fh * 0.78f;
+    fx_vgrad(r, 0.0f, horizon - 190.0f, (float)s->win_w, 190.0f,
+             art->lamp, 0, art->lamp, 34);
+
+    /* Two ranks. The far one is a low even band that gives the skyline a floor;
+     * the near one breaks the horizon and carries the lit windows. */
+    int distant = art_repeat(s->cam_x, 0.03f, 88.0f);
+    for (float x = art_scroll(s->cam_x, 0.03f, 88.0f) - 44.0f;
+         x < (float)s->win_w + 88.0f; x += 88.0f, ++distant)
+    {
+        unsigned h = fx_hash((unsigned)distant * 2246822519u);
+        float slab = 54.0f + (float)(h % 52u);
+        fx_rect(r, fx_mix(art->far_shape, art->lamp, 0.1f), x, horizon - slab,
+                80.0f, slab);
+        fx_rect_a(r, art->haze, 40, x, horizon - slab, 80.0f, 1.0f);
+    }
+
     int block = art_repeat(s->cam_x, 0.05f, 132.0f);
     for (float x = art_scroll(s->cam_x, 0.05f, 132.0f) - 40.0f;
          x < (float)s->win_w + 132.0f; x += 132.0f, ++block)
     {
         unsigned h = fx_hash((unsigned)block * 71u);
         float tower_h = 120.0f + (float)(h % 150u);
-        float base = oy + fh * 0.78f;
-        fx_rect(r, art->far_shape, x, base - tower_h, 84.0f, tower_h);
-        fx_rect(r, fx_mix(art->far_shape, art->accent, 0.2f), x,
-                base - tower_h, 84.0f, 2.0f);
-        for (float wy = base - tower_h + 10.0f; wy < base - 6.0f; wy += 16.0f)
-            for (float wx = x + 8.0f; wx < x + 76.0f; wx += 14.0f)
-                if ((((int)wx * 3 + (int)wy) % 6) < 2)
-                    fx_rect_a(r, art->lamp, 90, wx, wy, 4.0f, 5.0f);
+        float top = horizon - tower_h;
+        fx_rect(r, art->far_shape, x, top, 84.0f, tower_h);
+        /* The rim: a lit parapet and one lit flank. Without them a tower drawn
+         * at the value of the air behind it disappears, and all that is left of
+         * the city is its windows floating in the dark like dirt on the glass. */
+        fx_rect_a(r, art->haze, 90, x, top, 84.0f, 1.0f);
+        fx_rect_a(r, art->haze, 55, x, top, 1.0f, tower_h);
+        fx_rect(r, fx_mix(art->far_shape, art->accent, 0.2f), x, top,
+                84.0f, 2.0f);
+        int floor_index = 0;
+        for (float wy = top + 10.0f; wy < horizon - 6.0f;
+             wy += 16.0f, ++floor_index)
+        {
+            int bay = 0;
+            for (float wx = x + 8.0f; wx < x + 76.0f; wx += 14.0f, ++bay)
+            {
+                /* Keyed to the tower, floor and bay rather than to where the
+                 * window currently is on screen: hashing the screen position
+                 * made the whole skyline switch its lights while Chuck walked. */
+                unsigned wh = art_hash(block * 13 + bay, floor_index + 71);
+                if ((wh % 5u) < 2u)
+                    continue;
+                SDL_Color lit = (wh & 8u) ? art->lamp
+                                          : fx_mix(art->lamp, art->accent, 0.6f);
+                fx_rect_a(r, lit, (Uint8)(70u + (wh >> 6) % 80u), wx, wy,
+                          4.0f, 5.0f);
+            }
+        }
         /* Aircraft warning light on the tallest neighbours. */
         if ((h % 3u) == 0u)
         {
             float pulse = sinf(s->time * 1.6f + (float)(h % 5u)) > 0.7f ? 1.0f
                                                                        : 0.15f;
-            fx_glow(r, x + 42.0f, base - tower_h - 4.0f, 14.0f,
+            fx_glow(r, x + 42.0f, top - 4.0f, 14.0f,
                     (SDL_Color){236, 78, 62, 255}, (Uint8)(90.0f * pulse));
         }
     }
+    /* Ground haze thick enough to lose the foot of the towers in, but not so
+     * thick that it takes the towers with it. */
     fx_vgrad(r, 0.0f, oy + fh * 0.62f, (float)s->win_w, fh * 0.38f,
-             art->far_shape, 0, art->far_shape, 190);
+             art->far_shape, 0, art->far_shape, 150);
 
     /* The glazing: mullions, transoms, and rain running down the outside. */
     for (float x = art_scroll(s->cam_x, 0.18f, 74.0f);
@@ -1833,20 +2314,63 @@ static void facade_shell(const LevelArtScene *s, const LevelThemeArt *art,
     for (int course = first_course; course <= last_course; ++course)
     {
         float y = (float)course * 16.0f + HUD_HEIGHT - s->cam_y;
-        fx_rect(r, art->wall_dark, face_left, y, face_width, 1.0f);
         float joint_offset = (course & 1) != 0 ? 32.0f : 0.0f;
-        for (float x = face_left + joint_offset; x < face_right; x += 64.0f)
-            fx_rect(r, fx_mix(art->wall_dark, art->wall, 0.5f), x, y,
-                    1.0f, 16.0f);
+
+        /*
+         * Ashlar, one block at a time. Ruling joints over a single flat fill
+         * gives a grid, not masonry: what makes a stone wall stone is that no
+         * two blocks came out of the quarry the same colour. A block's identity
+         * is its course and its index along that course — both in world space,
+         * so a block keeps its colour while the climb scrolls past it rather
+         * than shimmering as the camera moves.
+         */
+        int block_count = (int)(face_width / 64.0f) + 2;
+        int first_block = (int)floorf((s->cam_x - FACADE_BUILDING_SIDE_INSET -
+                                       joint_offset) /
+                                      64.0f) -
+                          1;
+        if (first_block < 0)
+            first_block = 0;
+        for (int block = first_block; block < block_count; ++block)
+        {
+            /* The face is anchored to the building rather than scrolling like a
+             * parallax layer, so a block's index is its position along the
+             * course and has nothing to do with where the camera is. Deriving
+             * the index from cam_x instead would hand one block a new colour
+             * every time the climb moved, and the whole wall would crawl. */
+            float x = face_left + joint_offset + (float)block * 64.0f;
+            if (x > (float)s->win_w)
+                break;
+            unsigned bh = art_hash(block, course);
+            float left = x > face_left ? x : face_left;
+            float right = x + 64.0f < face_right ? x + 64.0f : face_right;
+            if (right <= left)
+                continue;
+            fx_rect_a(r, (bh & 1u) ? art->wall_light : FX_INK,
+                      (Uint8)(10u + (bh >> 4) % 26u), left, y, right - left,
+                      16.0f);
+            /* The bed joint, and the light catching the top arris of the
+             * course below it. */
+            fx_rect(r, art->wall_dark, left, y, right - left, 1.0f);
+            fx_rect_a(r, art->wall_light, 40, left, y + 1.0f, right - left,
+                      1.0f);
+            if (x >= face_left && x + 1.0f <= face_right)
+                fx_rect(r, fx_mix(art->wall_dark, art->wall, 0.5f), x, y,
+                        1.0f, 16.0f);
+        }
     }
 
-    /* Window bays separated by shallow stone pilasters. */
+    /* Window bays separated by shallow stone pilasters, each throwing a soft
+     * shadow into the bay beside it — the only thing that gives the face any
+     * relief at all before the cornices are drawn on top of it. */
     for (int col = 6; col < s->level->map.width - 3; col += 4)
     {
         float x = ((float)col + 0.5f) * (float)TILE_SIZE - s->cam_x;
+        fx_hgrad(r, x + 5.0f, top, 14.0f, height, FX_INK, 54, FX_INK, 0);
         fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.25f), x - 4.0f, top,
                 9.0f, height);
         fx_rect(r, art->wall_light, x - 3.0f, top, 2.0f, height);
+        fx_rect_a(r, FX_INK, 70, x + 3.0f, top, 2.0f, height);
     }
 
     /* Each band sits in the wall gap between two window rows. */
@@ -1858,12 +2382,58 @@ static void facade_shell(const LevelArtScene *s, const LevelThemeArt *art,
         fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.35f), face_left, y,
                 face_width, 6.0f);
         fx_rect(r, art->trim, face_left, y, face_width, 2.0f);
+        /* Sixty years of rain coming off that band. Staining is what tells the
+         * player the wall is stone that has been outside, and it hangs from a
+         * band because that is the only place water can leave a wall. */
+        int streak = (int)floorf(s->cam_x / 96.0f) - 1;
+        for (float sx = art_scroll(s->cam_x, 1.0f, 96.0f) - 96.0f;
+             sx < (float)s->win_w; sx += 96.0f, ++streak)
+        {
+            unsigned sh = art_hash(streak, row * 7);
+            if ((sh & 3u) == 0u)
+                continue;
+            float sw = 5.0f + (float)(sh % 11u);
+            float sl = 30.0f + (float)((sh >> 6) % 70u);
+            float px = sx + (float)((sh >> 12) % 70u);
+            if (px < face_left || px + sw > face_right)
+                continue;
+            fx_vgrad(r, px, y + 6.0f, sw, sl, FX_INK,
+                     (Uint8)(30u + (sh >> 18) % 26u), FX_INK, 0);
+        }
     }
 
+    /* One rainwater downpipe every four bays, bracketed to the stone. A blank
+     * facade with no service on it is a drawing of a facade. */
+    int pipe_bay = (int)floorf(s->cam_x / 512.0f) - 1;
+    for (float px = art_scroll(s->cam_x, 1.0f, 512.0f) - 512.0f;
+         px < (float)s->win_w; px += 512.0f, ++pipe_bay)
+    {
+        float x = px + 40.0f;
+        if (x < face_left + 10.0f || x + 6.0f > face_right - 10.0f)
+            continue;
+        fx_rect_a(r, FX_INK, 90, x + 6.0f, top, 5.0f, height);
+        fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.2f), x, top, 6.0f, height);
+        fx_rect(r, fx_mix(art->wall, art->wall_light, 0.4f), x + 1.0f, top,
+                1.0f, height);
+        for (float bracket = fmodf(HUD_HEIGHT - s->cam_y, 96.0f) - 96.0f;
+             bracket < (float)s->win_h; bracket += 96.0f)
+        {
+            fx_rect(r, fx_mix(art->trim, art->wall_dark, 0.3f), x - 2.0f,
+                    bracket, 10.0f, 3.0f);
+            fx_rect_a(r, art->trim_hi, 90, x - 2.0f, bracket, 10.0f, 1.0f);
+        }
+    }
+
+    /* The two returns. A face lit the same all the way to its own corner has
+     * no depth: the left one goes into shadow and the right one catches the
+     * light, and both fade inward instead of stopping at a line. */
     fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.4f), face_left, top,
             7.0f, height);
+    fx_hgrad(r, face_left + 7.0f, top, 34.0f, height, FX_INK, 64, FX_INK, 0);
     fx_rect(r, fx_mix(art->trim, art->wall_dark, 0.4f), face_right - 7.0f, top,
             7.0f, height);
+    fx_hgrad(r, face_right - 41.0f, top, 34.0f, height,
+             art->wall_light, 0, art->wall_light, 34);
 
     float roof_y = HUD_HEIGHT - s->cam_y;
     if (roof_y >= top - 10.0f && roof_y <= (float)s->win_h)

@@ -366,6 +366,22 @@ static void draw_restroom_wall_tile(SDL_Renderer *r, const Level *lvl,
   color_rect(r, (SDL_Color){124, 148, 143, 255},
              x + 2.0f, y + 2.0f, TILE_SIZE - 4.0f, 1.0f);
 
+  /* The room's ceramic is laid in a smaller module than the tile grid, and the
+   * grout is what says so. Four bays across a tile is the same eight-pixel
+   * module the wall material upstairs uses, so the restroom reads as part of
+   * the same building rather than as a checkerboard. */
+  for (int grout = 1; grout < 4; ++grout)
+  {
+    float gx = x + (float)grout * 8.0f;
+    color_rect(r, (SDL_Color){58, 82, 84, 255}, gx, y + 1.0f, 1.0f,
+               TILE_SIZE - 2.0f);
+  }
+  color_rect(r, (SDL_Color){58, 82, 84, 255}, x + 1.0f, y + 16.0f,
+             TILE_SIZE - 2.0f, 1.0f);
+  if ((h % 13u) == 0u)
+    fx_rect_a(r, (SDL_Color){202, 235, 222, 255}, 60, x + 3.0f, y + 3.0f,
+              4.0f, 4.0f);
+
   if (floor_top)
   {
     SDL_Color floor = (h & 1u)
@@ -377,10 +393,35 @@ static void draw_restroom_wall_tile(SDL_Renderer *r, const Level *lvl,
                x, y, TILE_SIZE, 3.0f);
     color_rect(r, (SDL_Color){62, 94, 94, 255},
                x, y + 3.0f, TILE_SIZE, 2.0f);
+    /* Small mosaic on the floor, and the light lying along the wet edge. */
+    for (int square = 0; square < 6; ++square)
+      color_rect(r, fx_mix(floor, (SDL_Color){23, 38, 42, 255}, 0.5f),
+                 x + 2.0f + (float)square * 5.0f, y + 5.0f, 1.0f, 3.0f);
+    fx_vgrad(r, x, y + 5.0f, TILE_SIZE, 9.0f,
+             (SDL_Color){190, 213, 202, 255}, 26,
+             (SDL_Color){190, 213, 202, 255}, 0);
+  }
+  else
+  {
+    /* A wall standing in a lit room falls away from its own top edge. */
+    fx_vgrad(r, x, y, TILE_SIZE, 12.0f,
+             (SDL_Color){202, 235, 222, 255}, 24,
+             (SDL_Color){202, 235, 222, 255}, 0);
   }
   if (!level_is_solid(lvl, col, row + 1))
+  {
     color_rect(r, (SDL_Color){17, 31, 35, 255},
                x, y + TILE_SIZE - 3.0f, TILE_SIZE, 3.0f);
+    fx_vgrad(r, x, y + TILE_SIZE - 14.0f, TILE_SIZE, 12.0f,
+             FX_INK, 0, FX_INK, 70);
+  }
+  if (!level_is_solid(lvl, col - 1, row))
+    fx_hgrad(r, x, y, 10.0f, TILE_SIZE,
+             (SDL_Color){202, 235, 222, 255}, 26,
+             (SDL_Color){202, 235, 222, 255}, 0);
+  if (!level_is_solid(lvl, col + 1, row))
+    fx_hgrad(r, x + TILE_SIZE - 10.0f, y, 10.0f, TILE_SIZE,
+             FX_INK, 0, FX_INK, 60);
 
   /* A slab inside the room with open air both above and below is a service
    * catwalk rather than the room's own floor: it gets a handrail and hangers. */
@@ -405,19 +446,40 @@ static void draw_restroom_wall_tile(SDL_Renderer *r, const Level *lvl,
 
 static void draw_ladder_tile(SDL_Renderer *r, float x, float y, int row)
 {
-  (void)row;
-  /* Cast shadow, steel side rails, and worn amber-painted rungs. */
-  color_rect(r, (SDL_Color){6, 9, 15, 170}, x + 5.0f, y, 5.0f, TILE_SIZE);
-  color_rect(r, (SDL_Color){6, 9, 15, 170}, x + 24.0f, y, 5.0f, TILE_SIZE);
+  /* The shadow the ladder throws on whatever it is bolted to. It used to be
+   * written as an opaque colour carrying an alpha the renderer never blended,
+   * so the ladder wore two black bars into every wall in the building; drawn
+   * for real it sits on the wall instead of cutting a hole in it. */
+  fx_rect_a(r, FX_INK, 96, x + 4.0f, y, 8.0f, TILE_SIZE);
+  fx_rect_a(r, FX_INK, 96, x + 22.0f, y, 8.0f, TILE_SIZE);
+
+  /* Steel side rails, with the light running down the outer face of each. */
   color_rect(r, (SDL_Color){47, 46, 38, 255}, x + 7.0f, y, 4.0f, TILE_SIZE);
   color_rect(r, (SDL_Color){47, 46, 38, 255}, x + 22.0f, y, 4.0f, TILE_SIZE);
   color_rect(r, (SDL_Color){196, 148, 62, 255}, x + 8.0f, y, 2.0f, TILE_SIZE);
   color_rect(r, (SDL_Color){196, 148, 62, 255}, x + 23.0f, y, 2.0f, TILE_SIZE);
+  fx_rect_a(r, (SDL_Color){255, 226, 158, 255}, 70, x + 8.0f, y, 1.0f,
+            TILE_SIZE);
+  fx_rect_a(r, (SDL_Color){255, 226, 158, 255}, 70, x + 23.0f, y, 1.0f,
+            TILE_SIZE);
+
   for (int rung = -4; rung < TILE_SIZE; rung += 8)
   {
     color_rect(r, (SDL_Color){52, 42, 28, 255}, x + 8.0f, y + (float)rung + 2.0f, 17.0f, 3.0f);
     color_rect(r, (SDL_Color){226, 180, 84, 255}, x + 9.0f, y + (float)rung + 1.0f, 15.0f, 2.0f);
     color_rect(r, (SDL_Color){255, 224, 150, 255}, x + 9.0f, y + (float)rung + 1.0f, 15.0f, 1.0f);
+    /* The paint is worn off the middle of a rung that gets stood on. */
+    fx_rect_a(r, (SDL_Color){150, 152, 148, 255}, 90, x + 13.0f,
+              y + (float)rung + 1.0f, 7.0f, 1.0f);
+  }
+
+  /* A wall bracket every other course, so the run is fixed to something. */
+  if ((row & 1) == 0)
+  {
+    color_rect(r, (SDL_Color){58, 54, 43, 255}, x + 3.0f, y + 13.0f, 6.0f, 4.0f);
+    color_rect(r, (SDL_Color){58, 54, 43, 255}, x + 24.0f, y + 13.0f, 6.0f, 4.0f);
+    color_rect(r, (SDL_Color){124, 112, 80, 255}, x + 3.0f, y + 13.0f, 6.0f, 1.0f);
+    color_rect(r, (SDL_Color){124, 112, 80, 255}, x + 24.0f, y + 13.0f, 6.0f, 1.0f);
   }
 }
 
@@ -425,10 +487,18 @@ static void draw_shaft_tile(SDL_Renderer *r, float x, float y, int col, int row)
 {
   unsigned h = tile_hash(col, row);
   color_rect(r, (SDL_Color){8, 13, 20, 255}, x + 4.0f, y, TILE_SIZE - 8.0f, TILE_SIZE);
+  /* A shaft is a hole in the floor plan, so it has to darken toward its own
+   * middle: the guide rails are the only lit thing in it. */
+  fx_hgrad(r, x + 4.0f, y, 10.0f, TILE_SIZE, FX_INK, 90, FX_INK, 0);
+  fx_hgrad(r, x + TILE_SIZE - 14.0f, y, 10.0f, TILE_SIZE, FX_INK, 0, FX_INK, 90);
   color_rect(r, (SDL_Color){23, 31, 42, 255}, x + 5.0f, y, 3.0f, TILE_SIZE);
   color_rect(r, (SDL_Color){23, 31, 42, 255}, x + 24.0f, y, 3.0f, TILE_SIZE);
   color_rect(r, (SDL_Color){82, 94, 102, 255}, x + 8.0f, y, 2.0f, TILE_SIZE);
   color_rect(r, (SDL_Color){82, 94, 102, 255}, x + 22.0f, y, 2.0f, TILE_SIZE);
+  fx_rect_a(r, (SDL_Color){150, 168, 178, 255}, 90, x + 8.0f, y, 1.0f,
+            TILE_SIZE);
+  fx_rect_a(r, (SDL_Color){150, 168, 178, 255}, 90, x + 22.0f, y, 1.0f,
+            TILE_SIZE);
   color_rect(r, (SDL_Color){5, 8, 13, 255}, x + 15.0f, y, 2.0f, TILE_SIZE);
   if ((h & 3u) == 0u)
     color_rect(r, (SDL_Color){42, 125, 126, 255}, x + 12.0f, y + 13.0f, 8.0f, 3.0f);
@@ -436,16 +506,41 @@ static void draw_shaft_tile(SDL_Renderer *r, float x, float y, int col, int row)
 
 static void draw_platform(SDL_Renderer *r, float x, float y, SDL_Color accent, bool unstable)
 {
+  /* The shadow it throws. A platform with nothing under it is a bar painted on
+   * the backdrop; the shadow is what puts it in the room, and it is the only
+   * cue the player has that the thing is hanging in mid-air. */
+  fx_vgrad(r, x - 1.0f, y + 8.0f, TILE_SIZE + 2.0f, 13.0f, COL_INK, 92,
+           COL_INK, 0);
+
   color_rect(r, COL_INK, x - 1.0f, y - 1.0f, TILE_SIZE + 2.0f, 9.0f);
   color_rect(r, (SDL_Color){50, 61, 66, 255}, x, y, TILE_SIZE, 7.0f);
+  fx_vgrad(r, x, y, TILE_SIZE, 7.0f, (SDL_Color){112, 128, 134, 255}, 90,
+           (SDL_Color){10, 14, 19, 255}, 130);
+
+  /* Open steel grating: the pattern is what reads as a deck to stand on rather
+   * than a solid slab, and it is drawn once so it never fights the accent. */
+  for (int slot = 0; slot < 5; ++slot)
+    color_rect(r, (SDL_Color){17, 23, 29, 255}, x + 3.0f + (float)slot * 6.0f,
+               y + 3.0f, 3.0f, 3.0f);
+
+  /* The accent line stays exactly where it was: which platform this is has to
+   * read the same however the steel around it is finished. */
   color_rect(r, accent, x + 1.0f, y, TILE_SIZE - 2.0f, 2.0f);
-  color_rect(r, (SDL_Color){22, 29, 35, 255}, x + 4.0f, y + 4.0f, TILE_SIZE - 8.0f, 2.0f);
-  color_rect(r, (SDL_Color){132, 143, 139, 255}, x + 3.0f, y + 3.0f, 2.0f, 2.0f);
-  color_rect(r, (SDL_Color){132, 143, 139, 255}, x + TILE_SIZE - 5.0f, y + 3.0f, 2.0f, 2.0f);
+  fx_glow(r, x + TILE_SIZE * 0.5f, y + 1.0f, 21.0f, accent, 32);
+
+  /* Bolted end plates. */
+  color_rect(r, (SDL_Color){132, 143, 139, 255}, x + 1.0f, y + 3.0f, 2.0f, 3.0f);
+  color_rect(r, (SDL_Color){132, 143, 139, 255}, x + TILE_SIZE - 3.0f, y + 3.0f,
+             2.0f, 3.0f);
   if (unstable)
   {
-    color_rect(r, COL_AMBER, x + 9.0f, y + 1.0f, 4.0f, 2.0f);
-    color_rect(r, COL_RED, x + 15.0f, y + 1.0f, 4.0f, 2.0f);
+    /* Hazard marking rather than two dots: this is the platform that drops. */
+    for (int chevron = 0; chevron < 3; ++chevron)
+    {
+      float cx = x + 7.0f + (float)chevron * 7.0f;
+      color_rect(r, COL_AMBER, cx, y + 1.0f, 3.0f, 2.0f);
+      color_rect(r, COL_RED, cx + 3.0f, y + 1.0f, 3.0f, 2.0f);
+    }
   }
 }
 
@@ -692,6 +787,12 @@ static void draw_facade_ledge(SDL_Renderer *r, const Level *level,
   const LevelThemeArt *art = level_art(level->map.theme);
   SDL_Color stone = art->trim;
   SDL_Color soffit = fx_mix(stone, art->wall_dark, 0.55f);
+
+  /* The shadow the cornice throws down the wall. A projecting stone that casts
+   * nothing is not projecting: this one line is what turns the whole run from
+   * a grey bar drawn over the masonry into something standing off it. */
+  fx_vgrad(r, x, y + 32.0f, 32.0f, 20.0f, FX_INK, 96, FX_INK, 0);
+
   color_rect(r, fx_mix(art->wall_dark, FX_INK, 0.4f), x, y + 1.0f, 32.0f, 31.0f);
   color_rect(r, stone, x, y + 2.0f, 32.0f, 9.0f);
   color_rect(r, art->trim_hi, x, y + 2.0f, 32.0f, 3.0f);
@@ -699,6 +800,23 @@ static void draw_facade_ledge(SDL_Renderer *r, const Level *level,
   fx_vgrad(r, x, y + 11.0f, 32.0f, 13.0f,
            fx_mix(soffit, stone, 0.3f), 255,
            fx_mix(soffit, FX_INK, 0.35f), 255);
+
+  /* The cornice is cut from blocks like the wall it sits on, so it takes the
+   * same vertical joints and the same variation from one stone to the next. */
+  for (int stone_block = 0; stone_block < 2; ++stone_block)
+  {
+    unsigned bh = tile_hash(col * 2 + stone_block, row + 601);
+    float bx = x + (float)stone_block * 16.0f;
+    fx_rect_a(r, (bh & 1u) ? art->trim_hi : FX_INK,
+              (Uint8)(12u + (bh >> 5) % 22u), bx, y + 2.0f, 16.0f, 22.0f);
+    fx_rect_a(r, FX_INK, 90, bx, y + 4.0f, 1.0f, 20.0f);
+  }
+
+  /* A drip mould under the nose: the groove that stops rain running back along
+   * the soffit, and the line that reads as the cornice's own thickness. */
+  fx_rect_a(r, FX_INK, 120, x, y + 20.0f, 32.0f, 2.0f);
+  fx_rect_a(r, art->trim_hi, 40, x, y + 22.0f, 32.0f, 1.0f);
+
   color_rect(r, fx_mix(art->wall_dark, FX_INK, 0.3f), x, y + 24.0f, 32.0f, 8.0f);
   if ((variant & 3u) == 0u)
   {
@@ -3444,11 +3562,39 @@ static void render_world(Game *game)
         if (lvl->map.tiles[row][col] != TILE_EMPTY &&
             lvl->map.tiles[row][col] != TILE_LADDER)
           continue;
-        if (!level_is_solid(lvl, col, row - 1))
-          continue;
         float x = col * (float)TILE_SIZE - cam_x;
         float y = row * (float)TILE_SIZE + oy;
-        fx_vgrad(r, x, y, TILE_SIZE, 11.0f, FX_INK, 80, FX_INK, 0);
+
+        /* Ambient occlusion against every face the air touches, not just the
+         * ceiling. A room whose walls meet its floor along a hard line is a
+         * diagram of a room; the gathering dark in the corners is what says
+         * the two surfaces are at different distances. The gradients simply
+         * overlap where two faces meet, so concave corners come out darker
+         * than either wall for free. */
+        bool above = level_is_solid(lvl, col, row - 1);
+        if (above)
+          fx_vgrad(r, x, y, TILE_SIZE, 13.0f, FX_INK, 92, FX_INK, 0);
+        if (level_is_solid(lvl, col, row + 1))
+        {
+          /* A floor gives light back. Two lines do it: a thin hard contact
+           * shadow exactly at the junction, so the floor and the air are not
+           * the same surface, and a soft bounce fading upward off it, so the
+           * room is lit from below as well as above. The bounce is scaled by
+           * how brightly the sector is lit — the plenum has nothing to bounce
+           * and must not glow. */
+          fx_vgrad(r, x, y + TILE_SIZE - 17.0f, TILE_SIZE, 15.0f,
+                   art->trim_hi, 0, art->trim_hi,
+                   (Uint8)((float)art->lamp_alpha * 0.3f));
+          fx_vgrad(r, x, y + TILE_SIZE - 4.0f, TILE_SIZE, 4.0f,
+                   FX_INK, 0, FX_INK, 66);
+        }
+        if (level_is_solid(lvl, col - 1, row))
+          fx_hgrad(r, x, y, 11.0f, TILE_SIZE, FX_INK, 58, FX_INK, 0);
+        if (level_is_solid(lvl, col + 1, row))
+          fx_hgrad(r, x + TILE_SIZE - 11.0f, y, 11.0f, TILE_SIZE,
+                   FX_INK, 0, FX_INK, 58);
+        if (!above)
+          continue;
 
         unsigned h = tile_hash(col, row);
         bool long_ceiling = level_is_solid(lvl, col - 1, row - 1) &&
@@ -3468,6 +3614,26 @@ static void render_world(Game *game)
                   (Uint8)((float)art->lamp_alpha * flicker));
           fx_light_cone(r, cx, y + 2.0f, 7.0f, 30.0f, 86.0f, art->lamp,
                         (Uint8)((float)art->lamp_alpha * 0.42f * flicker));
+
+          /* The pool the fixture puts on the floor under it. A cone that fades
+           * out in mid-air is a beam with nothing at the end of it; light has
+           * to land on something, and the floor it lands on is the surface the
+           * player is reading the level off. */
+          int floor_row = row;
+          while (floor_row < lvl->map.height &&
+                 floor_row < row + 5 &&
+                 !level_is_solid(lvl, col, floor_row + 1))
+            ++floor_row;
+          if (level_is_solid(lvl, col, floor_row + 1))
+          {
+            float fy = (float)(floor_row + 1) * (float)TILE_SIZE + oy;
+            float fade = 1.0f - (float)(floor_row - row) * 0.16f;
+            Uint8 pool =
+                (Uint8)((float)art->lamp_alpha * 0.36f * flicker * fade);
+            for (int lobe = -1; lobe <= 1; ++lobe)
+              fx_glow(r, cx + (float)lobe * 19.0f, fy + 2.0f, 30.0f,
+                      art->lamp, pool);
+          }
         }
       }
     }

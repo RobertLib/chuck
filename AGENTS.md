@@ -297,6 +297,35 @@ the staff side of the desk stays legible.
 - [level_art.c](src/level_art.c) holds the per-level wall materials and
   backdrops. It is the only place a level's look is decided; the themes shift
   hue and value inside the fx.h system rather than inventing one per sector.
+- **A material is not a lit solid, and the difference is three passes.** A wall
+  drawn as plating, brick or ceramic and nothing else is a texture swatch, and
+  a grid of swatches is what a flat tile layer looks like however good the
+  swatch is. `level_art_wall_tile` therefore runs the material, then
+  `wall_form_shading` over it, then the edges on top of that — in that order,
+  because the arris along a floor is a highlight and a highlight that gets
+  dimmed by the shading pass stops being one. The shading is broad patches of
+  light and shade across the whole wall (`art_drift`, one smooth value per tile
+  over a four-tile lattice), a mass falling away from its own surface
+  (`tile_depth`, so a shell reads as the part standing in the room and the
+  middle as the part behind it), and one light direction from the ceiling down,
+  so each exposed face is shaded by the way it points. Everything a tile needs
+  to know for this is in `tile_open_mask` — including where a slab ends and has
+  to return its lip down the flank to show how thick it is.
+- **The air beside a wall is lit too.** `render_world` walks the empty tiles
+  and lays ambient occlusion against every face the air touches, not just the
+  ceiling; the gradients overlap where two faces meet, so concave corners come
+  out darker than either wall without being a special case. The same pass gives
+  a floor a hard contact line and a soft bounce fading upward off it, scaled by
+  the theme's `lamp_alpha` — the plenum has nothing to bounce and must not glow
+  — and lands each ceiling fixture's cone in a pool on the first floor beneath
+  it, because a beam that fades out in mid-air is a beam with nothing at the
+  end of it.
+- **A material's rhythm is separate from its texture.** The panel grid tells
+  the player how big a panel is; only something on a longer module — a bolted
+  stiffener every fourth course, a shadow-gap reveal every third, a brick header
+  course every fifth, a day joint where one pour met the next — tells them how
+  big the wall is, and a wall with no scale reads as wallpaper whatever it is
+  made of.
 - **Only repeating architecture belongs in a backdrop.** Every backdrop layer
   tiles at a fixed parallax period, and a sector is often barely wider than the
   window, so each repeat is on screen at once. A curtain wall or a rack row

@@ -147,6 +147,27 @@ static inline void fx_vgrad(SDL_Renderer *r, float x, float y,
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
+/* The horizontal companion to fx_vgrad. Wall faces are lit from the side, so
+ * the ambient occlusion beside a wall and the sheen on its exposed flank both
+ * need a gradient that runs across rather than down. */
+static inline void fx_hgrad(SDL_Renderer *r, float x, float y,
+                            float w, float h,
+                            SDL_Color left, Uint8 a_left,
+                            SDL_Color right, Uint8 a_right)
+{
+    SDL_FColor lc = fx_fcolor(left, (float)a_left / 255.0f);
+    SDL_FColor rc = fx_fcolor(right, (float)a_right / 255.0f);
+    SDL_Vertex v[4] = {
+        {{x, y}, lc, {0.0f, 0.0f}},
+        {{x + w, y}, rc, {0.0f, 0.0f}},
+        {{x + w, y + h}, rc, {0.0f, 0.0f}},
+        {{x, y + h}, lc, {0.0f, 0.0f}}};
+    int idx[6] = {0, 1, 2, 0, 2, 3};
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_RenderGeometry(r, NULL, v, 4, idx, 6);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
 /* Soft radial pool of light (or glow around an emissive object). */
 static inline void fx_glow(SDL_Renderer *r, float cx, float cy,
                            float radius, SDL_Color c, Uint8 alpha)
