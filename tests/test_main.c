@@ -1968,6 +1968,64 @@ static void test_ladder_remembers_climb_direction_for_shooting(void)
     }
 }
 
+/*
+ * Moving across the rungs drives the animation clock; standing on them does not.
+ *
+ * The renderer poses the climber entirely from `anim_time`, so a clock that only
+ * ran on vertical travel left the figure sliding sideways off a ladder frozen in
+ * one grip — the pose dragged along rather than anyone shifting their weight
+ * across. The idle half of the rule is the reason the clock is gated at all: a
+ * player parked on a ladder has to hold his grip instead of shuffling in place.
+ */
+static void test_ladder_side_step_advances_the_animation_clock(void)
+{
+    /* The rungs run against the wall, so a side step is stopped while the box
+     * still overlaps them — the pose has to hold there rather than the player
+     * dropping off the ladder and the check going with him. */
+    static const char data[] =
+        "########\n"
+        "#H    E#\n"
+        "#H     #\n"
+        "#H S   #\n"
+        "########\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 91);
+    CHECK(level_load_data(&level, "ladder shuffle", data, strlen(data), &rng));
+
+    Player player;
+    player_reset(&player, &level);
+    player.x = 1.0f * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+    player.y = 2.0f * TILE_SIZE;
+
+    const float dt = 1.0f / 60.0f;
+    Input climb = {.up = true};
+    player_update(&player, &level, &climb, dt);
+    CHECK(player.on_ladder);
+
+    Input idle = {0};
+    player_update(&player, &level, &idle, dt);
+    float held = player.anim_time;
+    player_update(&player, &level, &idle, dt);
+    CHECK(player.on_ladder);
+    CHECK(player.anim_time == held);
+
+    /* One step toward the wall, still overlapping the rungs. */
+    Input side_step = {.left = true};
+    player_update(&player, &level, &side_step, dt);
+    CHECK(player.on_ladder);
+    CHECK(player.anim_time > held);
+
+    /* A shuffle that a wall has stopped is not motion, so the pose holds. */
+    for (int i = 0; i < 30; ++i)
+        player_update(&player, &level, &side_step, dt);
+    CHECK(player.on_ladder);
+    CHECK(player.vx == 0.0f);
+    float blocked = player.anim_time;
+    player_update(&player, &level, &side_step, dt);
+    CHECK(player.anim_time == blocked);
+}
+
 static void test_ladder_explosives_follow_aim_direction(void)
 {
     for (int direction = -1; direction <= 1; direction += 2)
@@ -3927,6 +3985,7 @@ int main(void)
     test_ladder_mount_centres_the_player();
     test_player_descends_from_top_of_ladder();
     test_ladder_remembers_climb_direction_for_shooting();
+    test_ladder_side_step_advances_the_animation_clock();
     test_ladder_explosives_follow_aim_direction();
     test_vertical_rocket_hits_targets();
     test_level_reveal_finishes();

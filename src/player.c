@@ -250,9 +250,16 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
      * use this for unsynchronised, state-driven procedural animation. */
     if (player->on_ladder)
     {
-        /* Hold the current grip and pose when the player stops on a ladder. */
+        /* Hold the current grip and pose when the player stops on a ladder.
+         * Moving across the rungs is motion too, and it has to drive the same
+         * clock: on a frozen one the figure slides sideways off the ladder in
+         * a fixed grip, which reads as the pose being dragged rather than as
+         * anyone shifting their weight across. Slower than the climb, because
+         * a shuffle covers a rung in two beats where a climb covers it in one. */
         if (fabsf(player->vy) > 1.0f)
             player->anim_time += dt * (2.6f + fabsf(player->vy) * 0.018f);
+        else if (fabsf(player->vx) > 1.0f)
+            player->anim_time += dt * (2.0f + fabsf(player->vx) * 0.016f);
     }
     else if (player->crawling && fabsf(player->vx) > 1.0f)
         player->anim_time += dt * (2.2f + fabsf(player->vx) * 0.020f);

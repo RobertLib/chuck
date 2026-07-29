@@ -389,6 +389,18 @@ the staff side of the desk stays legible.
   arc, and the other leg gets the same number half a turn along. A sine is
   slowest exactly where the foot should be carrying the figure fastest, which is
   what makes a sine-driven walk look like skating.
+- **A traverse is not a climb, and one beat is all that separates them.** The
+  rear-facing climbing pose in [game_render.c](src/game_render.c) spends its
+  beat vertically — a hand and the opposite boot rise while the other pair hold
+  — and a figure crossing the rungs sideways spends the same beat across them
+  instead: the leading hand and boot reach out, the trailing pair gather across,
+  the vertical alternation stops, and the body hangs back off the reach and
+  rides forward over the gather. Vertical travel wins when both are held,
+  because a pose saying both at once says neither. The clock is the same clock:
+  `player_update` advances `anim_time` on a sideways ladder move as well as a
+  climb (`test_ladder_side_step_advances_the_animation_clock`), and holds it
+  still when a wall has stopped the shuffle — a pose that only moved with `vy`
+  left the figure sliding off a ladder dragging one frozen grip.
 - **A face is five rows, and every one of them has to earn its place.** Below
   the headband there is room for a brow the fringe shades, an eye, a nose that
   has to break the head's outline to be a profile at all, a mouth and a jaw —

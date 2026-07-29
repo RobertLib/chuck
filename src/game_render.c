@@ -2334,6 +2334,11 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
                    p->bazooka_rockets > 0) ||
                  (firing && p->bazooka_firing);
   bool walking = moving && p->on_ground && !climbing;
+  /* Across the rungs rather than up them. Vertical travel wins when both are
+     held: that is the part of the move the player is watching, and a pose
+     trying to say both at once says neither. */
+  bool shuffling = climbing && moving && fabsf(p->vy) <= 1.0f;
+  float shuffle_side = shuffling ? (p->vx > 0.0f ? 1.0f : -1.0f) : 0.0f;
   float cycle = phase * (1.0f / 6.28318531f);
   float step = walking ? sinf(phase) : 0.0f;
   float bob = walking ? fabsf(step) * 0.55f
@@ -2350,6 +2355,13 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
   float lean = walking ? 1.0f : 0.0f;
   float arm_swing = -step;
   float climb = 0.0f;
+  /* How far each side has travelled across the ladder this beat, signed in
+     screen space. Shared with the arms below, which grip on the same beat as
+     the boot on their own side steps. */
+  float left_step = 0.0f;
+  float right_step = 0.0f;
+  float left_grip = 6.5f;
+  float right_grip = 19.5f;
 
   bob += crouch;
 
@@ -2363,26 +2375,57 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
                       11.0f, shadow_lift, 205);
   }
 
+  /* The weight goes across as well as the limbs: the body hangs back off the
+     hand that is reaching and rides forward over the pair that gather. A pixel
+     and a half of it is the difference between someone shifting across a ladder
+     and two limbs waving on a figure travelling on rails. The shadow is already
+     down, so it stays with the floor. */
+  if (shuffling)
+    x -= shuffle_side * sinf(phase) * 0.7f;
+
   if (climbing)
   {
-    climb = sinf(phase) * 4.0f;
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 13.0f, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_form(r, x, y, PLAYER_W, dir, 9.0f, 14.0f - climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
-    sprite_form(r, x, y, PLAYER_W, dir, 14.0f, 14.0f + climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
+    float beat = sinf(phase);
+    /*
+     * A traverse is not a climb, and one beat is all that separates the two.
+     * Climbing spends it vertically: one hand and the opposite boot rise while
+     * the other pair hold. Going sideways spends the same beat across the
+     * rungs — the leading hand and boot reach out on the first half, the
+     * trailing pair gather across on the second — so the alternation stops and
+     * nothing is pumping up and down while the figure travels level.
+     */
+    float reach = shuffle_side * fmaxf(0.0f, beat) * 3.0f;
+    float gather = shuffle_side * fmaxf(0.0f, -beat) * 3.0f;
+    left_step = shuffle_side > 0.0f ? gather : reach;
+    right_step = shuffle_side > 0.0f ? reach : gather;
+    climb = shuffling ? 0.0f : beat * 4.0f;
+    /* A boot that slides along a rung is a boot with no weight on it, so the
+       one that is moving clears it first. */
+    float left_lift = fabsf(left_step) * 0.5f;
+    float right_lift = fabsf(right_step) * 0.5f;
+    /* Each hand travels with the boot below it, but stays on its own side of
+       the shoulders: a grip that crossed the body would swap the elbow flare
+       mid-beat and pop. Reaching outward is free, gathering inward is damped. */
+    left_grip += left_step > 0.0f ? left_step * 0.4f : left_step;
+    right_grip += right_step < 0.0f ? right_step * 0.4f : right_step;
+
+    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + left_step, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 13.0f + right_step, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
+    sprite_form(r, x, y, PLAYER_W, dir, 9.0f + left_step, 14.0f - climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
+    sprite_form(r, x, y, PLAYER_W, dir, 14.0f + right_step, 14.0f + climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
     /* Boots seen from behind, one per leg, so the climb has feet on the rungs
        rather than two blank shanks ending in the dark. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 23.0f + climb, 5.0f, 8.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 13.0f, 23.0f - climb, 5.0f, 8.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 24.0f + climb, 3.0f, 5.0f,
+    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + left_step, 23.0f + climb - left_lift, 5.0f, 8.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 13.0f + right_step, 23.0f - climb - right_lift, 5.0f, 8.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f + left_step, 24.0f + climb - left_lift, 3.0f, 5.0f,
                 (SDL_Color){44, 51, 63, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 14.0f, 24.0f - climb, 3.0f, 5.0f,
+    sprite_rect(r, x, y, PLAYER_W, dir, 14.0f + right_step, 24.0f - climb - right_lift, 3.0f, 5.0f,
                 (SDL_Color){44, 51, 63, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 24.0f + climb, 3.0f, 1.0f,
+    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f + left_step, 24.0f + climb - left_lift, 3.0f, 1.0f,
                 (SDL_Color){63, 72, 86, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 14.0f, 24.0f - climb, 3.0f, 1.0f,
+    sprite_rect(r, x, y, PLAYER_W, dir, 14.0f + right_step, 24.0f - climb - right_lift, 3.0f, 1.0f,
                 (SDL_Color){63, 72, 86, 255});
-    bob = fabsf(sinf(phase)) * 0.7f;
+    bob = fabsf(beat) * 0.7f;
   }
   else
   {
@@ -2493,7 +2536,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
                            ? 2.0f
                            : 0.0f;
         draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                          8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
+                          8.0f, 14.0f + bob, left_grip, 5.0f - climb,
                           (SDL_Color){42, 118, 153, 255},
                           (SDL_Color){209, 154, 105, 255});
         sprite_limb_segment(r, x, y, PLAYER_W, dir,
@@ -2524,14 +2567,14 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
         if (p->facing > 0)
         {
           draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                            8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
+                            8.0f, 14.0f + bob, left_grip, 5.0f - climb,
                             (SDL_Color){42, 118, 153, 255},
                             (SDL_Color){209, 154, 105, 255});
         }
         else
         {
           draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                            18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
+                            18.0f, 14.0f + bob, right_grip, 5.0f + climb,
                             (SDL_Color){42, 118, 153, 255},
                             (SDL_Color){209, 154, 105, 255});
         }
@@ -2564,7 +2607,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
     else if (grenade)
     {
       draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                        8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
+                        8.0f, 14.0f + bob, left_grip, 5.0f - climb,
                         (SDL_Color){42, 118, 153, 255},
                         (SDL_Color){209, 154, 105, 255});
       if (p->shot_vertical != 0)
@@ -2595,14 +2638,14 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
       if (p->facing > 0)
       {
         draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                          8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
+                          8.0f, 14.0f + bob, left_grip, 5.0f - climb,
                           (SDL_Color){42, 118, 153, 255},
                           (SDL_Color){209, 154, 105, 255});
       }
       else
       {
         draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                          18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
+                          18.0f, 14.0f + bob, right_grip, 5.0f + climb,
                           (SDL_Color){42, 118, 153, 255},
                           (SDL_Color){209, 154, 105, 255});
       }
@@ -2647,7 +2690,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
     {
       /* Keep one hand on the ladder while the other operates the sidearm. */
       draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                        8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
+                        8.0f, 14.0f + bob, left_grip, 5.0f - climb,
                         (SDL_Color){42, 118, 153, 255},
                         (SDL_Color){209, 154, 105, 255});
       if (firing && p->shot_vertical != 0)
@@ -2690,7 +2733,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
       else
       {
         draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                          18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
+                          18.0f, 14.0f + bob, right_grip, 5.0f + climb,
                           (SDL_Color){42, 118, 153, 255},
                           (SDL_Color){209, 154, 105, 255});
       }
