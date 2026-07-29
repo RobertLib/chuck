@@ -990,6 +990,119 @@ static void wall_wood(SDL_Renderer *r, const LevelThemeArt *art,
     }
 }
 
+/*
+ * A blocked-up opening.
+ *
+ * A weak wall has to say two things at a glance: that it is a wall, and that it
+ * is not the wall the rest of the sector was built out of. The material under
+ * it stays the theme's, so the patch belongs to the room it is in; over that
+ * goes the reveal all the way round — the joint where somebody filled an
+ * opening in — and blockwork on a module twice as coarse as any of the seven
+ * materials, because a change of scale reads as different work where a change
+ * of colour would just read as a dirty tile. The cracks are the affordance:
+ * this is the one tile in the grid drawn cracked, and it is where it goes.
+ */
+static void wall_weak_patch(SDL_Renderer *r, const LevelThemeArt *art,
+                            int col, int row, float x, float y, unsigned h)
+{
+    /* The joint it was let into, dark and unbroken, so the fill reads as
+     * sitting inside a hole rather than as paint over one. */
+    fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.55f), x + 1.0f, y + 1.0f,
+            TILE_SIZE - 2.0f, TILE_SIZE - 2.0f);
+    /* The mortar the blocks are bedded in sits well back from them: every joint
+     * in the patch is this colour showing through, and a joint the same value as
+     * the block beside it leaves the coarse module invisible — which is the
+     * whole point of drawing blockwork instead of another swatch. */
+    fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.30f), x + 3.0f, y + 3.0f,
+            TILE_SIZE - 6.0f, TILE_SIZE - 6.0f);
+
+    /* Two courses of blockwork, offset half a block, indexed in world space so
+     * a run of patches side by side stays one piece of work. */
+    for (int course = 0; course < 2; ++course)
+    {
+        float by = y + 4.0f + (float)course * 12.5f;
+        float offset = course ? -4.5f : 0.0f;
+        for (int slot = 0; slot < 4; ++slot)
+        {
+            unsigned bh = art_hash(col * 4 + slot, row * 2 + course);
+            SDL_Color face = fx_mix(art->wall, art->wall_light,
+                                    0.14f + art_unit(bh, 3) * 0.26f);
+            float left = x + 3.0f + (float)slot * 9.0f + offset;
+            float right = left + 8.0f;
+            if (left < x + 3.0f)
+                left = x + 3.0f;
+            if (right > x + TILE_SIZE - 3.0f)
+                right = x + TILE_SIZE - 3.0f;
+            if (right <= left)
+                continue;
+            fx_rect(r, face, left, by, right - left, 9.5f);
+            /* Each block is its own little solid: lit along the top it was
+             * laid to and in shade along the bed under it. */
+            fx_rect(r, fx_mix(face, art->wall_light, 0.55f), left, by,
+                    right - left, 1.0f);
+            fx_rect(r, fx_mix(art->wall_dark, FX_INK, 0.45f), left,
+                    by + 8.5f, right - left, 1.0f);
+        }
+    }
+
+    /*
+     * Cracks, and they run across the joints rather than along them: a fracture
+     * that stops at every block edge is a block edge. Each is laid as short
+     * steps, because a straight line reads as scoring, and each carries one
+     * bright pixel of spalled edge beside it — the same reason a limb gets a lit
+     * pixel along the top. At thirty-two pixels a dark line alone is dirt.
+     */
+    for (int i = 0; i < 3; ++i)
+    {
+        unsigned ch = h >> (unsigned)(i * 6);
+        float cx = x + 6.0f + (float)(ch % 17u);
+        float cy = y + 5.0f + (float)((ch >> 5) % 10u);
+        int steps = 3 + (int)((ch >> 9) % 2u);
+        float lean = ((ch >> 11) & 1u) ? 1.0f : -1.0f;
+        for (int step = 0; step < steps; ++step)
+        {
+            fx_rect(r, fx_mix(art->wall_light, art->wall, 0.30f), cx - lean, cy,
+                    1.0f, 3.0f);
+            fx_rect(r, FX_INK, cx, cy, 1.0f, 3.0f);
+            cy += 3.0f;
+            cx += lean;
+            if (((ch >> (unsigned)(step + 12)) & 1u) != 0u)
+                fx_rect(r, FX_INK, cx, cy, 2.0f, 1.0f);
+        }
+    }
+}
+
+void level_art_broken_wall_tile(SDL_Renderer *r, const Level *level,
+                                int col, int row, float x, float y)
+{
+    /* Rubble only rests on something. A hole blown through a wall with air
+     * under it keeps nothing, which is right: it all went to the floor below. */
+    if (!level_is_solid(level, col, row + 1))
+        return;
+
+    const LevelThemeArt *art = level_art(level->map.theme);
+    unsigned h = art_hash(col, row);
+    SDL_Color base = fx_mix(art->wall_dark, FX_INK, 0.35f);
+
+    fx_rect(r, base, x + 1.0f, y + TILE_SIZE - 4.0f, TILE_SIZE - 2.0f, 4.0f);
+    for (int chip = 0; chip < 5; ++chip)
+    {
+        unsigned chh = h >> (unsigned)(chip * 5);
+        float cw = 3.0f + (float)(chh % 3u);
+        float ch_h = 2.0f + (float)((chh >> 3) % 4u);
+        float cx = x + 2.0f + (float)((chh >> 6) % 25u);
+        if (cx + cw > x + TILE_SIZE - 1.0f)
+            cx = x + TILE_SIZE - 1.0f - cw;
+        fx_rect(r, fx_mix(art->wall, art->wall_dark, 0.55f), cx,
+                y + TILE_SIZE - 3.0f - ch_h, cw, ch_h);
+        fx_rect(r, fx_mix(art->wall, art->wall_light, 0.22f), cx,
+                y + TILE_SIZE - 3.0f - ch_h, cw, 1.0f);
+    }
+    /* Dust still hanging in the opening, so the hole is not simply air. */
+    fx_vgrad(r, x, y + TILE_SIZE - 14.0f, TILE_SIZE, 11.0f,
+             art->haze, 0, art->haze, 46);
+}
+
 void level_art_wall_tile(SDL_Renderer *r, const Level *level,
                          int col, int row, float x, float y)
 {
@@ -1021,6 +1134,12 @@ void level_art_wall_tile(SDL_Renderer *r, const Level *level,
         wall_plate(r, art, col, row, x, y, h);
         break;
     }
+
+    /* A patched opening is drawn over its sector's own material, so the wall it
+     * was let into still belongs to this floor of the building — and it goes
+     * before the shading, because it is masonry to be lit and not a decal. */
+    if (level_tile(level, col, row) == TILE_WEAK_WALL)
+        wall_weak_patch(r, art, col, row, x, y, h);
 
     /* Form shading goes over the material and under the edges: the arris is a
      * highlight, and a highlight that gets dimmed by the shading pass stops

@@ -55,9 +55,22 @@ static char doc_at(const EditorDoc *doc, int col, int row)
     return editor_doc_get(doc, col, row);
 }
 
+/* Wall the loader will stand something on. Props are dropped unless there is a
+ * '#' under them, and a patch that may be blown away is deliberately not one:
+ * a desk left hanging in mid-air is worse than a desk somewhere else. */
 static bool doc_solid(const EditorDoc *doc, int col, int row)
 {
     return doc_at(doc, col, row) == '#';
+}
+
+/* Everything that stops the player. A weak wall collides exactly as a wall
+ * does until an explosion opens it, so every reachability and clearance rule
+ * has to count it — which is also what makes a sector work before it is
+ * opened, the only state the route model is allowed to assume. */
+static bool doc_blocks(const EditorDoc *doc, int col, int row)
+{
+    char cell = doc_at(doc, col, row);
+    return cell == '#' || cell == '%';
 }
 
 static int count_of(const EdReport *report, char symbol)
@@ -342,7 +355,7 @@ static int band_floor_row(const EditorDoc *doc, int col, int row, int spread)
     {
         for (int c = col - spread; c <= col + spread; ++c)
         {
-            if (doc_solid(doc, c, r))
+            if (doc_blocks(doc, c, r))
                 return r;
         }
     }
@@ -384,7 +397,7 @@ static void check_fans(const EditorDoc *doc, EdReport *report)
             }
             for (int c = col - 2; c <= col + 2; ++c)
             {
-                if (c < 0 || c >= doc->grid.width || doc_solid(doc, c, floor))
+                if (c < 0 || c >= doc->grid.width || doc_blocks(doc, c, floor))
                     continue;
                 report_add(report, ED_SEV_WARN, col, row,
                            "A hole in the floor two columns away: the route model calls that gap crossed and the blades make it lethal");
@@ -414,6 +427,48 @@ static void check_spikes(const EditorDoc *doc, EdReport *report)
     }
 }
 
+/*
+ * Weak walls.
+ *
+ * The route model counts a '%' as wall, so the sector is judged in the state it
+ * is authored in and a blocked-up opening can never be the way out. That makes
+ * two things worth saying out loud: a patch nothing in the sector can open is
+ * scenery, and a patch let into nothing is a block standing in mid-air.
+ */
+static void check_weak_walls(const EditorDoc *doc, EdReport *report)
+{
+    int patches = count_of(report, '%');
+    if (patches == 0)
+        return;
+
+    if (count_of(report, 'N') == 0 && count_of(report, 'Z') == 0)
+    {
+        report_add(report, ED_SEV_WARN, -1, -1,
+                   "%d weak walls and nothing to open them with: only a blast "
+                   "does it, so the sector needs a grenade 'N' or a bazooka 'Z'",
+                   patches);
+    }
+
+    for (int row = 0; row < doc->grid.height; ++row)
+    {
+        for (int col = 0; col < doc->grid.width; ++col)
+        {
+            if (doc_at(doc, col, row) != '%')
+                continue;
+            bool let_in = doc_blocks(doc, col - 1, row) ||
+                          doc_blocks(doc, col + 1, row) ||
+                          doc_blocks(doc, col, row - 1) ||
+                          doc_blocks(doc, col, row + 1);
+            if (!let_in)
+            {
+                report_add(report, ED_SEV_NOTE, col, row,
+                           "This patch has no wall to be let into, so it reads "
+                           "as a block standing in mid-air");
+            }
+        }
+    }
+}
+
 static void check_moving_platforms(const EditorDoc *doc, EdReport *report)
 {
     for (int row = 0; row < doc->grid.height; ++row)
@@ -427,7 +482,7 @@ static void check_moving_platforms(const EditorDoc *doc, EdReport *report)
             while (left - 1 >= 0)
             {
                 char cell = doc_at(doc, left - 1, row);
-                if (cell == '#' || cell == 'D' || cell == 'V')
+                if (cell == '#' || cell == '%' || cell == 'D' || cell == 'V')
                     break;
                 left--;
             }
@@ -435,7 +490,7 @@ static void check_moving_platforms(const EditorDoc *doc, EdReport *report)
             while (right + 1 < doc->grid.width)
             {
                 char cell = doc_at(doc, right + 1, row);
-                if (cell == '#' || cell == 'D' || cell == 'V')
+                if (cell == '#' || cell == '%' || cell == 'D' || cell == 'V')
                     break;
                 right++;
             }
@@ -479,7 +534,7 @@ static void check_people(const EditorDoc *doc, const Level *level,
                 for (int reach = 1; reach <= 2; ++reach)
                 {
                     int c = col + step * reach;
-                    if (doc_solid(doc, c, row) || !doc_solid(doc, c, row + 1))
+                    if (doc_blocks(doc, c, row) || !doc_blocks(doc, c, row + 1))
                         break;
                     if (reach == 2)
                         room++;
@@ -509,6 +564,15 @@ static void check_facade(const EditorDoc *doc, EdReport *report)
             {
                 report_add(report, ED_SEV_ERROR, col, row,
                            "There are no ladders on a wall; the climb is four-way movement over masonry");
+            }
+            if (cell == '%')
+            {
+                /* It collides like the cornice it is standing in, so the climb
+                 * still works — but nothing on a wall throws a grenade, so it
+                 * can never be opened and is only a '#' the author will expect
+                 * to be able to break. */
+                report_add(report, ED_SEV_WARN, col, row,
+                           "Nothing on a climb can set off a blast, so this patch never opens: paint it as '#'");
             }
             if (cell != '#')
                 continue;
@@ -622,7 +686,7 @@ static void check_facade_route(const EditorDoc *doc, EdReport *report)
             int row = at.row + dr[i];
             if (col < first || col > last || row < 0 || row >= doc->grid.height)
                 continue;
-            if (seen[row][col] || doc_solid(doc, col, row))
+            if (seen[row][col] || doc_blocks(doc, col, row))
                 continue;
             seen[row][col] = true;
             queue[tail++] = (RouteCell){col, row};
@@ -1029,6 +1093,7 @@ void editor_validate(const EditorDoc *doc, const Level *level, bool parsed,
     {
         check_fans(doc, report);
         check_spikes(doc, report);
+        check_weak_walls(doc, report);
         check_moving_platforms(doc, report);
     }
 

@@ -78,6 +78,12 @@ static void dispatch_events(Game *game, GameEventBuffer *events,
                                       event->data.explosion.y,
                                       event->data.explosion.count);
             break;
+        case GAME_EVENT_DUST:
+            particle_system_dust(&game->presentation.particles,
+                                 event->data.dust.x, event->data.dust.y,
+                                 event->data.dust.count,
+                                 event->data.dust.spread);
+            break;
         case GAME_EVENT_CAMERA_SHAKE:
             game->presentation.camera_shake_strength =
                 event->data.shake.strength;

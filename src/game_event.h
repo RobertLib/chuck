@@ -13,6 +13,10 @@ typedef enum
     GAME_EVENT_WORLD_SOUND,
     GAME_EVENT_PARTICLES,
     GAME_EVENT_EXPLOSION,
+    /* Masonry dust rather than sparks: what comes off a surface, not out of
+     * something. Blood-red fragments arcing away from a broken wall would read
+     * as the wrong material however many of them there were. */
+    GAME_EVENT_DUST,
     GAME_EVENT_CAMERA_SHAKE
 } GameEventType;
 
@@ -42,6 +46,13 @@ typedef struct
         } explosion;
         struct
         {
+            float x;
+            float y;
+            int count;
+            float spread; /* how wide the surface it came off was, in pixels */
+        } dust;
+        struct
+        {
             float strength;
             float duration;
         } shake;
@@ -63,6 +74,8 @@ bool game_events_particles(GameEventBuffer *events, float x, float y,
                            int count, int direction);
 bool game_events_explosion(GameEventBuffer *events, float x, float y,
                            int count);
+bool game_events_dust(GameEventBuffer *events, float x, float y, int count,
+                      float spread);
 bool game_events_camera_shake(GameEventBuffer *events, float strength,
                               float duration);
 

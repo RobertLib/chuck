@@ -89,6 +89,22 @@ void ed_draw_symbol(SDL_Renderer *r, char symbol, float x, float y, float s,
         fx_rect(r, fx_dim(c, 0.8f), x, y, s, SDL_max(1.0f, s * 0.09f));
         break;
 
+    case '%':
+        /* A wall with the crack drawn on it. At palette size the crack is the
+         * only thing telling it apart from '#', so it is drawn brighter than
+         * anything else in the tile rather than as a hairline. */
+        fx_rect(r, fx_dim(c, 0.55f), x, y, s, s);
+        fx_rect(r, fx_dim(c, 0.8f), x, y, s, SDL_max(1.0f, s * 0.09f));
+        fx_rect(r, dark, x + s * 0.10f, y + s * 0.44f, s * 0.80f,
+                SDL_max(1.0f, s * 0.06f));
+        fx_rect(r, light, x + s * 0.48f, y + s * 0.12f,
+                SDL_max(1.0f, s * 0.07f), s * 0.34f);
+        fx_rect(r, light, x + s * 0.34f, y + s * 0.46f,
+                SDL_max(1.0f, s * 0.07f), s * 0.42f);
+        fx_rect(r, light, x + s * 0.34f, y + s * 0.44f, s * 0.16f,
+                SDL_max(1.0f, s * 0.07f));
+        break;
+
     case 'H':
         fx_rect(r, c, x + s * 0.22f, y, s * 0.09f, s);
         fx_rect(r, c, x + s * 0.69f, y, s * 0.09f, s);
@@ -544,12 +560,12 @@ void ed_draw_canvas(EditorApp *app)
             char cell = editor_doc_get(&app->doc, col, row);
             float x = ox + (float)col * TILE_SIZE;
             float y = oy + (float)row * TILE_SIZE;
-            if (cell == '#')
+            if (cell == '#' || cell == '%')
             {
                 if (app->art_mode && app->level_ok)
                     level_art_wall_tile(r, &app->level, col, row, x, y);
                 else
-                    ed_draw_symbol(r, '#', x, y, TILE_SIZE, app->time);
+                    ed_draw_symbol(r, cell, x, y, TILE_SIZE, app->time);
                 continue;
             }
             if (!app->art_mode)

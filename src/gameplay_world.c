@@ -266,6 +266,46 @@ void gameplay_destroy_crate(GameplayState *state, CampaignState *campaign,
     campaign->score += 20;
 }
 
+int gameplay_break_walls_in_radius(GameplayState *state,
+                                   CampaignState *campaign,
+                                   float x, float y, float radius)
+{
+    Level *level = &state->level;
+    int first_col = (int)floorf((x - radius) / TILE_SIZE);
+    int last_col = (int)floorf((x + radius) / TILE_SIZE);
+    int first_row = (int)floorf((y - radius) / TILE_SIZE);
+    int last_row = (int)floorf((y + radius) / TILE_SIZE);
+    int broken = 0;
+
+    for (int row = first_row; row <= last_row; ++row)
+    {
+        for (int col = first_col; col <= last_col; ++col)
+        {
+            /* Measured to the tile's centre, so a blast beside a wall takes out
+             * the panel it went off against and its immediate neighbours rather
+             * than every tile its bounding box happens to touch. */
+            float centre_x = (col + 0.5f) * (float)TILE_SIZE;
+            float centre_y = (row + 0.5f) * (float)TILE_SIZE;
+            float dx = centre_x - x;
+            float dy = centre_y - y;
+            if (dx * dx + dy * dy > radius * radius)
+                continue;
+            if (!level_break_wall(level, col, row))
+                continue;
+            broken++;
+            campaign->score += WEAK_WALL_SCORE;
+            game_events_dust(&state->events, centre_x, centre_y,
+                             WEAK_WALL_DUST, (float)TILE_SIZE);
+        }
+    }
+
+    /* One report per blast, not one per tile: a wall that goes in three pieces
+     * is still one wall coming down, and sixteen voices would be spent on it. */
+    if (broken > 0)
+        gameplay_world_sound(state, SFX_WALL_BREAK, x, y);
+    return broken;
+}
+
 void gameplay_kill_enemy_with_crate(GameplayState *state,
                                     CampaignState *campaign, Enemy *enemy)
 {

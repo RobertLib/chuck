@@ -53,6 +53,7 @@ typedef enum
     SFX_CRATE_PUSH,
     SFX_CRATE_LAND,
     SFX_CRATE_BREAK,
+    SFX_WALL_BREAK,
     SFX_FAN_HIT,
     SFX_SPIKE_HIT,
     SFX_WIND_GUST,

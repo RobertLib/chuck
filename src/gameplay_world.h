@@ -25,6 +25,13 @@ void gameplay_alert_enemies_to_noise(GameplayState *state, float x, float y,
                                      float radius);
 void gameplay_destroy_crate(GameplayState *state, CampaignState *campaign,
                             Crate *crate);
+/* Open every weak wall a blast reaches. Only explosions call this: a pistol
+ * round or a knife leaves a blocked-up opening exactly where it was, so the
+ * route through a wall always costs an explosive. Returns how many tiles went.
+ */
+int gameplay_break_walls_in_radius(GameplayState *state,
+                                   CampaignState *campaign,
+                                   float x, float y, float radius);
 void gameplay_kill_enemy_with_crate(GameplayState *state,
                                     CampaignState *campaign, Enemy *enemy);
 void gameplay_kill_dog_with_crate(GameplayState *state,

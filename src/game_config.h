@@ -106,6 +106,13 @@
 #define CRATE_FRICTION 8.0f
 #define CRATE_LAND_SOUND_SPEED 90.0f
 
+/* Weak walls: a blocked-up opening that only an explosion reopens. Nothing
+ * smaller than a blast touches one, so a route through a wall always costs an
+ * explosive — which is what keeps it a shortcut rather than a corridor. The
+ * hole is permanent for the rest of the run, like a fallen panel. */
+#define WEAK_WALL_DUST 9
+#define WEAK_WALL_SCORE 25
+
 /* Exit-access terminals */
 #define MAX_TERMINALS 16
 #define TERMINAL_HACK_TIME 4.0f

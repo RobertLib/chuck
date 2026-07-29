@@ -1689,6 +1689,18 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_noise(s, 0.00f, 0.34f, 0.80f, 0.20f, 0.004f, 0.31f, 0xc2a7u);
         add_tone(s, 0.00f, 0.24f, 145.0f, 42.0f, 0.38f, WAVE_TRIANGLE, 0.004f, 0.20f);
         break;
+    case SFX_WALL_BREAK:
+        /* Masonry, not timber: the crate is a crack and gone, a wall gives way
+         * and then keeps coming down. The tail is the rubble, and it is most of
+         * what says a hole has been opened rather than something hit. */
+        if (!begin_sound(audio, effect, 0.72f, 0.46f, 140))
+            return false;
+        add_noise(s, 0.00f, 0.22f, 0.95f, 0.14f, 0.003f, 0.20f, 0x3d91u);
+        add_tone(s, 0.00f, 0.36f, 92.0f, 28.0f, 0.60f, WAVE_TRIANGLE,
+                 0.004f, 0.32f);
+        add_noise(s, 0.15f, 0.28f, 0.46f, 0.29f, 0.005f, 0.26f, 0x7ac2u);
+        add_noise(s, 0.36f, 0.30f, 0.27f, 0.40f, 0.006f, 0.28f, 0xb15fu);
+        break;
     case SFX_FAN_HIT:
         if (!begin_sound(audio, effect, 0.32f, 0.43f, 260))
             return false;
@@ -2025,6 +2037,9 @@ static bool sound_is_critical_feedback(SoundEffect effect)
     case SFX_EXPLOSION:
     case SFX_CRATE_LAND:
     case SFX_CRATE_BREAK:
+    /* A wall coming down changes the map, so it has to be audible from
+     * wherever the player was standing when he threw the thing. */
+    case SFX_WALL_BREAK:
     case SFX_ENEMY_DOWN:
     case SFX_DOG_YELP:
         return true;

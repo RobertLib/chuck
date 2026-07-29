@@ -68,6 +68,19 @@ bool game_events_explosion(GameEventBuffer *events, float x, float y,
     return true;
 }
 
+bool game_events_dust(GameEventBuffer *events, float x, float y, int count,
+                      float spread)
+{
+    GameEvent *event = next_event(events, GAME_EVENT_DUST);
+    if (event == NULL)
+        return false;
+    event->data.dust.x = x;
+    event->data.dust.y = y;
+    event->data.dust.count = count;
+    event->data.dust.spread = spread;
+    return true;
+}
+
 bool game_events_camera_shake(GameEventBuffer *events, float strength,
                               float duration)
 {

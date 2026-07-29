@@ -11,6 +11,13 @@ has to be added there as well, or it is a character the editor cannot paint.
 - `#` : Wall (solid, impassable tile). In a `MODE FACADE` level it is exterior
   masonry: a stone cornice or plant the climber must route around, and cover
   that shatters thrown objects and turns birds away.
+- `%` : Weak wall — a blocked-up opening, drawn as coarse blockwork let into the
+  sector's own material and cracked. It is solid in every way a `#` is until an
+  explosion takes it out: bullets stop on it, guards cannot see through it, and
+  props will not stand on it. Any blast within reach opens it (grenade, rocket,
+  mine, gas canister) and the hole is permanent for the rest of the run, so it
+  survives a lost life and is back the next time the sector loads. Interiors
+  only, and never the way out — see the authoring rule below.
 - `H` : Ladder (can climb up/down).
 - (space) : Empty space / air.
 - `.` : Empty padding / air (useful before a compact sublevel room).
@@ -168,7 +175,7 @@ or a storey rhythm.
 | # | Theme | Plan |
 | --- | --- | --- |
 | 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the atrium to a mezzanine gallery, a service ladder to the security wing, a short lift to the staff corridor behind the stair. The hall empties past Chuck as he walks in — see `f` — and the front desk stays staffed after it has, see `k` |
-| 2 | `OFFICE` | three open-plan floors cut into blocks by floor-to-ceiling partitions, the ladders staggered so every partition is passed by changing floor; a welded stair core at the far end, the executive gallery back across the top, and a service crawl underneath reached by one ladder |
+| 2 | `OFFICE` | three open-plan floors cut into blocks by floor-to-ceiling partitions, the ladders staggered so every partition is passed by changing floor; a welded stair core at the far end, the executive gallery back across the top, and a service crawl underneath reached by one ladder, where the bazooka lies beside a blocked-up opening (`%`) that saves the teleport across |
 | 3 | `FACADE_NIGHT` | one wide breach per course, walking slowly from side to side |
 | 4 | `SERVER` | cold aisles blocked at alternating ends: one long serpentine, plus two fenced pockets joined by a cable tunnel |
 | 5 | `PLANT` | catwalk towers either side of a solid plant block, goods lift onto its roof, crane platform across the hall |
@@ -180,7 +187,7 @@ or a storey rhythm.
 | 11 | `FACADE_DAWN` | two breaches that braid, swapping sides as the climb rises |
 | 12 | `DUCTS` | six crawl levels chopped into runs, one riser each; climb, drop through a missing panel, climb again |
 | 13 | `FACADE_HIGH` | offset stubs laid like brickwork: every band is a lateral detour |
-| 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall |
+| 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall. The far bay keeps the medkit and the rocket behind a paired door whose other end is the one guards come out of; the `%` in the bay's end wall is a second way in, for anyone who can spare a blast |
 | 15 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, service level beneath the deck |
 
 Two campaign-wide rules go with it, both pinned by the same test:
@@ -244,6 +251,16 @@ a hall. These rules come from the tuning in
 - **`F` panels are a shortcut, never a lifeline.** They fall away for the rest
   of the run, so the level must still be finishable once every one of them has
   gone, and no ledge they serve may become a place the player cannot leave.
+- **`%` patches are the same bargain from the other side.** The route model
+  counts one as wall, so a sector is judged in the state it is authored in and a
+  blocked-up opening can never be the way out, a key card's only approach or a
+  terminal's. It also counts as floor, so a patch may be set into a slab without
+  cutting the storey in two. Two things follow: put a `%` where opening it saves
+  a detour or opens a cache, and give the sector a grenade `N` or a bazooka `Z`,
+  because nothing else in the game opens one. Keep it one tile thick in the
+  direction being crossed — a blast opens the face it goes off against, not a
+  tunnel — and leave the row above a floor-level patch solid so the hole reads
+  as a doorway.
 - **`P` platforms** patrol the contiguous non-solid run of their row, bounded by
   `#`, `D` and `V`. Keep ladders and other gaps out of that row or the platform
   will wander further than the void it is meant to bridge.

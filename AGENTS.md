@@ -135,7 +135,8 @@ so any new `GameplayState` field must be cleared there.
 ### Levels
 
 `Level` ([level.h](src/level.h)) separates `LevelMap` (immutable parsed data),
-`LevelRuntime` (mutable per-run: items, crates, elevators, unlock flags), and
+`LevelRuntime` (mutable per-run: items, crates, elevators, unlock flags, which
+weak walls have been blown open), and
 `LevelReveal` (the tile-by-tile reveal animation). `level_load_data` parses the
 text grid; it also makes the seeded choices — which key card is the real one and
 which terminal is active (kept at least `TERMINAL_MIN_START_TILES` from the
@@ -150,6 +151,46 @@ A level is scored by its theme, not by its index, so the new sector's music
 comes with the `THEME` line. Maps are text and can be edited as text, but
 `make editor` is the tool that knows the rules — see
 [The level editor](#the-level-editor).
+
+### Walls that open
+
+A `%` tile is a weak wall: a blocked-up opening that is solid in every way a `#`
+is until a blast takes it out. Three decisions carry the whole feature, and each
+is tested.
+
+**One solidity rule.** `level_is_solid` is the only thing that knows a weak wall
+can stop being one, and everything that collides, shades, blocks a bullet or
+breaks a line of sight already went through it. So opening a wall opens it for
+the player, the guards, the crates, the ambient NPCs, the lighting pass and the
+ambient occlusion in the same frame, and there is no second list of places to
+update. Where a module had its own copy of the rule it now calls
+`level_is_solid` instead ([gameplay_climb.c](src/gameplay_climb.c)'s facade
+collision, the janitor and receptionist probes in
+[gameplay_ai.c](src/gameplay_ai.c)) — a tile that is solid to the player and air
+to a guard is a bug however it is drawn.
+
+**The hole is runtime, not map.** `LevelMap` stays exactly what the file said, so
+the editor, the parser and the tests all keep one answer for what a sector is;
+the opened tiles live in `LevelRuntime.wall_broken` beside the fallen panels and
+the broken crates. A lost life therefore keeps the hole and reloading the sector
+restores the wall, which is the same bargain `F` panels make.
+
+**Only a blast opens one**, and gameplay code never plays the sound itself:
+`gameplay_break_walls_in_radius` ([gameplay_world.c](src/gameplay_world.c)) is
+called from the four explosions in [gameplay_combat.c](src/gameplay_combat.c)
+and reports one `SFX_WALL_BREAK` per blast plus `GAME_EVENT_DUST` per tile.
+Dust is a new event rather than the existing spark burst because masonry is not
+blood: sparks arcing away from a broken wall read as the wrong material however
+many of them there are.
+
+The route model in [level_route.c](src/level_route.c) counts a weak wall as wall
+in both directions — impassable, because opening one costs an explosive the
+model knows nothing about, and floor, because a patch set into a slab must not
+cut the storey in two. That is what keeps a `%` a shortcut and never the way
+out, and it means placing one where a wall already stood cannot change whether a
+sector is solvable. The editor adds the two rules the model cannot see: a sector
+with a patch needs a grenade or a bazooka in it, and a patch on a climb never
+opens at all, because nothing out there can set off a blast.
 
 ### One plan per sector
 
@@ -170,8 +211,9 @@ strictly from sector to sector (and from climb to climb, along with the climb's
 height), and a conservative model of the player can reach the way out, every
 key card, every terminal and the restroom door without ever being stranded by a
 one-way drop. That model never stands on a falling panel, so a sector has to
-work once every `F` has gone. [levels/LEGEND.md](levels/LEGEND.md) tabulates
-the plans, the budgets and what the model will and will not do.
+work once every `F` has gone, and it never walks through a weak wall, so a
+sector has to work before any `%` has been opened. [levels/LEGEND.md](levels/LEGEND.md)
+tabulates the plans, the budgets and what the model will and will not do.
 
 That route model lives in [level_route.c](src/level_route.c) rather than in the
 test file, because the editor asks it the same question about a map that is

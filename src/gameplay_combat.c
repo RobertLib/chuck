@@ -238,6 +238,8 @@ static void explode_gas_canister(GameplayState *state,
     }
 
     damage_crates_in_radius(state, campaign, x, y, GAS_CANISTER_RADIUS);
+    gameplay_break_walls_in_radius(state, campaign, x, y,
+                                   GAS_CANISTER_RADIUS);
     if (state->invuln_timer <= 0.0f &&
         within_radius(state->player.x + PLAYER_W * 0.5f,
                       state->player.y + player_height(state) * 0.5f,
@@ -296,6 +298,7 @@ static void explode_grenade(GameplayState *state, CampaignState *campaign,
         }
     }
     damage_crates_in_radius(state, campaign, x, y, GRENADE_RADIUS);
+    gameplay_break_walls_in_radius(state, campaign, x, y, GRENADE_RADIUS);
     if (state->invuln_timer <= 0.0f &&
         within_radius(state->player.x + PLAYER_W * 0.5f,
                       state->player.y + player_height(state) * 0.5f,
@@ -360,6 +363,7 @@ static void explode_rocket(GameplayState *state, CampaignState *campaign,
     }
 
     damage_crates_in_radius(state, campaign, x, y, ROCKET_RADIUS);
+    gameplay_break_walls_in_radius(state, campaign, x, y, ROCKET_RADIUS);
     for (int i = 0; i < state->level.runtime.gas_canister_count; ++i)
     {
         GasCanister *canister = &state->level.runtime.gas_canisters[i];
@@ -414,6 +418,7 @@ void gameplay_combat_update_explosives(GameplayState *state,
         game_events_camera_shake(&state->events, 5.0f, 0.24f);
         gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
         damage_crates_in_radius(state, campaign, x, y, MINE_RADIUS);
+        gameplay_break_walls_in_radius(state, campaign, x, y, MINE_RADIUS);
         if (state->invuln_timer <= 0.0f &&
             within_radius(state->player.x + PLAYER_W * 0.5f,
                           state->player.y + player_height(state) * 0.5f,

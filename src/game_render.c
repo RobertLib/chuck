@@ -4015,7 +4015,18 @@ static void render_world(Game *game)
           !lvl->reveal.tiles_visible[row][col])
         continue;
       TileType tile = lvl->map.tiles[row][col];
-      if (tile == TILE_WALL)
+      if (tile == TILE_WEAK_WALL)
+      {
+        /* Drawn by level_art in every theme, restroom included: the patch and
+         * the crack are what tell the player the wall can be opened, and a
+         * sector that quietly drew it as ordinary masonry would be hiding the
+         * one route the player has to be told about. */
+        if (level_wall_broken(lvl, col, row))
+          level_art_broken_wall_tile(r, lvl, col, row, x, y);
+        else
+          level_art_wall_tile(r, lvl, col, row, x, y);
+      }
+      else if (tile == TILE_WALL)
       {
         if (lvl->map.theme == LEVEL_THEME_RESTROOM)
           draw_restroom_wall_tile(r, lvl, col, row, x, y, ceiling_row);
@@ -4052,8 +4063,12 @@ static void render_world(Game *game)
     {
       for (int col = first_col; col < last_col; ++col)
       {
-        if (lvl->map.tiles[row][col] != TILE_EMPTY &&
-            lvl->map.tiles[row][col] != TILE_LADDER)
+        /* A hole blown through a wall is air, and air beside a wall is lit:
+         * without this the opening would be the one unlit place in the sector,
+         * which is exactly the shape of a missing tile. */
+        TileType lit_tile = lvl->map.tiles[row][col];
+        if (lit_tile != TILE_EMPTY && lit_tile != TILE_LADDER &&
+            !(lit_tile == TILE_WEAK_WALL && level_wall_broken(lvl, col, row)))
           continue;
         float x = col * (float)TILE_SIZE - cam_x;
         float y = row * (float)TILE_SIZE + oy;

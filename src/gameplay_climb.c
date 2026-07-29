@@ -38,7 +38,9 @@ static bool facade_tile_solid(const Level *level, int col, int row)
     {
         return false;
     }
-    return level->map.tiles[row][col] == TILE_WALL;
+    /* In bounds the ordinary rule applies, so masonry and a blocked-up opening
+     * cannot disagree about what stops the climber. */
+    return level_is_solid(level, col, row);
 }
 
 static bool facade_point_solid(const Level *level, float x, float y)

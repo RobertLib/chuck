@@ -334,8 +334,8 @@ static bool janitor_box_clear(const GameplayState *state,
     {
         for (int col = left; col <= right; ++col)
         {
-            TileType tile = level_tile(&state->level, col, row);
-            if (tile == TILE_WALL || tile == TILE_DOOR)
+            if (level_is_solid(&state->level, col, row) ||
+                level_tile(&state->level, col, row) == TILE_DOOR)
                 return false;
         }
     }
@@ -380,8 +380,8 @@ static bool janitor_side_blocked(const GameplayState *state,
     int bottom = (int)floorf((janitor->y + JANITOR_H - 1.0f) / TILE_SIZE);
     for (int row = top; row <= bottom; ++row)
     {
-        TileType tile = level_tile(&state->level, col, row);
-        if (tile == TILE_WALL || tile == TILE_DOOR)
+        if (level_is_solid(&state->level, col, row) ||
+            level_tile(&state->level, col, row) == TILE_DOOR)
             return true;
     }
     return false;
@@ -671,8 +671,8 @@ static bool receptionist_column_walkable(const GameplayState *state,
         (int)floorf((receptionist->y + RECEPTIONIST_H - 1.0f) / TILE_SIZE);
     for (int row = top; row <= bottom; ++row)
     {
-        TileType tile = level_tile(&state->level, col, row);
-        if (tile == TILE_WALL || tile == TILE_DOOR)
+        if (level_is_solid(&state->level, col, row) ||
+            level_tile(&state->level, col, row) == TILE_DOOR)
             return false;
     }
     return true;

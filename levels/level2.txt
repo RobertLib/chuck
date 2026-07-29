@@ -12,7 +12,7 @@
 #dScHi Jdc Hid#cBHdiG cdHiAc#dMHicBdiHcdi#
 ####H#####################################
 #   H       #             ################
-#idcHi B ZD # D id MciL Kd################
+#idcHi B ZD % D id MciL Kd################
 ##########################################
 
 SPAWNS 0 1

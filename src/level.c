@@ -256,6 +256,9 @@ bool level_load_data(Level *level, const char *name,
         case '#':
             level->map.tiles[row][col] = TILE_WALL;
             break;
+        case '%':
+            level->map.tiles[row][col] = TILE_WEAK_WALL;
+            break;
         case 'H':
             level->map.tiles[row][col] = TILE_LADDER;
             break;
@@ -695,7 +698,8 @@ bool level_load_data(Level *level, const char *name,
         while (lc - 1 >= 0)
         {
             TileType t = level->map.tiles[row_mp][lc - 1];
-            if (t == TILE_WALL || t == TILE_DOOR || t == TILE_ELEVATOR_SHAFT)
+            if (t == TILE_WALL || t == TILE_WEAK_WALL || t == TILE_DOOR ||
+                t == TILE_ELEVATOR_SHAFT)
                 break;
             lc--;
         }
@@ -703,7 +707,8 @@ bool level_load_data(Level *level, const char *name,
         while (rc + 1 < level->map.width)
         {
             TileType t = level->map.tiles[row_mp][rc + 1];
-            if (t == TILE_WALL || t == TILE_DOOR || t == TILE_ELEVATOR_SHAFT)
+            if (t == TILE_WALL || t == TILE_WEAK_WALL || t == TILE_DOOR ||
+                t == TILE_ELEVATOR_SHAFT)
                 break;
             rc++;
         }
@@ -874,7 +879,34 @@ TileType level_tile(const Level *level, int col, int row)
 
 bool level_is_solid(const Level *level, int col, int row)
 {
-    return level_tile(level, col, row) == TILE_WALL;
+    TileType tile = level_tile(level, col, row);
+    /* One solidity rule for the whole game: everything that collides, shades,
+     * blocks a bullet or stops a line of sight comes through here, so a weak
+     * wall that has been opened stops being solid everywhere at once. */
+    if (tile == TILE_WEAK_WALL)
+        return !level_wall_broken(level, col, row);
+    return tile == TILE_WALL;
+}
+
+bool level_wall_broken(const Level *level, int col, int row)
+{
+    if (col < 0 || col >= level->map.width ||
+        row < 0 || row >= level->map.height)
+    {
+        return false;
+    }
+    return level->runtime.wall_broken[row][col];
+}
+
+bool level_break_wall(Level *level, int col, int row)
+{
+    if (level_tile(level, col, row) != TILE_WEAK_WALL ||
+        level_wall_broken(level, col, row))
+    {
+        return false;
+    }
+    level->runtime.wall_broken[row][col] = true;
+    return true;
 }
 
 bool level_is_ladder(const Level *level, int col, int row)

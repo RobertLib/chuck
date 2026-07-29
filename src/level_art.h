@@ -126,8 +126,16 @@ typedef struct
 /* Draw the parallax backdrop for the scene's level theme. */
 void level_art_backdrop(const LevelArtScene *scene);
 
-/* Draw one solid tile in the level's wall material. */
+/* Draw one solid tile in the level's wall material. A weak wall gets the same
+ * material with the blocked-up opening over it, so the two can never drift
+ * apart into different-looking walls. */
 void level_art_wall_tile(SDL_Renderer *r, const Level *level,
                          int col, int row, float x, float y);
+
+/* What a weak wall leaves once a blast has opened it: the hole is the route,
+ * and the rubble in the bottom of it is what says the route was made rather
+ * than built. Draws nothing where the debris would have no floor to lie on. */
+void level_art_broken_wall_tile(SDL_Renderer *r, const Level *level,
+                                int col, int row, float x, float y);
 
 #endif /* CHUCK_LEVEL_ART_H */

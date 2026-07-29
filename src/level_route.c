@@ -24,19 +24,34 @@ bool route_inside(const RouteMap *route, int col, int row)
            row >= 0 && row < route->level->map.height;
 }
 
+/*
+ * Masonry as the map was authored, which is why this reads the map rather than
+ * asking `level_is_solid`. A weak wall counts as wall in both directions: the
+ * model will not walk through one, because opening it costs an explosive it
+ * knows nothing about, and it will stand on one, because a patch set into a
+ * floor slab is floor until the player chooses to blow his own floor away.
+ * Both halves matter — passable would make a blocked-up opening a route the
+ * sector could depend on, and unsupported would cut a floor in two wherever a
+ * patch was set into it.
+ */
+static bool route_masonry(const RouteMap *route, int col, int row)
+{
+    TileType tile = route->level->map.tiles[row][col];
+    return tile == TILE_WALL || tile == TILE_WEAK_WALL;
+}
+
 bool route_passable(const RouteMap *route, int col, int row)
 {
     if (!route_inside(route, col, row))
         return false;
-    if (route->level->map.tiles[row][col] == TILE_WALL)
+    if (route_masonry(route, col, row))
         return false;
     return !route->spike[row][col];
 }
 
 bool route_support(const RouteMap *route, int col, int row)
 {
-    if (route_inside(route, col, row + 1) &&
-        route->level->map.tiles[row + 1][col] == TILE_WALL)
+    if (route_inside(route, col, row + 1) && route_masonry(route, col, row + 1))
     {
         return true;
     }
@@ -303,7 +318,12 @@ int level_storey_rhythm(const LevelMap *map, int *bands, int max_bands)
     {
         int walls = 0;
         for (int col = 0; col < map->width; ++col)
-            walls += map->tiles[row][col] == TILE_WALL;
+        {
+            /* A patch is part of the architecture: a slab with one blocked-up
+             * opening in it is still the storey the sector is built out of. */
+            walls += map->tiles[row][col] == TILE_WALL ||
+                     map->tiles[row][col] == TILE_WEAK_WALL;
+        }
         if (walls * 100 < map->width * 85)
             continue;
         if (previous >= 0 && count < max_bands)

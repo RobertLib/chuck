@@ -262,10 +262,26 @@ static void test_all_embedded_levels_parse(void)
         }
 
         int bazooka_count = 0;
+        int grenade_count = 0;
         for (int item = 0; item < level.runtime.item_count; ++item)
+        {
             if (level.runtime.items[item].type == ITEM_BAZOOKA)
                 bazooka_count++;
+            if (level.runtime.items[item].type == ITEM_GRENADE)
+                grenade_count++;
+        }
         CHECK(bazooka_count == (((i + 1) % 2 == 0) ? 1 : 0));
+
+        /* Weak walls are shortcuts, and only a blast opens one: a sector that
+         * blocks an opening up without carrying anything that could reopen it
+         * has painted a wall the player can read as a route and never use.
+         * They never appear on a climb, where nothing can be set off at all. */
+        int weak_walls = 0;
+        for (int row = 0; row < level.map.height; ++row)
+            for (int col = 0; col < level.map.width; ++col)
+                weak_walls += level.map.tiles[row][col] == TILE_WEAK_WALL;
+        CHECK(weak_walls == 0 || bazooka_count > 0 || grenade_count > 0);
+        CHECK(!facade || weak_walls == 0);
         /* Nothing can be fired on the wall, so a rocket out there is dead
          * weight; every bazooka belongs to an interior sector. */
         CHECK(!facade || bazooka_count == 0);
@@ -674,6 +690,40 @@ static void test_editor_report_catches_broken_maps(void)
                   "############\n",
                   NULL, &report);
     CHECK(report_mentions(&report, ED_SEV_WARN, "no wall under it"));
+
+    /* A weak wall nothing in the sector can open is scenery. */
+    validate_text("############\n"
+                  "#S   %    E#\n"
+                  "############\n"
+                  "\n"
+                  "THEME LAB\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "nothing to open them with"));
+
+    /* Give it a grenade and the warning goes; the route model still refuses to
+     * walk through the patch, which is what keeps it a shortcut. */
+    validate_text("#############\n"
+                  "#S N %    E #\n"
+                  "#############\n"
+                  "\n"
+                  "THEME LAB\n",
+                  NULL, &report);
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "nothing to open them with"));
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "way out cannot be reached"));
+
+    /* On a wall there is nothing to set a blast off with, so a patch there
+     * never opens. */
+    validate_text("....Y....\n"
+                  ".........\n"
+                  "..#####..\n"
+                  "....%....\n"
+                  ".........\n"
+                  "....S....\n"
+                  "\n"
+                  "MODE FACADE\n"
+                  "THEME FACADE_STORM\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "never opens"));
 
     /* On a wall, a lone block seals the band it sits in. */
     validate_text("....Y....\n"
@@ -1172,6 +1222,7 @@ static void test_gameplay_reset_preserves_rng_only(void)
     state.facade_hazard_windup_timers[0] = 0.5f;
     state.facade_has_checkpoint = true;
     state.facade_checkpoint_y = 128.0f;
+    state.level.runtime.wall_broken[3][4] = true;
 
     gameplay_state_begin_level(&state);
 
@@ -1195,6 +1246,8 @@ static void test_gameplay_reset_preserves_rng_only(void)
     CHECK(state.facade_hazard_windup_timers[0] == 0.0f);
     CHECK(!state.facade_has_checkpoint);
     CHECK(state.facade_checkpoint_y == 0.0f);
+    /* A sector loaded again is the sector as authored, walls included. */
+    CHECK(!state.level.runtime.wall_broken[3][4]);
 }
 
 static void test_campaign_continue_flow(void)
@@ -2651,6 +2704,128 @@ static void test_gas_canister_requires_crawling_shot(void)
                             SFX_EXPLOSION));
 }
 
+static void test_weak_wall_only_opens_to_a_blast(void)
+{
+    /* The patch is set into the standing row, which is the useful case: the
+     * hole it leaves is exactly one tile tall, and the player box is exactly
+     * one tile tall, so the opening is walked through rather than climbed. */
+    static const char map[] =
+        "############\n"
+        "#S      % E#\n"
+        "############\n";
+
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 77);
+    CHECK(level_load_data(&state.level, "weak-wall", map, strlen(map),
+                          &state.rng));
+    CHECK(state.level.map.tiles[1][8] == TILE_WEAK_WALL);
+    CHECK(level_is_solid(&state.level, 8, 1));
+    CHECK(!level_wall_broken(&state.level, 8, 1));
+    player_reset(&state.player, &state.level);
+
+    /* A pistol round stops on it and leaves it standing: a blocked-up opening
+     * is a wall to everything except an explosion. */
+    state.player.bullets = 1;
+    state.player.active_weapon = PLAYER_WEAPON_PISTOL;
+    state.player.facing = 1;
+    Input input = {.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.bullets[0].active);
+    for (int frame = 0; frame < 60 && state.bullets[0].active; ++frame)
+        gameplay_combat_update_player_bullets(&state, &campaign, 1.0f / 120.0f);
+    CHECK(!state.bullets[0].active);
+    CHECK(level_is_solid(&state.level, 8, 1));
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_BULLET_IMPACT));
+    CHECK(!events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                             SFX_WALL_BREAK));
+
+    /* A grenade going off against it does open it, and says so. */
+    game_events_clear(&state.events);
+    int score_before = campaign.score;
+    state.grenade_count = 1;
+    state.grenades[0] = (Grenade){
+        .x = 7.0f * TILE_SIZE + 8.0f,
+        .y = 1.0f * TILE_SIZE + 12.0f,
+        .active = true,
+        .timer = 0.01f,
+        .grounded = true};
+    gameplay_combat_update_explosives(&state, &campaign, 0.02f);
+
+    CHECK(level_wall_broken(&state.level, 8, 1));
+    CHECK(!level_is_solid(&state.level, 8, 1));
+    CHECK(campaign.score == score_before + WEAK_WALL_SCORE);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_WALL_BREAK));
+    bool found_dust = false;
+    for (int i = 0; i < state.events.count; ++i)
+        found_dust |= state.events.items[i].type == GAME_EVENT_DUST;
+    CHECK(found_dust);
+    /* The blast was three tiles from the player, so opening a route is not
+     * paid for with a life. */
+    CHECK(!state.player.dying);
+
+    /* The hole is a hole: the player walks the tile he could not walk before,
+     * and a second blast has nothing left to take out. */
+    state.player.x = 7.0f * TILE_SIZE;
+    state.player.y = 1.0f * TILE_SIZE;
+    float vx = 200.0f;
+    float vy = 0.0f;
+    bool on_ground = false;
+    for (int frame = 0; frame < 30; ++frame)
+    {
+        level_move(&state.level, &state.player.x, &state.player.y, &vx, &vy,
+                   PLAYER_W, PLAYER_H, 1.0f / 60.0f, false, &on_ground, false);
+    }
+    CHECK(state.player.x > 9.0f * TILE_SIZE);
+    CHECK(gameplay_break_walls_in_radius(&state, &campaign,
+                                         8.5f * TILE_SIZE,
+                                         1.5f * TILE_SIZE,
+                                         GRENADE_RADIUS) == 0);
+
+    /* Loading the sector again brings the wall back: the hole is per-run state
+     * and the map is still what the file says it is. */
+    GameplayState reloaded = {0};
+    rng_seed(&reloaded.rng, 77);
+    CHECK(level_load_data(&reloaded.level, "weak-wall", map, strlen(map),
+                          &reloaded.rng));
+    CHECK(level_is_solid(&reloaded.level, 8, 1));
+}
+
+static void test_weak_wall_is_masonry_to_the_route_model(void)
+{
+    /* Judged as authored: a way out behind a patch is a way out the model
+     * cannot reach, because opening it costs an explosive the model knows
+     * nothing about. */
+    static const char sealed[] =
+        "###########\n"
+        "#S   %   E#\n"
+        "###########\n";
+    static RouteMap route;
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 91);
+    CHECK(level_load_data(&level, "weak-wall route", sealed, strlen(sealed),
+                          &rng));
+    route_map_init(&route, &level);
+    route_flood(&route, route_player_start(&route));
+    CHECK(!route_reaches(&route, level.map.exit_col, level.map.exit_row));
+
+    /* And it is floor: a patch set into a slab must not cut the storey it is
+     * part of in two. */
+    static const char floor_patch[] =
+        "#########\n"
+        "#S     E#\n"
+        "###%#####\n";
+    CHECK(level_load_data(&level, "weak-wall floor", floor_patch,
+                          strlen(floor_patch), &rng));
+    route_map_init(&route, &level);
+    CHECK(route_standing(&route, 3, 1));
+    route_flood(&route, route_player_start(&route));
+    CHECK(route_reaches(&route, level.map.exit_col, level.map.exit_row));
+}
+
 static void test_empty_pistol_uses_close_range_knife(void)
 {
     GameplayState state = {0};
@@ -4002,6 +4177,8 @@ int main(void)
     test_bazooka_pickup_and_rocket_explosion();
     test_player_can_switch_between_carried_weapons();
     test_gas_canister_requires_crawling_shot();
+    test_weak_wall_only_opens_to_a_blast();
+    test_weak_wall_is_masonry_to_the_route_model();
     test_empty_pistol_uses_close_range_knife();
     test_ladder_knife_attacks_in_aimed_direction();
     test_crate_movement_emits_sounds();

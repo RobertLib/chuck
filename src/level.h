@@ -11,6 +11,10 @@ typedef enum
 {
     TILE_EMPTY = 0,
     TILE_WALL,
+    /* A patched-up opening: solid in every way a wall is until an explosion
+     * takes it out. The hole it leaves is per-run state and lives in
+     * LevelRuntime, so the parsed map stays exactly what the file says. */
+    TILE_WEAK_WALL,
     TILE_LADDER,
     TILE_DOOR,
     TILE_SUBLEVEL_DOOR,
@@ -257,6 +261,10 @@ typedef struct
 typedef struct
 {
     bool exit_unlocked;
+    /* Which weak walls have been blown open, by tile. A hole is per-run state
+     * like a fallen panel or a broken crate: it outlives a lost life and is
+     * gone the moment the sector is loaded again. */
+    bool wall_broken[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
     Item items[MAX_ITEMS];
     int item_count;
     int card_count;
@@ -308,6 +316,14 @@ const char *level_theme_name(LevelTheme theme);
 TileType level_tile(const Level *level, int col, int row);
 bool level_is_solid(const Level *level, int col, int row);
 bool level_is_ladder(const Level *level, int col, int row);
+
+/* True when this tile is a weak wall that has already been blown open.
+ * Out-of-bounds is never broken — it is the world edge, not a wall. */
+bool level_wall_broken(const Level *level, int col, int row);
+
+/* Open the weak wall at this tile. False when there was none left standing,
+ * so a caller can tell whether the blast actually took something out. */
+bool level_break_wall(Level *level, int col, int row);
 void level_update_elevators(Level *level, float dt);
 void level_update_falling_platforms(Level *level, float dt);
 void level_update_moving_platforms(Level *level, float dt);
