@@ -25,6 +25,8 @@ static const SDL_Color COL_RUST = {198, 62, 50, 255};
 static const SDL_Color COL_AMBER = {248, 188, 74, 255};
 static const SDL_Color COL_LAMP = {150, 206, 214, 255}; /* cold street lamp */
 static const SDL_Color COL_WARM = {240, 190, 112, 255}; /* interior light   */
+static const SDL_Color COL_SODIUM = {182, 116, 62, 255}; /* what the road
+                                                          * throws back up  */
 
 /* The tower: eight office floors over a lit lobby, tapering slightly toward
  * the roof because the shot looks up at it from street level. */
@@ -1087,115 +1089,473 @@ static void render_street(SDL_Renderer *r, const Intro *intro,
 /* ---- Wordmark -------------------------------------------------------- */
 
 /*
- * Nine rows by seven columns with two-cell strokes: heavy enough to carry an
- * extrusion and a bevel, which is what makes a wordmark read as a cast object
- * rather than as text that happens to be large.
+ * The title is signage, not text.
+ *
+ * A wordmark filled with a vertical rainbow is the one thing in this shot that
+ * could not be in it: every other surface in the frame is lit from somewhere,
+ * and the somewhere is the moon at the top left.  So the five letters are
+ * plates cut from the same slate the game builds its walls out of, bolted up
+ * over the city and lit by that moon — drawn in the three passes every other
+ * solid in Chuck is drawn in (material, then form, then edges), weathered by
+ * the same rust that stains the building, and legible because the brightest
+ * edge in the frame runs along their top faces rather than because the fill
+ * shouts.
+ *
+ * The letterforms are condensed, because a plate half again as tall as it is
+ * wide reads as a title where a square grid of cells reads as an arcade
+ * cabinet whatever is done to its colour.  They are held as convex polygons
+ * rather than as rows of characters for two reasons: the K keeps one straight
+ * diagonal of even weight instead of a staircase, and every outer corner can
+ * carry the same cut.  Then they are rasterised at one screen pixel — the
+ * resolution the rest of the frame is drawn at, and the other half of why the
+ * old cell grid read as a different, coarser picture pasted over this one.
  */
-#define LOGO_ROWS 9
-#define LOGO_COLS 7
+#define MARK_W 48       /* one plate, in pixels                            */
+#define MARK_H 76
+#define MARK_STROKE 12  /* stroke weight: bold enough to hold a lit edge    */
+#define MARK_GAP 11     /* tight, so five plates read as one sign — but not
+                         * so tight that one plate's edge fouls the next    */
+#define MARK_CUT 7      /* the chamfer taken off every outer corner         */
+#define MARK_TERM 10    /* how far a terminal is cut back on the diagonal   */
+#define MARK_DEPTH 3    /* how far a plate stands off what is behind it     */
 
-static const char *logo_glyph(char letter, int row)
+/* Where a plate is fixed, and it is the same two places on all five of them:
+ * a fixing pattern that wanders from letter to letter reads as dirt on the
+ * screen rather than as ironmongery holding a sign up. */
+#define MARK_BOLT_TOP 11
+#define MARK_BOLT_BOTTOM 57
+
+/* One pixel of margin all round: the outline and the edge classifier both ask
+ * about neighbours, and clamping at the border would report a letter's own
+ * edge as solid and swallow it. */
+#define MARK_BUF_W (MARK_W + 2)
+#define MARK_BUF_H (MARK_H + 2)
+
+typedef struct
 {
-    static const char *c[LOGO_ROWS] = {
-        ".11111.", "1111111", "11...11", "11.....", "11.....",
-        "11.....", "11...11", "1111111", ".11111."};
-    static const char *h[LOGO_ROWS] = {
-        "11...11", "11...11", "11...11", "1111111", "1111111",
-        "11...11", "11...11", "11...11", "11...11"};
-    static const char *u[LOGO_ROWS] = {
-        "11...11", "11...11", "11...11", "11...11", "11...11",
-        "11...11", "11...11", "1111111", ".11111."};
-    static const char *k[LOGO_ROWS] = {
-        "11...11", "11..11.", "11.11..", "1111...", "111....",
-        "1111...", "11.11..", "11..11.", "11...11"};
+    float x[6], y[6];
+    int n;
+} MarkPoly;
+
+typedef struct
+{
+    MarkPoly part[3];
+    int parts;
+} MarkPlate;
+
+static MarkPoly mark_poly(const float *xy, int n)
+{
+    MarkPoly poly;
+    SDL_zero(poly);
+    poly.n = n;
+    for (int i = 0; i < n; ++i)
+    {
+        poly.x[i] = xy[i * 2];
+        poly.y[i] = xy[i * 2 + 1];
+    }
+    return poly;
+}
+
+/*
+ * Every letter is at most three convex pieces in a 48x76 box, and the pieces
+ * are allowed to overlap — a union is what keeps a joint from opening up at
+ * the chamfers.
+ */
+static MarkPlate mark_plate(char letter)
+{
+    const float w = (float)MARK_W;
+    const float h = (float)MARK_H;
+    const float s = (float)MARK_STROKE;
+    const float c = (float)MARK_CUT;
+    const float t = (float)MARK_TERM;
+
+    MarkPlate p;
+    SDL_zero(p);
+    p.parts = 3;
 
     switch (letter)
     {
     case 'C':
-        return c[row];
+    {
+        /* Both terminals cut back on the diagonal.  A squared C at this weight
+         * with blunt terminals closes its own aperture up; the cut opens the
+         * mouth without thinning the stroke. */
+        const float top[] = {c, 0.0f, w, 0.0f, w - t, s, 0.0f, s, 0.0f, c};
+        const float bottom[] = {0.0f, h - c, 0.0f, h - s, w - t, h - s,
+                                w, h, c, h};
+        const float stem[] = {0.0f, c, s, c, s, h - c, 0.0f, h - c};
+        p.part[0] = mark_poly(top, 5);
+        p.part[1] = mark_poly(bottom, 5);
+        p.part[2] = mark_poly(stem, 4);
+        break;
+    }
     case 'H':
-        return h[row];
+    {
+        const float left[] = {c, 0.0f, s, 0.0f, s, h, c, h, 0.0f, h - c,
+                              0.0f, c};
+        const float right[] = {w - s, 0.0f, w - c, 0.0f, w, c, w, h - c,
+                               w - c, h, w - s, h};
+        /* Bar centre a shade above the middle: set at the true half it reads
+         * as having dropped, because the eye weights the lower counter more. */
+        const float bar_y = h * 0.455f - s * 0.5f;
+        const float bar[] = {s, bar_y, w - s, bar_y, w - s, bar_y + s,
+                             s, bar_y + s};
+        p.part[0] = mark_poly(left, 6);
+        p.part[1] = mark_poly(right, 6);
+        p.part[2] = mark_poly(bar, 4);
+        break;
+    }
     case 'U':
-        return u[row];
+    {
+        const float left[] = {c, 0.0f, s, 0.0f, s, h - s, 0.0f, h - s,
+                              0.0f, c};
+        const float right[] = {w - s, 0.0f, w - c, 0.0f, w, c, w, h - s,
+                               w - s, h - s};
+        const float bottom[] = {0.0f, h - s, w, h - s, w - c, h, c, h};
+        p.part[0] = mark_poly(left, 5);
+        p.part[1] = mark_poly(right, 5);
+        p.part[2] = mark_poly(bottom, 4);
+        break;
+    }
     default:
-        return k[row];
+    {
+        /*
+         * The arm and the leg are parallelograms, and that is the whole reason
+         * the letters are polygons: both long edges of each share one slope,
+         * so the stroke holds its weight from the stem out to the tip.  The
+         * horizontal span a bar needs at its ends to measure `s` across is
+         * s * sqrt(1 + m^2) / m — get that wrong and the K goes thin at the
+         * corners while the other four letters stay heavy.
+         */
+        const float stem[] = {c, 0.0f, s, 0.0f, s, h, c, h, 0.0f, h - c,
+                              0.0f, c};
+        const float arm_y = h * 0.45f;
+        const float arm_m = arm_y / (w - s);
+        const float arm_dx = s * sqrtf(1.0f + arm_m * arm_m) / arm_m;
+        const float arm[] = {w - arm_dx, 0.0f, w - c, 0.0f,
+                             w - c * 0.7f, arm_m * c * 0.7f,
+                             s, arm_y, s, arm_m * (w - arm_dx - s)};
+        const float leg_y = h * 0.42f;
+        const float leg_m = (h - leg_y) / (w - s);
+        const float leg_dx = s * sqrtf(1.0f + leg_m * leg_m) / leg_m;
+        const float leg[] = {s, leg_y, s, h - leg_m * (w - leg_dx - s),
+                             w - leg_dx, h, w - c, h,
+                             w - c * 0.7f, h - leg_m * c * 0.7f};
+        p.part[0] = mark_poly(stem, 6);
+        p.part[1] = mark_poly(arm, 5);
+        p.part[2] = mark_poly(leg, 5);
+        break;
+    }
+    }
+    return p;
+}
+
+/* Convex, either winding: the sign of the cross product has to agree for every
+ * edge, and which sign it is depends on how the piece happens to be wound. */
+static bool mark_in_poly(const MarkPoly *poly, float x, float y)
+{
+    int above = 0, below = 0;
+
+    for (int i = 0; i < poly->n; ++i)
+    {
+        int j = (i + 1) % poly->n;
+        float ex = poly->x[j] - poly->x[i];
+        float ey = poly->y[j] - poly->y[i];
+        float cross = ex * (y - poly->y[i]) - ey * (x - poly->x[i]);
+        if (cross > 0.0f)
+            ++above;
+        else if (cross < 0.0f)
+            ++below;
+    }
+    return above == 0 || below == 0;
+}
+
+static void mark_rasterise(char letter, Uint8 *mask)
+{
+    MarkPlate plate = mark_plate(letter);
+
+    SDL_memset(mask, 0, (size_t)(MARK_BUF_W * MARK_BUF_H));
+    for (int y = 0; y < MARK_H; ++y)
+    {
+        for (int x = 0; x < MARK_W; ++x)
+        {
+            for (int i = 0; i < plate.parts; ++i)
+            {
+                if (mark_in_poly(&plate.part[i], (float)x + 0.5f,
+                                 (float)y + 0.5f))
+                {
+                    mask[(y + 1) * MARK_BUF_W + (x + 1)] = 1;
+                    break;
+                }
+            }
+        }
     }
 }
 
-static bool logo_cell(char letter, int row, int col)
+static bool mark_solid(const Uint8 *mask, int x, int y)
 {
-    if (row < 0 || row >= LOGO_ROWS || col < 0 || col >= LOGO_COLS)
+    if (x < -1 || x > MARK_W || y < -1 || y > MARK_H)
         return false;
-    return logo_glyph(letter, row)[col] == '1';
+    return mask[(y + 1) * MARK_BUF_W + (x + 1)] != 0;
 }
 
-static void logo_pass(SDL_Renderer *r, char letter, float x, float y,
-                      float cell, SDL_Color color, float grow)
+static bool mark_grown(const Uint8 *mask, int x, int y)
 {
-    for (int row = 0; row < LOGO_ROWS; ++row)
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx)
+            if (mark_solid(mask, x + dx, y + dy))
+                return true;
+    return false;
+}
+
+/* One flat pass over the letter, emitted as horizontal runs rather than as one
+ * rect per pixel — a plate is three or four spans a row, not four hundred. */
+static void mark_fill(SDL_Renderer *r, const Uint8 *mask, float ox, float oy,
+                      SDL_Color color, bool grown)
+{
+    set_color(r, color);
+    for (int y = -1; y <= MARK_H; ++y)
     {
-        for (int col = 0; col < LOGO_COLS; ++col)
+        int run = -1;
+        for (int x = -1; x <= MARK_W + 1; ++x)
         {
-            if (!logo_cell(letter, row, col))
-                continue;
-            color_rect(r, color, x + (float)col * cell - grow,
-                       y + (float)row * cell - grow,
-                       cell + grow * 2.0f, cell + grow * 2.0f);
+            bool on = x <= MARK_W && (grown ? mark_grown(mask, x, y)
+                                            : mark_solid(mask, x, y));
+            if (on && run < 0)
+                run = x;
+            else if (!on && run >= 0)
+            {
+                fill_rect(r, ox + (float)run, oy + (float)y,
+                          (float)(x - run), 1.0f);
+                run = -1;
+            }
         }
     }
 }
 
-static void draw_logo_letter(SDL_Renderer *r, char letter, float x, float y,
-                             float cell, float level, float sweep_x)
+/*
+ * Which face of the plate a pixel belongs to.  Light comes from the upper left
+ * — the moon is drawn there and the tower is shaded for it — so the top and
+ * the left flank catch it and the underside and the right flank turn away.
+ */
+enum
 {
-    const float depth = 5.0f;
+    MARK_BODY,
+    MARK_CROWN,  /* the top face proper */
+    MARK_ARRIS,  /* the row under it, where the chamfer rolls over */
+    MARK_BASE,
+    MARK_RIM_L,
+    MARK_RIM_R
+};
 
-    /* Outlined extrusion first, then the outlined face on top of it. */
-    logo_pass(r, letter, x + depth, y + depth, cell,
-              fx_dim((SDL_Color){6, 8, 12, 255}, 1.0f), 2.0f);
-    logo_pass(r, letter, x + depth, y + depth, cell,
-              fx_dim((SDL_Color){104, 34, 32, 255}, level), 0.0f);
-    logo_pass(r, letter, x, y, cell, (SDL_Color){6, 8, 12, 255}, 2.0f);
+/*
+ * Broad patches of light and shade across the plate, on a lattice four cells to
+ * the stroke — the same drift the game lays over its wall tiles, and there for
+ * the same reason.  A face in one flat value is a swatch, and a row of bevelled
+ * swatches is what a die-cut sticker looks like however well the bevel is done.
+ * Smooth, so it never competes with the edge it sits under, and salted per
+ * plate so no two letters weather the same way.
+ */
+static float mark_drift(unsigned salt, int x, int y)
+{
+    const float cell = 15.0f;
+    float fx = (float)x / cell;
+    float fy = (float)y / cell;
+    int x0 = (int)floorf(fx);
+    int y0 = (int)floorf(fy);
+    float tx = smoothstep01(fx - (float)x0);
+    float ty = smoothstep01(fy - (float)y0);
+    float value = 0.0f;
 
-    for (int row = 0; row < LOGO_ROWS; ++row)
+    for (int j = 0; j <= 1; ++j)
     {
-        /* Hot at the top, cooling into rust at the baseline: the same warm
-         * ramp the rest of the game lights interiors with. */
-        float t = (float)row / (float)(LOGO_ROWS - 1);
-        SDL_Color face = t < 0.5f
-                             ? fx_mix((SDL_Color){255, 250, 236, 255},
-                                      (SDL_Color){250, 196, 96, 255}, t * 2.0f)
-                             : fx_mix((SDL_Color){250, 196, 96, 255},
-                                      (SDL_Color){216, 96, 60, 255},
-                                      (t - 0.5f) * 2.0f);
-
-        for (int col = 0; col < LOGO_COLS; ++col)
+        for (int i = 0; i <= 1; ++i)
         {
-            if (!logo_cell(letter, row, col))
-                continue;
-            float bx = x + (float)col * cell;
-            float by = y + (float)row * cell;
-
-            SDL_Color lit = face;
-            float boost = 1.0f - fabsf(bx + cell * 0.5f - sweep_x) / 30.0f;
-            if (boost > 0.0f)
-                lit = fx_mix(lit, (SDL_Color){255, 255, 250, 255}, boost * 0.7f);
-            lit = fx_dim(lit, level);
-            color_rect(r, lit, bx, by, cell, cell);
-
-            /* Bevel only where the letterform actually has an edge, so the
-             * face does not end up ruled into a grid of cells. */
-            if (!logo_cell(letter, row - 1, col))
-                color_rect(r, fx_mix(lit, (SDL_Color){255, 255, 252, 255}, 0.55f),
-                           bx, by, cell, 2.0f);
-            if (!logo_cell(letter, row + 1, col))
-                color_rect(r, fx_dim(lit, 0.6f), bx, by + cell - 2.0f, cell, 2.0f);
-            if (!logo_cell(letter, row, col + 1))
-                color_rect(r, fx_dim(lit, 0.74f), bx + cell - 2.0f, by, 2.0f, cell);
-            if (!logo_cell(letter, row, col - 1))
-                color_rect(r, fx_mix(lit, (SDL_Color){255, 248, 232, 255}, 0.22f),
-                           bx, by, 2.0f, cell);
+            unsigned hash = fx_hash((unsigned)(x0 + i) * 73856093u ^
+                                    (unsigned)(y0 + j) * 19349663u ^ salt);
+            value += (float)(hash % 1024u) * (1.0f / 1024.0f) *
+                     (i ? tx : 1.0f - tx) * (j ? ty : 1.0f - ty);
         }
+    }
+    return value * 2.0f - 1.0f;
+}
+
+static int mark_facing(const Uint8 *mask, int x, int y)
+{
+    if (!mark_solid(mask, x, y - 1))
+        return MARK_CROWN;
+    if (!mark_solid(mask, x, y - 2))
+        return MARK_ARRIS;
+    if (!mark_solid(mask, x, y + 1))
+        return MARK_BASE;
+    if (!mark_solid(mask, x - 1, y))
+        return MARK_RIM_L;
+    if (!mark_solid(mask, x + 1, y))
+        return MARK_RIM_R;
+    return MARK_BODY;
+}
+
+static SDL_Color mark_face_color(int facing, SDL_Color body, float glint)
+{
+    /*
+     * How much of a passing beam each face takes.  The crown is nearly cream
+     * already, so putting the beam mostly there makes it a whiter white that
+     * nobody sees; it is the body and the flanks — the faces a light coming
+     * across the sign actually turns toward — that carry the sweep, and the
+     * underside barely at all.
+     */
+    static const float take[6] = {0.62f, 0.26f, 0.52f, 0.16f, 0.70f, 0.34f};
+    SDL_Color color = body;
+
+    switch (facing)
+    {
+    case MARK_CROWN:
+        color = fx_mix(body, FX_CREAM, 0.78f);
+        break;
+    case MARK_ARRIS:
+        color = fx_mix(body, FX_CREAM, 0.30f);
+        break;
+    case MARK_BASE:
+        /* Cooled by turning away from the moon, then warmed again by the
+         * street: the sign is hung over a lit road, and a night exterior with
+         * nothing but cold in its shadows is a night exterior in a vacuum.
+         * The same bounce the game lays off its own floors, aimed upward. */
+        color = fx_mix(fx_mix(body, COL_INK, 0.60f), COL_SODIUM, 0.34f);
+        break;
+    case MARK_RIM_L:
+        color = fx_mix(body, FX_CREAM, 0.26f);
+        break;
+    case MARK_RIM_R:
+        color = fx_mix(fx_mix(body, COL_INK, 0.40f), COL_SODIUM, 0.16f);
+        break;
+    default:
+        break;
+    }
+    if (glint > 0.0f)
+        color = fx_mix(color, (SDL_Color){255, 246, 226, 255},
+                       glint * take[facing]);
+    return color;
+}
+
+/* A rivet, four pixels of it: the same fixing the game's walls carry on their
+ * stiffeners every fourth course, so the sign is made of the building's steel
+ * rather than of nothing in particular.  Lit on the same corner as everything
+ * else on the plate, or it reads as a hole instead of as a head. */
+static void draw_mark_bolt(SDL_Renderer *r, float x, float y, float level)
+{
+    color_rect(r, fx_dim(COL_INK, level), x, y, 4.0f, 4.0f);
+    color_rect(r, fx_dim(FX_STEEL, level), x, y, 3.0f, 3.0f);
+    color_rect(r, fx_dim(FX_PALE, level), x, y, 2.0f, 1.0f);
+    color_rect(r, fx_dim(fx_mix(FX_STEEL_DK, COL_INK, 0.5f), level),
+               x + 2.0f, y + 2.0f, 1.0f, 1.0f);
+}
+
+/*
+ * Rust bleeds out of a fixing and runs down the plate under it, and it stops
+ * where the plate stops — which is why the streak walks the mask instead of
+ * being drawn as a rectangle: on the C it runs down the stem and dies at the
+ * chamfer, on the K it dies at the leg.
+ */
+static void draw_mark_stain(SDL_Renderer *r, const Uint8 *mask, float ox,
+                            float oy, int bx, int by, float level)
+{
+    static const SDL_Color rust = {146, 68, 40, 255};
+    const int reach = 34;
+
+    for (int col = 0; col < 4; ++col)
+    {
+        int x = bx + col - 1;
+        for (int step = 0; step < reach; step += 2)
+        {
+            int y = by + 4 + step;
+            if (!mark_solid(mask, x, y) || !mark_solid(mask, x, y + 1))
+                break;
+            float fade = 1.0f - (float)step / (float)reach;
+            Uint8 alpha = (Uint8)(96.0f * fade * fade * level *
+                                  (col == 0 || col == 3 ? 0.45f : 1.0f));
+            if (alpha == 0)
+                break;
+            fx_rect_a(r, rust, alpha, ox + (float)x, oy + (float)y, 1.0f, 2.0f);
+        }
+    }
+}
+
+static void draw_mark_letter(SDL_Renderer *r, char letter, unsigned salt,
+                             float ox, float oy, float level, float glint_x)
+{
+    Uint8 mask[MARK_BUF_W * MARK_BUF_H];
+    const float depth = (float)MARK_DEPTH;
+
+    mark_rasterise(letter, mask);
+
+    /* The plate stands off the sky: its own dark first, then the thickness of
+     * its edge, then the outline of the face over that.  The offset goes down
+     * and to the right because the light is up and to the left. */
+    mark_fill(r, mask, ox + depth, oy + depth, COL_INK, true);
+    mark_fill(r, mask, ox + depth, oy + depth,
+              fx_dim(fx_mix(FX_STEEL_DK, COL_INK, 0.45f), level), false);
+    mark_fill(r, mask, ox, oy, COL_INK, true);
+
+    for (int y = 0; y < MARK_H; ++y)
+    {
+        /* Steel, lighter at the top of the plate than at its foot — one ramp
+         * across the whole letter, so the five plates read as cut from one
+         * sheet — with the weather in the bottom of it, where water sits. */
+        float t = (float)y / (float)(MARK_H - 1);
+        SDL_Color body = fx_mix(fx_mix(FX_STEEL_LT, FX_STEEL_DK, t),
+                                COL_SODIUM, t * t * 0.16f);
+        int run = -1;
+        int run_key = -1;
+        SDL_Color run_color = COL_INK;
+
+        for (int x = 0; x <= MARK_W; ++x)
+        {
+            int key = -1;
+            SDL_Color color = COL_INK;
+
+            if (x < MARK_W && mark_solid(mask, x, y))
+            {
+                int facing = mark_facing(mask, x, y);
+                int glint = 0;
+
+                /* A beam off the street crossing the sign.  The drift and the
+                 * beam are both quantised, because a run of pixels is only one
+                 * rect while its colour is one colour. */
+                float reach = 1.0f - fabsf((float)x + ox - glint_x) / 34.0f;
+                if (reach > 0.0f)
+                    glint = (int)(reach * reach * 8.0f + 0.5f);
+
+                int shade = (int)(mark_drift(salt, x, y) * 2.5f + 3.0f);
+                float drift = (float)shade / 2.5f - 1.2f;
+                SDL_Color plate = drift > 0.0f
+                                      ? fx_mix(body, FX_CREAM, drift * 0.11f)
+                                      : fx_mix(body, COL_INK, -drift * 0.15f);
+
+                key = (facing * 16 + glint) * 8 + shade;
+                color = fx_dim(mark_face_color(facing, plate,
+                                               (float)glint / 8.0f), level);
+            }
+
+            if (key != run_key)
+            {
+                if (run >= 0)
+                    color_rect(r, run_color, ox + (float)run, oy + (float)y,
+                               (float)(x - run), 1.0f);
+                run = key >= 0 ? x : -1;
+                run_key = key;
+                run_color = color;
+            }
+        }
+    }
+
+    /* Both fixings go down the left stem, which every one of the five letters
+     * has, at the same two heights — so the pattern reads across the word. */
+    static const int bolt_y[2] = {MARK_BOLT_TOP, MARK_BOLT_BOTTOM};
+    const int bolt_x = MARK_STROKE / 2 - 2;
+    for (int i = 0; i < 2; ++i)
+    {
+        draw_mark_stain(r, mask, ox, oy, bolt_x, bolt_y[i], level);
+        draw_mark_bolt(r, ox + (float)bolt_x, oy + (float)bolt_y[i], level);
     }
 }
 
@@ -1203,32 +1563,32 @@ static void render_logo(SDL_Renderer *r, const Intro *intro,
                         const IntroScene *s)
 {
     static const char *word = "CHUCK";
-    const float cell = 8.0f;
-    const float letter_w = cell * (float)LOGO_COLS;
-    const float advance = letter_w + 10.0f;
-    const float logo_w = advance * 4.0f + letter_w;
-    const float x = (s->w - logo_w) * 0.5f;
-    const float y = 26.0f;
+    const float advance = (float)(MARK_W + MARK_GAP);
+    const float mark_w = advance * 4.0f + (float)MARK_W;
+    const float x = (s->w - mark_w) * 0.5f;
+    const float y = 30.0f;
 
-    /* Two-stage bloom: the wordmark has to sit in the night, not on it. */
-    fx_glow(r, s->w * 0.5f, y + 46.0f, 300.0f, (SDL_Color){208, 96, 70, 255}, 22);
-    fx_glow(r, s->w * 0.5f, y + 40.0f, 150.0f, (SDL_Color){238, 158, 96, 255}, 20);
+    /* Haze rather than bloom.  A steel sign does not glow; what it needs is
+     * the city's light lifting the sky just behind it, so the plates have
+     * something to be dark against at the top of the frame. */
+    fx_glow(r, s->w * 0.5f, y + 40.0f, 330.0f, (SDL_Color){52, 76, 96, 255}, 30);
+    fx_glow(r, s->w * 0.5f, y + 62.0f, 170.0f, (SDL_Color){70, 92, 108, 255}, 22);
 
-    float sweep = fmodf(intro->time, 8.0f);
-    float sweep_x = sweep < 1.5f
-                        ? x - 46.0f + (sweep / 1.5f) * (logo_w + 92.0f)
+    float sweep = fmodf(intro->time, 9.0f);
+    float glint_x = sweep < 1.8f
+                        ? x - 40.0f + (sweep / 1.8f) * (mark_w + 80.0f)
                         : -4000.0f;
 
     for (int i = 0; i < 5; ++i)
     {
-        /* Each letter drops the last few pixels into place. */
+        /* Each plate drops the last few pixels onto its fixings. */
         float reveal = smoothstep01((intro->time - 0.05f - (float)i * 0.08f) /
                                     0.36f);
         if (reveal <= 0.0f)
             continue;
-        draw_logo_letter(r, word[i], x + (float)i * advance,
-                         y + (1.0f - reveal) * 9.0f, cell,
-                         0.4f + reveal * 0.6f, sweep_x);
+        draw_mark_letter(r, word[i], (unsigned)i * 977u + 41u,
+                         x + (float)i * advance, y + (1.0f - reveal) * 8.0f,
+                         0.34f + reveal * 0.66f, glint_x);
     }
 
     /* Tagline, set between two rules so it reads as part of the wordmark. */
@@ -1238,7 +1598,7 @@ static void render_logo(SDL_Renderer *r, const Intro *intro,
     const char *line = "THEY TOOK HER. BRING HER HOME.";
     const float track = 3.0f;
     float width = tracked_width(line, 1.0f, track);
-    float ty = y + LOGO_ROWS * cell + 22.0f;
+    float ty = y + (float)MARK_H + 24.0f;
     draw_tracked_centered(r, s->w * 0.5f, ty, 1.0f, track,
                           fx_dim((SDL_Color){196, 202, 196, 255}, tag), line);
 

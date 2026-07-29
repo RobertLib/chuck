@@ -415,6 +415,21 @@ the staff side of the desk stays legible.
   dimmed to night, and stands in the lamp's pool), and every window that is lit
   on the tower is asked for twice, once by the facade and once by the pavement
   reflecting it, so the two can never disagree.
+- **The wordmark is a thing in the shot, not type over it.** It used to be a
+  seven-by-nine bitmap font drawn at eight pixels a cell and filled with a
+  cream-to-red gradient, which made it the one surface in the frame lit from
+  nowhere — and a grid four times coarser than the picture behind it, so it read
+  as a second, cheaper drawing pasted on. It is now five plates of steel bolted
+  over the city and lit by the same moon as the tower: the game's own slate ramp
+  for the material, the drift-and-edges passes a wall gets for the form, a warm
+  bounce off the lit street on every underside, and rust bleeding out of the
+  fixings. Two consequences worth keeping. The letterforms are convex polygons
+  rasterised at one screen pixel rather than cells of a character grid, because
+  that is what lets the K hold an even stroke down a straight diagonal and every
+  corner carry the same cut. And the sweeping beam is weighted *away* from the
+  top faces (`take[]` in `mark_face_color`): they are already near cream, so a
+  highlight spent there is a whiter white nobody sees, and the sweep has to land
+  on the body and the flanks to read at all.
 - **`SDL_RenderDebugText` is an 8x8 bitmap: draw it at scale 1.0 or a multiple
   of it.** Any other scale resamples the glyphs, and a line of mushy type
   cheapens a screen faster than anything else on it. If a row does not fit at
