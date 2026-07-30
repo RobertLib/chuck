@@ -913,14 +913,14 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt)
         }
 
         int col = (int)floorf((bullet->x + width * 0.5f +
-                               (bullet->vx > 0.0f    ? width * 0.5f - 1.0f
-                                : bullet->vx < 0.0f  ? -(width * 0.5f)
-                                                     : 0.0f)) /
+                               (bullet->vx > 0.0f   ? width * 0.5f - 1.0f
+                                : bullet->vx < 0.0f ? -(width * 0.5f)
+                                                    : 0.0f)) /
                               TILE_SIZE);
         int row = (int)floorf((bullet->y + height * 0.5f +
-                               (bullet->vy > 0.0f    ? height * 0.5f - 1.0f
-                                : bullet->vy < 0.0f  ? -(height * 0.5f)
-                                                     : 0.0f)) /
+                               (bullet->vy > 0.0f   ? height * 0.5f - 1.0f
+                                : bullet->vy < 0.0f ? -(height * 0.5f)
+                                                    : 0.0f)) /
                               TILE_SIZE);
         if (level_is_solid(&state->level, col, row))
         {
@@ -958,23 +958,45 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt)
     }
 }
 
-void gameplay_combat_check_contacts(GameplayState *state)
+void gameplay_combat_check_contacts(GameplayState *state,
+                                    CampaignState *campaign)
 {
     if (state->invuln_timer > 0.0f)
         return;
     float height = player_height(state);
     for (int i = 0; i < state->enemy_count; ++i)
     {
-        const Enemy *enemy = &state->enemies[i];
-        if (!enemy->dead &&
-            gameplay_boxes_overlap(state->player.x, state->player.y,
-                                   PLAYER_W, height,
-                                   enemy->x, enemy->y,
-                                   ENEMY_W, ENEMY_H))
+        Enemy *enemy = &state->enemies[i];
+        if (enemy->dead ||
+            !gameplay_boxes_overlap(state->player.x, state->player.y,
+                                    PLAYER_W, height,
+                                    enemy->x, enemy->y,
+                                    ENEMY_W, ENEMY_H))
+            continue;
+
+        /* Shallower vertical overlap than horizontal means Chuck fell onto
+         * the guard's head rather than walking into its side: bounce off
+         * instead of dying, and land a hit like any other attack. */
+        float overlap_x = fminf(state->player.x + PLAYER_W,
+                                enemy->x + ENEMY_W) -
+                          fmaxf(state->player.x, enemy->x);
+        float overlap_y = fminf(state->player.y + height,
+                                enemy->y + ENEMY_H) -
+                          fmaxf(state->player.y, enemy->y);
+        if (state->player.vy > 0.0f && overlap_y < overlap_x)
         {
-            gameplay_hit_player(state);
+            /* Climbing down onto a guard would otherwise just have the
+             * ladder overwrite this with the climb speed next frame. */
+            state->player.vy = -ENEMY_STOMP_BOUNCE_SPEED;
+            state->player.on_ladder = false;
+            state->player.ladder_direction = 0;
+            state->player.ladder_lockout_timer = ENEMY_STOMP_LADDER_LOCKOUT;
+            damage_enemy(state, campaign, i);
             return;
         }
+
+        gameplay_hit_player(state);
+        return;
     }
     for (int i = 0; i < state->dog_count; ++i)
     {

@@ -13,6 +13,7 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
                                            CampaignState *campaign,
                                            float dt);
 void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt);
-void gameplay_combat_check_contacts(GameplayState *state);
+void gameplay_combat_check_contacts(GameplayState *state,
+                                    CampaignState *campaign);
 
 #endif /* CHUCK_GAMEPLAY_COMBAT_H */

@@ -60,6 +60,7 @@ void player_reset(Player *player, const Level *level)
     player->on_ground = false;
     player->on_ladder = false;
     player->ladder_direction = 0;
+    player->ladder_lockout_timer = 0.0f;
     player->facade_climbing = false;
     player->facing = 1;
     player->bullets = MAX_AMMO;
@@ -175,6 +176,9 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
 
     bool over_ladder = player_over_ladder(player, level);
 
+    if (player->ladder_lockout_timer > 0.0f)
+        player->ladder_lockout_timer -= dt;
+
     /* Mount the ladder by pressing up/down; stay on it until we leave it.
      *
      * Grabbing it also centres the box in the rung column. The box is 26 of a
@@ -183,7 +187,8 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
      * the climb on the vertical axis and pressing up appears to do nothing at
      * all. Snapping on mount is invisible at 3px and makes every ladder in the
      * campaign catch from wherever the player happened to stop walking. */
-    if ((over_ladder && (input->up || input->down)) || descend_from_top)
+    if (((over_ladder && (input->up || input->down)) || descend_from_top) &&
+        player->ladder_lockout_timer <= 0.0f)
     {
         if (!player->on_ladder)
         {

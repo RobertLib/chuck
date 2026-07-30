@@ -67,7 +67,9 @@ every guard and dog. Guards move, aim, and fire faster, lead a running target,
 hop small gaps to keep up, and fan out to sweep around Chuck's last known
 position; the alarm shuts itself off after he stays out of sight long enough.
 Guards can be eliminated with weapons, avoided by taking another route, or
-bypassed by crawling, timing movement, and using cover.
+bypassed by crawling, timing movement, and using cover. Landing on a guard's
+head while falling bounces Chuck off unharmed and costs the guard a hit,
+unlike touching one any other way, which still costs a life.
 
 The game rewards careful movement as much as combat. Each sector contains
 several terminals, but only the brightly lit active terminal can be hacked.

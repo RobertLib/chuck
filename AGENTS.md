@@ -95,6 +95,27 @@ seeing Chuck on the final frame keeps the alarm alive) → exit check → camera
 lerp. Reordering these has caused real bugs; several tests pin the resulting
 behavior.
 
+### Stomping a guard
+
+Touching a guard is normally instant death (`gameplay_hit_player`), but
+`gameplay_combat_check_contacts` ([gameplay_combat.c](src/gameplay_combat.c#L961))
+carves out one exception: landing on its head. It tells a stomp from a side
+collision without swept collision by comparing penetration depth on each
+axis — a falling player (`vy > 0`) whose vertical overlap with the guard is
+shallower than the horizontal overlap only just tagged the top of the box, so
+it bounces Chuck upward (`ENEMY_STOMP_BOUNCE_SPEED`) and calls the same
+`damage_enemy` a bullet or knife hit would, instead of killing him. Dogs are
+unaffected; only guards can be stomped.
+
+A stomp lands mid-climb as often as mid-jump, and that case needs its own
+fix: the ladder branch of `player_update` ([player.c](src/player.c)) sets `vy`
+from the climb input every frame, so a bounce set while `on_ladder` is true
+would be overwritten the very next frame by the climb speed, driving Chuck
+back down into what now reads as a deep, lethal side hit. The stomp handler
+also clears `on_ladder` and arms `ladder_lockout_timer`
+(`ENEMY_STOMP_LADDER_LOCKOUT`) so the ladder cannot be re-grabbed until the
+bounce has had time to actually clear the guard.
+
 ### The prologue pursuit
 
 Pressing START drops the player into a top-down, forward-only car chase
@@ -390,7 +411,7 @@ the staff side of the desk stays legible.
   outline is still a box with something drawn in it. Anything laid over a form
   has to follow it too (`sprite_mass`): hair, a helmet, a cap, the shade along a
   jaw. A rectangle of hair puts the corners of the head straight back. Hair and
-  helmets go on *after* the face for the same reason, so their fill covers the
+  helmets go on _after_ the face for the same reason, so their fill covers the
   face's own top outline row instead of being cut in half by it. Parts narrow
   enough that a chamfer would eat them whole — a forearm, a trouser leg — stay
   rectangular.
@@ -399,7 +420,7 @@ the staff side of the desk stays legible.
   through `sprite_form`/`sprite_body` → `fx_form_block`/`fx_form_mass`, which
   lays the garment down, puts the crown the ceiling reaches on top of it, drops
   the underside into shade and
-  runs one rim pixel down the *leading* flank — the side the figure is facing,
+  runs one rim pixel down the _leading_ flank — the side the figure is facing,
   which at twenty-six pixels across is much of what says which way someone is
   turned. The trailing flank is deliberately left alone: it sits against the
   sprite's own outline, where a second dark column reads as a thicker outline
@@ -430,7 +451,7 @@ the staff side of the desk stays legible.
   cast owes the same gap.
 - **The floor casts the shadow, not the boots.** `fx_contact_shadow` is a soft
   three-pass pool, and for the player `character_ground` finds the first solid
-  tile *below* him and puts it there, shrinking and thinning it with height. A
+  tile _below_ him and puts it there, shrinking and thinning it with height. A
   hard slab pinned under the feet travels up with a jump and so states that the
   floor came along; the pool staying behind on the floor is most of what sells
   how high the jump was. Keep new figures on this path — the old flat
@@ -464,7 +485,7 @@ the staff side of the desk stays legible.
 - **A face is five rows, and every one of them has to earn its place.** Below
   the headband there is room for a brow the fringe shades, an eye, a nose that
   has to break the head's outline to be a profile at all, a mouth and a jaw —
-  and the pupil goes at the *front* of the white, because a dark pixel centred
+  and the pupil goes at the _front_ of the white, because a dark pixel centred
   in it reads as two eyes seen head-on. `fx_blinking` closes the eye every few
   seconds from the animation clock alone, salted per figure so a room full of
   people never blinks in unison.
@@ -498,7 +519,7 @@ the staff side of the desk stays legible.
   fixings. Two consequences worth keeping. The letterforms are convex polygons
   rasterised at one screen pixel rather than cells of a character grid, because
   that is what lets the K hold an even stroke down a straight diagonal and every
-  corner carry the same cut. And the sweeping beam is weighted *away* from the
+  corner carry the same cut. And the sweeping beam is weighted _away_ from the
   top faces (`take[]` in `mark_face_color`): they are already near cream, so a
   highlight spent there is a whiter white nobody sees, and the sweep has to land
   on the body and the flanks to read at all.
@@ -539,7 +560,7 @@ the one being used.
 
 Four modules, and the split is by what needs SDL:
 
-- [editor_doc.c](editor/editor_doc.c) — the document: a map *as characters*,
+- [editor_doc.c](editor/editor_doc.c) — the document: a map _as characters_,
   not as a parsed `LevelMap`. A file says things a `LevelMap` cannot say back —
   a space against a `.`, a decoration the loader drops, an absent `THEME` line —
   so the editor keeps the text and hands it to `level_load_data` to find out

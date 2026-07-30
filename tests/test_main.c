@@ -21,15 +21,15 @@
 
 static int failures;
 
-#define CHECK(condition)                                                       \
-    do                                                                         \
-    {                                                                          \
-        if (!(condition))                                                      \
-        {                                                                      \
-            fprintf(stderr, "%s:%d: check failed: %s\n",                    \
-                    __FILE__, __LINE__, #condition);                           \
-            failures++;                                                        \
-        }                                                                      \
+#define CHECK(condition)                                 \
+    do                                                   \
+    {                                                    \
+        if (!(condition))                                \
+        {                                                \
+            fprintf(stderr, "%s:%d: check failed: %s\n", \
+                    __FILE__, __LINE__, #condition);     \
+            failures++;                                  \
+        }                                                \
     } while (0)
 
 static bool events_have_sound(const GameEventBuffer *events,
@@ -1470,11 +1470,9 @@ static void test_facade_ledge_stops_thrown_object_and_bird(void)
     state.facade_hazards_initialized = true;
 
     state.thrown_objects[0] = (ThrownObject){
-        .x = 4 * (float)TILE_SIZE, .y = 2 * (float)TILE_SIZE + 8.0f,
-        .vx = 0.0f, .vy = 0.0f, .active = true};
+        .x = 4 * (float)TILE_SIZE, .y = 2 * (float)TILE_SIZE + 8.0f, .vx = 0.0f, .vy = 0.0f, .active = true};
     state.birds[0] = (Bird){
-        .x = 6 * (float)TILE_SIZE, .y = 2 * (float)TILE_SIZE + 8.0f,
-        .vx = 10.0f, .vy = 0.0f, .active = true};
+        .x = 6 * (float)TILE_SIZE, .y = 2 * (float)TILE_SIZE + 8.0f, .vx = 10.0f, .vy = 0.0f, .active = true};
 
     gameplay_climb_update(&state, 0.016f);
 
@@ -1859,10 +1857,10 @@ static void test_ladder_mount_centres_the_player(void)
 {
     static const char data[] =
         "########\n"
-        "#  H  E#\n"  /* upper standing row: the run ends level with the floor */
-        "###H####\n"  /* the slab either side of the ladder is what blocks */
+        "#  H  E#\n" /* upper standing row: the run ends level with the floor */
+        "###H####\n" /* the slab either side of the ladder is what blocks */
         "#  H   #\n"
-        "# SH   #\n"  /* lower standing row: the run starts level with it */
+        "# SH   #\n" /* lower standing row: the run starts level with it */
         "########\n";
     Level level;
     Rng rng;
@@ -2405,10 +2403,10 @@ static void test_door_interaction_reports_range_and_teleports(void)
     gameplay_use_door(&state, &input);
 
     CHECK(fabsf(state.player.x -
-                 (destination->col * TILE_SIZE +
-                  (TILE_SIZE - PLAYER_W) * 0.5f)) < 0.01f);
+                (destination->col * TILE_SIZE +
+                 (TILE_SIZE - PLAYER_W) * 0.5f)) < 0.01f);
     CHECK(fabsf(state.player.y -
-                 ((destination->row + 1) * TILE_SIZE - PLAYER_H)) < 0.01f);
+                ((destination->row + 1) * TILE_SIZE - PLAYER_H)) < 0.01f);
     CHECK(state.teleport_cooldown == TELEPORT_COOLDOWN);
     CHECK(!input.use_door);
     CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_DOOR));
@@ -2592,7 +2590,7 @@ static void test_bazooka_pickup_and_rocket_explosion(void)
 
     for (int frame = 0; frame < 120 && state.rockets[0].active; ++frame)
         gameplay_combat_update_player_bullets(&state, &campaign,
-                                               1.0f / 120.0f);
+                                              1.0f / 120.0f);
 
     CHECK(!state.rockets[0].active);
     CHECK(state.enemies[0].dead);
@@ -3401,9 +3399,9 @@ static void test_dog_escapes_ladder_perch_without_spinning(void)
         }
     }
 
-    CHECK(flips <= 3);                            /* no frantic spinning */
-    CHECK(dog->y > perch_y + TILE_SIZE * 0.5f);   /* dropped off the rung */
-    CHECK(fabsf(dog->x - perch_x) > TILE_SIZE);   /* left the ladder column */
+    CHECK(flips <= 3);                          /* no frantic spinning */
+    CHECK(dog->y > perch_y + TILE_SIZE * 0.5f); /* dropped off the rung */
+    CHECK(fabsf(dog->x - perch_x) > TILE_SIZE); /* left the ladder column */
 }
 
 static void test_hazards_emit_specific_impact_sounds(void)
@@ -3424,6 +3422,85 @@ static void test_hazards_emit_specific_impact_sounds(void)
     gameplay_combat_update_hazards(&state);
     CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
                             SFX_SPIKE_HIT));
+}
+
+static void test_stomp_on_enemy_bounces_player_and_damages_it(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){.x = 100.0f, .y = 200.0f, .hp = ENEMY_HP};
+
+    /* Aligned horizontally with the guard, feet only just into its head. */
+    state.player.x = 100.0f;
+    state.player.y = 200.0f - (float)PLAYER_H + 5.0f;
+    state.player.vy = 50.0f; /* falling */
+
+    gameplay_combat_check_contacts(&state, &campaign);
+
+    CHECK(!state.player.dying);
+    CHECK(state.player.vy == -ENEMY_STOMP_BOUNCE_SPEED);
+    CHECK(state.enemies[0].hp == ENEMY_HP - 1);
+    CHECK(!state.enemies[0].dead);
+
+    /* A side contact at the same height still kills the player as before. */
+    state = (GameplayState){0};
+    campaign = (CampaignState){0};
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){.x = 100.0f, .y = 200.0f, .hp = ENEMY_HP};
+    state.player.x = 100.0f + ENEMY_W - 3.0f;
+    state.player.y = 200.0f;
+    state.player.vy = 50.0f;
+
+    gameplay_combat_check_contacts(&state, &campaign);
+
+    CHECK(state.player.dying);
+    CHECK(state.enemies[0].hp == ENEMY_HP);
+}
+
+/* Climbing down onto a guard blocking the ladder used to still die: the
+ * bounce set an upward vy, but the ladder's own climb logic overwrote it
+ * with the climb speed the very next frame, driving Chuck back down into a
+ * lethal, deep contact. A lockout must hold the player off the ladder long
+ * enough for the bounce to actually clear the guard. */
+static void test_ladder_descent_onto_enemy_bounces_instead_of_killing(void)
+{
+    static const char data[] =
+        "########\n"
+        "#  S  E#\n"
+        "#  H   #\n"
+        "#  H   #\n"
+        "#  H   #\n"
+        "#      #\n"
+        "########\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 5);
+    CHECK(level_load_data(&state.level, "ladder stomp", data, strlen(data),
+                          &state.rng));
+
+    const int ladder_col = 3;
+    state.player.x =
+        (float)ladder_col * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+    state.player.y = 2.0f * TILE_SIZE;
+
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){
+        .x = (float)ladder_col * TILE_SIZE + (TILE_SIZE - ENEMY_W) * 0.5f,
+        .y = 5.0f * TILE_SIZE - (float)ENEMY_H,
+        .hp = ENEMY_HP,
+        .on_ground = true};
+
+    Input down = {.down = true};
+    for (int frame = 0; frame < 300 && !state.enemies[0].dead; ++frame)
+    {
+        player_update(&state.player, &state.level, &down, 1.0f / 60.0f);
+        gameplay_combat_check_contacts(&state, &campaign);
+        CHECK(!state.player.dying);
+    }
+
+    CHECK(state.enemies[0].dead);
+    CHECK(campaign.score == 150);
 }
 
 static void test_enemy_spawn_uses_seeded_rng(void)
@@ -3848,7 +3925,7 @@ static void test_guard_investigates_fallen_comrade(void)
     CHECK(state.enemy_count == 2);
     Enemy *witness = &state.enemies[0];
     witness->on_ground = true;
-    witness->dir = 1; /* face the neighbouring guard, away from Chuck */
+    witness->dir = 1;             /* face the neighbouring guard, away from Chuck */
     state.enemies[1].dead = true; /* the comrade lies dead nearby */
 
     gameplay_ai_update_combat(&state, 0.016f);
@@ -3894,7 +3971,7 @@ static void test_pursuing_guard_hops_small_gap(void)
             break;
         }
     }
-    CHECK(reached_far_side); /* completing the jump matters, not just starting it */
+    CHECK(reached_far_side);            /* completing the jump matters, not just starting it */
     CHECK(guard->x < 4.5f * TILE_SIZE); /* land just beyond the far edge */
 }
 
@@ -3922,7 +3999,8 @@ static void test_pursuing_guard_searches_away_from_blocking_wall(void)
 
     float wall_turn_x = 5.0f * TILE_SIZE - ENEMY_W - 1.0f;
     for (int frame = 0; frame < 480 &&
-                        guard->x < wall_turn_x - 0.01f; ++frame)
+                        guard->x < wall_turn_x - 0.01f;
+         ++frame)
         gameplay_ai_update_movement(&state, 1.0f / 120.0f);
     CHECK(fabsf(guard->x - wall_turn_x) < 1.0f);
 
@@ -4192,6 +4270,8 @@ int main(void)
     test_enemy_aligns_before_vertical_climb();
     test_dog_escapes_ladder_perch_without_spinning();
     test_hazards_emit_specific_impact_sounds();
+    test_stomp_on_enemy_bounces_player_and_damages_it();
+    test_ladder_descent_onto_enemy_bounces_instead_of_killing();
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();
     test_civilians_flee_to_the_way_in_and_vanish();

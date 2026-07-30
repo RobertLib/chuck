@@ -187,6 +187,11 @@
 #define ENEMY_CLIMB_CHANCE 3
 #define ENEMY_OBSTACLE_AVOID_TIME 1.25f
 #define ENEMY_HP 3
+/* Stomping a guard from above bounces Chuck off instead of killing him. */
+#define ENEMY_STOMP_BOUNCE_SPEED 300.0f
+/* Briefly blocks re-grabbing a ladder after a stomp, so climbing down onto a
+ * guard below doesn't just overwrite the bounce with the climb speed. */
+#define ENEMY_STOMP_LADDER_LOCKOUT 0.3f
 
 /* Perception. Guards no longer see only along their exact floor row: they have
  * a forward vision cone (wide field of view, diagonal sight up and down) with a

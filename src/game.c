@@ -977,8 +977,7 @@ static void update_playing(Game *game, float dt)
         previous_moving_platform < 0)
     {
         const MovingPlatform *platform =
-            &game->gameplay.level.runtime.moving_platforms[
-                game->gameplay.player_on_moving_platform];
+            &game->gameplay.level.runtime.moving_platforms[game->gameplay.player_on_moving_platform];
         gameplay_world_sound(
             &game->gameplay, SFX_MOVING_PLATFORM,
             platform->x + TILE_SIZE * 0.5f,
@@ -1052,8 +1051,8 @@ static void update_playing(Game *game, float dt)
         {
             game->presentation.fall_platform_sounded[i] = true;
             gameplay_world_sound(&game->gameplay, SFX_PLATFORM_CRACK,
-                platform->col * (float)TILE_SIZE + TILE_SIZE * 0.5f,
-                platform->y + FALL_PLATFORM_H * 0.5f);
+                                 platform->col * (float)TILE_SIZE + TILE_SIZE * 0.5f,
+                                 platform->y + FALL_PLATFORM_H * 0.5f);
         }
     }
 
@@ -1070,7 +1069,7 @@ static void update_playing(Game *game, float dt)
 
     gameplay_combat_update_enemy_bullets(&game->gameplay, dt);
 
-    gameplay_combat_check_contacts(&game->gameplay);
+    gameplay_combat_check_contacts(&game->gameplay, &game->campaign);
 
     /* Tick the calm countdown after perception updates, so a guard or dog
      * seeing Chuck on the would-be final frame keeps the alarm alive. */
