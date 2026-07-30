@@ -380,6 +380,14 @@ bool game_init_seeded(Game *game, uint64_t seed)
     return true;
 }
 
+void game_open_manual(Game *game)
+{
+    /* The manual is read from the title screen, where nothing is running: no
+     * simulation to pause and no music to change. */
+    audio_play(&game->platform.audio, SFX_MENU_PAGE);
+    game_enter_state(game, STATE_MANUAL);
+}
+
 void game_return_to_intro(Game *game)
 {
     particle_system_clear(&game->presentation.particles);
@@ -490,6 +498,14 @@ static void game_enter_state(Game *game, GameState next_state)
         intro_init(&game->presentation.intro, win_w, win_h);
         break;
     }
+    case STATE_MANUAL:
+    {
+        int win_w = 0;
+        int win_h = 0;
+        game_get_view_size(game, &win_w, &win_h);
+        manual_init(&game->presentation.manual, win_w, win_h);
+        break;
+    }
     case STATE_LEVEL_START:
         level_reveal_init(&game->gameplay.level);
         break;
@@ -565,6 +581,20 @@ static bool update_scene(Game *game, float dt)
             game->input.confirm = false;
             game_enter_state(game, STATE_CHASE);
         }
+        clear_edge_input(game);
+        return true;
+    }
+
+    if (game->state == STATE_MANUAL)
+    {
+        float win_x = 0.0f, win_y = 0.0f, mx = 0.0f, my = 0.0f;
+        SDL_GetMouseState(&win_x, &win_y);
+        SDL_RenderCoordinatesFromWindow(game->platform.renderer, win_x, win_y,
+                                        &mx, &my);
+
+        int win_w = 0, win_h = 0;
+        game_get_view_size(game, &win_w, &win_h);
+        manual_update(&game->presentation.manual, dt, win_w, win_h, mx, my);
         clear_edge_input(game);
         return true;
     }

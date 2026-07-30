@@ -7,10 +7,10 @@
  * the wet street), so the eye is led from the wordmark down the building to
  * the one lit window that matters and out to the man looking up at it.
  *
- * Only three things on the screen are interface: the wordmark, the start
- * prompt and the control hints.  Everything else is the world, drawn from the
- * same palette and lighting vocabulary as the game (fx.h), so the title is
- * recognisably the same production as the first level.
+ * Only three things on the screen are interface: the wordmark, the start prompt
+ * and the line naming the field manual.  Everything else is the world, drawn
+ * from the same palette and lighting vocabulary as the game (fx.h), so the
+ * title is recognisably the same production as the first level.
  */
 #include "intro.h"
 
@@ -54,6 +54,30 @@ static const SDL_Color COL_SODIUM = {182, 116, 62, 255}; /* what the road
                        START_TRACK)
 #define START_PLATE_W (START_CHEVRON_W + START_CHEVRON_GAP + START_LABEL_W + \
                        START_PAD * 2.0f)
+
+/*
+ * The way into the manual is one keycap and a label, at exactly the weight the
+ * row of control hints used to have — because it is the same thing, moved.
+ *
+ * It replaced that row rather than joining it.  A second plate under START, a
+ * hint row under that and the street under all three left the bottom eighty
+ * pixels of the shot carrying three bands of interface, which reads as a menu
+ * stacked on a picture; and the hints themselves were only ever there because
+ * there was nowhere else to learn the controls.  Now there is, and it is named
+ * on the line where they used to be.
+ */
+#define MANUAL_LABEL "FIELD MANUAL"
+#define MANUAL_TRACK 1.0f
+#define MANUAL_KEY_W 20.0f
+#define MANUAL_KEY_GAP 9.0f
+#define MANUAL_ROW_H 18.0f
+/* Padding on the hit rect only: there is no plate to pad. */
+#define MANUAL_HIT_PAD 10.0f
+#define MANUAL_LABEL_W ((float)(sizeof(MANUAL_LABEL) - 1) * \
+                        ((float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + MANUAL_TRACK) - \
+                        MANUAL_TRACK)
+#define MANUAL_ROW_W (MANUAL_KEY_W + MANUAL_KEY_GAP + MANUAL_LABEL_W + \
+                      MANUAL_HIT_PAD * 2.0f)
 
 typedef struct
 {
@@ -154,7 +178,7 @@ static IntroScene scene_layout(int win_w, int win_h)
     s.roof_y = 166.0f;
 
     /*
-     * Dead centre.  The wordmark, the start plate and the control hints all
+     * Dead centre.  The wordmark, the start plate and the manual line all
      * sit on the screen's centre line, so a subject nudged seventy pixels off
      * it does not read as composition — it reads as something that failed to
      * line up.  The asymmetry the shot needs is carried on the street instead:
@@ -220,6 +244,21 @@ static bool pane_light(int fl, int pane, float time, SDL_Color *out)
     return true;
 }
 
+/*
+ * Two things, on the screen's centre line: the start plate on the street, and
+ * the way into the manual on the bottom line.  Both keep the line the wordmark
+ * and the tower are composed on, and the forty pixels between them are what
+ * stop the pair reading as a menu rather than as one thing to press and one
+ * thing to know about.
+ */
+static void place_buttons(Intro *intro, int w, int h)
+{
+    intro->start_button.x = ((float)w - intro->start_button.w) * 0.5f;
+    intro->start_button.y = (float)h - 78.0f;
+    intro->manual_button.x = ((float)w - intro->manual_button.w) * 0.5f;
+    intro->manual_button.y = (float)h - 30.0f;
+}
+
 void intro_init(Intro *intro, int win_w, int win_h)
 {
     SDL_zerop(intro);
@@ -239,8 +278,9 @@ void intro_init(Intro *intro, int win_w, int win_h)
 
     intro->start_button.w = START_PLATE_W;
     intro->start_button.h = 34.0f;
-    intro->start_button.x = ((float)w - intro->start_button.w) * 0.5f;
-    intro->start_button.y = (float)h - 78.0f;
+    intro->manual_button.w = MANUAL_ROW_W;
+    intro->manual_button.h = MANUAL_ROW_H;
+    place_buttons(intro, w, h);
 }
 
 void intro_update(Intro *intro, float dt, int win_w, int win_h,
@@ -250,8 +290,7 @@ void intro_update(Intro *intro, float dt, int win_w, int win_h,
 
     int w = win_w > 0 ? win_w : 800;
     int h = win_h > 0 ? win_h : 552;
-    intro->start_button.x = ((float)w - intro->start_button.w) * 0.5f;
-    intro->start_button.y = (float)h - 78.0f;
+    place_buttons(intro, w, h);
 
     for (int i = 0; i < INTRO_STAR_COUNT; ++i)
     {
@@ -261,17 +300,24 @@ void intro_update(Intro *intro, float dt, int win_w, int win_h,
             star->x = 0.0f;
     }
 
-    const SDL_FRect *button = &intro->start_button;
-    intro->start_hovered =
-        mouse_x >= button->x && mouse_x <= button->x + button->w &&
-        mouse_y >= button->y && mouse_y <= button->y + button->h;
+    intro->start_hovered = intro_hit_start_button(intro, mouse_x, mouse_y);
+    intro->manual_hovered = intro_hit_manual_button(intro, mouse_x, mouse_y);
+}
+
+static bool hit_plate(const SDL_FRect *button, float x, float y)
+{
+    return x >= button->x && x <= button->x + button->w &&
+           y >= button->y && y <= button->y + button->h;
 }
 
 bool intro_hit_start_button(const Intro *intro, float x, float y)
 {
-    const SDL_FRect *button = &intro->start_button;
-    return x >= button->x && x <= button->x + button->w &&
-           y >= button->y && y <= button->y + button->h;
+    return hit_plate(&intro->start_button, x, y);
+}
+
+bool intro_hit_manual_button(const Intro *intro, float x, float y)
+{
+    return hit_plate(&intro->manual_button, x, y);
 }
 
 /* ---- Sky ------------------------------------------------------------ */
@@ -1678,69 +1724,47 @@ static void render_start_prompt(SDL_Renderer *r, const Intro *intro,
 }
 
 /*
- * The hints are set at scale 1.0 and no smaller.  The debug font is an 8x8
- * bitmap: any other scale resamples it, and a row of blurred type along the
- * bottom of the frame undoes the rest of the screen.  At 1.0 the whole row
- * still fits inside 800 logical pixels.
+ * The way into the manual: one keycap and a label on the bottom line, set at
+ * scale 1.0 and no smaller.  The debug font is an 8x8 bitmap, so any other
+ * scale resamples it, and blurred type along the bottom of the frame undoes the
+ * rest of the screen.
+ *
+ * It is deliberately hint-weight rather than a second plate.  START is the only
+ * thing anyone came here to press, and two plates on the centre line would
+ * argue about which of them that was.
  */
-#define CONTROL_CH ((float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE)
-
-static float control_hint_width(const char *key, const char *action)
+static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
+                                 const IntroScene *s, bool gamepad_active)
 {
-    return CONTROL_CH * (float)SDL_strlen(key) + 12.0f + 7.0f +
-           CONTROL_CH * (float)SDL_strlen(action) + 20.0f;
-}
-
-static float draw_control_hint(SDL_Renderer *r, float x, float y,
-                               const char *key, const char *action,
-                               float level)
-{
-    float key_w = CONTROL_CH * (float)SDL_strlen(key) + 12.0f;
-    const float key_h = 18.0f;
-
-    /* Keycap: dark bezel, lit top edge, sunken base. */
-    fx_rect_a(r, COL_INK, (Uint8)(190.0f * level), x, y, key_w, key_h);
-    fx_rect_a(r, (SDL_Color){32, 42, 56, 255}, (Uint8)(215.0f * level),
-              x + 1.0f, y + 1.0f, key_w - 2.0f, key_h - 2.0f);
-    fx_rect_a(r, (SDL_Color){68, 84, 102, 255}, (Uint8)(215.0f * level),
-              x + 1.0f, y + 1.0f, key_w - 2.0f, 1.0f);
-    fx_rect_a(r, (SDL_Color){10, 14, 22, 255}, (Uint8)(215.0f * level),
-              x + 1.0f, y + key_h - 2.0f, key_w - 2.0f, 1.0f);
-    draw_text(r, x + 6.0f, y + 5.0f, 1.0f,
-              fx_dim((SDL_Color){186, 196, 190, 255}, level), key);
-    draw_text(r, x + key_w + 7.0f, y + 5.0f, 1.0f, fx_dim(COL_MUTED, level),
-              action);
-    return x + key_w + 7.0f + CONTROL_CH * (float)SDL_strlen(action) + 20.0f;
-}
-
-static void render_controls(SDL_Renderer *r, const Intro *intro,
-                            const IntroScene *s, bool gamepad_active)
-{
-    static const char *keyboard_keys[] = {
-        "WASD", "W", "SPACE", "TAB", "S", "E"};
-    static const char *keyboard_actions[] = {
-        "MOVE", "JUMP", "ATTACK", "WEAPON", "CRAWL", "USE/HACK"};
-    static const char *gamepad_keys[] = {"LS/DPAD", "A", "X", "RB", "Y"};
-    static const char *gamepad_actions[] = {
-        "MOVE", "JUMP", "ATTACK", "WEAPON", "USE/HACK"};
-    const char *const *keys = gamepad_active ? gamepad_keys : keyboard_keys;
-    const char *const *actions = gamepad_active ? gamepad_actions
-                                                : keyboard_actions;
-    int count = gamepad_active ? 5 : 6;
-
-    float level = smoothstep01((intro->time - 1.45f) / 0.6f);
-    if (level <= 0.0f)
+    const SDL_FRect *button = &intro->manual_button;
+    float appear = smoothstep01((intro->time - 1.45f) / 0.6f);
+    if (appear <= 0.0f)
         return;
 
-    float total = 0.0f;
-    for (int i = 0; i < count; ++i)
-        total += control_hint_width(keys[i], actions[i]);
-    total -= 20.0f;
+    bool hot = intro->manual_hovered;
+    float x = button->x + MANUAL_HIT_PAD;
+    float y = button->y;
 
-    float x = (s->w - total) * 0.5f;
-    float y = s->h - 30.0f;
-    for (int i = 0; i < count; ++i)
-        x = draw_control_hint(r, x, y, keys[i], actions[i], level);
+    if (hot)
+        fx_glow(r, s->w * 0.5f, y + MANUAL_ROW_H * 0.5f, 116.0f,
+                (SDL_Color){226, 104, 78, 255}, 26);
+
+    /* Keycap: dark bezel, lit top edge, sunken base. */
+    fx_rect_a(r, COL_INK, (Uint8)(190.0f * appear), x, y, MANUAL_KEY_W,
+              MANUAL_ROW_H);
+    fx_rect_a(r, (SDL_Color){32, 42, 56, 255}, (Uint8)(215.0f * appear),
+              x + 1.0f, y + 1.0f, MANUAL_KEY_W - 2.0f, MANUAL_ROW_H - 2.0f);
+    fx_rect_a(r, hot ? COL_RUST : (SDL_Color){68, 84, 102, 255},
+              (Uint8)(215.0f * appear), x + 1.0f, y + 1.0f,
+              MANUAL_KEY_W - 2.0f, 1.0f);
+    fx_rect_a(r, (SDL_Color){10, 14, 22, 255}, (Uint8)(215.0f * appear),
+              x + 1.0f, y + MANUAL_ROW_H - 2.0f, MANUAL_KEY_W - 2.0f, 1.0f);
+    draw_text(r, x + 6.0f, y + 5.0f, 1.0f,
+              fx_dim(hot ? COL_CREAM : (SDL_Color){186, 196, 190, 255}, appear),
+              gamepad_active ? "Y" : "H");
+    draw_tracked(r, x + MANUAL_KEY_W + MANUAL_KEY_GAP, y + 5.0f, 1.0f,
+                 MANUAL_TRACK, fx_dim(hot ? COL_AMBER : COL_MUTED, appear),
+                 MANUAL_LABEL);
 }
 
 void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,
@@ -1755,7 +1779,7 @@ void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,
     render_street(r, intro, &scene);
     render_logo(r, intro, &scene);
     render_start_prompt(r, intro, &scene, gamepad_active);
-    render_controls(r, intro, &scene, gamepad_active);
+    render_manual_prompt(r, intro, &scene, gamepad_active);
 
     /* The shot fades up from black, like the cutscenes it hands over to. */
     float fade = 1.0f - smoothstep01(intro->time / 0.65f);

@@ -41,8 +41,8 @@ Two layers, and the split is the most important invariant in the codebase:
   [game.c](src/game.c) (state machine, level loading, per-frame orchestration),
   [game_input.c](src/game_input.c), [game_render.c](src/game_render.c),
   [chase_render.c](src/chase_render.c), [audio.c](src/audio.c),
-  [intro.c](src/intro.c), [cutscene.c](src/cutscene.c),
-  [particle.c](src/particle.c).
+  [intro.c](src/intro.c), [manual.c](src/manual.c),
+  [cutscene.c](src/cutscene.c), [particle.c](src/particle.c).
 - **Gameplay core** (no SDL, no knowledge of `Game`): `src/gameplay_*.c`,
   [level.c](src/level.c), [level_route.c](src/level_route.c),
   [player.c](src/player.c), [enemy.c](src/enemy.c),
@@ -82,8 +82,9 @@ transitions, game over); otherwise `update_playing` runs the simulation. Events
 are dispatched last.
 
 The scene order the player walks through is `STATE_INTRO` → `STATE_CHASE` →
-`STATE_OPENING_CUTSCENE` → level one. The chase branch owns its own event
-dispatch and camera-shake tick because those normally run only on playing
+`STATE_OPENING_CUTSCENE` → level one, with `STATE_MANUAL` hanging off the title
+screen as a dead end that only leads back to it. The chase branch owns its own
+event dispatch and camera-shake tick because those normally run only on playing
 frames.
 
 `update_playing` ([game.c:686](src/game.c#L686)) has a deliberate ordering:
@@ -139,6 +140,54 @@ than `CHASE_MAX_CARS_ABREAST` cars wide, so at least two lanes are always open,
 and the SUV holds a speed that keeps Chuck at arm's length once it is being
 tailed, so holding the accelerator settles into a stable tail instead of ramming
 the car his fiancée is in.
+
+### The field manual
+
+`H` on the title screen (`Y` on a pad, or a click on the line naming it) opens
+`STATE_MANUAL`: six sheets in [manual.c](src/manual.c) that say what the
+building is, what the buttons do, what the floor plan allows, what the guards
+do, how the wall is climbed and how to read the console. Arrow keys or the
+footer chips turn a sheet; anything that means "done" hands back to
+`game_return_to_intro`, which is also where `ESC` already went. It is a branch
+off the title screen and nothing else — there is no simulation to pause, so the
+manual cannot be opened mid-sector.
+
+It **replaced the title screen's row of control hints** rather than joining it,
+and that is a composition decision as much as an editorial one: a plate, a
+second plate under it and a keycap row under that left the bottom eighty pixels
+of the shot carrying three bands of interface, which reads as a menu stacked on
+a picture. The hints were only ever there because there was nowhere else to
+learn the controls; the manual is that place, and it is named on the line they
+used to occupy. Anything added to the title screen from here owes the same
+question — the shot holds the wordmark, START and one quiet line, and a fourth
+element has to earn a band of its own.
+
+Three decisions carry it, and they are the reason it is one file.
+
+**The text is a table.** Every sheet is a `ManualPage` — a title, a strap, a
+list of typed lines and one illustration — and the line kinds (`LINE_HEAD`,
+`LINE_BODY`, `LINE_BULLET`, `LINE_KEY`, `LINE_GAP`) are the whole layout
+language. A rule that changes in [game_config.h](src/game_config.h) is a string
+edited in one place rather than a paragraph hunted through a draw function, and
+the control rows are `key|pad|action` so the two chip columns can be sized from
+the widest label on the sheet instead of per row.
+
+**The sheet is a thing in the frame.** A wall of type on a flat fill would be
+the one screen in the game that is not lit, so it is a steel-clipped sheet on a
+dark desk: a lit top edge, a dark base, rust corner brackets, and the same
+vignette and scanlines every other frame is finished with.
+
+**The illustrations use the game's own vocabulary.** The figures go through
+`fx_form_mass`/`fx_form_block` with the legs dropped away from the garment, the
+slabs get an arris and ambient occlusion, the cornices are drawn the way
+[level_art.c](src/level_art.c) draws them. A manual illustrated in a second
+style would be a manual for a different game. Two things that cost a revision
+each and are worth keeping: a caption is set from the panel's left edge, so it
+is clipped to `CAPTION_MAX` rather than trusted to be short — a line that
+outgrows the plate runs off the sheet — and `dash_arc` takes the height the
+curve actually reaches, because a quadratic only rises halfway to its handle
+and an arc drawn through the handle leaves the figure hanging above its own
+jump.
 
 ### Determinism and RNG
 

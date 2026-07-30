@@ -4978,6 +4978,13 @@ void game_render(Game *game)
     return;
   }
 
+  if (game->state == STATE_MANUAL)
+  {
+    manual_render(r, &game->presentation.manual, win_w, win_h);
+    SDL_RenderPresent(r);
+    return;
+  }
+
   if (game->state == STATE_LEVEL_TRANSITION)
   {
     level_transition_render(r, &game->presentation.level_transition,

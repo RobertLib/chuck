@@ -1252,6 +1252,15 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
             return false;
         add_tone(s, 0.00f, 0.20f, 310.0f, 135.0f, 0.52f, WAVE_SQUARE, 0.006f, 0.13f);
         break;
+    case SFX_MENU_PAGE:
+        /* A sheet turning: paper first, and one soft tick where the clip
+         * takes it. Nothing tonal — a chime here would sound like an award. */
+        if (!begin_sound(audio, effect, 0.16f, 0.30f, 40))
+            return false;
+        add_noise(s, 0.00f, 0.11f, 0.42f, 0.30f, 0.004f, 0.09f, 0x51b7u);
+        add_tone(s, 0.07f, 0.06f, 720.0f, 470.0f, 0.16f, WAVE_TRIANGLE,
+                 0.003f, 0.05f);
+        break;
     case SFX_OPENING_RAIN:
         if (!begin_sound(audio, effect, 11.95f, 0.11f, 500))
             return false;

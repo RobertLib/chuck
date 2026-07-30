@@ -7,6 +7,7 @@
 #include "cutscene.h"
 #include "gameplay_state.h"
 #include "intro.h"
+#include "manual.h"
 #include "particle.h"
 
 typedef enum
@@ -14,6 +15,7 @@ typedef enum
     STATE_CHASE,
     STATE_OPENING_CUTSCENE,
     STATE_INTRO,
+    STATE_MANUAL,
     STATE_LEVEL_START,
     STATE_SHOW_KEYCARD,
     STATE_PLAYING,
@@ -67,6 +69,9 @@ typedef struct
     /* Title-screen state (field-operations briefing shown before STATE_LEVEL_START) */
     Intro intro;
 
+    /* The field manual, opened from the title screen. */
+    Manual manual;
+
     float cam_x; /* world x of left edge of the viewport */
     float cam_y; /* world y above the visible gameplay area */
     /* Short, decaying render offset used by gameplay explosions. The HUD is
@@ -119,6 +124,10 @@ void game_shutdown(Game *game);
 
 /* Abort the current game (if any) and go back to the title screen. */
 void game_return_to_intro(Game *game);
+
+/* Open the field manual. It is read from the title screen, and closed with the
+ * same route back as anything else: game_return_to_intro. */
+void game_open_manual(Game *game);
 
 /* Start a clean campaign directly in one embedded level, skipping the title
  * screen and the prologue. The debug level picker uses it, and so does the

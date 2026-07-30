@@ -142,6 +142,40 @@ static bool handle_debug_level_select(Game *game, SDL_Scancode scancode)
 }
 #endif
 
+/* Turn a sheet and sound it. The sound only plays when the page actually
+ * changed, so holding against either end of the manual stays silent. */
+static void turn_manual_page(Game *game, int delta)
+{
+  if (manual_turn_page(&game->presentation.manual, delta))
+    audio_play(&game->platform.audio, SFX_MENU_PAGE);
+}
+
+/*
+ * The manual's own bindings, on the pad. Left and right walk the sheaf; A,
+ * START and Y all put it away, because whichever button opened it is the one
+ * the player will press again. B and BACK fall through to the ordinary route
+ * out, which is the same route.
+ */
+static bool handle_manual_gamepad(Game *game, SDL_GamepadButton button)
+{
+  switch (button)
+  {
+  case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
+    turn_manual_page(game, -1);
+    return true;
+  case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+    turn_manual_page(game, 1);
+    return true;
+  case SDL_GAMEPAD_BUTTON_SOUTH:
+  case SDL_GAMEPAD_BUTTON_START:
+  case SDL_GAMEPAD_BUTTON_NORTH:
+    game_return_to_intro(game);
+    return true;
+  default:
+    return false;
+  }
+}
+
 static void confirm_with_gamepad(Game *game, bool allow_jump)
 {
   if (game->state == STATE_OUTRO &&
@@ -162,6 +196,8 @@ static void confirm_with_gamepad(Game *game, bool allow_jump)
 static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
 {
   game->platform.gamepad_active = true;
+  if (game->state == STATE_MANUAL && handle_manual_gamepad(game, button))
+    return;
   switch (button)
   {
   case SDL_GAMEPAD_BUTTON_SOUTH:
@@ -184,6 +220,8 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
   case SDL_GAMEPAD_BUTTON_NORTH:
     if (game->state == STATE_PLAYING)
       game->input.use_door = true;
+    else if (game->state == STATE_INTRO)
+      game_open_manual(game);
     break;
   case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
     audio_toggle_mute(&game->platform.audio);
@@ -236,14 +274,35 @@ void game_handle_event(Game *game, const SDL_Event *event)
 
   if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
       event->button.button == SDL_BUTTON_LEFT &&
-      game->state == STATE_INTRO)
+      (game->state == STATE_INTRO || game->state == STATE_MANUAL))
   {
     game->platform.gamepad_active = false;
     float mx = 0.0f, my = 0.0f;
     SDL_RenderCoordinatesFromWindow(game->platform.renderer, event->button.x, event->button.y, &mx, &my);
-    if (intro_hit_start_button(&game->presentation.intro, mx, my))
+    if (game->state == STATE_MANUAL)
+    {
+      switch (manual_hit_test(&game->presentation.manual, mx, my))
+      {
+      case MANUAL_HOT_PREV:
+        turn_manual_page(game, -1);
+        break;
+      case MANUAL_HOT_NEXT:
+        turn_manual_page(game, 1);
+        break;
+      case MANUAL_HOT_BACK:
+        game_return_to_intro(game);
+        break;
+      case MANUAL_HOT_NONE:
+        break;
+      }
+    }
+    else if (intro_hit_start_button(&game->presentation.intro, mx, my))
     {
       game->input.confirm = true;
+    }
+    else if (intro_hit_manual_button(&game->presentation.intro, mx, my))
+    {
+      game_open_manual(game);
     }
     return;
   }
@@ -265,6 +324,32 @@ void game_handle_event(Game *game, const SDL_Event *event)
         (sc == SDL_SCANCODE_RETURN && (event->key.mod & SDL_KMOD_ALT) != 0))
     {
       toggle_fullscreen(game);
+      return;
+    }
+
+    /* The manual owns the whole keyboard while it is open: left and right walk
+     * the sheaf, and every key that means "done" puts it away. */
+    if (game->state == STATE_MANUAL)
+    {
+      if (sc == SDL_SCANCODE_LEFT || sc == SDL_SCANCODE_A ||
+          sc == SDL_SCANCODE_PAGEUP)
+        turn_manual_page(game, -1);
+      else if (sc == SDL_SCANCODE_RIGHT || sc == SDL_SCANCODE_D ||
+               sc == SDL_SCANCODE_PAGEDOWN)
+        turn_manual_page(game, 1);
+      else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
+               key == SDLK_SPACE || sc == SDL_SCANCODE_H ||
+               sc == SDL_SCANCODE_F1 || sc == SDL_SCANCODE_BACKSPACE)
+        game_return_to_intro(game);
+      else if (sc == SDL_SCANCODE_M)
+        audio_toggle_mute(&game->platform.audio);
+      return;
+    }
+
+    if (game->state == STATE_INTRO &&
+        (sc == SDL_SCANCODE_H || sc == SDL_SCANCODE_F1))
+    {
+      game_open_manual(game);
       return;
     }
 
