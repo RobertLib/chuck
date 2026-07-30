@@ -410,6 +410,24 @@ the staff side of the desk stays legible.
   outline, shaded underside, garment, one lit pixel along the top — and that one
   function is why the whole cast gained the treatment at once instead of each
   figure being hand-shaded.
+- **A lit step is a value lift, not a mix toward cream.** `fx_ramp`'s bright end
+  scales each channel through `fx_lit_step` — red fastest, blue slowest, so the
+  ceiling lamp's warmth comes out of the gains themselves — instead of blending
+  the garment toward a pale neutral. Every mix toward a neutral spends part of
+  the colour's chroma, which put the least coloured pixels of a figure exactly
+  where a thirty-two pixel body has to do its talking, and a cast lit that way
+  reads grey in a grey room however bright the highlight is. The knee inside
+  `fx_lit_step` is what keeps an already-pale garment — a white shirt — from
+  clamping to a flat 255 the moment it is lit.
+- **A figure is two values: the garment carries, the legs recede.** Chuck's
+  trousers, the guards' fatigues, the janitor's work trousers and the
+  receptionist's suit trousers all sit a long way under the torso above them,
+  and the civilians were built that way from the start. Legs drawn a few steps
+  under a jacket in the same hue give a figure no read at all at this size — it
+  is one column of colour with a belt across it — where dropping them into the
+  dark makes the torso the mass the eye lands on, which is how the cast is drawn
+  in the cutscenes and in the rear-facing terminal pose. Anything new joining the
+  cast owes the same gap.
 - **The floor casts the shadow, not the boots.** `fx_contact_shadow` is a soft
   three-pass pool, and for the player `character_ground` finds the first solid
   tile *below* him and puts it there, shrinking and thinning it with height. A

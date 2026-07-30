@@ -110,6 +110,25 @@ static inline SDL_Color fx_mix(SDL_Color a, SDL_Color b, float t)
                        255};
 }
 
+/*
+ * One channel of a lit step, lifted on its own value rather than mixed toward
+ * a neutral.
+ *
+ * Brightening by mixing toward white or toward cream is the obvious way to
+ * build the top of a ramp, and it is why a hand-tuned palette comes out grey:
+ * every step toward a neutral spends part of the colour's chroma, so the
+ * brightest part of a garment is also the least coloured part of it. Scaling
+ * the channel keeps the chroma. The knee — the `1 - c/255` term — is what
+ * stops an already-pale colour from clamping to a flat white the moment it is
+ * lit: a dark jacket gains most of the gain, a white shirt almost none.
+ */
+static inline Uint8 fx_lit_step(Uint8 value, float gain)
+{
+    float c = (float)value;
+    float lit = c + (gain - 1.0f) * c * (1.0f - c / 255.0f);
+    return (Uint8)(lit > 255.0f ? 255.0f : lit);
+}
+
 static inline SDL_FColor fx_fcolor(SDL_Color c, float alpha)
 {
     return (SDL_FColor){(float)c.r / 255.0f, (float)c.g / 255.0f,
@@ -147,15 +166,23 @@ typedef struct
 
 static inline FxRamp fx_ramp(SDL_Color base)
 {
-    /* Interior light comes from the ceiling and is slightly warm, so the lit
-     * step gains a little of that warmth and the shaded step cools as it
-     * drops rather than only losing value. A ramp built by scaling one colour
-     * up and down instead reads as plastic. */
-    SDL_Color warm = {255, 236, 206, 255};
+    /*
+     * Interior light comes from the ceiling and is slightly warm, so the shaded
+     * step cools as it drops rather than only losing value.
+     *
+     * The lit step carries that warmth as three different gains rather than as
+     * a mix toward cream. The difference is the whole reason the cast reads as
+     * coloured people in a grey room instead of grey people: a quarter-mix
+     * toward cream took a quarter of the chroma out of the brightest part of
+     * every garment, which is exactly where a thirty-two pixel figure has to do
+     * its talking. Red climbs fastest and blue slowest, so the crown of a
+     * surface turns toward the lamp on its own hue.
+     */
     SDL_Color cool = {13, 19, 33, 255};
-    FxRamp ramp = {fx_mix(base, cool, 0.30f), base, fx_mix(base, warm, 0.24f)};
+    FxRamp ramp = {fx_mix(base, cool, 0.30f), base,
+                   {fx_lit_step(base.r, 1.75f), fx_lit_step(base.g, 1.60f),
+                    fx_lit_step(base.b, 1.40f), base.a}};
     ramp.dark.a = base.a;
-    ramp.lit.a = base.a;
     return ramp;
 }
 

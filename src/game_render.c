@@ -1874,8 +1874,11 @@ static void draw_vertical_bazooka_weapon(SDL_Renderer *r, float x, float y,
 static const SDL_Color PLAYER_JACKET = {35, 102, 142, 255};
 static const SDL_Color PLAYER_SKIN = {209, 154, 105, 255};
 static const SDL_Color PLAYER_SKIN_DK = {166, 116, 78, 255};
-static const SDL_Color PLAYER_HAIR = {94, 52, 36, 255};
-static const SDL_Color PLAYER_HAIR_LT = {126, 72, 46, 255};
+/* Dark enough to frame the face rather than sit beside it. Hair drawn at the
+   value of tanned skin makes a head one lump the headband is stuck through;
+   the cutscenes have always had it a good deal darker than that. */
+static const SDL_Color PLAYER_HAIR = {70, 42, 30, 255};
+static const SDL_Color PLAYER_HAIR_LT = {102, 62, 42, 255};
 
 /* A body block in sprite-local space, shaded as a solid rather than filled
    flat. Everything a figure is built out of goes through here, so the whole
@@ -2411,8 +2414,11 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
 
     sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + left_step, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
     sprite_rect(r, x, y, PLAYER_W, dir, 13.0f + right_step, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_form(r, x, y, PLAYER_W, dir, 9.0f + left_step, 14.0f - climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
-    sprite_form(r, x, y, PLAYER_W, dir, 14.0f + right_step, 14.0f + climb, 3.0f, 8.0f, (SDL_Color){51, 130, 159, 255});
+    /* Seen from behind the legs are still trousers, and still darker than the
+       jacket above them — drawn at the torso's own value they turned the whole
+       climb into one blue column. */
+    sprite_form(r, x, y, PLAYER_W, dir, 9.0f + left_step, 14.0f - climb, 3.0f, 8.0f, (SDL_Color){30, 58, 84, 255});
+    sprite_form(r, x, y, PLAYER_W, dir, 14.0f + right_step, 14.0f + climb, 3.0f, 8.0f, (SDL_Color){30, 58, 84, 255});
     /* Boots seen from behind, one per leg, so the climb has feet on the rungs
        rather than two blank shanks ending in the dark. */
     sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + left_step, 23.0f + climb - left_lift, 5.0f, 8.0f, COL_OUTLINE);
@@ -2429,13 +2435,22 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
   }
   else
   {
-    const SDL_Color trouser_rear = {25, 57, 82, 255};
-    const SDL_Color trouser_front = {38, 82, 111, 255};
+    /*
+     * Trousers are a long way below the jacket in value, and that gap is the
+     * figure's whole read at this size. A figure whose legs sit a few steps
+     * under its torso in the same hue is one blue smear with a belt drawn
+     * across it; drop the legs into the dark and the jacket becomes the mass
+     * the eye lands on — which is exactly how Chuck is built in the cutscenes
+     * and in the rear-facing terminal pose.
+     */
+    const SDL_Color trouser_rear = {21, 40, 59, 255};
+    const SDL_Color trouser_front = {29, 55, 80, 255};
     /* Boots, not holes. A near-black shoe under a near-black outline fuses the
        two feet and the contact shadow into one slab, and a figure standing on a
-       slab has no feet at all. */
-    const SDL_Color boot_rear = {34, 40, 50, 255};
-    const SDL_Color boot_front = {46, 53, 66, 255};
+       slab has no feet at all. They stay a step under the trousers so the ankle
+       still breaks; the lit toe cap is what carries them back out of the dark. */
+    const SDL_Color boot_rear = {26, 31, 40, 255};
+    const SDL_Color boot_front = {34, 39, 49, 255};
 
     if (walking)
     {
@@ -2804,9 +2819,12 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
     {
       /* Mostly pupil, with the white behind it: the dark is what the eye is,
          and the pupil sits at the front of it rather than in the middle, since
-         a profile with the dark centred reads as two eyes seen head-on. */
+         a profile with the dark centred reads as two eyes seen head-on. The
+         white is kept under the value of the lit cheek beside it — three pixels
+         of near-cream on an eight pixel face is the brightest thing on the
+         figure, and the eye ends up reading as the whole head. */
       sprite_rect(r, x, y, PLAYER_W, dir, 14.0f + lean, 7.0f + bob, 3.0f, 2.0f,
-                  (SDL_Color){198, 208, 190, 255});
+                  (SDL_Color){166, 176, 164, 255});
       sprite_rect(r, x, y, PLAYER_W, dir, 15.0f + lean, 7.0f + bob, 2.0f, 2.0f,
                   (SDL_Color){38, 50, 60, 255});
     }
@@ -2986,21 +3004,24 @@ static void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
                cart_x + 5.0f, cart_y + 3.0f, 9.0f, 3.0f);
   }
 
+  /* Work trousers, a clear step under the tunic. His teal is the darkest
+     garment in the cast to begin with, so legs drawn at the tunic's own value
+     left nothing on him for the eye to catch but the reflective band. */
   if (walking)
   {
     draw_walking_leg(r, x, y, JANITOR_W, dir, 12.0f, 21.0f + bob,
-                     cycle + 0.5f, 2.8f, (SDL_Color){30, 57, 60, 255},
-                     (SDL_Color){32, 36, 42, 255});
+                     cycle + 0.5f, 2.8f, (SDL_Color){22, 33, 36, 255},
+                     (SDL_Color){24, 27, 32, 255});
     draw_walking_leg(r, x, y, JANITOR_W, dir, 14.0f, 21.0f + bob,
-                     cycle, 2.8f, (SDL_Color){36, 68, 70, 255},
-                     (SDL_Color){40, 45, 52, 255});
+                     cycle, 2.8f, (SDL_Color){28, 42, 45, 255},
+                     (SDL_Color){31, 35, 41, 255});
   }
   else
   {
     draw_standing_legs(r, x, y, JANITOR_W, dir, 9.0f, 14.0f, 22.0f,
-                       (SDL_Color){30, 57, 60, 255},
-                       (SDL_Color){36, 68, 70, 255},
-                       (SDL_Color){38, 43, 50, 255});
+                       (SDL_Color){22, 33, 36, 255},
+                       (SDL_Color){28, 42, 45, 255},
+                       (SDL_Color){29, 33, 39, 255});
   }
 
   sprite_body(r, x, y, JANITOR_W, dir,
@@ -3310,9 +3331,13 @@ static void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
   /* One pixel of shift in the clasped hands is all the movement a 32-pixel
      figure needs to read as waiting on someone rather than as parked. */
   float shift = on_post && sinf(rec->anim_time * 2.9f) > 0.6f ? 1.0f : 0.0f;
-  SDL_Color suit = {44, 54, 82, 255};
-  SDL_Color suit_hi = {60, 73, 106, 255};
-  SDL_Color trouser = {33, 38, 56, 255};
+  /* The one figure in the lobby wearing the lobby's own colour. Standing at a
+     navy counter against a navy curtain wall, a navy suit at the value of the
+     trousers under it left her a silhouette; the jacket carries a step up and
+     the trousers a step down so there is a person at the desk. */
+  SDL_Color suit = {52, 66, 102, 255};
+  SDL_Color suit_hi = {74, 92, 138, 255};
+  SDL_Color trouser = {26, 30, 44, 255};
   SDL_Color blouse = {202, 208, 218, 255};
   SDL_Color skin = {201, 154, 116, 255};
   SDL_Color hair = {58, 41, 33, 255};
@@ -3323,16 +3348,16 @@ static void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
   if (walking)
   {
     draw_walking_leg(r, x, y, RECEPTIONIST_W, dir, 11.0f, 21.0f + bob,
-                     cycle + 0.5f, 3.0f, trouser, (SDL_Color){38, 41, 50, 255});
+                     cycle + 0.5f, 3.0f, trouser, (SDL_Color){30, 33, 40, 255});
     draw_walking_leg(r, x, y, RECEPTIONIST_W, dir, 13.0f, 21.0f + bob,
-                     cycle, 3.0f, (SDL_Color){42, 48, 68, 255},
-                     (SDL_Color){44, 48, 58, 255});
+                     cycle, 3.0f, (SDL_Color){32, 37, 54, 255},
+                     (SDL_Color){35, 39, 47, 255});
   }
   else
   {
     draw_standing_legs(r, x, y, RECEPTIONIST_W, dir, 8.0f, 12.0f, 22.0f,
-                       trouser, (SDL_Color){42, 48, 68, 255},
-                       (SDL_Color){40, 44, 54, 255});
+                       trouser, (SDL_Color){32, 37, 54, 255},
+                       (SDL_Color){32, 35, 43, 255});
   }
 
   sprite_body(r, x, y, RECEPTIONIST_W, dir, 6.0f, 11.0f + bob, 12.0f, 12.0f,
@@ -3472,21 +3497,25 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
   }
   else
   {
+    /* Fatigue trousers well under the tunic, for the same reason Chuck's are
+       under his jacket: a uniform drawn in one value from the collar to the
+       boots is a green column, and the tunic is the shape that has to carry
+       the guard across a room. */
     if (moving)
     {
       draw_walking_leg(r, x, y, ENEMY_W, dir, 12.0f, 21.0f + bob,
-                       cycle + 0.5f, 3.2f, (SDL_Color){43, 50, 40, 255},
-                       (SDL_Color){34, 39, 33, 255});
+                       cycle + 0.5f, 3.2f, (SDL_Color){30, 35, 28, 255},
+                       (SDL_Color){24, 27, 23, 255});
       draw_walking_leg(r, x, y, ENEMY_W, dir, 14.0f, 21.0f + bob,
-                       cycle, 3.2f, (SDL_Color){67, 77, 57, 255},
-                       (SDL_Color){44, 50, 41, 255});
+                       cycle, 3.2f, (SDL_Color){42, 49, 38, 255},
+                       (SDL_Color){32, 36, 30, 255});
     }
     else
     {
       draw_standing_legs(r, x, y, ENEMY_W, dir, 9.0f, 14.0f, 22.0f,
-                         (SDL_Color){42, 49, 39, 255},
-                         (SDL_Color){52, 60, 47, 255},
-                         (SDL_Color){40, 45, 38, 255});
+                         (SDL_Color){30, 35, 28, 255},
+                         (SDL_Color){40, 46, 36, 255},
+                         (SDL_Color){30, 34, 28, 255});
     }
   }
 
