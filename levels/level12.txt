@@ -1,22 +1,21 @@
 ########################################################
-#       O      ###      O      ###      O      ###     #
-#dEciHdc iBc id###ciHd cidLc id###ciBdHcidNci d###ciHYc#
-#####H###### #######H####### #########H###### ######H###
-#    H   ###O       H    ###  O       H  ###        H  #
-#d NcHidc###idciBdciHdMcH###idciLdciKdHid###ciBdHcGiHci#
-#####H##################H#######################H#######
-#    H        O      ###H         O  ###        H      #
-#dAHcHid cidMc i cXid###HcHidcBidcGid###ciHdMcLiHdciHdc#
-###H############ #########H###############H#########H###
-#  H       ###  O         H  ###          H    ###  H  #
-#dcHiHXdAci###dcidciMdcBHiHNd###cidcWidcXiHdHL ###iZHKD#
-#####H##################H###################HFF#########
-#    H             ###  H         O    ###  H          #
-#dcidHHcBiMdciXdLci###dcHidcWiHdcXidGci###dcHi dcBHdLci#
-######H#######################H###################H#####
-#     H                  ###  H              ###  H    #
-#dcSidHcJidLciMdciXdcBidc###idHcidMcidXcidKci###dDHWcNi#
+#                                                      #
+#Y    X   M                                          N #
+#####################H######## ################### #####
+#                 O  H  #   O               #       O  #
+# K     W            H  #         X   B   K #        B #
+#############H########################## ####### #######
+#            H  #     O                 O              #
+#            H  # G       X   W   L                 B  #
+#####H######################################## #########
+#    H        O                         #       O      #
+#    H  A X       M         X           # N B     X    #
+## ##################### #########H################# ###
+#       #       O         O     % H       O            #
+#     L #           Z X         % H     M     X        #
+#### ####### #####################################H#####
+#         O             O             O           H    #
+# S             B   M       L X   M             A H ^ E#
 ########################################################
 
-SPAWNS 1 1
 THEME DUCTS

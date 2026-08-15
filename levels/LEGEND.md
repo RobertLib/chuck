@@ -174,21 +174,21 @@ or a storey rhythm.
 
 | # | Theme | Plan |
 | --- | --- | --- |
-| 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the atrium to a mezzanine gallery, a service ladder to the security wing, a short lift to the staff corridor behind the stair. The hall empties past Chuck as he walks in — see `f` — and the front desk stays staffed after it has, see `k` |
+| 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the double-height atrium to a gallery, a service ladder up to the security wing where the exit is, and a second service ladder down behind the reception line to the staff corridor with the restroom. The hall empties past Chuck as he walks in — see `f` — and the front desk stays staffed after it has, see `k` |
 | 2 | `OFFICE` | three open-plan floors cut into blocks by floor-to-ceiling partitions, the ladders staggered so every partition is passed by changing floor; a welded stair core at the far end, the executive gallery back across the top, and a service crawl underneath reached by one ladder, where the bazooka lies beside a blocked-up opening (`%`) that saves the teleport across |
 | 3 | `FACADE_NIGHT` | one wide breach per course, walking slowly from side to side |
-| 4 | `SERVER` | cold aisles blocked at alternating ends: one long serpentine, plus two fenced pockets joined by a cable tunnel |
-| 5 | `PLANT` | catwalk towers either side of a solid plant block, goods lift onto its roof, crane platform across the hall |
-| 6 | `CANTEEN` | a double-height dining hall against a tight galley stack; the way up is the kitchen and its dumbwaiter |
+| 4 | `SERVER` | a serpentine of four aisles walked in alternating directions, plus two fenced pockets — the vault above, the terminal room below — joined by a service ladder, entered by an airlock door pair or by dropping through the cable gap in the hot-aisle floor |
+| 5 | `PLANT` | catwalk towers either side of a solid plant block, goods lift onto its roof, crane platform across the hall to the exit ledge; spiked pit under the crane gap |
+| 6 | `CANTEEN` | a double-height dining hall against a tight galley stack; the way up is the kitchen and its dumbwaiter, and a blast through the galley wall is the way back down |
 | 7 | `FACADE_STORM` | short balconies instead of courses, so cover for the wind is sparse |
-| 8 | `LAB` | a spine corridor with sealed clean-room bays combed off it above and below |
-| 9 | `ARCHIVE` | a grid of canyons between blocks of shelving, linked only where an aisle was cut through |
-| 10 | `SECURITY` | a patrol ring around the control bunker; both corridors are bricked up, so the bunker is the only way across |
-| 11 | `FACADE_DAWN` | two breaches that braid, swapping sides as the climb rises |
-| 12 | `DUCTS` | six crawl levels chopped into runs, one riser each; climb, drop through a missing panel, climb again |
+| 8 | `LAB` | a spine corridor with sealed clean-room bays combed off it above — each an airlock reached by its own ladder — and basement chambers and a deep-storage crawl below; the rocket vault opens only through a paired door |
+| 9 | `ARCHIVE` | a grid of canyons between blocks of shelving, linked only where an aisle was cut through; the route weaves up, across the reading room, and back down before the exit stair |
+| 10 | `SECURITY` | a patrol ring around the control bunker; both corridors are bricked up, so the bunker's lower floor is the only way across, and the airlock doors flanking it are where the reinforcements come out |
+| 11 | `FACADE_DAWN` | two breaches that braid, swapping sides as the climb rises and merging where the lines cross |
+| 12 | `DUCTS` | six crawl levels chopped into runs, one riser each; climb, drop through a missing panel, climb again. The rocket pocket hides behind a blocked-up bulkhead |
 | 13 | `FACADE_HIGH` | offset stubs laid like brickwork: every band is a lateral detour |
-| 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall. The far bay keeps the medkit and the rocket behind a paired door whose other end is the one guards come out of; the `%` in the bay's end wall is a second way in, for anyone who can spare a blast |
-| 15 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, service level beneath the deck |
+| 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall crossed by balcony stubs. The far bay keeps the medkit and the rocket behind a paired door whose other end is the one guards come out of; the `%` in the bay's end wall is a second way in, for anyone who can spare a blast |
+| 15 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, a gondola strung between the two towers, and a fan-choked service level beneath the deck that is the only way past the two breaches in it |
 
 Two campaign-wide rules go with it, both pinned by the same test:
 
@@ -196,7 +196,7 @@ Two campaign-wide rules go with it, both pinned by the same test:
   `3·guards + 2·dogs + 2·mines + spikes + fans` — must exceed the previous
   interior's; a climb's budget (`3·throwers + 2·birds`) and its height must
   exceed the previous climb's. The campaign runs 6, 14, 20, 24, 30, 37, 48, 53,
-  59, 64, 67 inside and 20, 25, 30, 35 on the walls. Sector 1 spends its whole
+  57, 64, 67 inside and 20, 25, 30, 35 on the walls. Sector 1 spends its whole
   budget on two guards and carries no hazard at all: it is where the player
   finds out what the controls do.
 - **Every interior is finishable.** The test walks a conservative model of the

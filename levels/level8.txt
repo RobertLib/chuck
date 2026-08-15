@@ -1,22 +1,22 @@
 ####################################################
-#            #            #            #           #
-#dcK id MciH #dcC i Hd Wc #i XHd c  Ni # AH Mdc E i#
-###########H########H#########H###########H#########
-#        # H      # H      #  H     #     H  #     #
-#        # H      # H   O  #  H     #     H  #     #
-#dC^HciDc#iHdHciGd#cHiHd Mc#idHHc Xi#dT HcHid#Z^H D#
-####H########H########H########H########H#######H###
-#   H   O    H   O    H   O    H   O    H   O   H  #
-#dciHdHci B dHcidHci dHcidLcHidHcid  ciHHBid ciHHci#
-######H##########H##########H##########H#######H####
-#     H    #     H    #     H    #     H    #  H   #
-#     H    #     H    #  O  H    #     H    #  H   #
-#dLcHiHdcid#cBHidHcHid#cidMcHHidc#idciHH ^Td#cCHiHd#
-####H#########H####H#########H########H##########H##
-#   H  #      H #  H     #   H    #   H    #     H #
-#   H  #      H #  H     #   H    #   H    #     H #
-#dScHid#ciJdLcHi# dHXcBid#cAiHMdci#dciH^dNc#iBdKcHi#
+####################################################
+####################################################
+####################################################
+######       ###  O      #####         ###  O    ###
+######       ###         #####         ###       ###
+###### C i   ###dc  MTA  #####   i ^ T ###E  i   ###
+###########H###########H#######H###############H####
+#          H           H       H      O        H   #
+#          H           H       H               H   #
+# S   i    HM ^ A      H    ^  HM   XA  D M    H   #
+########H#################H#################H#######
+#       H        #    O   H       #         H#     #
+#       H        #        H       #         H#     #
+#  WG   H     ^ B#  M   B H  X  L #   i  M  H#XKDZ #
+############H#######################################
+#           H                         #            #
+#           H       B       L     N   #            #
 ####################################################
 
-SPAWNS 2 2
+SPAWNS 1 0
 THEME LAB

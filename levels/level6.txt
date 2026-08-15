@@ -1,21 +1,20 @@
 ##################################################
 #                                                #
 #                                                #
-#                                                #
-# Yd c i d  A c i d B c i d c M i d H c i d c i  #
-####################################H#############
-#                                   H   O    V   #
-#                   dcK Gidci dc id Hc L  i dVci #
-#                   #########################V####
-#               O               H     O      V   #
-#dcNAiHdBcidc                 idHML c  i d ciV d #
-######H######                ###H#################
-#     H               O         H        H #     #
-#     H   O                   DdHciXdcBidHc#DiZd #
-#     H                      ############H########
-#     H                              O   H       #
-#dScidJ McidLcWidcXiBdciMEdc# iBdcidcidLcHiMdcid #
+#Y                  M    A                       #
+##################################H###############
+#                              #  H         V    #
+#                              #  H M       V    #
+#                              ##########H##V#####
+#                              #         H  V    #
+#                              # M    A  H  V  Z #
+#                              ######H######V#####
+#                              %     H      V    #
+#  t ss K          ##########  %     H  ^   V BN #
+#H#########                    ###H#########V#####
+#H                    O  O     #  H   O  O  V    #
+#H                                H         V    #
+#HS tJ ss M  BG ssM nnnnnnnnWA   AHB   LM L V ^^E#
 ##################################################
 
-SPAWNS 1 0
 THEME CANTEEN

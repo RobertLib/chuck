@@ -1,24 +1,24 @@
 ########################################################
-#       #      #            #            #      #      #
-#       #      #            #            #      #      #
-#     O #   O  #        O   #   O        #    O #    O #
-#dEc Cid cMidAc idHcTidcXidV ciMdciBdHcWi dc^iCd cidMci#
-##################H########V#########H##################
-#          #      H   #    V     #   H      #          #
-#          #      H   #    V     #   H      #          #
-#       O  #      H  O#    V   O #   H     O#          #
-#dKcHiMdcXi dcBidcHLid ciMdVcNidc idXHciBdci dWciLdHciG#
-####H##############################################H####
-#   H  #      #                          #      #  H   #
-#   H  #      #               O          #      #  H   #
-#   H  #    O #                          #      #  H   #
-#dNcHBi dcUidX ciMdciH            HdTciBd ciCWd^ ciHdKc#
-#####################H            H#####################
-#     #     #    #   H    O       H   #    #     #     #
-#     #     #    #   H            H   #    #     #     #
-#     #     #    #   H            H   #    #     #     #
-#dcSid cDiJd cLiX dcBHidMcidAcidMcHiBd ciLd ciGdc%iZDKd#
+#                                                      #
+#      #      #                          #      #      #
+#      #      #                          #      #      #
+#      #  O   #                          #   O  #      #
+#                                               %      #
+# C ^    d cM   X t   dcM  E   Mdc   tAX    M i %XZK D #
+###################H################H###################
+#         #        H #            # H        #         #
+#         #        H #            # H        #         #
+#     O   #        H #            # H        #   O     #
+#                  H                H                  #
+# i  TM A    ^ T  MHi  X        X  iH T  M     dcM i   #
+###H#####################      #####################H###
+#  H        #        #            #        #        H  #
+#  H        #        #            #        #        H  #
+#  H        #        #            #        #        H  #
+#  H  O     #        #            #        #O       H  #
+#  H                                                H  #
+# UH  W  ^    S  i  X tknnn  WAD M X t  M       ^   HN #
 ########################################################
 
-SPAWNS 2 0
+SPAWNS 0 3
 THEME PENTHOUSE

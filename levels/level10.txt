@@ -1,24 +1,24 @@
 ####################################################
-#                   #                              #
-#       O     O     #     O                 O      #
-#dHcKidcMi dciGdciAd#cidXcidMc idcWidcidHcidcYB  V #
-##H#####################################H########V##
-# H #                                   H      # V #
-# H #                             O     H      # V #
-# H #dNc^idcMidcidXcidciBdcidcHidcidMcidHcidcid# V #
-# H ##########################H################# V #
-# H #                         H                # V #
-# H #                 O       H                # V #
-# H #dciLdc DidcHiMdciXdcEidciHdciBdciWdcid^cNi# V #
-# H ############H############################### V #
-# H #           H                  #           # V #
-# H #           H       O          #           # V #
-# H #dLcXiHdMcidHcidBcidciAdcidcLid#ciZdDcidKci# V #
-##H#######H######################################V##
-# H       H                   #                  V #
-# H   O   H             O     #           O      V #
-#dHcidScJiHdciLdciXdciBdci dci#dciBdciMdcidcGiKdcVi#
+#                                                  #
+#                   O    %       O                 #
+#                        %                         #
+#E V A  ^ dc  M          %    ^      ^M  B  X     Y#
+###V############################################H###
+#  V        #                          #        H  #
+#  V        #                          #        H  #
+#  V        #    O                     #        H  #
+#K VM       #                          #        H  #
+###V####    # iii  W dc   A   X  X  Z  #        H  #
+#  V        #############H##############        H  #
+#  V        #            H             #        H  #
+#  V        #            H             #        H  #
+#  V                     H                      H  #
+#  V      Dg    B   MdcL H i i M NB  A  gD  M X H  #
+###V####H##################################H########
+#       H                %  O              H       #
+#       H                %                 H       #
+# S     H ^   M i ^    K %       W  M   XL H  G    #
 ####################################################
 
-SPAWNS 2 0
+SPAWNS 2 2
 THEME SECURITY
