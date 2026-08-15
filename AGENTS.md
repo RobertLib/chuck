@@ -7,6 +7,52 @@ procedurally at runtime and all audio is synthesized at startup, so the shipped
 executable has no external asset files — levels are embedded into the binary at
 build time.
 
+## The story, and where each piece of it is written down
+
+The fiction is not decoration here: it decides what the HUD says, what the
+manual teaches, what the captions between sectors are allowed to reveal and
+what the ending can pay off. It is one page, and everything that speaks to the
+player has to agree with it.
+
+- **Chuck Ross** — twelve years an Army sapper, now a two-man strip-out crew
+  that guts old buildings. That is the licence for the sidearm, for knowing
+  charges, and for the `%` weak wall being a thing he can read as a bricked-up
+  opening rather than a wall.
+- **Ellen Ross** — his wife, and the night duty controller of Kessler Tower.
+  She wrote the building's access system, which is why the sector rules are
+  hers: one real key card among decoys, and an engineer's way in at every
+  terminal.
+- **Anton Voss** — twelve men badged into the tower since March as *Meridian
+  Facility Services*, its night maintenance contractor. The flight cases they
+  wheeled through the goods entrance were never inspected, which is where every
+  rifle, grenade and rocket the player picks up came from.
+- **The cover** — a political demand broadcast at 00:20. It puts every unit in
+  the city on a cordon and nobody at all inside the building. It is theatre.
+- **The job** — at 01:00 the sub-vault opens for the overnight settlement, six
+  hundred million in bearer bonds, and its last door runs on a two-key rule:
+  the bank's key, and the duty controller alive and present. That is why they
+  needed Ellen at all, and it is the only reason she is still breathing.
+- **Why Chuck is inside** — he was twenty metres behind her on the pavement
+  when they took her, and he was through the front door before the cordon went
+  up.
+- **The ending** — the helicopter on the roof is the getaway, not a rescue.
+
+Where the player actually reads it, in the order they meet it: the title
+screen's one line; the abduction cutscene's captions; the drive's captions; the
+opening cutscene outside the tower; **the `TRANSITION_INTEL` table in
+[cutscene.c](src/cutscene.c)**, one line on the report between sectors, which
+is the main carrier because it is the only part of the plot the player meets
+while actually playing; the manual's `THE NIGHT` sheet; and the outro. A
+change to any of those is a change to all of them.
+
+The table is indexed by finished sector, but only sectors that leave by a
+**stair door** show a report at all — a window is a continuous physical route
+onto the facade and cuts straight to the next sector. In the campaign as
+shipped that is six reports, after sectors 1, 4, 5, 8, 9 and 14, and those six
+carry the arc on their own. Adding or moving a facade sector therefore changes
+which beats of the story are told, which is the one thing about the level
+layout that reaches all the way into the script.
+
 ## Commands
 
 ```sh
@@ -81,11 +127,11 @@ consumed by a non-playing state (intro, the prologue drive, cutscenes,
 transitions, game over); otherwise `update_playing` runs the simulation. Events
 are dispatched last.
 
-The scene order the player walks through is `STATE_INTRO` → `STATE_CHASE` →
-`STATE_OPENING_CUTSCENE` → level one, with `STATE_MANUAL` hanging off the title
-screen as a dead end that only leads back to it. The chase branch owns its own
-event dispatch and camera-shake tick because those normally run only on playing
-frames.
+The scene order the player walks through is `STATE_INTRO` → `STATE_ABDUCTION`
+→ `STATE_CHASE` → `STATE_OPENING_CUTSCENE` → level one, with `STATE_MANUAL`
+hanging off the title screen as a dead end that only leads back to it. The
+chase branch owns its own event dispatch and camera-shake tick because those
+normally run only on playing frames.
 
 `update_playing` ([game.c:686](src/game.c#L686)) has a deliberate ordering:
 terminal hold → player physics → elevators/falling/moving platforms → crates →
@@ -190,12 +236,30 @@ core stays deterministic and menu-free. The sheet opens from the title
 screen or from pause (`J`, or X on a pad) and returns to whichever opened
 it.
 
-### The prologue pursuit
+### The prologue: three beats, one shot
 
-Pressing START drops the player into a top-down, forward-only car chase
-([chase.c](src/chase.c)) before the platformer begins: Chuck tails the
-kidnappers' SUV through night traffic until it parks at the building the first
-level opens in. It is a gameplay-core module — no SDL, seeded `Rng`, its own
+Pressing START plays the whole abduction before the platformer begins, in
+three scenes that are staged to read as one continuous take. All three are
+skippable with confirm.
+
+**The kerb** (`STATE_ABDUCTION`, `abduction_cutscene_*` in
+[cutscene.c](src/cutscene.c)) is the beat the campaign hangs off: Chuck's car
+parked outside a coffee window, Ellen walking the last block ahead of him, and
+an SUV that comes up the kerb lane with its lights off. It is staged left to
+right and ends with the SUV accelerating toward the tower on the skyline and
+Chuck running back for his car — which is exactly the state
+`CHASE_PHASE_DEPARTURE` opens in, so the cut between them is invisible. It
+reuses the opening cutscene's cast, vehicles, street and rain wholesale and
+adds no sound effect of its own; a thirteen-second beat does not earn an entry
+in the synth table. Two things in it are load-bearing and easy to break: the
+SUV's headlights are a parameter separate from `moving`, because a rolling
+vehicle throwing no beam is the one detail anybody would remember, and Chuck
+stops a clear seventy pixels short of the SUV's tail, because a figure
+standing on the vehicle he cannot reach says the opposite of the scene.
+
+**The drive** ([chase.c](src/chase.c)) is a top-down, forward-only car chase:
+Chuck tails the SUV through night traffic until it parks at the building the
+first level opens in. It is a gameplay-core module — no SDL, seeded `Rng`, its own
 `GameEventBuffer` — and [chase_render.c](src/chase_render.c) is the only part
 that touches SDL.
 
@@ -216,14 +280,20 @@ Two rules keep it fair, and both are tested: traffic is never generated more
 than `CHASE_MAX_CARS_ABREAST` cars wide, so at least two lanes are always open,
 and the SUV holds a speed that keeps Chuck at arm's length once it is being
 tailed, so holding the accelerator settles into a stable tail instead of ramming
-the car his fiancée is in.
+the car his wife is in.
 
 ### The field manual
 
 `H` on the title screen (`Y` on a pad, or a click on the line naming it) opens
-`STATE_MANUAL`: six sheets in [manual.c](src/manual.c) that say what the
-building is, what the buttons do, what the floor plan allows, what the guards
-do, how the wall is climbed and how to read the console. Arrow keys or the
+`STATE_MANUAL`: seven sheets in [manual.c](src/manual.c) that say who is in
+the building and why, what the building is, what the buttons do, what the
+floor plan allows, what the guards do, how the wall is climbed and how to read
+the console. The first sheet, `THE NIGHT`, is the only place the plot is
+stated outright, and it is illustrated with the crew's own flight case — open,
+stencilled *Meridian Facility Services*, signed in on 14 March and never
+inspected. Three heads at twelve pixels across would have said nothing the
+text does not; the case says the part the text cannot, which is where every
+rifle and rocket in the campaign came from. Arrow keys or the
 footer chips turn a sheet; anything that means "done" hands back to
 `game_return_to_intro`, which is also where `ESC` already went. It is a branch
 off the title screen and nothing else — there is no simulation to pause, so the
@@ -458,7 +528,7 @@ player, no scoring. Guards do not see them and bullets pass through them. Keep
 it that way: the moment one of them can be shot or can block a route, every
 level holding one has to be re-solved.
 
-Level 1 is the lobby the kidnappers came through, so it empties as Chuck walks
+Level 1 is the lobby they walked Ellen through, so it empties as Chuck walks
 in: five civilians freeze, shout and run for the tile the player started on —
 the street entrance — dissolving into the doorway rather than stepping out of
 frame, because the entrance itself is painted on a parallax layer

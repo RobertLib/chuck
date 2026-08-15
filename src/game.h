@@ -12,6 +12,7 @@
 
 typedef enum
 {
+    STATE_ABDUCTION,
     STATE_CHASE,
     STATE_OPENING_CUTSCENE,
     STATE_INTRO,
@@ -70,10 +71,13 @@ typedef struct
      * know the figure compresses when it lands. */
     float player_land_squash;
 
-    /* One-shot story setup shown only when the application first launches. */
+    /* The three beats of the prologue, in the order they play: the kerb where
+     * she is taken, the drive across town (in `Chase`), and the pavement
+     * outside the tower she is walked into. */
+    AbductionCutscene abduction_cutscene;
     OpeningCutscene opening_cutscene;
 
-    /* Results report and continuing hostage pursuit shown between levels. */
+    /* Results report and the captors' next flight of stairs, between levels. */
     LevelTransition level_transition;
 
     /* Final rooftop rescue and happy ending after the last level. */

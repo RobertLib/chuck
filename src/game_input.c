@@ -100,6 +100,7 @@ void game_read_input(Game *game)
 static bool state_accepts_confirm(GameState state)
 {
   return state == STATE_INTRO ||
+         state == STATE_ABDUCTION ||
          state == STATE_CHASE ||
          state == STATE_OPENING_CUTSCENE ||
          state == STATE_LEVEL_START ||

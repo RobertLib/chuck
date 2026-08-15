@@ -4754,95 +4754,101 @@ static void render_hud(Game *game)
   color_rect(r, (SDL_Color){38, 112, 110, 255}, 0.0f, 38.0f, (float)win_w, 1.0f);
   color_rect(r, FX_INK, 0.0f, 39.0f, (float)win_w, 1.0f);
 
-  /* Identity block. */
+  /* Identity block. A block is only as wide as its widest row, and every row
+   * here is set in the 8px debug font: five cells at scale 2 put the
+   * wordmark's last inked column at x=89, so the divider has to stand clear
+   * of it instead of painting over the last stroke of the K. The rule under
+   * it is that wordmark's own underline and carries the same width. */
   color_rect(r, FX_RED, 0.0f, 0.0f, 3.0f, 37.0f);
   draw_text(r, 12.0f, 9.0f, 2.0f, FX_CREAM.r, FX_CREAM.g, FX_CREAM.b,
             "CHUCK");
-  color_rect(r, (SDL_Color){170, 52, 46, 255}, 12.0f, 23.0f, 58.0f, 2.0f);
+  color_rect(r, (SDL_Color){170, 52, 46, 255}, 12.0f, 23.0f, 78.0f, 2.0f);
   draw_text(r, 12.0f, 27.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
-            "RESCUE OPS");
-  draw_hud_separator(r, 88.0f);
+            "NO BACKUP");
+  draw_hud_separator(r, 96.0f);
 
   /* Hearts are the hits left in this life; the counter beside them is the
-   * lives left in the run. Empty sockets keep the maximum readable. */
-  draw_text(r, 99.0f, 8.0f, 1.0f, label_r, label_g, label_b, "VITAL");
+   * lives left in the run. Empty sockets keep the maximum readable. The block
+   * is sized for the assist row of five plus the widest counter, which is the
+   * three-cell "1UP" and not the "x9" it replaces. */
+  draw_text(r, 107.0f, 8.0f, 1.0f, label_r, label_g, label_b, "VITAL");
   int max_hp = gameplay_player_max_hp(&game->gameplay);
   for (int i = 0; i < max_hp; ++i)
-    draw_hud_heart(r, 99.0f + i * 14.0f, 19.0f,
+    draw_hud_heart(r, 107.0f + i * 14.0f, 19.0f,
                    i < game->gameplay.player.hp);
   char life_buf[8];
   SDL_snprintf(life_buf, sizeof(life_buf), "x%d", game->campaign.lives);
   if (game->presentation.extra_life_timer > 0.0f &&
       fmodf(game->presentation.extra_life_timer, 0.3f) > 0.15f)
-    draw_text(r, 99.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
+    draw_text(r, 107.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
               120, 255, 190, "1UP");
   else
-    draw_text(r, 99.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
+    draw_text(r, 107.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
               246, 110, 96, life_buf);
-  draw_hud_separator(r, 190.0f);
+  draw_hud_separator(r, 206.0f);
 
   /* All carried ammunition remains visible; the label names the weapon that
    * the next attack will actually use. */
   char weapon_buf[20];
   SDL_snprintf(weapon_buf, sizeof(weapon_buf), "%s",
                player_weapon_label(game->gameplay.player.active_weapon));
-  draw_text(r, 201.0f, 8.0f, 1.0f, label_r, label_g, label_b, weapon_buf);
+  draw_text(r, 217.0f, 8.0f, 1.0f, label_r, label_g, label_b, weapon_buf);
   for (int i = 0; i < MAX_AMMO; ++i)
-    fx_ammo_pip(r, 202.0f + i * 7.0f, 19.0f,
+    fx_ammo_pip(r, 218.0f + i * 7.0f, 19.0f,
                 i < game->gameplay.player.bullets);
   if (game->gameplay.player.grenades > 0)
-    draw_grenade(r, 247.0f, 19.0f, 0.0f);
+    draw_grenade(r, 263.0f, 19.0f, 0.0f);
   if (game->gameplay.player.bazooka_rockets > 0)
-    draw_rocket_sprite(r, 260.0f, 22.0f, 1, false);
-  draw_hud_separator(r, 276.0f);
+    draw_rocket_sprite(r, 276.0f, 22.0f, 1, false);
+  draw_hud_separator(r, 292.0f);
 
   /* Access status chip with a live LED. */
-  draw_text(r, 287.0f, 8.0f, 1.0f, label_r, label_g, label_b, "ACCESS");
+  draw_text(r, 303.0f, 8.0f, 1.0f, label_r, label_g, label_b, "ACCESS");
   bool blocked = game->gameplay.level.map.has_window;
   bool unlocked = game->gameplay.level.runtime.exit_unlocked;
   float blink = 0.5f + 0.5f * sinf((float)SDL_GetTicksNS() * 1.0e-9f * 4.0f);
   if (blocked)
   {
-    color_rect(r, (SDL_Color){36, 38, 42, 255}, 287.0f, 19.0f, 70.0f, 13.0f);
-    color_rect(r, (SDL_Color){96, 102, 108, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
-    color_rect(r, (SDL_Color){166, 142, 91, 255}, 291.0f, 24.0f, 3.0f, 3.0f);
-    draw_text(r, 298.0f, 22.0f, 1.0f, FX_PALE.r, FX_PALE.g, FX_PALE.b,
+    color_rect(r, (SDL_Color){36, 38, 42, 255}, 303.0f, 19.0f, 70.0f, 13.0f);
+    color_rect(r, (SDL_Color){96, 102, 108, 255}, 303.0f, 19.0f, 70.0f, 1.0f);
+    color_rect(r, (SDL_Color){166, 142, 91, 255}, 307.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 314.0f, 22.0f, 1.0f, FX_PALE.r, FX_PALE.g, FX_PALE.b,
               "BLOCKED");
   }
   else if (unlocked)
   {
-    color_rect(r, (SDL_Color){16, 52, 40, 255}, 287.0f, 19.0f, 70.0f, 13.0f);
-    color_rect(r, (SDL_Color){40, 132, 96, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
-    color_rect(r, FX_GREEN, 291.0f, 24.0f, 3.0f, 3.0f);
-    draw_text(r, 298.0f, 22.0f, 1.0f, FX_GREEN.r, FX_GREEN.g, FX_GREEN.b,
+    color_rect(r, (SDL_Color){16, 52, 40, 255}, 303.0f, 19.0f, 70.0f, 13.0f);
+    color_rect(r, (SDL_Color){40, 132, 96, 255}, 303.0f, 19.0f, 70.0f, 1.0f);
+    color_rect(r, FX_GREEN, 307.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 314.0f, 22.0f, 1.0f, FX_GREEN.r, FX_GREEN.g, FX_GREEN.b,
               "GRANTED");
   }
   else
   {
-    color_rect(r, (SDL_Color){54, 24, 24, 255}, 287.0f, 19.0f, 70.0f, 13.0f);
-    color_rect(r, (SDL_Color){124, 52, 46, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
+    color_rect(r, (SDL_Color){54, 24, 24, 255}, 303.0f, 19.0f, 70.0f, 13.0f);
+    color_rect(r, (SDL_Color){124, 52, 46, 255}, 303.0f, 19.0f, 70.0f, 1.0f);
     color_rect(r, fx_dim((SDL_Color){246, 90, 70, 255}, 0.45f + blink * 0.55f),
-               291.0f, 24.0f, 3.0f, 3.0f);
-    draw_text(r, 298.0f, 22.0f, 1.0f, FX_RED.r, FX_RED.g, FX_RED.b,
+               307.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 314.0f, 22.0f, 1.0f, FX_RED.r, FX_RED.g, FX_RED.b,
               "LOCKED");
   }
-  draw_hud_separator(r, 371.0f);
+  draw_hud_separator(r, 387.0f);
 
   char level_buf[32];
   SDL_snprintf(level_buf, sizeof(level_buf), "%02d", game->campaign.current_level + 1);
-  draw_text(r, 382.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SECTOR");
-  draw_text(r, 382.0f, 19.0f, 2.0f, 226, 232, 220, level_buf);
-  draw_hud_separator(r, 440.0f);
+  draw_text(r, 398.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SECTOR");
+  draw_text(r, 398.0f, 19.0f, 2.0f, 226, 232, 220, level_buf);
+  draw_hud_separator(r, 456.0f);
 
   /* Score keeps its leading zeros, but only the live digits glow. */
   char score_buf[16];
   SDL_snprintf(score_buf, sizeof(score_buf), "%07d", game->campaign.score);
-  draw_text(r, 451.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SCORE");
+  draw_text(r, 467.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SCORE");
   int first_digit = 0;
   while (first_digit < 6 && score_buf[first_digit] == '0')
     ++first_digit;
-  draw_text(r, 451.0f, 19.0f, 2.0f, 74, 88, 102, score_buf);
-  draw_text(r, 451.0f + first_digit * 16.0f, 19.0f, 2.0f,
+  draw_text(r, 467.0f, 19.0f, 2.0f, 74, 88, 102, score_buf);
+  draw_text(r, 467.0f + first_digit * 16.0f, 19.0f, 2.0f,
             FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, score_buf + first_digit);
 
   /* The passive trail meter becomes an unmistakable security readout while
@@ -5221,6 +5227,12 @@ void game_render(Game *game)
       render_hud(game);
     }
     draw_assist_overlay(game);
+  }
+  else if (game->state == STATE_ABDUCTION)
+  {
+    abduction_cutscene_render(r, &game->presentation.abduction_cutscene,
+                              win_w, win_h, game->platform.gamepad_active);
+    vignette = FX_VIGNETTE_SCENE;
   }
   else if (game->state == STATE_OPENING_CUTSCENE)
   {

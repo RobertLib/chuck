@@ -105,7 +105,7 @@ typedef struct
     JanitorWetSpot wet_spots[JANITOR_WET_SPOTS];
 } Janitor;
 
-/* A civilian caught in the building when the kidnappers came through it. The
+/* A civilian caught in the lobby when the crew walked Ellen through it. The
  * whole part is four beats long: freeze, run, trip, gone. */
 typedef enum
 {

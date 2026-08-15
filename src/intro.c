@@ -1,6 +1,6 @@
 /*
- * Chuck's title screen is the shot the story starts from: the tower his
- * fiancee was carried into, seen from the pavement he parked on.  It is not a
+ * Chuck's title screen is the shot the story starts from: the tower his wife
+ * was walked into, seen from the pavement he stopped on.  It is not a
  * menu laid over a diagram of the game — it is one deep image built from
  * planes that each sit a step darker or lighter than the plane behind them
  * (sky, far skyline, near skyline, the blocks that crop the frame, the tower,
@@ -1683,7 +1683,7 @@ static void render_logo(SDL_Renderer *r, const Intro *intro,
     float tag = smoothstep01((intro->time - 0.72f) / 0.5f);
     if (tag <= 0.0f)
         return;
-    const char *line = "THEY TOOK HER. BRING HER HOME.";
+    const char *line = "FORTY-TWO FLOORS. ONE WAY UP.";
     const float track = 3.0f;
     float width = tracked_width(line, 1.0f, track);
     float ty = y + (float)MARK_H + 24.0f;

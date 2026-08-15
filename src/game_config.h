@@ -416,8 +416,9 @@
 #define FACADE_CHECKPOINT_STEP (3.0f * TILE_SIZE)
 
 /* Prologue car chase. A top-down, forward-only pursuit played once before the
- * campaign: Chuck tails the kidnappers' SUV through night traffic until it
- * reaches the building where the platformer starts. Road space is measured in
+ * campaign, and the middle of the prologue's three beats: Chuck tails the SUV
+ * Ellen was put into through night traffic until it reaches Kessler Tower,
+ * where the platformer starts. Road space is measured in
  * pixels, x across the road and y along the driving direction (y grows
  * forward), so the simulation needs no separate world scale. */
 #define CHASE_ROAD_WIDTH 480.0f
@@ -487,8 +488,9 @@
 #define CHASE_MIN_GAP 190.0f
 #define CHASE_LOSE_GAP 1050.0f
 
-/* The opening beat, cue by cue: the kidnappers slam a door and pull away while
- * Chuck runs up the pavement, unlocks his car and pulls out after them. The
+/* The opening beat, cue by cue: the crew slam a door and pull away while Chuck
+ * runs up the pavement, unlocks his car and pulls out after them. It resumes
+ * the abduction cutscene's last frame, so the two read as one shot. The
  * renderer stages Chuck's run from the same timings the simulation uses. */
 #define CHASE_KERB_X \
     (CHASE_ROAD_WIDTH - CHASE_CAR_WIDTH * 0.5f - CHASE_KERB_MARGIN)

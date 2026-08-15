@@ -1,7 +1,14 @@
 /*
- * Chuck's opening is rendered entirely from the same hard-edged primitives
- * as the rest of the game. It establishes the hostage situation before the
- * title screen without adding an external asset pipeline.
+ * Every film in the game, rendered from the same hard-edged primitives as the
+ * sector: the kerb where Ellen is taken, the pavement outside Kessler Tower
+ * where she is walked in, the report between sectors, and the roof. They share
+ * one cast, one set of vehicles, one street and one rain, which is the only
+ * reason four cinematics cost no asset pipeline at all — and the reason a
+ * change to a figure here changes all four of them at once.
+ *
+ * The order the player meets them is: title screen, then the kerb
+ * (`abduction_*`), then the drive in [chase.c](chase.c), then the tower's
+ * front door (`opening_*`), then the campaign.
  */
 #include "cutscene.h"
 
@@ -339,13 +346,18 @@ static void draw_wheel(SDL_Renderer *r, float cx, float cy,
     SDL_RenderLine(r, cx + dy, cy - dx, cx - dy, cy + dx);
 }
 
+/*
+ * `headlights` is separate from `moving` because the one thing anybody
+ * remembers about the vehicle is that it came up the kerb lane dark. A rolling
+ * SUV throwing a beam is a car; a rolling SUV throwing nothing is a decision.
+ */
 static void draw_suv(SDL_Renderer *r, float x, float ground_y,
-                     float time, bool moving, bool door_open)
+                     float time, bool moving, bool headlights, bool door_open)
 {
     const float y = ground_y - 51.0f;
     float rotation = moving ? time * 15.0f : 0.35f;
 
-    if (moving)
+    if (headlights)
         draw_headlight_beam(r, x + 146.0f, y + 33.0f, 106.0f, FX_CREAM);
 
     /* A real pool with real blending: the old slab passed alpha into a
@@ -369,7 +381,7 @@ static void draw_suv(SDL_Renderer *r, float x, float ground_y,
                x + 105.0f, y + 23.0f, 2.0f, 21.0f);
 
     color_rect(r, FX_RUST, x + 2.0f, y + 29.0f, 6.0f, 8.0f);
-    color_rect(r, moving ? FX_CREAM : (SDL_Color){149, 145, 113, 255},
+    color_rect(r, headlights ? FX_CREAM : (SDL_Color){63, 62, 50, 255},
                x + 142.0f, y + 28.0f, 7.0f, 7.0f);
     color_rect(r, (SDL_Color){93, 99, 94, 255},
                x + 119.0f, y + 41.0f, 19.0f, 4.0f);
@@ -545,8 +557,60 @@ static void draw_agent(SDL_Renderer *r, float x, float ground_y,
                 19, 14, 10, 3, FX_SKIN);
 }
 
+static void draw_agent_held_fire(SDL_Renderer *r, float x, float ground_y,
+                                 float scale, float time, bool aiming, int dir)
+{
+    float y = ground_y - 32.0f * scale;
+    float breath = sinf(time * 4.5f) * 0.35f * scale;
+
+    fx_contact_shadow(r, x + 16.0f * scale, ground_y - 2.0f,
+                      14.0f * scale, 0.0f, 190);
+    sprite_rect(r, x, y, 30.0f, dir, scale,
+                8, 21, 6, 11, FX_INK);
+    sprite_rect(r, x, y, 30.0f, dir, scale,
+                15, 21, 6, 11, FX_INK);
+    body_scaled(r, x, y + breath, 30.0f, dir, scale,
+                7, 11, 14, 12, FX_HERO, 1, 0);
+    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
+                8, 12, 4, 9, FX_HERO_LT);
+    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
+                8, 20, 12, 2, FX_AMBER);
+    body_scaled(r, x, y + breath, 30.0f, dir, scale,
+                10, 2, 9, 9, FX_SKIN, 2, 1);
+    mass_scaled(r, x, y + breath, 30.0f, dir, scale,
+                9, 1, 11, 4, fx_dim(FX_HAIR, 0.88f), 1, 0);
+
+    if (aiming)
+    {
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
+                    18, 12, 13, 4, FX_SKIN);
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
+                    27, 11, 10, 4, FX_INK);
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
+                    35, 12, 6, 2, (SDL_Color){77, 84, 81, 255});
+    }
+    else
+    {
+        /* He lowers the pistol rather than taking the obstructed shot. */
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
+                    18, 13, 8, 8, FX_SKIN);
+        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
+                    23, 19, 5, 9, FX_INK);
+    }
+}
+
+/*
+ * The crew, and the one man who is not part of it.
+ *
+ * Voss came in through the front door dressed like a client and gives orders
+ * rather than carrying a rifle, so at twenty-six pixels across he is a long
+ * pale coat, bare grey hair and a sidearm — three differences, all of them in
+ * the silhouette, because that is the only channel a figure this size has.
+ * Everything else is the same two-beat walk on the same clock.
+ */
 static void draw_terrorist(SDL_Renderer *r, float x, float ground_y,
-                           float scale, float time, float phase, int dir)
+                           float scale, float time, float phase, int dir,
+                           bool leader)
 {
     float y = ground_y - 32.0f * scale;
     float dx_a, lift_a, dx_b, lift_b;
@@ -560,6 +624,35 @@ static void draw_terrorist(SDL_Renderer *r, float x, float ground_y,
                 7 + dx_a, 21, 6, 11, FX_INK);
     sprite_rect(r, x, y - lift_b * scale, 28.0f, dir, scale,
                 14 + dx_b, 21, 6, 11, FX_INK);
+
+    if (leader)
+    {
+        SDL_Color coat = {102, 106, 108, 255};
+        SDL_Color skin = {202, 166, 132, 255};
+
+        /* The coat runs six rows further down than the crew's webbing rig, so
+           the legs barely show: that alone reads as "not dressed for this". */
+        body_scaled(r, x, y + bob, 28.0f, dir, scale,
+                    5, 11, 17, 15, coat, 1, 0);
+        sprite_rect(r, x, y + bob, 28.0f, dir, scale,
+                    8, 12, 4, 13, fx_mix(coat, FX_CREAM, 0.22f));
+        sprite_rect(r, x, y + bob, 28.0f, dir, scale,
+                    13, 12, 2, 13, fx_mix(coat, FX_INK, 0.45f));
+        body_scaled(r, x, y + bob, 28.0f, dir, scale,
+                    10, 2, 9, 9, skin, 2, 1);
+        mass_scaled(r, x, y + bob, 28.0f, dir, scale,
+                    9, 1, 11, 3, (SDL_Color){148, 150, 146, 255}, 1, 0);
+
+        /* Sidearm, held down at the thigh rather than shouldered. */
+        sprite_rect(r, x, y + bob, 28.0f, dir, scale,
+                    18, 15, 7, 3, skin);
+        sprite_rect(r, x, y + bob, 28.0f, dir, scale,
+                    23, 14, 7, 4, FX_INK);
+        sprite_rect(r, x, y + bob, 28.0f, dir, scale,
+                    25, 15, 5, 2, (SDL_Color){77, 84, 81, 255});
+        return;
+    }
+
     body_scaled(r, x, y + bob, 28.0f, dir, scale,
                 5, 11, 17, 12, (SDL_Color){22, 27, 26, 255}, 1, 0);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
@@ -777,7 +870,7 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
         draw_target_brackets(r, target_x - 8.0f, 371.0f,
                              167.0f, 72.0f, pulse);
         draw_text(r, target_x + 3.0f, 351.0f, 1.0f,
-                  FX_RUST, "FIANCEE ABDUCTED // VEHICLE CONFIRMED");
+                  FX_RUST, "SAME SUV // KESSLER TOWER");
     }
 
     if (time > 7.1f && time < 10.8f)
@@ -787,7 +880,7 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
                   (SDL_Color){(Uint8)(FX_AMBER.r * reveal),
                               (Uint8)(FX_AMBER.g * reveal),
                               (Uint8)(FX_AMBER.b * reveal), 255},
-                  "CHUCK // RESCUE IN PROGRESS");
+                  "CHUCK ROSS // NOBODY ELSE IS COMING");
         color_rect(r, FX_RUST, 35.0f, 53.0f, 52.0f * reveal, 2.0f);
     }
 
@@ -819,7 +912,8 @@ void opening_cutscene_render(SDL_Renderer *r,
     float suv_x = lerpf(-175.0f, 438.0f, suv_move);
     bool suv_moving = time < 3.30f;
     bool suv_door_open = time >= 3.75f && time < 7.0f;
-    draw_suv(r, suv_x, ground, time, suv_moving, suv_door_open);
+    draw_suv(r, suv_x, ground, time, suv_moving, suv_moving,
+             suv_door_open);
 
     float agent_car_move = ease_out_cubic((time - 1.45f) / 2.55f);
     float agent_car_x = lerpf(-170.0f, 92.0f, agent_car_move);
@@ -834,9 +928,9 @@ void opening_cutscene_render(SDL_Renderer *r,
         float escort_one_x = lerpf(500.0f, 643.0f, group_move);
         float hostage_x = lerpf(525.0f, 668.0f, group_move);
         float escort_two_x = lerpf(550.0f, 693.0f, group_move);
-        draw_terrorist(r, escort_one_x, ground, 1.35f, time, 0.0f, 1);
+        draw_terrorist(r, escort_one_x, ground, 1.35f, time, 0.0f, 1, false);
         draw_hostage(r, hostage_x, ground, 1.18f, time, 1, true);
-        draw_terrorist(r, escort_two_x, ground, 1.35f, time, 2.2f, 1);
+        draw_terrorist(r, escort_two_x, ground, 1.35f, time, 2.2f, 1, false);
     }
 
     if (time >= 7.0f && time < 11.05f)
@@ -859,6 +953,476 @@ void opening_cutscene_render(SDL_Renderer *r,
 
     float fade_in = 1.0f - smoothstep01(time / 0.68f);
     float fade_out = smoothstep01((time - 11.15f) / 1.15f);
+    float fade = fmaxf(fade_in, fade_out);
+    if (fade > 0.0f)
+    {
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        set_rgba(r, FX_INK.r, FX_INK.g, FX_INK.b, (Uint8)(fade * 255.0f));
+        fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    }
+}
+
+/* ---- The kerb ---------------------------------------------------------- */
+
+/*
+ * The beat the campaign hangs off, and the only one the player is never asked
+ * to do anything in.
+ *
+ * It is staged left to right so it hands straight over to the drive: Chuck's
+ * car is parked at the far kerb, Ellen is twenty metres ahead of him on the
+ * pavement, and the SUV comes up behind them both and leaves the way it was
+ * already pointing — toward the tower on the skyline. When the scene ends the
+ * world is in exactly the state `CHASE_PHASE_DEPARTURE` opens in, so the two
+ * beats read as one continuous shot rather than as a cut.
+ *
+ * Every cue is a sound the game already synthesises. A beat this short does
+ * not earn an entry in the effect table of its own.
+ */
+
+/* Where each actor stands, so the timings below and the staging cannot drift
+ * apart. All of them are the sprite's left edge. */
+#define KERB_GROUND 437.0f
+#define KERB_CAR_X 10.0f
+#define KERB_CHUCK_WAIT_X 190.0f
+/* Chuck stops a clear seventy pixels short of the SUV's tail. Close enough to
+   be in the same shot as the vehicle, far enough that the frame still reads as
+   a distance he is not going to cover in time. */
+#define KERB_CHUCK_CHASE_X 322.0f
+#define KERB_CHUCK_RETURN_X 158.0f
+#define KERB_ELLEN_FROM_X 372.0f
+#define KERB_ELLEN_TAKEN_X 612.0f
+#define KERB_SUV_STOP_X 404.0f
+/* The SUV's near door, in the sprite's own coordinates: the crew get out of it
+   and she goes back into it, so both journeys are measured from here. */
+#define KERB_SUV_DOOR_X (KERB_SUV_STOP_X + 61.0f)
+
+static void draw_coffee_cup(SDL_Renderer *r, float time)
+{
+    /* Dropped at the moment of contact and left in frame for the rest of the
+       scene. It is the whole of the struggle that survives the wide shot, so
+       it gets a real arc: fall, one bounce, a short roll, and the spill
+       spreading on the wet stone under it. */
+    float age = time - 5.10f;
+    if (age < 0.0f)
+        return;
+
+    const float start_x = KERB_ELLEN_TAKEN_X + 21.0f;
+    const float start_y = KERB_GROUND - 46.0f;
+    const float floor_y = KERB_GROUND - 5.0f;
+    float x = start_x + age * 27.0f;
+    float y = start_y + 470.0f * age * age;
+    float bounce = age - 0.42f;
+
+    if (y >= floor_y)
+    {
+        if (bounce > 0.0f && bounce < 0.30f)
+            y = floor_y - sinf(bounce / 0.30f * 3.14159265f) * 9.0f;
+        else
+            y = floor_y;
+    }
+    if (age > 0.95f)
+        x = start_x + 0.95f * 27.0f + (1.0f - expf(-(age - 0.95f) * 3.4f)) * 9.0f;
+
+    if (age > 0.42f)
+    {
+        float spread = clamp01((age - 0.42f) / 1.6f);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        set_rgba(r, 74, 56, 40, (Uint8)(150.0f * (1.0f - spread * 0.35f)));
+        fill_rect(r, start_x + 9.0f - spread * 13.0f, floor_y + 3.0f,
+                  4.0f + spread * 27.0f, 2.0f);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    }
+
+    color_rect(r, FX_INK, x - 1.0f, y - 1.0f, 7.0f, 8.0f);
+    color_rect(r, (SDL_Color){171, 166, 152, 255}, x, y, 5.0f, 6.0f);
+    color_rect(r, (SDL_Color){118, 113, 102, 255}, x, y + 4.0f, 5.0f, 2.0f);
+}
+
+/*
+ * The street this happens on, and Kessler Tower standing over the end of it.
+ *
+ * Two rules the shot is built to. The frame is a canyon, not a backdrop with
+ * figures in front of it: the near terrace runs from a hundred and eighty
+ * pixels down to the shopfronts, so there is no band of empty sky between the
+ * skyline and the pavement for the eye to fall into. And the tower clears the
+ * terrace by a hundred and thirty pixels, because it is the place the SUV
+ * drives to and the player has to recognise it three minutes later from the
+ * pavement outside its own doors — a landmark the same height as its
+ * neighbours is not a landmark.
+ */
+static void render_kerb_backdrop(SDL_Renderer *r, float time, int win_w)
+{
+    static const float parapet[6] = {212.0f, 178.0f, 246.0f, 196.0f,
+                                     264.0f, 224.0f};
+    const float parade_top = 344.0f;
+
+    /* Kessler Tower, five blocks up, behind everything else on the street. */
+    color_rect(r, (SDL_Color){19, 27, 35, 255}, 594.0f, 52.0f, 136.0f, 294.0f);
+    color_rect(r, (SDL_Color){36, 47, 54, 255}, 594.0f, 52.0f, 136.0f, 3.0f);
+    color_rect(r, (SDL_Color){10, 16, 23, 255}, 602.0f, 59.0f, 120.0f, 287.0f);
+    for (int row = 0; row < 13; ++row)
+    {
+        for (int col = 0; col < 5; ++col)
+        {
+            unsigned h = scene_hash((unsigned)(row * 53 + col * 11 + 401));
+            if ((h % 5u) != 0u)
+                continue;
+            color_rect(r, (h & 8u) ? (SDL_Color){96, 89, 57, 255}
+                                   : (SDL_Color){44, 78, 86, 255},
+                       609.0f + (float)col * 22.0f,
+                       68.0f + (float)row * 21.0f, 12.0f, 6.0f);
+        }
+    }
+    color_rect(r, (SDL_Color){30, 38, 44, 255}, 654.0f, 40.0f, 5.0f, 12.0f);
+    float beacon = sinf(time * 4.6f) > 0.2f ? 1.0f : 0.24f;
+    color_rect(r, fx_dim(FX_RUST, beacon), 651.0f, 35.0f, 11.0f, 5.0f);
+    fx_glow(r, 656.0f, 37.0f, 26.0f, FX_RUST, (Uint8)(40.0f * beacon));
+
+    /* The near terrace: walk-ups over the shops, a step lighter than the sky
+       and a step darker than the pavement they stand on. */
+    for (int i = 0; i < 6; ++i)
+    {
+        float x = (float)i * 138.0f - 22.0f;
+        float top = parapet[i];
+        color_rect(r, (SDL_Color){16, 22, 30, 255}, x, top, 138.0f,
+                   parade_top - top + 4.0f);
+        color_rect(r, (SDL_Color){35, 43, 50, 255}, x, top, 138.0f, 3.0f);
+        color_rect(r, (SDL_Color){10, 14, 20, 255}, x, top + 3.0f, 138.0f, 2.0f);
+        /* A cornice band halfway down: without one long horizontal the
+           terrace is a row of blank slabs rather than masonry. */
+        float band = top + (parade_top - top) * 0.52f;
+        color_rect(r, (SDL_Color){26, 33, 40, 255}, x, band, 138.0f, 3.0f);
+        for (int row = 0; row * 27 < (int)(parade_top - top) - 26; ++row)
+        {
+            for (int col = 0; col < 4; ++col)
+            {
+                unsigned h = scene_hash((unsigned)(i * 311 + row * 29 + col * 7));
+                float wx = x + 16.0f + (float)col * 30.0f;
+                float wy = top + 14.0f + (float)row * 27.0f;
+                if (wy > band - 4.0f && wy < band + 6.0f)
+                    continue;
+                color_rect(r, (SDL_Color){8, 12, 18, 255}, wx, wy, 15.0f, 18.0f);
+                if ((h % 7u) != 0u)
+                    continue;
+                SDL_Color glass = (h & 8u) ? (SDL_Color){104, 91, 56, 255}
+                                           : (SDL_Color){40, 72, 80, 255};
+                color_rect(r, glass, wx + 2.0f, wy + 2.0f, 11.0f, 14.0f);
+                color_rect(r, fx_mix(glass, FX_CREAM, 0.35f),
+                           wx + 2.0f, wy + 2.0f, 11.0f, 1.0f);
+            }
+        }
+    }
+
+    /* Haze between the terrace and the street, so the near plane separates
+       from the one behind it the way every other scene's does. */
+    fx_vgrad(r, 0.0f, 250.0f, (float)win_w, 100.0f,
+             (SDL_Color){30, 48, 60, 255}, 0,
+             (SDL_Color){30, 48, 60, 255}, 44);
+
+    /* The shopfronts under them. Their fascia is one unbroken line, which is
+       what ties six separate buildings into one street. */
+    color_rect(r, (SDL_Color){23, 29, 36, 255},
+               0.0f, parade_top, (float)win_w, KERB_GROUND - parade_top);
+    color_rect(r, (SDL_Color){52, 58, 60, 255},
+               0.0f, parade_top, (float)win_w, 5.0f);
+    color_rect(r, (SDL_Color){13, 18, 24, 255},
+               0.0f, parade_top + 5.0f, (float)win_w, 3.0f);
+    for (int i = 0; i < 9; ++i)
+    {
+        float x = (float)i * 92.0f + 6.0f;
+        color_rect(r, (SDL_Color){15, 20, 26, 255},
+                   x - 6.0f, parade_top + 8.0f, 6.0f, KERB_GROUND - parade_top);
+        /* Shutters down on everything but the one place still open. */
+        if (i == 2)
+            continue;
+        color_rect(r, (SDL_Color){29, 34, 38, 255},
+                   x, 372.0f, 78.0f, 61.0f);
+        for (float slat = 375.0f; slat < 430.0f; slat += 5.0f)
+            color_rect(r, (SDL_Color){17, 21, 25, 255}, x, slat, 78.0f, 1.0f);
+    }
+
+    /* The window they stopped at: the one warm thing in the frame, and the
+       reason she is carrying a cup at all. */
+    const float shop_x = 190.0f;
+    color_rect(r, (SDL_Color){14, 19, 24, 255}, shop_x, 358.0f, 86.0f, 12.0f);
+    draw_text(r, shop_x + 11.0f, 360.0f, 1.0f,
+              (SDL_Color){206, 158, 84, 255}, "COFFEE");
+    color_rect(r, (SDL_Color){84, 68, 40, 255}, shop_x, 372.0f, 86.0f, 61.0f);
+    color_rect(r, (SDL_Color){139, 111, 62, 255}, shop_x + 3.0f, 375.0f,
+               80.0f, 44.0f);
+    color_rect(r, (SDL_Color){38, 32, 24, 255}, shop_x + 40.0f, 375.0f,
+               3.0f, 58.0f);
+    color_rect(r, (SDL_Color){28, 24, 20, 255}, shop_x + 9.0f, 396.0f,
+               22.0f, 23.0f);
+    fx_glow(r, shop_x + 43.0f, 400.0f, 96.0f,
+            (SDL_Color){238, 190, 112, 255}, 40);
+    fx_light_cone(r, shop_x + 43.0f, 420.0f, 44.0f, 96.0f, 22.0f,
+                  (SDL_Color){238, 190, 112, 255}, 22);
+
+    /* Two street lamps, so the pavement is lit in pools rather than evenly:
+       the taking happens in the gap between them. */
+    for (int i = 0; i < 2; ++i)
+    {
+        float lx = 118.0f + (float)i * 582.0f;
+        color_rect(r, (SDL_Color){26, 32, 36, 255}, lx, 268.0f, 4.0f, 170.0f);
+        color_rect(r, (SDL_Color){45, 52, 55, 255}, lx, 268.0f, 1.0f, 170.0f);
+        color_rect(r, (SDL_Color){38, 44, 47, 255}, lx - 9.0f, 264.0f, 22.0f, 5.0f);
+        color_rect(r, FX_SODIUM, lx - 6.0f, 269.0f, 16.0f, 3.0f);
+        fx_glow(r, lx + 2.0f, 271.0f, 46.0f, FX_SODIUM, 62);
+        fx_light_cone(r, lx + 2.0f, 272.0f, 15.0f, 92.0f, 166.0f,
+                      FX_SODIUM, 24);
+    }
+}
+
+static void render_kerb_ui(SDL_Renderer *r, float time, int win_w, int win_h,
+                           float suv_x, bool gamepad_active)
+{
+    if (time > 0.45f && time < 4.40f)
+    {
+        float reveal = smoothstep01((time - 0.45f) / 0.5f);
+        draw_text(r, 35.0f, 38.0f, 1.0f, fx_dim(FX_CYAN, reveal),
+                  "23:31 // THREE BLOCKS FROM KESSLER TOWER");
+        color_rect(r, FX_RUST, 35.0f, 53.0f, 52.0f * reveal, 2.0f);
+    }
+
+    if (time > 5.40f && time < 8.05f)
+    {
+        float reveal = smoothstep01((time - 5.40f) / 0.28f);
+        draw_text(r, 35.0f, 38.0f, 1.0f, fx_dim(FX_RUST, reveal),
+                  "NO DEMAND // NO CAR // THEY CAME FOR HER");
+        color_rect(r, FX_RUST, 35.0f, 53.0f, 142.0f * reveal, 2.0f);
+    }
+
+    if (time > 7.95f && time < 8.95f)
+    {
+        float pulse = 0.5f + 0.5f * sinf(time * 6.0f);
+        draw_target_brackets(r, suv_x - 8.0f, 371.0f, 167.0f, 72.0f, pulse);
+        draw_text(r, suv_x + 3.0f, 351.0f, 1.0f, FX_RUST,
+                  "NO SHOT // SHE IS IN THE DOOR");
+    }
+
+    if (time > 9.60f && time < 12.90f)
+    {
+        float reveal = smoothstep01((time - 9.60f) / 0.3f);
+        draw_text(r, 35.0f, 38.0f, 1.0f, fx_dim(FX_AMBER, reveal),
+                  "CHUCK ROSS // FORTY SECONDS BEHIND");
+        color_rect(r, FX_RUST, 35.0f, 53.0f, 52.0f * reveal, 2.0f);
+    }
+
+    if (time > 0.9f && time < 12.35f)
+    {
+        float pulse = 0.45f + 0.55f * sinf(time * 2.0f);
+        SDL_Color skip = {(Uint8)(100.0f + pulse * 42.0f),
+                          (Uint8)(108.0f + pulse * 42.0f),
+                          (Uint8)(106.0f + pulse * 38.0f), 255};
+        draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f, 1.0f, skip,
+                  gamepad_active ? "A / START TO SKIP" :
+                                   "ENTER / SPACE TO SKIP");
+    }
+}
+
+void abduction_cutscene_init(AbductionCutscene *cutscene)
+{
+    SDL_zerop(cutscene);
+}
+
+bool abduction_cutscene_update(AbductionCutscene *cutscene, float dt,
+                               Uint32 *out_cues)
+{
+    /* Ellen walking up, then Chuck twice: out after them, and back for the
+       car. His second run is the faster one. */
+    static const float ellen_steps_a[] = {0.95f, 1.63f, 2.31f, 2.99f, 3.67f};
+    static const float ellen_steps_b[] = {1.29f, 1.97f, 2.65f, 3.33f, 4.01f};
+    static const float chuck_steps_a[] = {
+        5.72f, 6.24f, 6.76f, 7.28f,
+        9.67f, 10.13f, 10.59f, 11.05f, 11.51f, 11.97f};
+    static const float chuck_steps_b[] = {
+        5.98f, 6.50f, 7.02f,
+        9.90f, 10.36f, 10.82f, 11.28f, 11.74f};
+    static const float door_times[] = {3.90f, 4.02f, 7.35f, 7.47f, 12.45f};
+
+    float previous = cutscene->time;
+    float current = previous + dt;
+    Uint32 cues = 0;
+
+    if (crossed_time(previous, current, 0.05f))
+        cues |= ABDUCTION_CUE_RAIN;
+    if (crossed_time(previous, current, 2.00f))
+        cues |= ABDUCTION_CUE_SUV_ROLL;
+    if (crossed_time(previous, current, 3.62f))
+        cues |= ABDUCTION_CUE_SUV_BRAKE;
+    if (crossed_any_time(previous, current, door_times,
+                         (int)SDL_arraysize(door_times)))
+        cues |= ABDUCTION_CUE_CAR_DOOR;
+    if (crossed_time(previous, current, 5.10f))
+        cues |= ABDUCTION_CUE_SCREAM;
+    if (crossed_any_time(previous, current, ellen_steps_a,
+                         (int)SDL_arraysize(ellen_steps_a)) ||
+        crossed_any_time(previous, current, chuck_steps_a,
+                         (int)SDL_arraysize(chuck_steps_a)))
+        cues |= ABDUCTION_CUE_STEP_A;
+    if (crossed_any_time(previous, current, ellen_steps_b,
+                         (int)SDL_arraysize(ellen_steps_b)) ||
+        crossed_any_time(previous, current, chuck_steps_b,
+                         (int)SDL_arraysize(chuck_steps_b)))
+        cues |= ABDUCTION_CUE_STEP_B;
+    if (crossed_time(previous, current, 9.20f))
+        cues |= ABDUCTION_CUE_SUV_AWAY;
+
+    cutscene->time = current;
+    if (out_cues != NULL)
+        *out_cues = cues;
+    return cutscene->time >= ABDUCTION_CUTSCENE_DURATION;
+}
+
+void abduction_cutscene_render(SDL_Renderer *r,
+                               const AbductionCutscene *cutscene,
+                               int win_w, int win_h, bool gamepad_active)
+{
+    const float time = cutscene->time;
+    const float ground = KERB_GROUND;
+
+    render_city(r, time, win_w, win_h);
+    render_kerb_backdrop(r, time, win_w);
+    render_street(r, time, win_w, win_h);
+
+    /* Chuck's car never moves in this scene. It is parked, locked and empty:
+       he is out of it, which is the whole reason he cannot simply drive. */
+    draw_agent_car(r, KERB_CAR_X, ground, time, false, false);
+
+    /* The SUV: dark up the kerb lane, hard on the brakes level with her, then
+       away toward the tower with the lights finally on. */
+    float suv_x;
+    bool suv_moving;
+    bool suv_lights;
+    if (time < 2.00f)
+    {
+        suv_x = -230.0f;
+        suv_moving = false;
+        suv_lights = false;
+    }
+    else if (time < 3.70f)
+    {
+        suv_x = lerpf(-230.0f, KERB_SUV_STOP_X,
+                      ease_out_cubic((time - 2.00f) / 1.70f));
+        suv_moving = true;
+        suv_lights = false;
+    }
+    else if (time < 9.20f)
+    {
+        suv_x = KERB_SUV_STOP_X;
+        suv_moving = false;
+        suv_lights = false;
+    }
+    else
+    {
+        float away = clamp01((time - 9.20f) / 1.85f);
+        suv_x = lerpf(KERB_SUV_STOP_X, 980.0f, away * away);
+        suv_moving = true;
+        suv_lights = true;
+    }
+    bool suv_door_open = time >= 3.85f && time < 7.45f;
+    draw_suv(r, suv_x, ground, time, suv_moving, suv_lights, suv_door_open);
+
+    draw_coffee_cup(r, time);
+
+    /*
+     * Ellen: up the pavement, a stop, and then walked back to the vehicle
+     * between the two of them. She is never bound in this scene — the wrists
+     * are taped in the SUV, which is why she arrives at the tower tied and
+     * leaves this street not.
+     */
+    if (time < 7.35f)
+    {
+        float ellen_x = KERB_ELLEN_TAKEN_X;
+        int ellen_dir = 1;
+        float ellen_clock = 0.0f;
+        if (time < 4.50f)
+        {
+            float walk = clamp01((time - 0.70f) / 3.80f);
+            ellen_x = lerpf(KERB_ELLEN_FROM_X, KERB_ELLEN_TAKEN_X, walk);
+            ellen_clock = time;
+        }
+        else if (time >= 5.20f)
+        {
+            /* Walked back down the pavement to the door she came level with.
+               She never reaches Chuck, and the two of them are never in the
+               same frame facing each other — that is the scene. */
+            float taken = smoothstep01((time - 5.20f) / 2.15f);
+            ellen_x = lerpf(KERB_ELLEN_TAKEN_X, KERB_SUV_DOOR_X + 14.0f, taken);
+            ellen_dir = -1;
+            ellen_clock = time;
+        }
+        else
+        {
+            ellen_dir = -1;
+        }
+        draw_hostage(r, ellen_x, ground, 1.18f, ellen_clock, ellen_dir, false);
+    }
+
+    /* The two who get out of it. They walk up to her, then walk her back. */
+    if (time >= 4.05f && time < 7.35f)
+    {
+        float out = smoothstep01((time - 4.05f) / 1.25f);
+        float back = smoothstep01((time - 5.20f) / 2.15f);
+        float near_x = lerpf(KERB_SUV_DOOR_X + 4.0f,
+                             KERB_ELLEN_TAKEN_X - 36.0f, out);
+        float far_x = lerpf(KERB_SUV_DOOR_X + 42.0f,
+                            KERB_ELLEN_TAKEN_X + 32.0f, out);
+        if (time >= 5.20f)
+        {
+            near_x = lerpf(KERB_ELLEN_TAKEN_X - 36.0f,
+                           KERB_SUV_DOOR_X - 22.0f, back);
+            far_x = lerpf(KERB_ELLEN_TAKEN_X + 32.0f,
+                          KERB_SUV_DOOR_X + 46.0f, back);
+        }
+        int crew_dir = time < 5.20f ? 1 : -1;
+        draw_terrorist(r, near_x, ground, 1.32f, time, 0.0f, crew_dir, false);
+        draw_terrorist(r, far_x, ground, 1.32f, time, 2.2f, crew_dir, false);
+    }
+
+    /*
+     * Chuck: waiting at the coffee window, out after them, the shot he does
+     * not take, and the run back. Every one of those is a beat the drive then
+     * inherits.
+     */
+    if (time < 5.60f)
+    {
+        draw_agent(r, KERB_CHUCK_WAIT_X, ground, 1.48f, 0.0f, 1);
+    }
+    else if (time < 7.60f)
+    {
+        float run = smoothstep01((time - 5.60f) / 2.00f);
+        draw_agent(r, lerpf(KERB_CHUCK_WAIT_X, KERB_CHUCK_CHASE_X, run),
+                   ground, 1.48f, time * 1.35f, 1);
+    }
+    else if (time < 9.55f)
+    {
+        draw_agent_held_fire(r, KERB_CHUCK_CHASE_X, ground, 1.48f, time,
+                             time < 8.75f, 1);
+    }
+    else if (time < 12.30f)
+    {
+        float back = smoothstep01((time - 9.55f) / 2.75f);
+        draw_agent(r, lerpf(KERB_CHUCK_CHASE_X, KERB_CHUCK_RETURN_X, back),
+                   ground, 1.48f, time * 1.55f, -1);
+    }
+    else
+    {
+        draw_agent(r, KERB_CHUCK_RETURN_X, ground, 1.48f, 0.0f, -1);
+    }
+
+    render_rain(r, time, win_w, win_h);
+    render_kerb_ui(r, time, win_w, win_h, suv_x, gamepad_active);
+
+    fx_grain(r, win_w, win_h, time, FX_GRAIN_FILM);
+
+    color_rect(r, FX_INK, 0.0f, 0.0f, (float)win_w, 19.0f);
+    color_rect(r, FX_INK, 0.0f, (float)win_h - 19.0f, (float)win_w, 19.0f);
+
+    float fade_in = 1.0f - smoothstep01(time / 0.68f);
+    float fade_out = smoothstep01((time - 12.55f) / 1.05f);
     float fade = fmaxf(fade_in, fade_out);
     if (fade > 0.0f)
     {
@@ -916,6 +1480,56 @@ bool level_transition_update(LevelTransition *transition, float dt,
     return transition->time >= LEVEL_TRANSITION_DURATION;
 }
 
+/*
+ * One line of what the sector just told him, indexed by the sector he just
+ * finished.
+ *
+ * The plot lives here rather than in a cutscene nobody replays or on a manual
+ * page most players never open: this is a screen the run passes through
+ * repeatedly, and a thriller told a sentence at a time between floors is the
+ * version of it the game can be reasonably sure was read.
+ *
+ * Two constraints shape the table, and both are easy to break by accident.
+ *
+ * Sixty characters is the hard ceiling — the report's first divider stands at
+ * x=526 and a line that runs under it stops being a line.
+ *
+ * And **a sector that leaves by the window has no report at all**: the window
+ * is a continuous physical route out onto the facade, so `try_finish_current_level`
+ * loads the next sector directly rather than cutting to a screen that would
+ * contradict what is on the display. In the campaign as shipped that is
+ * sectors 2, 3, 6, 7, 10, 11, 12 and 13, which leaves exactly six reports —
+ * after 1, 4, 5, 8, 9 and 14 — and those six carry the whole arc: she walked
+ * in, they have been here since March, the police response is the plan, this
+ * is a military load-out, it is the vault, and she is the key. The other eight
+ * lines are written anyway, because the table is indexed by sector and a
+ * sector that later gains a stair door must not gain a blank line with it.
+ */
+static const char *const TRANSITION_INTEL[] = {
+    /* 1 LOBBY     */ "FRONT DESK LOG: SHE BADGED IN AT MIDNIGHT. CALMLY.",
+    /* 2 OFFICE    */ "EVERY STAIR CORE IS WELDED. SEALED FROM THE INSIDE.",
+    /* 3 CLIMB     */ "NO SIRENS UP HERE. THE CORDON IS FOUR BLOCKS WIDE.",
+    /* 4 SERVER    */ "MERIDIAN. NIGHT MAINTENANCE CONTRACTOR SINCE MARCH.",
+    /* 5 PLANT     */ "POLICE BAND: A CORDON, A NEGOTIATOR, NOBODY COMING UP.",
+    /* 6 CANTEEN   */ "TWELVE PLACES LAID IN THE GALLEY. TWELVE MEN.",
+    /* 7 CLIMB     */ "THEIR DEMAND WENT OUT AT 00:20. IT ASKED FOR NO MONEY.",
+    /* 8 LAB       */ "FLIGHT CASES IN EVERY BAY. NONE OF IT WAS INSPECTED.",
+    /* 9 ARCHIVE   */ "01:00: SIX HUNDRED MILLION LEAVES THE SUB-VAULT.",
+    /* 10 SECURITY */ "MONITOR WALL: VOSS. HE HAS HER AT THE VAULT DOOR.",
+    /* 11 CLIMB    */ "THE SETTLEMENT CLOCK IS RUNNING. FIFTY MINUTES.",
+    /* 12 DUCTS    */ "NOT FOR RANSOM. THEY TOOK HER TO OPEN A DOOR.",
+    /* 13 CLIMB    */ "THE VAULT IS OPEN AND EMPTY. THEY ARE GOING UP.",
+    /* 14 PENTHOUSE*/ "TWO-KEY DOOR. SHE IS THE SECOND. VOSS IS ON THE ROOF.",
+};
+
+static const char *transition_intel(int completed_level)
+{
+    if (completed_level < 0 ||
+        completed_level >= (int)SDL_arraysize(TRANSITION_INTEL))
+        return NULL;
+    return TRANSITION_INTEL[completed_level];
+}
+
 static void render_transition_report(SDL_Renderer *r,
                                      const LevelTransition *transition,
                                      int win_w)
@@ -949,7 +1563,15 @@ static void render_transition_report(SDL_Renderer *r,
                       (Uint8)(FX_CYAN.b * reveal), 255},
                27.0f, 61.0f, 72.0f * reveal, 2.0f);
 
-    draw_text(r, 27.0f, 34.0f, 2.0f, title, "PURSUIT CONTINUES");
+    draw_text(r, 27.0f, 34.0f, 2.0f, title, "ONE FLOOR BEHIND");
+
+    const char *intel = transition_intel(transition->completed_level);
+    if (intel != NULL)
+    {
+        color_rect(r, fx_dim(FX_RUST, line_reveal), 27.0f, 69.0f, 3.0f, 9.0f);
+        draw_text(r, 37.0f, 69.0f, 1.0f,
+                  fx_dim((SDL_Color){158, 174, 178, 255}, line_reveal), intel);
+    }
 
     int elapsed = (int)transition->elapsed_seconds;
     int minutes = elapsed / 60;
@@ -1129,48 +1751,6 @@ static void draw_transition_door_foreground(SDL_Renderer *r,
                25.0f, ground_y - TRANSITION_DOOR_TOP);
 }
 
-static void draw_agent_held_fire(SDL_Renderer *r, float x, float ground_y,
-                                 float scale, float time, bool aiming, int dir)
-{
-    float y = ground_y - 32.0f * scale;
-    float breath = sinf(time * 4.5f) * 0.35f * scale;
-
-    fx_contact_shadow(r, x + 16.0f * scale, ground_y - 2.0f,
-                      14.0f * scale, 0.0f, 190);
-    sprite_rect(r, x, y, 30.0f, dir, scale,
-                8, 21, 6, 11, FX_INK);
-    sprite_rect(r, x, y, 30.0f, dir, scale,
-                15, 21, 6, 11, FX_INK);
-    body_scaled(r, x, y + breath, 30.0f, dir, scale,
-                7, 11, 14, 12, FX_HERO, 1, 0);
-    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                8, 12, 4, 9, FX_HERO_LT);
-    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                8, 20, 12, 2, FX_AMBER);
-    body_scaled(r, x, y + breath, 30.0f, dir, scale,
-                10, 2, 9, 9, FX_SKIN, 2, 1);
-    mass_scaled(r, x, y + breath, 30.0f, dir, scale,
-                9, 1, 11, 4, fx_dim(FX_HAIR, 0.88f), 1, 0);
-
-    if (aiming)
-    {
-        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                    18, 12, 13, 4, FX_SKIN);
-        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                    27, 11, 10, 4, FX_INK);
-        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                    35, 12, 6, 2, (SDL_Color){77, 84, 81, 255});
-    }
-    else
-    {
-        /* He lowers the pistol rather than taking the obstructed shot. */
-        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                    18, 13, 8, 8, FX_SKIN);
-        sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                    23, 19, 5, 9, FX_INK);
-    }
-}
-
 static void render_transition_action_ui(SDL_Renderer *r, float time,
                                         float hostage_x, float ground_y,
                                         int win_w, int win_h,
@@ -1226,10 +1806,10 @@ void level_transition_render(SDL_Renderer *r,
                        hostage_x + 9.0f, ground_y - 25.0f);
         SDL_RenderLine(r, hostage_x + 25.0f, ground_y - 25.0f,
                        group_x + 73.0f, ground_y - 29.0f);
-        draw_terrorist(r, group_x, ground_y, 1.32f, time, 0.0f, 1);
+        draw_terrorist(r, group_x, ground_y, 1.32f, time, 0.0f, 1, false);
         draw_hostage(r, hostage_x, ground_y, 1.18f, time, 1, true);
         draw_terrorist(r, group_x + 68.0f, ground_y,
-                       1.32f, time, 2.2f, 1);
+                       1.32f, time, 2.2f, 1, false);
     }
 
     if (time >= 0.95f && time < 2.20f)
@@ -1653,20 +2233,28 @@ static void draw_shot_tracer(SDL_Renderer *r, float time, float shot_time,
 }
 
 static void draw_terrorist_down(SDL_Renderer *r, float x, float ground_y,
-                                bool faces_right)
+                                bool faces_right, bool leader)
 {
     float dir = faces_right ? 1.0f : -1.0f;
+    /* The coat and the bare head are what said which of them was Voss while
+       he was standing; down on the deck they have to keep saying it. */
+    SDL_Color garment = leader ? (SDL_Color){86, 90, 92, 255}
+                               : (SDL_Color){42, 47, 43, 255};
     fx_contact_shadow(r, x + 23.0f, ground_y - 3.0f, 28.0f, 0.0f, 190);
-    color_rect(r, FX_INK, x, ground_y - 13.0f, 43.0f, 13.0f);
-    color_rect(r, (SDL_Color){42, 47, 43, 255},
-               x + 5.0f, ground_y - 11.0f, 27.0f, 8.0f);
-    color_rect(r, FX_RUST, x + 13.0f, ground_y - 9.0f, 12.0f, 2.0f);
-    color_rect(r, fx_dim(FX_SKIN, 0.68f),
+    color_rect(r, FX_INK, x, ground_y - 13.0f, leader ? 49.0f : 43.0f, 13.0f);
+    color_rect(r, garment, x + 5.0f, ground_y - 11.0f,
+               leader ? 33.0f : 27.0f, 8.0f);
+    if (!leader)
+        color_rect(r, FX_RUST, x + 13.0f, ground_y - 9.0f, 12.0f, 2.0f);
+    color_rect(r, fx_dim(leader ? (SDL_Color){202, 166, 132, 255} : FX_SKIN,
+                         0.68f),
                x + (faces_right ? 34.0f : -2.0f),
                ground_y - 12.0f, 10.0f, 9.0f);
-    color_rect(r, (SDL_Color){20, 24, 24, 255},
+    color_rect(r, leader ? (SDL_Color){96, 98, 95, 255}
+                         : (SDL_Color){20, 24, 24, 255},
                x + 8.0f + dir * 3.0f, ground_y - 20.0f, 9.0f, 10.0f);
-    color_rect(r, FX_INK, x + 30.0f, ground_y - 5.0f, 26.0f, 4.0f);
+    if (!leader)
+        color_rect(r, FX_INK, x + 30.0f, ground_y - 5.0f, 26.0f, 4.0f);
 }
 
 static void draw_shock_mark(SDL_Renderer *r, float x, float y, float time)
@@ -1782,7 +2370,7 @@ static void render_outro_ui(SDL_Renderer *r, float time,
                   (SDL_Color){(Uint8)(FX_AMBER.r * reveal),
                               (Uint8)(FX_AMBER.g * reveal),
                               (Uint8)(FX_AMBER.b * reveal), 255},
-                  "ROOFTOP // EXTRACTION INBOUND");
+                  "ROOF // 01:00 // THEIR RIDE IS COMING");
         color_rect(r, FX_AMBER, 34.0f, 54.0f, 105.0f * reveal, 2.0f);
     }
 
@@ -1792,7 +2380,7 @@ static void render_outro_ui(SDL_Renderer *r, float time,
         draw_target_brackets(r, hostage_x - 10.0f, 352.0f,
                              94.0f, 73.0f, pulse);
         draw_text(r, 34.0f, 78.0f, 1.0f, FX_RUST,
-                  "NO CLEAR SHOT // HOSTAGE IN LINE OF FIRE");
+                  "NO CLEAR SHOT // ELLEN IN LINE OF FIRE");
     }
 
     if (time >= 9.25f && time < 10.25f)
@@ -1802,7 +2390,7 @@ static void render_outro_ui(SDL_Renderer *r, float time,
                   (SDL_Color){(Uint8)(FX_CYAN.r * reveal),
                               (Uint8)(FX_CYAN.g * reveal),
                               (Uint8)(FX_CYAN.b * reveal), 255},
-                  "NEW TARGET // ROTORCRAFT");
+                  "NEW TARGET // THE RIDE");
     }
 
     if (time >= 13.35f && time < 16.50f)
@@ -1812,7 +2400,7 @@ static void render_outro_ui(SDL_Renderer *r, float time,
                   (SDL_Color){(Uint8)(FX_RUST.r * reveal),
                               (Uint8)(FX_RUST.g * reveal),
                               (Uint8)(FX_RUST.b * reveal), 255},
-                  "EXTRACTION DENIED // RESCUE WINDOW OPEN");
+                  "NO RIDE // VOSS HAS NOWHERE LEFT TO GO");
     }
 
     if (time > 0.85f && time < OUTRO_FINAL_REVEAL_TIME)
@@ -1911,18 +2499,18 @@ void outro_cutscene_render(SDL_Renderer *r,
                               : 0.0f;
             draw_terrorist(r, first_x + shake, ground,
                            1.34f, time < 3.75f ? time : 0.0f,
-                           0.0f, group_dir);
+                           0.0f, group_dir, true);
             if (time >= 13.35f)
                 draw_shock_mark(r, first_x + 17.0f, ground - 78.0f, time);
         }
         else if (time < 15.60f)
         {
             draw_terrorist(r, first_x, ground,
-                           1.34f, 0.0f, 0.0f, 1);
+                           1.34f, 0.0f, 0.0f, 1, true);
         }
         else
         {
-            draw_terrorist_down(r, first_x, ground, false);
+            draw_terrorist_down(r, first_x, ground, false, true);
         }
 
         if (time < 14.70f)
@@ -1932,14 +2520,14 @@ void outro_cutscene_render(SDL_Renderer *r,
                               : 0.0f;
             draw_terrorist(r, second_x + shake, ground,
                            1.34f, time < 3.75f ? time : 0.0f,
-                           2.2f, group_dir);
+                           2.2f, group_dir, false);
             if (time >= 13.35f)
                 draw_shock_mark(r, second_x + 17.0f,
                                 ground - 78.0f, time + 0.3f);
         }
         else
         {
-            draw_terrorist_down(r, second_x, ground, true);
+            draw_terrorist_down(r, second_x, ground, true, false);
         }
 
         if (time < 16.45f)
@@ -2044,7 +2632,7 @@ void outro_cutscene_render(SDL_Renderer *r,
             (SDL_Color){(Uint8)((float)FX_LABEL.r * reveal),
                         (Uint8)((float)FX_LABEL.g * reveal),
                         (Uint8)((float)FX_LABEL.b * reveal), 255},
-            "CHUCK BROUGHT HER HOME");
+            "THE BONDS BURNED. SHE DID NOT.");
 
         if (time >= 21.0f)
         {

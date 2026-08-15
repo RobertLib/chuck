@@ -245,7 +245,7 @@ static void test_all_embedded_levels_parse(void)
         if (level.map.has_sublevel_entrance)
             sublevel_entrances++;
 
-        /* The lobby is the sector the kidnappers came through, so it is the
+        /* The lobby is the sector the crew walked her through, so it is the
          * one that empties as Chuck walks in. Anyone planted inside the
          * dissolve radius of the way in would fade out before running
          * anywhere, so the evacuation has to start further into the room. */

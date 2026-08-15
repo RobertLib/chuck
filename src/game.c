@@ -390,8 +390,8 @@ bool game_init_seeded(Game *game, uint64_t seed)
     /* Initialise particle system */
     particle_system_init(&game->presentation.particles);
 
-    /* Boot straight to the title screen; the opening cutscene now plays after
-     * the player presses START. */
+    /* Boot straight to the title screen; the prologue's three beats — the
+     * kerb, the drive, the tower's front door — play after START. */
     game_enter_state(game, STATE_INTRO);
 
     game->platform.last_tick = SDL_GetTicksNS();
@@ -586,6 +586,12 @@ static void game_enter_state(Game *game, GameState next_state)
 {
     switch (next_state)
     {
+    case STATE_ABDUCTION:
+        abduction_cutscene_init(&game->presentation.abduction_cutscene);
+        reset_level_presentation(game);
+        audio_stop_effects(&game->platform.audio);
+        audio_play_music(&game->platform.audio, MUSIC_INTRO);
+        break;
     case STATE_CHASE:
     {
         /* The pursuit draws from the campaign RNG, so one game seed still
@@ -647,6 +653,37 @@ static void game_enter_state(Game *game, GameState next_state)
 
 static bool update_scene(Game *game, float dt)
 {
+    if (game->state == STATE_ABDUCTION)
+    {
+        Uint32 cues = 0;
+        bool finished = abduction_cutscene_update(
+            &game->presentation.abduction_cutscene, dt, &cues);
+
+        if (cues & ABDUCTION_CUE_RAIN)
+            audio_play(&game->platform.audio, SFX_OPENING_RAIN);
+        if (cues & ABDUCTION_CUE_SUV_ROLL)
+            audio_play(&game->platform.audio, SFX_OPENING_SUV_ENGINE);
+        if (cues & ABDUCTION_CUE_SUV_BRAKE)
+            audio_play(&game->platform.audio, SFX_OPENING_BRAKE);
+        if (cues & ABDUCTION_CUE_CAR_DOOR)
+            audio_play(&game->platform.audio, SFX_OPENING_CAR_DOOR);
+        if (cues & ABDUCTION_CUE_SCREAM)
+            audio_play(&game->platform.audio, SFX_CIVILIAN_SCREAM);
+        if (cues & ABDUCTION_CUE_STEP_A)
+            audio_play(&game->platform.audio, SFX_STEP_A);
+        if (cues & ABDUCTION_CUE_STEP_B)
+            audio_play(&game->platform.audio, SFX_STEP_B);
+        if (cues & ABDUCTION_CUE_SUV_AWAY)
+            audio_play(&game->platform.audio, SFX_OPENING_CAR_ENGINE);
+
+        if (finished || game->input.confirm)
+        {
+            audio_stop_effects(&game->platform.audio);
+            game_enter_state(game, STATE_CHASE);
+        }
+        clear_edge_input(game);
+        return true;
+    }
 
     if (game->state == STATE_OPENING_CUTSCENE)
     {
@@ -693,10 +730,10 @@ static bool update_scene(Game *game, float dt)
 
         if (game->input.confirm)
         {
-            /* START pressed: the prologue drive runs before anything else, and
-             * hands over to the opening cutscene at the building. */
+            /* START pressed: the prologue plays its three beats before the
+             * campaign — the kerb, the drive, and the tower's front door. */
             game->input.confirm = false;
-            game_enter_state(game, STATE_CHASE);
+            game_enter_state(game, STATE_ABDUCTION);
         }
         clear_edge_input(game);
         return true;

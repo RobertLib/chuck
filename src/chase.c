@@ -560,7 +560,7 @@ static void update_target(Chase *chase, float dt)
      * Once they have made the tail they refuse to be caught: instead of a fixed
      * boost they hold whatever keeps Chuck at arm's length. Holding the
      * accelerator therefore settles into a stable tailgate rather than a
-     * pointless collision with the car his fiancee is in.
+     * pointless collision with the car his wife is in.
      */
     float boost = 0.0f;
     if (target->boost_timer > 0.0f)
@@ -573,7 +573,7 @@ static void update_target(Chase *chase, float dt)
                     sinf(chase->time * 0.7f) * CHASE_TARGET_SPEED_SWING;
     target->y += target->speed * dt;
 
-    /* The kidnappers drive through anything they cannot get around, which
+    /* The crew drive through anything they cannot get around, which
      * leaves the wreck spinning in the road for Chuck to deal with. */
     for (int i = 0; i < CHASE_MAX_CARS; ++i)
     {

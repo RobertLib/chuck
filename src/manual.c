@@ -583,6 +583,167 @@ static void draw_access_chip(SDL_Renderer *r, float x, float y, float w,
 
 /* ---- Illustrations --------------------------------------------------- */
 
+/*
+ * What Meridian Facility Services wheeled through the goods entrance, opened
+ * on the floor of a sector.
+ *
+ * The story page could have been illustrated with the three faces in it, and
+ * three heads at twelve pixels across would have said nothing the text does
+ * not already say. This says the part the text cannot: the rifles, the tube
+ * and the frags were signed in weeks ago on a maintenance docket, which is
+ * both the twist and the reason the player keeps finding a bazooka on a
+ * carpet tile.
+ *
+ * It is drawn as a case standing open and facing the reader — lid on the
+ * left, foam bed on the right — because a case lying open would have to be
+ * drawn from above, and this game has exactly one camera.
+ */
+static void illus_night(SDL_Renderer *r, SDL_FRect p, float time)
+{
+    (void)time;
+    float cx = p.x + p.w * 0.5f;
+    float floor_y = p.y + p.h - 40.0f;
+    float top_y = floor_y - 244.0f;
+    SDL_FRect lid = {cx - 146.0f, top_y, 138.0f, 244.0f};
+    SDL_FRect bed = {cx + 2.0f, top_y, 148.0f, 244.0f};
+    SDL_Color shell = {49, 55, 58, 255};
+    SDL_Color foam = {35, 40, 39, 255};
+    SDL_Color cut = {14, 18, 19, 255};
+
+    fx_vgrad(r, p.x, p.y, p.w, p.h, (SDL_Color){10, 14, 22, 255}, 255,
+             (SDL_Color){21, 27, 37, 255}, 255);
+    /* One lamp above and to the left, the same direction every lit thing in
+       the game is lit from. */
+    fx_glow(r, p.x + p.w * 0.30f, p.y - 30.0f, 260.0f,
+            (SDL_Color){146, 168, 190, 255}, 32);
+    color_rect(r, (SDL_Color){26, 32, 40, 255}, p.x, floor_y, p.w,
+               p.y + p.h - floor_y);
+    color_rect(r, (SDL_Color){58, 68, 76, 255}, p.x, floor_y, p.w, 1.0f);
+    fx_contact_shadow(r, cx, floor_y + 1.0f, 158.0f, 0.0f, 200);
+
+    for (int half = 0; half < 2; ++half)
+    {
+        SDL_FRect box = half == 0 ? lid : bed;
+        ink_block(r, box.x, box.y, box.w, box.h);
+        fx_vgrad(r, box.x, box.y, box.w, box.h, shell, 255,
+                 fx_mix(shell, FX_INK, 0.55f), 255);
+        color_rect(r, (SDL_Color){118, 130, 136, 255}, box.x, box.y, box.w, 1.0f);
+        color_rect(r, FX_INK, box.x, box.y + box.h - 2.0f, box.w, 2.0f);
+        /* Corner protectors and two latches down the outer edge. */
+        float edge = half == 0 ? box.x : box.x + box.w - 5.0f;
+        color_rect(r, fx_mix(shell, FX_STEEL_LT, 0.4f), edge, box.y, 5.0f, 20.0f);
+        color_rect(r, fx_mix(shell, FX_STEEL_LT, 0.4f), edge,
+                   box.y + box.h - 22.0f, 5.0f, 20.0f);
+        for (int i = 0; i < 2; ++i)
+        {
+            float ly = box.y + 66.0f + (float)i * 112.0f;
+            color_rect(r, FX_STEEL_DK, edge - 2.0f, ly, 9.0f, 16.0f);
+            color_rect(r, FX_STEEL_LT, edge - 2.0f, ly, 9.0f, 1.0f);
+        }
+        color_rect(r, FX_RUST, box.x + (half == 0 ? 4.0f : box.w - 13.0f),
+                   box.y + box.h - 44.0f, 9.0f, 3.0f);
+    }
+
+    /* The lid liner, so the docket is stencilled on something. */
+    color_rect(r, (SDL_Color){31, 36, 39, 255}, lid.x + 9.0f, lid.y + 10.0f,
+               lid.w - 18.0f, lid.h - 24.0f);
+    color_rect(r, (SDL_Color){17, 21, 24, 255}, lid.x + 9.0f, lid.y + 10.0f,
+               lid.w - 18.0f, 1.0f);
+
+    draw_tracked(r, lid.x + 18.0f, lid.y + 26.0f, 2.0f,
+                 (SDL_Color){182, 176, 150, 255}, "MERIDIAN");
+    draw_text(r, lid.x + 18.0f, lid.y + 44.0f, 1.0f,
+              (SDL_Color){128, 130, 118, 255}, "FACILITY");
+    draw_text(r, lid.x + 18.0f, lid.y + 56.0f, 1.0f,
+              (SDL_Color){128, 130, 118, 255}, "SERVICES");
+    color_rect(r, fx_dim(FX_RUST, 0.85f), lid.x + 18.0f, lid.y + 72.0f,
+               64.0f, 2.0f);
+    draw_text(r, lid.x + 18.0f, lid.y + 88.0f, 1.0f, FX_LABEL, "NIGHT SHIFT");
+    draw_text(r, lid.x + 18.0f, lid.y + 102.0f, 1.0f, FX_LABEL, "TOOL SET 07");
+    draw_text(r, lid.x + 18.0f, lid.y + 128.0f, 1.0f,
+              (SDL_Color){92, 100, 104, 255}, "SIGNED IN");
+    draw_text(r, lid.x + 18.0f, lid.y + 142.0f, 1.0f,
+              (SDL_Color){148, 156, 154, 255}, "14 MARCH");
+
+    /* The docket bar, and the line on it that is the whole plot. */
+    for (int i = 0; i < 22; ++i)
+    {
+        unsigned h = fx_hash((unsigned)i * 2654435761u + 91u);
+        color_rect(r, (SDL_Color){158, 162, 156, 255},
+                   lid.x + 18.0f + (float)i * 4.0f, lid.y + 170.0f,
+                   (h & 1u) ? 2.0f : 1.0f, 18.0f);
+    }
+    draw_text(r, lid.x + 18.0f, lid.y + 196.0f, 1.0f, fx_dim(FX_RUST, 0.95f),
+              "NOT INSPECTED");
+
+    /* The foam bed, and the five cutouts that are not tools. */
+    color_rect(r, foam, bed.x + 7.0f, bed.y + 8.0f, bed.w - 14.0f,
+               bed.h - 22.0f);
+    color_rect(r, fx_mix(foam, FX_INK, 0.5f), bed.x + 7.0f, bed.y + 8.0f,
+               bed.w - 14.0f, 1.0f);
+
+    /* Rifle. */
+    color_rect(r, cut, bed.x + 12.0f, bed.y + 16.0f, bed.w - 24.0f, 30.0f);
+    color_rect(r, FX_INK, bed.x + 20.0f, bed.y + 28.0f, 104.0f, 5.0f);
+    color_rect(r, (SDL_Color){76, 83, 80, 255}, bed.x + 20.0f, bed.y + 28.0f,
+               104.0f, 1.0f);
+    color_rect(r, FX_INK, bed.x + 48.0f, bed.y + 25.0f, 28.0f, 10.0f);
+    color_rect(r, (SDL_Color){66, 60, 45, 255}, bed.x + 52.0f, bed.y + 34.0f,
+               10.0f, 9.0f);
+    color_rect(r, FX_INK, bed.x + 16.0f, bed.y + 24.0f, 14.0f, 9.0f);
+
+    /* Launcher tube. */
+    color_rect(r, cut, bed.x + 12.0f, bed.y + 52.0f, bed.w - 24.0f, 34.0f);
+    fx_vgrad(r, bed.x + 18.0f, bed.y + 60.0f, 112.0f, 17.0f,
+             (SDL_Color){80, 76, 53, 255}, 255,
+             (SDL_Color){36, 34, 26, 255}, 255);
+    color_rect(r, (SDL_Color){122, 114, 76, 255}, bed.x + 18.0f, bed.y + 60.0f,
+               112.0f, 1.0f);
+    color_rect(r, FX_INK, bed.x + 18.0f, bed.y + 57.0f, 6.0f, 23.0f);
+    color_rect(r, FX_INK, bed.x + 124.0f, bed.y + 57.0f, 6.0f, 23.0f);
+    color_rect(r, FX_RUST, bed.x + 64.0f, bed.y + 65.0f, 16.0f, 3.0f);
+
+    /* Four frags in their own cups. */
+    color_rect(r, cut, bed.x + 12.0f, bed.y + 92.0f, bed.w - 24.0f, 42.0f);
+    for (int i = 0; i < 4; ++i)
+    {
+        float gx = bed.x + 24.0f + (float)i * 28.0f;
+        color_rect(r, (SDL_Color){9, 12, 12, 255}, gx - 3.0f, bed.y + 98.0f,
+                   20.0f, 30.0f);
+        fx_mass(r, (SDL_Color){57, 64, 47, 255}, gx, bed.y + 104.0f, 14.0f,
+                20.0f, 2, 2);
+        color_rect(r, (SDL_Color){86, 94, 70, 255}, gx + 2.0f, bed.y + 106.0f,
+                   6.0f, 1.0f);
+        color_rect(r, FX_STEEL_DK, gx + 4.0f, bed.y + 100.0f, 6.0f, 5.0f);
+        color_rect(r, FX_STEEL_LT, gx + 10.0f, bed.y + 101.0f, 2.0f, 11.0f);
+    }
+
+    /* Rockets, nose down. */
+    color_rect(r, cut, bed.x + 12.0f, bed.y + 140.0f, bed.w - 24.0f, 44.0f);
+    for (int i = 0; i < 3; ++i)
+    {
+        float rx = bed.x + 28.0f + (float)i * 36.0f;
+        color_rect(r, FX_INK, rx - 1.0f, bed.y + 147.0f, 16.0f, 30.0f);
+        fx_mass(r, (SDL_Color){70, 64, 46, 255}, rx, bed.y + 148.0f, 14.0f,
+                12.0f, 3, 0);
+        color_rect(r, (SDL_Color){44, 48, 46, 255}, rx + 2.0f, bed.y + 160.0f,
+                   10.0f, 16.0f);
+        color_rect(r, FX_RUST, rx + 2.0f, bed.y + 163.0f, 10.0f, 2.0f);
+    }
+
+    /* Magazines, stacked flat. */
+    color_rect(r, cut, bed.x + 12.0f, bed.y + 190.0f, bed.w - 24.0f, 40.0f);
+    for (int i = 0; i < 5; ++i)
+    {
+        float my = bed.y + 196.0f + (float)i * 7.0f;
+        color_rect(r, FX_INK, bed.x + 20.0f, my, 112.0f, 6.0f);
+        color_rect(r, (SDL_Color){58, 64, 62, 255}, bed.x + 21.0f, my + 1.0f,
+                   110.0f, 4.0f);
+        color_rect(r, (SDL_Color){90, 98, 94, 255}, bed.x + 21.0f, my + 1.0f,
+                   110.0f, 1.0f);
+    }
+}
+
 /* Sector one to the roof, and where the four climbs fall in it. */
 static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time)
 {
@@ -1084,11 +1245,38 @@ typedef struct
     void (*illustration)(SDL_Renderer *r, SDL_FRect panel, float time);
 } ManualPage;
 
+static const ManualLine PAGE_NIGHT[] = {
+    {LINE_HEAD, "WHO YOU ARE"},
+    {LINE_BODY, "Chuck Ross. Twelve years an Army sapper,"},
+    {LINE_BODY, "now a two-man strip-out crew. You know"},
+    {LINE_BODY, "charges, and you know which walls were"},
+    {LINE_BODY, "only ever bricked up."},
+    {LINE_GAP, NULL},
+    {LINE_HEAD, "WHO THEY TOOK"},
+    {LINE_BODY, "Ellen Ross. Your wife, and the night duty"},
+    {LINE_BODY, "controller of Kessler Tower - she wrote"},
+    {LINE_BODY, "its access system."},
+    {LINE_BULLET, "They took her off the pavement three"},
+    {LINE_BODY, "blocks out and walked her in the front"},
+    {LINE_BODY, "door at midnight, so the log read normal."},
+    {LINE_GAP, NULL},
+    {LINE_HEAD, "WHAT THIS ACTUALLY IS"},
+    {LINE_BULLET, "Anton Voss and twelve men, badged in as"},
+    {LINE_BODY, "the night maintenance contractor."},
+    {LINE_BULLET, "The demand they broadcast at 00:20 is"},
+    {LINE_BODY, "theatre. It puts every unit in the city"},
+    {LINE_BODY, "on the cordon and nobody in the building."},
+    {LINE_BULLET, "At 01:00 the sub-vault opens on six"},
+    {LINE_BODY, "hundred million in bearer bonds."},
+    {LINE_BULLET, "The last door needs the bank's key and"},
+    {LINE_BODY, "the duty controller, alive and present."},
+    {LINE_BODY, "That is the only reason she still is."},
+};
+
 static const ManualLine PAGE_MISSION[] = {
     {LINE_HEAD, "THE JOB"},
-    {LINE_BODY, "They took her off the street and carried"},
-    {LINE_BODY, "her inside. Nobody else is coming up"},
-    {LINE_BODY, "after her."},
+    {LINE_BODY, "Fifteen sectors, the lobby to the roof,"},
+    {LINE_BODY, "and nobody else coming up after her."},
     {LINE_GAP, NULL},
     {LINE_HEAD, "EVERY SECTOR IS THE SAME SHAPE"},
     {LINE_BULLET, "One security door leads up, and it"},
@@ -1170,6 +1358,7 @@ static const ManualLine PAGE_MOVEMENT[] = {
 
 static const ManualLine PAGE_COMBAT[] = {
     {LINE_HEAD, "WHAT YOU CARRY"},
+    {LINE_BODY, "Past the pistol, it is all theirs."},
     {LINE_BULLET, "KNIFE: always with you, one tile of"},
     {LINE_BODY, "reach, and it makes no noise."},
     {LINE_BULLET, "PISTOL: six rounds. Ammo lies around"},
@@ -1252,6 +1441,8 @@ static const ManualLine PAGE_CONSOLE[] = {
 #define PAGE(lines) lines, (int)(sizeof(lines) / sizeof((lines)[0]))
 
 static const ManualPage PAGES[] = {
+    {"THE NIGHT", "KESSLER TOWER, 23:31, AND A CONTRACTOR NOBODY CHECKED",
+     "WHAT THEY WHEELED IN AS TOOLS", PAGE(PAGE_NIGHT), illus_night},
     {"THE MISSION", "FIFTEEN SECTORS BETWEEN THE LOBBY AND THE ROOF",
      "FOUR OF THEM ARE ON THE OUTSIDE", PAGE(PAGE_MISSION), illus_mission},
     {"CONTROLS", "KEYBOARD AND GAMEPAD ARE BOTH ALWAYS LIVE",

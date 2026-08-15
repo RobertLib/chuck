@@ -3,10 +3,28 @@
 
 #include "common.h"
 
+#define ABDUCTION_CUTSCENE_DURATION 13.6f
 #define OPENING_CUTSCENE_DURATION 12.4f
 #define LEVEL_TRANSITION_DURATION 9.4f
 #define OUTRO_CUTSCENE_DURATION 25.0f
 #define OUTRO_FINAL_REVEAL_TIME 19.4f
+
+typedef enum
+{
+    ABDUCTION_CUE_RAIN = 1u << 0,
+    ABDUCTION_CUE_SUV_ROLL = 1u << 1,
+    ABDUCTION_CUE_SUV_BRAKE = 1u << 2,
+    ABDUCTION_CUE_CAR_DOOR = 1u << 3,
+    ABDUCTION_CUE_SCREAM = 1u << 4,
+    ABDUCTION_CUE_STEP_A = 1u << 5,
+    ABDUCTION_CUE_STEP_B = 1u << 6,
+    ABDUCTION_CUE_SUV_AWAY = 1u << 7
+} AbductionCutsceneCue;
+
+typedef struct
+{
+    float time;
+} AbductionCutscene;
 
 typedef enum
 {
@@ -63,6 +81,19 @@ typedef struct
 {
     float time;
 } OutroCutscene;
+
+/*
+ * The kerb, three blocks short of the tower: the beat the whole campaign hangs
+ * off. It runs once between the title screen and the prologue drive, and it
+ * hands over in the state the drive opens in — the SUV pulling away up the
+ * street and Chuck running back for his car.
+ */
+void abduction_cutscene_init(AbductionCutscene *cutscene);
+bool abduction_cutscene_update(AbductionCutscene *cutscene, float dt,
+                               Uint32 *out_cues);
+void abduction_cutscene_render(SDL_Renderer *renderer,
+                               const AbductionCutscene *cutscene,
+                               int win_w, int win_h, bool gamepad_active);
 
 void opening_cutscene_init(OpeningCutscene *cutscene);
 

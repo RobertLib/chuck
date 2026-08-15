@@ -939,7 +939,7 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
                            "THEY STOPPED HERE");
         draw_text_centered(r, center_x, 392.0f, 1.0f,
                            fx_dim(FX_STEEL_LT, fade),
-                           "SHE IS INSIDE THAT BUILDING");
+                           "THEY WALKED HER INTO KESSLER TOWER");
     }
 }
 

@@ -1,18 +1,19 @@
 # Chuck
 
-Chuck is a 2D action platformer about pursuing the kidnappers who took Chuck's
-fiancée and bringing her home alive.
+Chuck is a 2D action platformer about one man going up the inside of a
+forty-two storey tower that twelve armed men have sealed from within, because
+his wife is somewhere above him and nobody else is coming.
 
-The game opens with a top-down night car chase: Chuck tails the kidnappers' SUV
-through city traffic until it reaches the building where they take her. From
-there the game becomes a platformer.
+The prologue plays in three beats — the kerb where she is taken, a top-down
+night car chase across the city, and the pavement outside the tower she is
+walked into. From there the game becomes a platformer.
 
 The player explores a side-scrolling building made of platforms, ladders,
 doors, elevators, alarm switches, hazards, and pickups. Each level is a small
-infiltration route through the kidnappers' stronghold: follow their trail, find the key card
-or breach the security terminal that opens the way deeper inside, and decide
-when to fight, when to sneak past, and when to use the environment to your
-advantage.
+infiltration route up through a tower the crew now runs: follow their trail,
+find the key card or breach the security terminal that opens the way deeper
+inside, and decide when to fight, when to sneak past, and when to use the
+environment to your advantage.
 
 Ambient janitors patrol some corridors with cleaning carts, pause to mop, and
 leave short-lived wet streaks. They are visual-only NPCs: attacks, collisions,
@@ -20,26 +21,47 @@ alarms, pickups, and scoring ignore them completely.
 
 ## Story
 
-Kidnappers take Chuck's fiancée off the street and drive away with her. Chuck
-gets to his own car seconds later and follows them across the city, and they lead
-him to the building they are holding her in.
+**Chuck Ross** spent twelve years as an Army sapper and now runs a two-man
+strip-out crew that guts old buildings. He knows charges, and he knows which
+walls were only ever bricked up.
 
-He arrives just as they drag her inside. He tries to stop them, but cannot take a
-clear shot without putting her in danger, so he follows them into the building.
+**Ellen Ross** is his wife, and the night duty controller of Kessler Tower —
+she wrote the building's access system. At 23:31 she is three blocks from work
+with a coffee in her hand and Chuck twenty metres behind her on the pavement
+when an SUV comes up the kerb lane with its lights off. Two men in maintenance
+coveralls put her in it. They do not ask for the car. They do not ask for
+anything.
 
-The kidnappers keep moving deeper into the complex while Chuck fights and
-sneaks his way through its guarded sectors. Each level brings him closer to
-rescuing his fiancée, but every route is locked down: he must search the area,
-identify the correct access key card, and reach the exit before he can continue
-the pursuit.
+Chuck follows them across the city and watches them walk her in through the
+tower's own front door at midnight, past a receptionist who badges the duty
+controller through and thinks nothing of it. He goes in after them.
 
-The mission is simple: follow the kidnappers through every level, overcome the
-building's security, and bring his fiancée home. The pursuit ends in a
-cinematic rooftop rescue after the final sector.
+What is happening inside is not a kidnapping. **Anton Voss** and twelve men
+have been badged into Kessler Tower since March as its night maintenance
+contractor, and the flight cases they wheeled through the goods entrance were
+never inspected. The demand they broadcast at 00:20 is theatre: it puts every
+unit in the city on a cordon and nobody at all in the building. At 01:00 the
+sub-vault opens for the overnight settlement — six hundred million in bearer
+bonds — and its last door runs on a two-key rule: the bank's key, and the
+building's duty controller, alive and present. That is why they needed Ellen,
+and it is the only reason she still is.
+
+So the campaign is a climb with a deadline. Fifteen sectors between the lobby
+and the roof, every route locked down, and a line of what Chuck has worked out
+waiting on the report between them. It ends where their helicopter does.
+
+## The prologue
+
+Pressing START plays three short beats before the campaign, each of them
+skippable.
+
+The first is the kerb: Chuck's car parked outside a coffee window, Ellen
+walking the last block ahead of him, and the SUV that pulls up between them.
+It ends in exactly the state the drive opens in, so the two read as one shot.
 
 ## The pursuit drive
 
-The prologue is played from above, driving forward along a four-lane city street.
+The drive is played from above, driving forward along a four-lane city street.
 Only two things matter: stay on the SUV, and keep the car in one piece. Slower
 traffic runs with you, oncoming traffic comes down the two left-hand lanes with
 its headlights in your face, and every block ends at a signalled junction where
@@ -52,7 +74,7 @@ drive, so the story always continues. Reaching the building starts the campaign.
 
 ## Gameplay
 
-Your goal is to keep the kidnappers in reach. In each level, survive the guards,
+Your goal is to keep the crew in reach. In each level, survive the guards,
 collect the right key card, and pass through the secured exit before the trail
 goes cold. Guards patrol the building, climb between floors, and react to first
 contact by attacking or running for one of the wall-mounted alarm switches.
@@ -260,4 +282,4 @@ The project is intentionally small and direct: a classic pixel-art platformer
 with readable rules, compact levels, and arcade-style tension. New levels,
 hazards, pickups, and enemy behaviors should keep the same core loop intact:
 follow the trail, read the situation, breach the locked route, and close the
-distance to Chuck's fiancée.
+distance to Ellen.
