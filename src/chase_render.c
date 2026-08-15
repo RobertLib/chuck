@@ -22,6 +22,8 @@ typedef struct
     float shake_y;
 } ChaseView;
 
+/* The chase's material table: the road surfaces, markings and glass this
+ * scene alone is made of, named once here the way level_art.c names walls. */
 static const SDL_Color COL_ASPHALT = {26, 30, 38, 255};
 static const SDL_Color COL_ASPHALT_LT = {35, 40, 49, 255};
 static const SDL_Color COL_PAVEMENT = {46, 52, 62, 255};
@@ -29,6 +31,12 @@ static const SDL_Color COL_KERB = {96, 104, 114, 255};
 static const SDL_Color COL_PAINT = {198, 204, 194, 255};
 static const SDL_Color COL_PAINT_MID = {150, 146, 96, 255};
 static const SDL_Color COL_GLASS = {11, 20, 28, 255};
+
+/* Wreck soot: warm neutral chars for burnt-out panels, deliberately off the
+ * blue-slate ramp so a burnt car reads as burnt rather than repainted. */
+static const SDL_Color SOOT = {44, 40, 40, 255};
+static const SDL_Color SOOT_LT = {62, 56, 54, 255};
+static const SDL_Color SOOT_DK = {30, 28, 28, 255};
 
 typedef struct
 {
@@ -43,8 +51,13 @@ static const CarPaint TRAFFIC_PAINT[4] = {
     {{94, 96, 86, 255}, {128, 130, 116, 255}, {60, 64, 58, 255}},
     {{138, 130, 96, 255}, {174, 166, 124, 255}, {94, 88, 66, 255}}};
 
-static const CarPaint PLAYER_PAINT = {
-    {40, 108, 148, 255}, {70, 156, 180, 255}, {24, 66, 96, 255}};
+/* Chuck's car wears his jacket: the FX_HERO ramp, not a fourth blue. A
+ * function because the fx.h colours are const objects, which C17 will not
+ * accept inside a static initializer. */
+static CarPaint player_paint(void)
+{
+    return (CarPaint){FX_HERO, FX_HERO_LT, FX_HERO_DK};
+}
 
 static const CarPaint TARGET_PAINT = {
     {38, 44, 46, 255}, {62, 68, 66, 255}, {24, 28, 30, 255}};
@@ -121,6 +134,24 @@ static void car_part(SDL_Renderer *r, const CarFrame *f,
             fmaxf(1.0f, ceilf(w)), fmaxf(1.0f, ceilf(h)));
 }
 
+static void car_part_a(SDL_Renderer *r, const CarFrame *f,
+                       float a0, float a1, float b0, float b1,
+                       SDL_Color color, Uint8 alpha)
+{
+    float rx = -f->ay;
+    float ry = f->ax;
+    float x0 = f->cx + f->ax * a0 * f->length + rx * b0 * f->width;
+    float y0 = f->cy + f->ay * a0 * f->length + ry * b0 * f->width;
+    float x1 = f->cx + f->ax * a1 * f->length + rx * b1 * f->width;
+    float y1 = f->cy + f->ay * a1 * f->length + ry * b1 * f->width;
+    float x = fminf(x0, x1);
+    float y = fminf(y0, y1);
+    float w = fabsf(x1 - x0);
+    float h = fabsf(y1 - y0);
+    fx_rect_a(r, color, alpha, floorf(x), floorf(y),
+              fmaxf(1.0f, ceilf(w)), fmaxf(1.0f, ceilf(h)));
+}
+
 static void draw_head_beam(SDL_Renderer *r, const CarFrame *f, float length,
                            float spread, SDL_Color color, float alpha)
 {
@@ -159,16 +190,17 @@ static void draw_car_body(SDL_Renderer *r, const CarFrame *f,
     {
         /* Scorched panels, and less of the crisp highlight. */
         float burn = clamp01(wreck * 0.9f);
-        body = fx_mix(body, (SDL_Color){44, 40, 40, 255}, burn);
-        body_lt = fx_mix(body_lt, (SDL_Color){62, 56, 54, 255}, burn);
-        roof = fx_mix(roof, (SDL_Color){30, 28, 28, 255}, burn);
+        body = fx_mix(body, SOOT, burn);
+        body_lt = fx_mix(body_lt, SOOT_LT, burn);
+        roof = fx_mix(roof, SOOT_DK, burn);
     }
 
-    /* Contact shadow: the same box nudged down-right, so cars sit on the road. */
+    /* Contact shadow: a translucent pool set down-right and inset a pixel,
+     * so it reads as light the car blocks rather than a second, black car. */
     CarFrame shadow = *f;
     shadow.cx += 3.0f;
     shadow.cy += 4.0f;
-    car_part(r, &shadow, -0.5f, 0.5f, -0.5f, 0.5f, (SDL_Color){6, 8, 12, 255});
+    car_part_a(r, &shadow, -0.48f, 0.48f, -0.46f, 0.46f, FX_INK, 150);
 
     car_part(r, f, -0.5f, 0.5f, -0.5f, 0.5f, FX_INK);
     car_part(r, f, -0.47f, 0.47f, -0.44f, 0.44f, body);
@@ -190,7 +222,8 @@ static void draw_car_body(SDL_Renderer *r, const CarFrame *f,
         car_part(r, f, 0.43f, 0.50f, -0.38f, -0.20f, FX_CREAM);
         car_part(r, f, 0.43f, 0.50f, 0.20f, 0.38f, FX_CREAM);
     }
-    SDL_Color tail = braking ? (SDL_Color){255, 96, 76, 255} : FX_RED_DK;
+    /* A brake lamp is FX_RED lit, not a new red: the ramp's own bright step. */
+    SDL_Color tail = braking ? fx_ramp(FX_RED).lit : FX_RED_DK;
     if (wreck <= 0.0f)
     {
         car_part(r, f, -0.50f, -0.44f, -0.40f, -0.18f, tail);
@@ -209,7 +242,7 @@ static void draw_wreck_debris(SDL_Renderer *r, const CarFrame *f, float wreck)
         unsigned h = fx_hash(i * 2246822519u + (unsigned)(f->cx * 3.0f));
         float angle = (float)(h % 628u) * 0.01f;
         float distance = 8.0f + (float)((h >> 9) % 34u) * wreck * 3.0f;
-        SDL_Color spark = (i & 1u) ? FX_AMBER : (SDL_Color){206, 216, 220, 255};
+        SDL_Color spark = (i & 1u) ? FX_AMBER : fx_mix(FX_PALE, FX_CREAM, 0.7f);
         fx_rect_a(r, spark, (Uint8)(fade * 210.0f),
                   f->cx + cosf(angle) * distance,
                   f->cy + sinf(angle) * distance, 2.0f, 2.0f);
@@ -263,10 +296,14 @@ static void draw_target_car(SDL_Renderer *r, const ChaseView *view,
     bool braking = chase->phase == CHASE_PHASE_ARRIVAL;
     draw_head_beam(r, &frame, 150.0f, CHASE_SUV_WIDTH, FX_CREAM, 0.16f);
     draw_car_body(r, &frame, &TARGET_PAINT, true, braking, 0.0f);
-    /* Roof rack and a spare on the back: the SUV has to be unmistakable. */
-    car_part(r, &frame, -0.22f, 0.06f, -0.30f, 0.30f, (SDL_Color){52, 58, 56, 255});
-    car_part(r, &frame, -0.22f, 0.06f, -0.30f, -0.24f, (SDL_Color){78, 84, 80, 255});
-    car_part(r, &frame, -0.56f, -0.50f, -0.22f, 0.22f, (SDL_Color){28, 30, 32, 255});
+    /* Roof rack and a spare on the back: the SUV has to be unmistakable.
+     * All three fittings come out of the SUV's own paint so a fourth grey
+     * never joins the table. */
+    car_part(r, &frame, -0.22f, 0.06f, -0.30f, 0.30f,
+             fx_mix(TARGET_PAINT.body, TARGET_PAINT.body_lt, 0.6f));
+    car_part(r, &frame, -0.22f, 0.06f, -0.30f, -0.24f,
+             fx_mix(TARGET_PAINT.body_lt, FX_PALE, 0.15f));
+    car_part(r, &frame, -0.56f, -0.50f, -0.22f, 0.22f, TARGET_PAINT.roof);
 
     /* Pursuit bracket, borrowed from the cutscene's target framing. */
     float pulse = 0.5f + 0.5f * sinf(chase->time * 5.0f);
@@ -303,13 +340,15 @@ static void draw_player_car(SDL_Renderer *r, const ChaseView *view,
     if (car->engine_running)
         draw_head_beam(r, &frame, 190.0f, CHASE_CAR_WIDTH * 1.1f, FX_CREAM, 0.22f);
 
-    CarPaint paint = PLAYER_PAINT;
-    /* Damage is legible on the car itself, not only in the HUD. */
+    CarPaint paint = player_paint();
+    /* Damage is legible on the car itself, not only in the HUD: worn paint
+     * dulls toward the same soot the wrecks burn to. */
     float wear = 1.0f - (float)car->integrity / (float)CHASE_INTEGRITY;
     if (wear > 0.0f)
     {
-        paint.body = fx_mix(paint.body, (SDL_Color){60, 58, 58, 255}, wear * 0.55f);
-        paint.body_lt = fx_mix(paint.body_lt, (SDL_Color){86, 84, 80, 255}, wear * 0.55f);
+        paint.body = fx_mix(paint.body, SOOT_LT, wear * 0.55f);
+        paint.body_lt = fx_mix(paint.body_lt, fx_mix(SOOT_LT, FX_PALE, 0.25f),
+                               wear * 0.55f);
     }
     draw_car_body(r, &frame, &paint, car->engine_running, false, 0.0f);
 
@@ -333,6 +372,25 @@ static void draw_player_car(SDL_Renderer *r, const ChaseView *view,
 }
 
 /* ---- Chuck on foot, during the opening beat -------------------------- */
+
+/*
+ * One limb's place in a two-beat stride, -1 (fully back) to +1 (fully
+ * forward). The first half of the cycle is stance: the limb tracks straight
+ * back under the body at a constant rate, carrying it. The second half is
+ * the swing, eased so it is quick through the middle and slow where the limb
+ * takes or gives up the load. A sine is slowest exactly where the stride
+ * should be fastest, which reads as skating even seen from above; the other
+ * limb runs the same cycle half a turn along.
+ */
+static float stride_offset(float cycle)
+{
+    cycle -= floorf(cycle);
+    if (cycle < 0.5f)
+        return 1.0f - 4.0f * cycle;
+    float t = (cycle - 0.5f) * 2.0f;
+    float ease = t * t * (3.0f - 2.0f * t);
+    return -1.0f + 2.0f * ease;
+}
 
 static void draw_chuck_on_foot(SDL_Renderer *r, const ChaseView *view,
                                const Chase *chase)
@@ -371,17 +429,21 @@ static void draw_chuck_on_foot(SDL_Renderer *r, const ChaseView *view,
     float x = screen_x(view, road_x);
     float y = screen_y(view, road_y);
     bool running = progress > 0.0f && progress < 1.0f;
-    float stride = running ? sinf(chase->phase_time * 15.0f) : 0.0f;
+    /* Two limbs half a cycle apart, ~2.4 strides a second at a flat run. */
+    float cycle = chase->phase_time * 2.4f;
+    float near_limb = running ? stride_offset(cycle) : 0.0f;
+    float far_limb = running ? stride_offset(cycle + 0.5f) : 0.0f;
 
     /* A pool of light under him so a 16-pixel figure still reads at night. */
     fx_glow(r, x, y, 34.0f, FX_AMBER, 44);
-    fx_rect_a(r, FX_INK, 140, x - 6.0f, y + 7.0f, 14.0f, 5.0f);
-    /* Seen from above: shoulders, jacket, head, and swinging arms. */
+    fx_contact_shadow(r, x + 1.0f, y + 8.0f, 7.0f, 0.0f, 140);
+    /* Seen from above: shoulders, jacket, head, and swinging arms. Forward
+     * is screen-up, so a limb at +1 sits above the shoulder line. */
     fx_rect(r, FX_HERO_DK, x - 8.0f, y - 8.0f, 16.0f, 16.0f);
     fx_rect(r, FX_HERO, x - 7.0f, y - 7.0f, 14.0f, 13.0f);
     fx_rect(r, FX_HERO_LT, x - 7.0f, y - 7.0f, 14.0f, 4.0f);
-    fx_rect(r, FX_HERO_DK, x - 12.0f, y - 4.0f + stride * 3.0f, 5.0f, 7.0f);
-    fx_rect(r, FX_HERO_DK, x + 7.0f, y - 4.0f - stride * 3.0f, 5.0f, 7.0f);
+    fx_rect(r, FX_HERO_DK, x - 12.0f, y - 4.0f - near_limb * 3.0f, 5.0f, 7.0f);
+    fx_rect(r, FX_HERO_DK, x + 7.0f, y - 4.0f - far_limb * 3.0f, 5.0f, 7.0f);
     fx_rect(r, FX_HAIR, x - 5.0f, y - 4.0f, 10.0f, 9.0f);
     fx_rect(r, FX_SKIN, x - 4.0f, y - 3.0f, 8.0f, 5.0f);
 }
@@ -704,8 +766,11 @@ static void render_speed_streaks(SDL_Renderer *r, const ChaseView *view,
 
 static void draw_car_pip(SDL_Renderer *r, float x, float y, bool intact)
 {
-    SDL_Color body = intact ? PLAYER_PAINT.body_lt : (SDL_Color){44, 48, 56, 255};
-    SDL_Color roof = intact ? PLAYER_PAINT.roof : (SDL_Color){32, 36, 42, 255};
+    CarPaint hero = player_paint();
+    /* A lost pip is the car gone grey: slate steps off the shared ramp, so
+     * it recedes instead of reading as a second paint option. */
+    SDL_Color body = intact ? hero.body_lt : fx_mix(FX_SHADOW, FX_STEEL, 0.4f);
+    SDL_Color roof = intact ? hero.roof : fx_mix(FX_SHADOW, FX_STEEL, 0.2f);
     fx_rect(r, FX_INK, x, y, 9.0f, 13.0f);
     fx_rect(r, body, x + 1.0f, y + 1.0f, 7.0f, 11.0f);
     fx_rect(r, roof, x + 2.0f, y + 4.0f, 5.0f, 5.0f);
@@ -714,32 +779,31 @@ static void draw_car_pip(SDL_Renderer *r, float x, float y, bool intact)
 static void render_hud(SDL_Renderer *r, const Chase *chase, int win_w,
                        bool gamepad_active)
 {
-    const SDL_Color label = {108, 128, 148, 255};
-
     fx_vgrad(r, 0.0f, 0.0f, (float)win_w, 37.0f,
-             (SDL_Color){31, 39, 52, 255}, 255,
-             (SDL_Color){11, 17, 28, 255}, 255);
-    fx_rect(r, (SDL_Color){60, 76, 98, 255}, 0.0f, 0.0f, (float)win_w, 1.0f);
+             fx_mix(FX_BASE, FX_MID, 0.30f), 255,
+             fx_mix(FX_NIGHT, FX_SHADOW, 0.40f), 255);
+    fx_rect(r, fx_mix(FX_MID, FX_STEEL_LT, 0.35f), 0.0f, 0.0f, (float)win_w,
+            1.0f);
     fx_rect(r, FX_INK, 0.0f, 37.0f, (float)win_w, 1.0f);
-    fx_rect(r, (SDL_Color){181, 132, 56, 255}, 0.0f, 38.0f, (float)win_w, 2.0f);
+    fx_rect(r, fx_dim(FX_AMBER, 0.73f), 0.0f, 38.0f, (float)win_w, 2.0f);
 
     fx_rect(r, FX_RED, 0.0f, 0.0f, 3.0f, 37.0f);
-    draw_text(r, 12.0f, 8.0f, 1.35f, FX_CREAM, "PURSUIT");
-    fx_rect(r, (SDL_Color){170, 52, 46, 255}, 12.0f, 23.0f, 74.0f, 2.0f);
-    draw_text(r, 12.0f, 27.0f, 0.65f, label,
-              gamepad_active ? "LEFT STICK / DPAD  DRIVE" :
+    draw_text(r, 12.0f, 4.0f, 2.0f, FX_CREAM, "PURSUIT");
+    fx_rect(r, fx_dim(FX_RED, 0.73f), 12.0f, 22.0f, 112.0f, 2.0f);
+    draw_text(r, 12.0f, 27.0f, 1.0f, FX_LABEL,
+              gamepad_active ? "STICK / DPAD  DRIVE" :
                                "ARROWS / WASD  DRIVE");
 
-    draw_text(r, 196.0f, 8.0f, 0.7f, label, "CAR");
+    draw_text(r, 196.0f, 8.0f, 1.0f, FX_LABEL, "CAR");
     for (int i = 0; i < CHASE_INTEGRITY; ++i)
         draw_car_pip(r, 196.0f + (float)i * 13.0f, 19.0f,
                      i < chase->player.integrity);
 
-    draw_text(r, 250.0f, 8.0f, 0.7f, label, "ROUTE");
-    fx_rect(r, (SDL_Color){10, 15, 24, 255}, 250.0f, 20.0f, 244.0f, 11.0f);
+    draw_text(r, 250.0f, 8.0f, 1.0f, FX_LABEL, "ROUTE");
+    fx_rect(r, FX_NIGHT, 250.0f, 20.0f, 244.0f, 11.0f);
     float route = chase_route_progress(chase) * 240.0f;
-    fx_rect(r, (SDL_Color){54, 128, 128, 255}, 252.0f, 22.0f, route, 7.0f);
-    fx_rect(r, (SDL_Color){123, 226, 204, 255}, 252.0f, 22.0f, route, 2.0f);
+    fx_rect(r, fx_mix(FX_CYAN_DK, FX_CYAN, 0.2f), 252.0f, 22.0f, route, 7.0f);
+    fx_rect(r, FX_CYAN, 252.0f, 22.0f, route, 2.0f);
 
     /* The gap meter is the whole game: it fills as the SUV pulls away. */
     float gap = fmaxf(chase_gap(chase), 0.0f);
@@ -747,19 +811,18 @@ static void render_hud(SDL_Renderer *r, const Chase *chase, int win_w,
     SDL_Color gap_color = fx_mix(FX_CYAN, FX_RED, pressure);
     char gap_text[24];
     SDL_snprintf(gap_text, sizeof(gap_text), "%03dM", (int)(gap * 0.1f));
-    draw_text(r, 512.0f, 8.0f, 0.7f, label, "GAP TO SUV");
-    draw_text(r, 600.0f, 8.0f, 0.7f, gap_color, gap_text);
-    fx_rect(r, (SDL_Color){10, 15, 24, 255}, 512.0f, 20.0f, 176.0f, 11.0f);
+    draw_text(r, 512.0f, 8.0f, 1.0f, FX_LABEL, "GAP TO SUV");
+    draw_text(r, 600.0f, 8.0f, 1.0f, gap_color, gap_text);
+    fx_rect(r, FX_NIGHT, 512.0f, 20.0f, 176.0f, 11.0f);
     fx_rect(r, fx_dim(gap_color, 0.55f), 514.0f, 22.0f, 172.0f * pressure, 7.0f);
     fx_rect(r, gap_color, 514.0f, 22.0f, 172.0f * pressure, 2.0f);
 
     char speed_text[24];
     SDL_snprintf(speed_text, sizeof(speed_text), "%03d",
                  (int)(chase->player.speed * 0.5f));
-    draw_text(r, 706.0f, 8.0f, 0.7f, label, "SPEED");
-    draw_text(r, 706.0f, 19.0f, 1.5f, (SDL_Color){226, 232, 220, 255},
-              speed_text);
-    draw_text(r, 758.0f, 25.0f, 0.65f, label, "KMH");
+    draw_text(r, 706.0f, 8.0f, 1.0f, FX_LABEL, "SPEED");
+    draw_text(r, 706.0f, 19.0f, 2.0f, FX_CREAM, speed_text);
+    draw_text(r, 758.0f, 25.0f, 1.0f, FX_LABEL, "KMH");
 }
 
 /*
@@ -819,8 +882,8 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
     {
         float pulse = 0.5f + 0.5f * sinf(chase->time * 6.0f);
         SDL_Color mark = fx_dim(FX_AMBER, 0.5f + pulse * 0.5f);
-        draw_text_centered(r, center_x, view->view_top + 10.0f, 1.8f, mark, "^");
-        draw_text_centered(r, center_x, view->view_top + 30.0f, 0.9f, mark,
+        draw_text_centered(r, center_x, view->view_top + 10.0f, 2.0f, mark, "^");
+        draw_text_centered(r, center_x, view->view_top + 30.0f, 1.0f, mark,
                            "SUV AHEAD");
     }
 
@@ -834,10 +897,10 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
         float fade = clamp01(chase->phase_time / 0.6f);
         fx_rect_a(r, FX_INK, (Uint8)(fade * 200.0f), 0.0f,
                   view->view_top + 6.0f, (float)win_w, 30.0f);
-        draw_text_centered(r, center_x, view->view_top + 14.0f, 1.6f,
+        draw_text_centered(r, center_x, view->view_top + 14.0f, 2.0f,
                            fx_dim(FX_CREAM, fade), caption);
         float blink = 0.45f + 0.55f * sinf(chase->time * 2.0f);
-        draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f, 0.75f,
+        draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f, 1.0f,
                   fx_dim(FX_STEEL_LT, blink),
                   gamepad_active ? "A / START TO SKIP" :
                                    "ENTER / SPACE TO SKIP");
@@ -850,7 +913,7 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
                                    : "TRAIL LOST";
         fx_rect_a(r, FX_INK, 210, 0.0f, 232.0f, (float)win_w, 76.0f);
         fx_rect(r, FX_RED, 0.0f, 232.0f, (float)win_w, 2.0f);
-        draw_text_centered(r, center_x, 248.0f, 2.6f, FX_RED, headline);
+        draw_text_centered(r, center_x, 248.0f, 3.0f, FX_RED, headline);
         draw_text_centered(r, center_x, 286.0f, 1.0f, FX_STEEL_LT,
                            "CUTTING THROUGH THE BLOCKS TO GET BACK ON THEM");
     }
@@ -860,7 +923,7 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
         chase->attempts >= CHASE_SKIP_AFTER_ATTEMPTS)
     {
         float blink = 0.45f + 0.55f * sinf(chase->time * 2.0f);
-        draw_text(r, (float)win_w - 196.0f, (float)win_h - 31.0f, 0.75f,
+        draw_text(r, (float)win_w - 196.0f, (float)win_h - 31.0f, 1.0f,
                   fx_dim(FX_STEEL_LT, blink),
                   gamepad_active ? "A / START: SKIP DRIVE"
                                  : "ENTER: SKIP THE DRIVE");
@@ -872,7 +935,7 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
         fx_rect_a(r, FX_INK, (Uint8)(fade * 205.0f), 0.0f, 340.0f,
                   (float)win_w, 74.0f);
         fx_rect(r, fx_dim(FX_CYAN, fade), 0.0f, 340.0f, (float)win_w, 2.0f);
-        draw_text_centered(r, center_x, 356.0f, 2.4f, fx_dim(FX_CYAN, fade),
+        draw_text_centered(r, center_x, 356.0f, 2.0f, fx_dim(FX_CYAN, fade),
                            "THEY STOPPED HERE");
         draw_text_centered(r, center_x, 392.0f, 1.0f,
                            fx_dim(FX_STEEL_LT, fade),
@@ -920,7 +983,7 @@ void chase_render(SDL_Renderer *r, const Chase *chase, int win_w, int win_h,
     render_overlays(r, &view, chase, win_w, win_h, gamepad_active);
     render_hud(r, chase, win_w, gamepad_active);
 
-    /* Same finishing pass as every other screen in the game. */
-    fx_vignette(r, win_w, win_h, 64);
-    fx_scanlines(r, win_w, win_h, 11);
+    /* Finishing (vignette, scanlines) belongs to game_render's one shared
+       pass — the pause overlay has to sit under it, and it is drawn by the
+       shell after this function returns. */
 }

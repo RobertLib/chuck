@@ -18,15 +18,38 @@
 
 #include "fx.h"
 
-static const SDL_Color COL_INK = {5, 7, 12, 255};
-static const SDL_Color COL_CREAM = {236, 238, 224, 255};
-static const SDL_Color COL_MUTED = {112, 128, 142, 255};
-static const SDL_Color COL_RUST = {198, 62, 50, 255};
-static const SDL_Color COL_AMBER = {248, 188, 74, 255};
-static const SDL_Color COL_LAMP = {150, 206, 214, 255}; /* cold street lamp */
-static const SDL_Color COL_WARM = {240, 190, 112, 255}; /* interior light   */
-static const SDL_Color COL_SODIUM = {182, 116, 62, 255}; /* what the road
-                                                          * throws back up  */
+/*
+ * The colours this one image owns.  Anything byte-close to an fx.h constant
+ * uses the constant, and anything mixable from one is mixed where it is
+ * used; these are the few the shot cannot borrow, named once each so a
+ * repeated literal cannot drift between call sites.
+ */
+static const SDL_Color COL_MOON = {222, 232, 236, 255};    /* the lit face  */
+static const SDL_Color COL_MOON_DK = {168, 186, 202, 255}; /* its lower limb,
+                                                            * and its haze  */
+static const SDL_Color COL_CITY_GLOW = {52, 76, 88, 255};  /* the sodium-teal
+                                                            * the city throws
+                                                            * up at the sky */
+/* Background windows, duller than FX_WARM or FX_LAMP: every bright dot back
+ * there competes with the one window the shot is about. */
+static const SDL_Color COL_WIN_WARM = {106, 82, 44, 255};
+static const SDL_Color COL_WIN_COOL = {40, 80, 88, 255};
+/* Lit office panes on the tower itself, a warm tube and a cool one. */
+static const SDL_Color COL_GLASS_WARM = {236, 182, 104, 255};
+static const SDL_Color COL_GLASS_COOL = {104, 188, 196, 255};
+/* The light in the window the whole composition points at. */
+static const SDL_Color COL_TARGET = {250, 206, 130, 255};
+/* Two near-blacks the night keeps reaching for: FX_INK stepped toward
+ * FX_NIGHT for glass and doorway voids, and one step above FX_NIGHT for the
+ * silhouette masses standing on the street. */
+static const SDL_Color COL_VOID = {8, 11, 18, 255};
+static const SDL_Color COL_NIGHT_MASS = {12, 16, 24, 255};
+/* A body against a lit pane: a neutral dark, not the night's blue — a
+ * backlit figure keeps its own warmth even in silhouette. */
+static const SDL_Color COL_BACKLIT = {10, 10, 14, 255};
+/* Interface type: cream cooled a step, so a line of text never outshines
+ * the lit windows it shares the frame with. */
+static const SDL_Color COL_TYPE = {206, 212, 202, 255};
 
 /* The tower: eight office floors over a lit lobby, tapering slightly toward
  * the roof because the shot looks up at it from street level. */
@@ -248,9 +271,7 @@ static bool pane_light(int fl, int pane, float time, SDL_Color *out)
         fmodf(time * 1.7f + (float)(h % 97u) * 0.06f, 5.4f) < 0.08f)
         bright *= 0.32f; /* a tube stutters */
 
-    *out = fx_dim((h & 8u) ? (SDL_Color){236, 182, 104, 255}
-                           : (SDL_Color){104, 188, 196, 255},
-                  bright);
+    *out = fx_dim((h & 8u) ? COL_GLASS_WARM : COL_GLASS_COOL, bright);
     return true;
 }
 
@@ -349,22 +370,22 @@ bool intro_hit_assist_button(const Intro *intro, float x, float y)
 static void draw_moon(SDL_Renderer *r, float cx, float cy)
 {
     const float radius = 14.0f;
-    fx_glow(r, cx, cy, 78.0f, (SDL_Color){160, 190, 210, 255}, 30);
-    fx_glow(r, cx, cy, 34.0f, (SDL_Color){206, 224, 232, 255}, 34);
+    fx_glow(r, cx, cy, 78.0f, COL_MOON_DK, 30);
+    fx_glow(r, cx, cy, 34.0f, fx_mix(COL_MOON_DK, COL_MOON, 0.7f), 34);
 
     for (int row = -14; row <= 14; ++row)
     {
         float half = sqrtf(fmaxf(0.0f, radius * radius - (float)(row * row)));
         /* Cooler along the lower limb so the disc reads as a sphere. */
-        SDL_Color tint = fx_mix((SDL_Color){222, 232, 236, 255},
-                                (SDL_Color){168, 186, 202, 255},
+        SDL_Color tint = fx_mix(COL_MOON, COL_MOON_DK,
                                 ((float)row + radius) / (2.0f * radius));
         color_rect(r, tint, cx - half, cy + (float)row, half * 2.0f, 1.0f);
     }
-    color_rect(r, (SDL_Color){182, 198, 210, 255}, cx - 6.0f, cy - 5.0f, 5.0f, 4.0f);
-    color_rect(r, (SDL_Color){182, 198, 210, 255}, cx + 3.0f, cy + 6.0f, 4.0f, 3.0f);
-    color_rect(r, (SDL_Color){192, 208, 218, 255}, cx - 2.0f, cy + 2.0f, 3.0f, 2.0f);
-    color_rect(r, (SDL_Color){188, 204, 216, 255}, cx + 6.0f, cy - 2.0f, 2.0f, 2.0f);
+    /* Maria: steps between the disc's own two values, never a third grey. */
+    color_rect(r, fx_mix(COL_MOON_DK, COL_MOON, 0.25f), cx - 6.0f, cy - 5.0f, 5.0f, 4.0f);
+    color_rect(r, fx_mix(COL_MOON_DK, COL_MOON, 0.25f), cx + 3.0f, cy + 6.0f, 4.0f, 3.0f);
+    color_rect(r, fx_mix(COL_MOON_DK, COL_MOON, 0.45f), cx - 2.0f, cy + 2.0f, 3.0f, 2.0f);
+    color_rect(r, fx_mix(COL_MOON_DK, COL_MOON, 0.35f), cx + 6.0f, cy - 2.0f, 2.0f, 2.0f);
 }
 
 static void draw_cloud(SDL_Renderer *r, float x, float y, float width,
@@ -380,24 +401,19 @@ static void draw_cloud(SDL_Renderer *r, float x, float y, float width,
     {
         float bx = x + rows[i][0] * width;
         float bw = rows[i][1] * width;
-        fx_rect_a(r, (SDL_Color){26, 34, 48, 255}, alpha,
-                  bx, y + (float)i * band, bw, band);
+        fx_rect_a(r, FX_BASE, alpha, bx, y + (float)i * band, bw, band);
         if (i == 0)
-            fx_rect_a(r, (SDL_Color){64, 78, 96, 255}, (Uint8)(alpha + 18),
-                      bx, y, bw, 1.0f);
+            fx_rect_a(r, FX_STEEL, (Uint8)(alpha + 18), bx, y, bw, 1.0f);
     }
 }
 
 static void render_sky(SDL_Renderer *r, const Intro *intro, const IntroScene *s)
 {
-    fx_vgrad(r, 0.0f, 0.0f, s->w, s->h,
-             (SDL_Color){5, 8, 15, 255}, 255,
-             (SDL_Color){18, 27, 39, 255}, 255);
+    fx_vgrad(r, 0.0f, 0.0f, s->w, s->h, FX_INK, 255, FX_SHADOW, 255);
 
     /* Sodium haze the city throws up behind its own skyline. */
     fx_vgrad(r, 0.0f, 236.0f, s->w, s->street_y - 236.0f,
-             (SDL_Color){44, 70, 84, 255}, 0,
-             (SDL_Color){58, 84, 92, 255}, 64);
+             COL_CITY_GLOW, 0, COL_CITY_GLOW, 64);
 
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     for (int i = 0; i < INTRO_STAR_COUNT; ++i)
@@ -458,12 +474,14 @@ static void render_sky(SDL_Renderer *r, const Intro *intro, const IntroScene *s)
         float head_x = -12.0f + p * (s->w + 36.0f);
         float head_y = 26.0f + p * 58.0f;
         float fade = 1.0f - smoothstep01((p - 0.72f) / 0.28f);
+        /* The streak burns moon-cold, not lamp-cold. */
+        SDL_Color streak = fx_mix(COL_MOON_DK, COL_MOON, 0.7f);
 
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
         for (int i = 8; i >= 0; --i)
         {
             Uint8 alpha = (Uint8)((28.0f + (float)(8 - i) * 18.0f) * fade);
-            set_rgba(r, 202, 224, 228, alpha);
+            set_rgba(r, streak.r, streak.g, streak.b, alpha);
             fill_rect(r, floorf(head_x - (float)i * 7.0f),
                       floorf(head_y - (float)i * 3.0f),
                       i < 2 ? 3.0f : 2.0f, 1.0f);
@@ -485,13 +503,12 @@ static void render_skyline(SDL_Renderer *r, const Intro *intro,
     {
         int width = 62 + (i * 17) % 34;
         int height = far_heights[i % (int)SDL_arraysize(far_heights)];
-        color_rect(r, (SDL_Color){16, 23, 34, 255}, (float)cursor,
+        color_rect(r, FX_SHADOW, (float)cursor,
                    far_base - (float)height, (float)width, (float)height);
         cursor += width + 5;
     }
     fx_vgrad(r, 0.0f, far_base - 96.0f, s->w, 96.0f,
-             (SDL_Color){50, 74, 88, 255}, 0,
-             (SDL_Color){52, 76, 88, 255}, 54);
+             COL_CITY_GLOW, 0, COL_CITY_GLOW, 54);
 
     /* Near row: a value darker, with the last windows still burning. */
     static const int heights[] = {44, 68, 52, 82, 58, 74, 48, 90, 62, 78, 54};
@@ -502,9 +519,9 @@ static void render_skyline(SDL_Renderer *r, const Intro *intro,
         int width = 48 + (i * 13) % 30;
         int height = heights[i % (int)SDL_arraysize(heights)];
         float top = base - (float)height;
-        color_rect(r, (SDL_Color){10, 15, 24, 255}, (float)cursor, top,
+        color_rect(r, FX_NIGHT, (float)cursor, top,
                    (float)width, (float)height);
-        color_rect(r, (SDL_Color){19, 27, 39, 255}, (float)cursor, top,
+        color_rect(r, fx_mix(FX_SHADOW, FX_BASE, 0.3f), (float)cursor, top,
                    (float)width, 1.0f);
 
         for (int w = 0; w < width / 12; ++w)
@@ -512,17 +529,17 @@ static void render_skyline(SDL_Renderer *r, const Intro *intro,
             unsigned h = fx_hash((unsigned)(i * 53 + w * 17));
             if ((h % 6u) != 0u)
                 continue;
-            SDL_Color light = (h & 8u) ? (SDL_Color){106, 82, 44, 255}
-                                       : (SDL_Color){40, 80, 88, 255};
+            SDL_Color light = (h & 8u) ? COL_WIN_WARM : COL_WIN_COOL;
             color_rect(r, light, (float)(cursor + 6 + w * 12),
                        top + 10.0f + (float)(h % 4u) * 12.0f, 5.0f, 3.0f);
         }
         if (i % 4 == 1)
         {
             float ax = (float)cursor + (float)width * 0.5f;
-            color_rect(r, (SDL_Color){14, 20, 30, 255}, ax, top - 13.0f, 2.0f, 13.0f);
+            color_rect(r, fx_mix(FX_NIGHT, FX_SHADOW, 0.5f), ax, top - 13.0f,
+                       2.0f, 13.0f);
             float blink = sinf(intro->time * 1.8f + (float)i) > 0.75f ? 1.0f : 0.18f;
-            color_rect(r, fx_dim((SDL_Color){212, 74, 58, 255}, blink),
+            color_rect(r, fx_dim(FX_RED, 0.93f * blink),
                        ax - 1.0f, top - 16.0f, 4.0f, 3.0f);
         }
         cursor += width + 8;
@@ -542,16 +559,15 @@ static void render_skyline(SDL_Renderer *r, const Intro *intro,
 static void draw_neighbour_block(SDL_Renderer *r, const IntroScene *s,
                                  float x, float top, float width, unsigned seed)
 {
-    color_rect(r, (SDL_Color){9, 13, 21, 255}, x, top, width,
-               s->street_y - top);
-    color_rect(r, (SDL_Color){18, 24, 34, 255}, x, top, width, 2.0f);
-    color_rect(r, (SDL_Color){13, 18, 27, 255}, x + width - 3.0f, top, 3.0f,
-               s->street_y - top);
+    color_rect(r, FX_NIGHT, x, top, width, s->street_y - top);
+    color_rect(r, FX_SHADOW, x, top, width, 2.0f);
+    color_rect(r, fx_mix(FX_NIGHT, FX_SHADOW, 0.4f), x + width - 3.0f, top,
+               3.0f, s->street_y - top);
 
     /* Roof plant, then whatever is left burning inside. */
-    color_rect(r, (SDL_Color){9, 13, 21, 255}, x + width * 0.5f - 11.0f,
+    color_rect(r, FX_NIGHT, x + width * 0.5f - 11.0f,
                top - 9.0f, 22.0f, 9.0f);
-    color_rect(r, (SDL_Color){16, 22, 32, 255}, x + width * 0.5f - 11.0f,
+    color_rect(r, FX_SHADOW, x + width * 0.5f - 11.0f,
                top - 9.0f, 22.0f, 2.0f);
 
     int cols = (int)(width / 17.0f);
@@ -565,8 +581,8 @@ static void draw_neighbour_block(SDL_Renderer *r, const IntroScene *s,
                 continue;
             /* Kept dim: these are background, and a bright dot back here
              * competes with the window the shot is about. */
-            SDL_Color light = (h & 8u) ? (SDL_Color){58, 44, 24, 255}
-                                       : (SDL_Color){24, 50, 54, 255};
+            SDL_Color light = (h & 8u) ? fx_dim(COL_WIN_WARM, 0.55f)
+                                       : fx_dim(COL_WIN_COOL, 0.62f);
             color_rect(r, light, x + 8.0f + (float)col * 17.0f,
                        top + 12.0f + (float)row * 22.0f, 6.0f, 4.0f);
         }
@@ -575,8 +591,8 @@ static void draw_neighbour_block(SDL_Renderer *r, const IntroScene *s,
 
 static void render_flanking_blocks(SDL_Renderer *r, const IntroScene *s)
 {
-    const SDL_Color mass = {7, 10, 17, 255};
-    const SDL_Color edge = {15, 20, 30, 255};
+    const SDL_Color mass = fx_mix(FX_INK, FX_NIGHT, 0.5f);
+    const SDL_Color edge = fx_mix(FX_NIGHT, FX_SHADOW, 0.6f);
 
     /*
      * Mid-ground slabs at four different heights, so the rooflines step
@@ -596,8 +612,8 @@ static void render_flanking_blocks(SDL_Renderer *r, const IntroScene *s)
     color_rect(r, edge, 40.0f, 274.0f, 34.0f, 2.0f);
     color_rect(r, mass, 48.0f, 262.0f, 4.0f, 12.0f);
     color_rect(r, mass, 62.0f, 262.0f, 4.0f, 12.0f);
-    color_rect(r, (SDL_Color){64, 52, 30, 255}, 16.0f, 348.0f, 6.0f, 4.0f);
-    color_rect(r, (SDL_Color){30, 58, 62, 255}, 104.0f, 384.0f, 6.0f, 4.0f);
+    color_rect(r, fx_dim(COL_WIN_WARM, 0.6f), 16.0f, 348.0f, 6.0f, 4.0f);
+    color_rect(r, fx_dim(COL_WIN_COOL, 0.72f), 104.0f, 384.0f, 6.0f, 4.0f);
 
     /* Right: nearer, taller, also cut by the frame, so the composition is
      * closed on both sides instead of draining out of them. */
@@ -606,17 +622,17 @@ static void render_flanking_blocks(SDL_Renderer *r, const IntroScene *s)
     color_rect(r, edge, s->w - 138.0f, 262.0f, 150.0f, 2.0f);
     color_rect(r, mass, s->w - 92.0f, 226.0f, 3.0f, 36.0f);
     color_rect(r, mass, s->w - 100.0f, 236.0f, 19.0f, 2.0f);
-    color_rect(r, (SDL_Color){58, 46, 28, 255}, s->w - 122.0f, 314.0f, 6.0f, 4.0f);
-    color_rect(r, (SDL_Color){58, 46, 28, 255}, s->w - 102.0f, 360.0f, 6.0f, 4.0f);
-    color_rect(r, (SDL_Color){28, 54, 58, 255}, s->w - 56.0f, 336.0f, 6.0f, 4.0f);
+    color_rect(r, fx_dim(COL_WIN_WARM, 0.55f), s->w - 122.0f, 314.0f, 6.0f, 4.0f);
+    color_rect(r, fx_dim(COL_WIN_WARM, 0.55f), s->w - 102.0f, 360.0f, 6.0f, 4.0f);
+    color_rect(r, fx_dim(COL_WIN_COOL, 0.68f), s->w - 56.0f, 336.0f, 6.0f, 4.0f);
 }
 
 /* ---- The tower ------------------------------------------------------- */
 
 static void draw_roof_hardware(SDL_Renderer *r, const IntroScene *s, float time)
 {
-    const SDL_Color mass = {13, 18, 28, 255};
-    const SDL_Color lit = {26, 34, 47, 255};
+    const SDL_Color mass = fx_mix(FX_NIGHT, FX_SHADOW, 0.4f);
+    const SDL_Color lit = FX_BASE;
     float left = s->top_left;
     float right = s->top_right;
 
@@ -629,7 +645,7 @@ static void draw_roof_hardware(SDL_Renderer *r, const IntroScene *s, float time)
     color_rect(r, mass, mast_x, s->roof_y - 22.0f, 3.0f, 22.0f);
     color_rect(r, mass, mast_x - 5.0f, s->roof_y - 15.0f, 13.0f, 2.0f);
     float blink = sinf(time * 2.1f) > 0.62f ? 1.0f : 0.16f;
-    SDL_Color beacon = fx_dim((SDL_Color){226, 78, 60, 255}, blink);
+    SDL_Color beacon = fx_dim(FX_RED, blink);
     if (blink > 0.5f)
         fx_glow(r, mast_x + 1.5f, s->roof_y - 25.0f, 15.0f, beacon, 96);
     color_rect(r, beacon, mast_x - 1.0f, s->roof_y - 26.0f, 5.0f, 4.0f);
@@ -651,11 +667,11 @@ static void draw_roof_hardware(SDL_Renderer *r, const IntroScene *s, float time)
     color_rect(r, mass, right - 23.0f, s->roof_y - 16.0f, 3.0f, 4.0f);
 
     /* Cornice: overhangs both faces, lit along its top arris. */
-    color_rect(r, (SDL_Color){10, 14, 22, 255}, left - 7.0f, s->roof_y - 1.0f,
+    color_rect(r, FX_NIGHT, left - 7.0f, s->roof_y - 1.0f,
                right - left + 14.0f, 11.0f);
-    color_rect(r, (SDL_Color){46, 57, 70, 255}, left - 7.0f, s->roof_y - 1.0f,
+    color_rect(r, FX_STEEL_DK, left - 7.0f, s->roof_y - 1.0f,
                right - left + 14.0f, 2.0f);
-    color_rect(r, (SDL_Color){96, 112, 126, 255}, left - 5.0f, s->roof_y - 1.0f,
+    color_rect(r, fx_dim(FX_STEEL_LT, 0.93f), left - 5.0f, s->roof_y - 1.0f,
                right - left + 10.0f, 1.0f);
 }
 
@@ -663,8 +679,8 @@ static void draw_fire_escape(SDL_Renderer *r, const IntroScene *s)
 {
     /* Bolted to the left face: it breaks the box silhouette, and it is the
      * one thing on the wall that says this building gets climbed. */
-    const SDL_Color steel = {20, 26, 36, 255};
-    const SDL_Color rail = {34, 43, 55, 255};
+    const SDL_Color steel = fx_mix(FX_SHADOW, FX_BASE, 0.25f);
+    const SDL_Color rail = fx_mix(FX_BASE, FX_MID, 0.5f);
     for (int i = 0; i < TOWER_FLOORS; ++i)
     {
         float y = floor_top(s, i) + 30.0f;
@@ -698,64 +714,65 @@ static void draw_lobby(SDL_Renderer *r, const IntroScene *s, float time,
      * it is lit from its own ceiling and falls off downward, because a flat
      * wash of amber would read as a painted panel and not as a room.
      */
-    color_rect(r, (SDL_Color){8, 11, 18, 255}, left, top, right - left,
-               floor_line - top);
+    color_rect(r, COL_VOID, left, top, right - left, floor_line - top);
     fx_vgrad(r, left + 4.0f, top + 5.0f, right - left - 8.0f,
              floor_line - top - 7.0f,
-             fx_dim((SDL_Color){118, 88, 52, 255}, wake), 255,
-             fx_dim((SDL_Color){40, 33, 27, 255}, wake), 255);
+             fx_dim(fx_dim(FX_WARM, 0.5f), wake), 255,
+             fx_dim(fx_mix(FX_NIGHT, FX_WARM, 0.13f), wake), 255);
 
     /* Ceiling coves, seen through the glass. */
     for (int i = 0; i < 3; ++i)
     {
         float cx = left + 30.0f + (float)i * (right - left - 60.0f) * 0.5f;
-        color_rect(r, fx_dim(COL_WARM, wake), cx - 10.0f, top + 6.0f, 20.0f, 2.0f);
-        fx_glow(r, cx, top + 9.0f, 26.0f, COL_WARM, (Uint8)(66.0f * wake));
+        color_rect(r, fx_dim(FX_WARM, wake), cx - 10.0f, top + 6.0f, 20.0f, 2.0f);
+        fx_glow(r, cx, top + 9.0f, 26.0f, FX_WARM, (Uint8)(66.0f * wake));
     }
 
     /* Reception counter, with whoever is left behind it, and the lift core
      * glowing cold at the back of the room. */
     float counter_x = left + 96.0f;
-    color_rect(r, (SDL_Color){15, 19, 27, 255}, counter_x, floor_line - 17.0f,
-               54.0f, 17.0f);
-    color_rect(r, fx_dim((SDL_Color){150, 114, 66, 255}, wake), counter_x,
+    color_rect(r, fx_mix(FX_NIGHT, FX_SHADOW, 0.6f), counter_x,
+               floor_line - 17.0f, 54.0f, 17.0f);
+    color_rect(r, fx_dim(fx_dim(FX_WARM, 0.62f), wake), counter_x,
                floor_line - 17.0f, 54.0f, 2.0f);
     float lean = sinf(time * 0.8f) * 1.5f;
-    color_rect(r, (SDL_Color){12, 16, 23, 255}, counter_x + 22.0f + lean,
+    color_rect(r, COL_NIGHT_MASS, counter_x + 22.0f + lean,
                floor_line - 29.0f, 8.0f, 12.0f);
-    color_rect(r, (SDL_Color){10, 14, 20, 255}, counter_x + 23.0f + lean,
+    color_rect(r, fx_dim(COL_NIGHT_MASS, 0.85f), counter_x + 23.0f + lean,
                floor_line - 33.0f, 6.0f, 5.0f);
 
-    color_rect(r, (SDL_Color){12, 16, 24, 255}, right - 40.0f,
+    color_rect(r, COL_NIGHT_MASS, right - 40.0f,
                floor_line - 38.0f, 28.0f, 38.0f);
-    color_rect(r, fx_dim((SDL_Color){64, 140, 146, 255}, wake), right - 35.0f,
-               floor_line - 34.0f, 18.0f, 2.0f);
+    color_rect(r, fx_dim(fx_mix(FX_CYAN_DK, COL_GLASS_COOL, 0.5f), wake),
+               right - 35.0f, floor_line - 34.0f, 18.0f, 2.0f);
 
     /* Glazing bars, so the light is read through a wall of glass. */
     for (float mx = left + 16.0f; mx < right - 8.0f; mx += 22.0f)
-        color_rect(r, (SDL_Color){10, 13, 20, 255}, mx, top + 4.0f, 2.0f,
+        color_rect(r, FX_NIGHT, mx, top + 4.0f, 2.0f,
                    floor_line - top - 5.0f);
-    color_rect(r, (SDL_Color){10, 13, 20, 255}, left + 4.0f, top + 4.0f,
+    color_rect(r, FX_NIGHT, left + 4.0f, top + 4.0f,
                right - left - 8.0f, 2.0f);
 
-    /* The entrance itself: two leaves, a mullion, a lit canopy over them. */
+    /* The entrance itself: two leaves, a mullion, a lit canopy over them.
+     * The doorway burns with the same light as the target window — one
+     * interior, one warmth, top of the shot to the bottom. */
     float door_x = left + 26.0f;
-    color_rect(r, (SDL_Color){7, 10, 16, 255}, door_x - 3.0f,
+    color_rect(r, COL_VOID, door_x - 3.0f,
                floor_line - 34.0f, 58.0f, 34.0f);
     fx_vgrad(r, door_x, floor_line - 31.0f, 52.0f, 31.0f,
-             fx_dim((SDL_Color){206, 158, 98, 255}, wake), 255,
-             fx_dim((SDL_Color){132, 100, 62, 255}, wake), 255);
-    color_rect(r, (SDL_Color){9, 12, 19, 255}, door_x + 24.0f,
+             fx_dim(COL_TARGET, 0.8f * wake), 255,
+             fx_dim(COL_TARGET, 0.5f * wake), 255);
+    color_rect(r, COL_VOID, door_x + 24.0f,
                floor_line - 31.0f, 4.0f, 31.0f);
-    color_rect(r, (SDL_Color){7, 10, 16, 255}, door_x - 6.0f,
+    color_rect(r, COL_VOID, door_x - 6.0f,
                floor_line - 40.0f, 64.0f, 5.0f);
-    color_rect(r, fx_dim(COL_AMBER, wake * 0.85f), door_x - 6.0f,
+    color_rect(r, fx_dim(FX_AMBER, wake * 0.85f), door_x - 6.0f,
                floor_line - 36.0f, 64.0f, 2.0f);
 
     /* Sill line: the building meets the pavement on a lit concrete edge. */
-    color_rect(r, (SDL_Color){36, 44, 54, 255}, left - 4.0f, floor_line - 4.0f,
+    color_rect(r, fx_mix(FX_BASE, FX_MID, 0.6f), left - 4.0f, floor_line - 4.0f,
                right - left + 8.0f, 4.0f);
-    color_rect(r, (SDL_Color){64, 76, 88, 255}, left - 4.0f, floor_line - 4.0f,
+    color_rect(r, fx_dim(FX_STEEL, 0.92f), left - 4.0f, floor_line - 4.0f,
                right - left + 8.0f, 1.0f);
 }
 
@@ -770,14 +787,14 @@ static void draw_target_window(SDL_Renderer *r, const IntroScene *s, float time)
     float level = on * strike;
 
     fx_glow(r, p.x + p.w * 0.5f, p.y + p.h * 0.5f, 74.0f,
-            (SDL_Color){250, 206, 130, 255}, (Uint8)(58.0f * level));
+            COL_TARGET, (Uint8)(58.0f * level));
     fx_vgrad(r, p.x, p.y, p.w, p.h,
-             fx_dim((SDL_Color){255, 226, 158, 255}, level), 255,
-             fx_dim((SDL_Color){236, 176, 92, 255}, level), 255);
+             fx_dim(fx_ramp(COL_TARGET).lit, level), 255,
+             fx_dim(fx_mix(COL_TARGET, FX_AMBER_DK, 0.3f), level), 255);
 
     /* Two figures: one held in a chair, one standing over her. */
     float base = p.y + p.h;
-    SDL_Color ink = {10, 10, 14, 255};
+    SDL_Color ink = COL_BACKLIT;
     color_rect(r, ink, p.x + 7.0f, base - 11.0f, 6.0f, 11.0f);
     color_rect(r, ink, p.x + 6.0f, base - 14.0f, 5.0f, 4.0f);
     color_rect(r, ink, p.x + 12.0f, base - 12.0f, 2.0f, 12.0f);
@@ -787,8 +804,8 @@ static void draw_target_window(SDL_Renderer *r, const IntroScene *s, float time)
     color_rect(r, ink, p.x + p.w - 13.0f + pace, base - 21.0f, 5.0f, 5.0f);
 
     /* Frame last, so the figures sit behind the glazing bars. */
-    color_rect(r, (SDL_Color){28, 22, 18, 255}, p.x, p.y, p.w, 1.0f);
-    color_rect(r, fx_dim((SDL_Color){255, 236, 190, 255}, level),
+    color_rect(r, fx_mix(FX_INK, FX_SODIUM, 0.13f), p.x, p.y, p.w, 1.0f);
+    color_rect(r, fx_dim(fx_ramp(COL_TARGET).lit, level),
                p.x, base - 1.0f, p.w, 1.0f);
 }
 
@@ -814,12 +831,10 @@ static void render_tower(SDL_Renderer *r, const Intro *intro,
         /* Spandrel: one lit arris on top, dark concrete, deep soffit.  The
          * concrete stays low in value on purpose — every bit of brightness on
          * this wall is meant to be a window. */
-        color_rect(r, (SDL_Color){9, 12, 19, 255}, left, top, right - left,
-                   TOWER_FLOOR_H);
-        color_rect(r, (SDL_Color){21, 27, 36, 255}, left, top, right - left, 7.0f);
-        color_rect(r, (SDL_Color){44, 54, 66, 255}, left, top, right - left, 1.0f);
-        color_rect(r, (SDL_Color){6, 8, 13, 255}, left, top + 7.0f,
-                   right - left, 1.0f);
+        color_rect(r, COL_VOID, left, top, right - left, TOWER_FLOOR_H);
+        color_rect(r, FX_SHADOW, left, top, right - left, 7.0f);
+        color_rect(r, FX_STEEL_DK, left, top, right - left, 1.0f);
+        color_rect(r, FX_INK, left, top + 7.0f, right - left, 1.0f);
 
         for (int pane = 0; pane < TOWER_PANES; ++pane)
         {
@@ -829,8 +844,7 @@ static void render_tower(SDL_Renderer *r, const Intro *intro,
             /* Sky reflected in dark glass; without it the unlit panes read as
              * holes in the wall rather than as windows. */
             fx_vgrad(r, p.x, p.y, p.w, p.h,
-                     (SDL_Color){38, 54, 72, 255}, 104,
-                     (SDL_Color){11, 17, 27, 255}, 40);
+                     FX_MID, 104, FX_NIGHT, 40);
 
             if (i == TARGET_FLOOR && pane == TARGET_PANE)
                 continue;
@@ -841,7 +855,7 @@ static void render_tower(SDL_Renderer *r, const Intro *intro,
                  * pane from reading as a painted rectangle. */
                 unsigned h = fx_hash((unsigned)(i * 91 + pane * 13));
                 fx_vgrad(r, p.x, p.y, p.w, p.h,
-                         fx_mix(light, COL_CREAM, 0.18f), 255,
+                         fx_mix(light, FX_CREAM, 0.18f), 255,
                          fx_dim(light, 0.45f), 255);
                 color_rect(r, fx_dim(light, 0.24f), p.x, p.y,
                            p.w, 2.0f + (float)(h % 3u));
@@ -850,7 +864,7 @@ static void render_tower(SDL_Renderer *r, const Intro *intro,
                                p.w, p.h * 0.42f);
                 color_rect(r, fx_dim(light, 0.38f), p.x, p.y + p.h - 6.0f,
                            p.w, 1.0f);
-                color_rect(r, fx_mix(light, COL_CREAM, 0.4f), p.x,
+                color_rect(r, fx_mix(light, FX_CREAM, 0.4f), p.x,
                            p.y + p.h - 1.0f, p.w, 1.0f);
 
                 /* Someone is still working on a couple of the floors. */
@@ -861,9 +875,9 @@ static void render_tower(SDL_Renderer *r, const Intro *intro,
                                                  (p.w * 0.24f)
                                            : 0.0f;
                     float px = p.x + p.w * 0.5f + walk;
-                    color_rect(r, (SDL_Color){13, 13, 17, 255}, px - 2.0f,
+                    color_rect(r, COL_BACKLIT, px - 2.0f,
                                p.y + p.h - 12.0f, 4.5f, 12.0f);
-                    color_rect(r, (SDL_Color){13, 13, 17, 255}, px - 1.5f,
+                    color_rect(r, COL_BACKLIT, px - 1.5f,
                                p.y + p.h - 15.0f, 3.5f, 3.5f);
                 }
                 fx_glow(r, p.x + p.w * 0.5f, p.y + p.h * 0.5f, 26.0f, light, 22);
@@ -871,7 +885,7 @@ static void render_tower(SDL_Renderer *r, const Intro *intro,
 
             /* Two leaves per opening: the transom is what gives the wall its
              * scale, and it crosses lit and dark panes alike. */
-            color_rect(r, (SDL_Color){10, 13, 20, 255},
+            color_rect(r, FX_NIGHT,
                        p.x + floorf(p.w * 0.5f), p.y, 1.0f, p.h);
         }
 
@@ -892,9 +906,9 @@ static void render_tower(SDL_Renderer *r, const Intro *intro,
                 px = p.x + p.w;
                 pw = right - px;
             }
-            color_rect(r, (SDL_Color){17, 22, 31, 255}, px, top + 8.0f,
+            color_rect(r, FX_SHADOW, px, top + 8.0f,
                        pw, TOWER_FLOOR_H - 8.0f);
-            color_rect(r, (SDL_Color){28, 36, 47, 255}, px, top + 8.0f,
+            color_rect(r, FX_BASE, px, top + 8.0f,
                        1.0f, TOWER_FLOOR_H - 8.0f);
         }
     }
@@ -918,24 +932,28 @@ static void draw_chuck(SDL_Renderer *r, float x, float feet_y, float scale,
      * needs a bright ground behind it, and this street has none.  Rim light
      * is then an accent on the edges that face a lamp, not a strip down his
      * whole body.
+     *
+     * And they are the game's colours: the jacket is FX_HERO at street-lamp
+     * level, the skin FX_SKIN a step down, the cap FX_RUST — the same man
+     * the first level hands over, not a fourth jacket for the same coat.
      */
-    const SDL_Color coat = {32, 62, 86, 255};      /* front, toward the lobby */
-    const SDL_Color coat_dk = {17, 32, 48, 255};   /* back, toward the lamp   */
-    const SDL_Color trouser = {24, 30, 42, 255};
-    const SDL_Color boot = {10, 12, 18, 255};
-    const SDL_Color skin = {154, 108, 74, 255};
-    const SDL_Color cap = {104, 40, 34, 255};
-    const SDL_Color cap_dk = {58, 24, 22, 255};
-    const SDL_Color cold = {112, 166, 180, 255};
-    const SDL_Color warm = {214, 152, 82, 255};
+    const SDL_Color coat = fx_dim(FX_HERO, 0.60f); /* front, toward the lobby */
+    const SDL_Color coat_dk = fx_dim(coat, 0.55f); /* back, toward the lamp   */
+    const SDL_Color trouser = fx_mix(FX_SHADOW, FX_BASE, 0.55f);
+    const SDL_Color boot = fx_dim(FX_SHADOW, 0.55f);
+    const SDL_Color skin = fx_dim(FX_SKIN, 0.70f);
+    const SDL_Color cap = fx_dim(FX_RUST, 0.53f);
+    const SDL_Color cap_dk = fx_dim(cap, 0.56f);
+    const SDL_Color cold = fx_dim(FX_LAMP, 0.80f);
+    const SDL_Color warm = fx_mix(FX_SODIUM, FX_WARM, 0.55f);
 
     float breath = sinf(time * 1.5f) * 0.35f;
 #define U(v) ((v) * scale)
     float top = feet_y - U(34.0f);
 
-    /* Cast shadow, thrown forward and away from the lamp behind him. */
-    fx_rect_a(r, COL_INK, 120, x + U(6.0f), feet_y - U(2.0f), U(32.0f), U(2.5f));
-    fx_rect_a(r, COL_INK, 80, x + U(18.0f), feet_y - U(2.0f), U(26.0f), U(2.0f));
+    /* Cast shadow: the same soft pool the game grounds a figure with,
+     * centred a step toward the lobby because the lamp is behind him. */
+    fx_contact_shadow(r, x + U(16.0f), feet_y - 2.0f, U(13.0f), 0.0f, 170);
 
     /* Legs: back leg planted, near leg forward, boots pointing at the door. */
     color_rect(r, fx_dim(trouser, 0.6f), x + U(6.0f), top + U(24.0f), U(4.5f), U(8.5f));
@@ -949,7 +967,7 @@ static void draw_chuck(SDL_Renderer *r, float x, float feet_y, float scale,
     color_rect(r, coat, x + U(12.0f), body, U(5.5f), U(15.0f));
     color_rect(r, coat_dk, x + U(4.0f), body + U(11.0f), U(8.0f), U(4.0f));
     color_rect(r, fx_dim(coat, 0.8f), x + U(12.0f), body + U(11.0f), U(6.0f), U(4.0f));
-    color_rect(r, fx_mix(coat, COL_CREAM, 0.12f), x + U(9.0f), body,
+    color_rect(r, fx_mix(coat, FX_CREAM, 0.12f), x + U(9.0f), body,
                U(8.5f), U(2.0f)); /* shoulder catching the lamp */
 
     /* Near arm hanging at his side, hand loose. */
@@ -959,12 +977,12 @@ static void draw_chuck(SDL_Renderer *r, float x, float feet_y, float scale,
     /* Head in profile, tipped back: neck, skull, face, nose, cap, brim. */
     float head = top + U(1.5f) + U(breath);
     color_rect(r, fx_dim(skin, 0.5f), x + U(9.5f), head + U(7.5f), U(4.0f), U(2.5f));
-    color_rect(r, (SDL_Color){38, 24, 18, 255}, x + U(7.0f), head + U(2.5f),
+    color_rect(r, fx_dim(FX_HAIR, 0.5f), x + U(7.0f), head + U(2.5f),
                U(4.0f), U(6.0f));
     color_rect(r, skin, x + U(11.0f), head + U(2.5f), U(5.0f), U(6.0f));
     color_rect(r, skin, x + U(16.0f), head + U(4.5f), U(1.5f), U(2.0f)); /* nose */
     color_rect(r, fx_dim(skin, 0.55f), x + U(11.0f), head + U(7.0f), U(5.0f), U(1.5f));
-    color_rect(r, (SDL_Color){28, 18, 14, 255}, x + U(13.5f), head + U(4.0f),
+    color_rect(r, fx_dim(FX_HAIR, 0.36f), x + U(13.5f), head + U(4.0f),
                U(1.5f), U(1.0f)); /* eye, aimed up the wall */
     color_rect(r, cap, x + U(6.5f), head, U(10.0f), U(3.0f));
     color_rect(r, cap_dk, x + U(6.5f), head + U(2.0f), U(10.0f), U(1.5f));
@@ -972,7 +990,7 @@ static void draw_chuck(SDL_Renderer *r, float x, float feet_y, float scale,
 
     /* Rim accents only: cap, shoulder blade, calf, and the coat's front edge
      * where the lobby light catches it. */
-    color_rect(r, fx_mix(cap, COL_CREAM, 0.45f), x + U(6.5f), head, U(10.0f), U(1.0f));
+    color_rect(r, fx_mix(cap, FX_CREAM, 0.45f), x + U(6.5f), head, U(10.0f), U(1.0f));
     color_rect(r, cold, x + U(4.5f), body + U(1.0f), U(1.0f), U(9.0f));
     color_rect(r, fx_dim(cold, 0.7f), x + U(6.0f), head + U(2.5f), U(1.0f), U(5.0f));
     color_rect(r, fx_dim(cold, 0.55f), x + U(6.0f), top + U(24.0f), U(1.0f), U(7.5f));
@@ -990,18 +1008,18 @@ static void draw_street_lamp(SDL_Renderer *r, const IntroScene *s, float x)
     /* The cone reaches wide enough at the bottom to put the man standing in
      * front of it inside the light rather than beside it. */
     fx_light_cone(r, x + 2.0f, head + 12.0f, 9.0f, 104.0f, base - head - 4.0f,
-                  COL_LAMP, 30);
-    fx_glow(r, x + 24.0f, base - 8.0f, 108.0f, COL_LAMP, 30);
+                  FX_LAMP, 30);
+    fx_glow(r, x + 24.0f, base - 8.0f, 108.0f, FX_LAMP, 30);
 
-    color_rect(r, (SDL_Color){12, 16, 24, 255}, x, head + 10.0f, 5.0f,
+    color_rect(r, COL_NIGHT_MASS, x, head + 10.0f, 5.0f,
                base - head - 10.0f);
-    color_rect(r, (SDL_Color){24, 31, 42, 255}, x + 1.0f, head + 10.0f, 1.0f,
+    color_rect(r, FX_BASE, x + 1.0f, head + 10.0f, 1.0f,
                base - head - 10.0f);
-    color_rect(r, (SDL_Color){12, 16, 24, 255}, x - 1.0f, head, 18.0f, 4.0f);
-    color_rect(r, (SDL_Color){12, 16, 24, 255}, x + 13.0f, head + 4.0f, 4.0f, 3.0f);
-    color_rect(r, fx_mix(COL_LAMP, COL_CREAM, 0.5f), x + 2.0f, head + 7.0f,
+    color_rect(r, COL_NIGHT_MASS, x - 1.0f, head, 18.0f, 4.0f);
+    color_rect(r, COL_NIGHT_MASS, x + 13.0f, head + 4.0f, 4.0f, 3.0f);
+    color_rect(r, fx_mix(FX_LAMP, FX_CREAM, 0.5f), x + 2.0f, head + 7.0f,
                13.0f, 4.0f);
-    fx_glow(r, x + 8.0f, head + 9.0f, 26.0f, COL_LAMP, 88);
+    fx_glow(r, x + 8.0f, head + 9.0f, 26.0f, FX_LAMP, 88);
 }
 
 static void draw_suv(SDL_Renderer *r, float x, float base_y, float time)
@@ -1010,33 +1028,33 @@ static void draw_suv(SDL_Renderer *r, float x, float base_y, float time)
      * cooling off — the shot picks up exactly where the drive ends.  It is a
      * dark shape lit from the lobby side, so the top surfaces and the near
      * flank carry a warm edge and the rest stays in the road. */
-    const SDL_Color body = {16, 20, 28, 255};
-    const SDL_Color trim = {40, 47, 58, 255};
-    const SDL_Color glass = {22, 30, 42, 255};
+    const SDL_Color body = fx_mix(FX_NIGHT, FX_SHADOW, 0.45f);
+    const SDL_Color trim = FX_MID;
+    const SDL_Color glass = FX_BASE;
     float brake = 1.0f - smoothstep01((time - 2.2f) / 2.6f);
 
-    fx_rect_a(r, COL_INK, 170, x - 3.0f, base_y - 2.0f, 94.0f, 4.0f);
+    /* The same soft pool a figure is grounded with, at a vehicle's width. */
+    fx_contact_shadow(r, x + 44.0f, base_y - 2.0f, 52.0f, 0.0f, 200);
     color_rect(r, body, x, base_y - 24.0f, 88.0f, 22.0f);
     color_rect(r, body, x + 16.0f, base_y - 37.0f, 52.0f, 14.0f);
     color_rect(r, trim, x + 16.0f, base_y - 37.0f, 52.0f, 1.0f);
     color_rect(r, glass, x + 20.0f, base_y - 34.0f, 20.0f, 9.0f);
     color_rect(r, fx_dim(glass, 0.8f), x + 44.0f, base_y - 34.0f, 20.0f, 9.0f);
-    color_rect(r, (SDL_Color){52, 44, 36, 255}, x + 20.0f, base_y - 34.0f,
-               20.0f, 2.0f);
+    color_rect(r, fx_mix(FX_SHADOW, FX_SODIUM, 0.22f), x + 20.0f,
+               base_y - 34.0f, 20.0f, 2.0f);
     color_rect(r, trim, x, base_y - 24.0f, 88.0f, 1.0f);
-    color_rect(r, (SDL_Color){64, 54, 40, 255}, x + 2.0f, base_y - 15.0f,
+    color_rect(r, fx_mix(FX_SHADOW, FX_SODIUM, 0.3f), x + 2.0f, base_y - 15.0f,
                84.0f, 1.0f); /* beltline catching the entrance light */
-    color_rect(r, (SDL_Color){9, 11, 16, 255}, x, base_y - 8.0f, 88.0f, 6.0f);
+    color_rect(r, COL_VOID, x, base_y - 8.0f, 88.0f, 6.0f);
 
-    color_rect(r, COL_INK, x + 10.0f, base_y - 9.0f, 17.0f, 9.0f);
-    color_rect(r, COL_INK, x + 59.0f, base_y - 9.0f, 17.0f, 9.0f);
-    color_rect(r, (SDL_Color){34, 40, 50, 255}, x + 13.0f, base_y - 6.0f, 10.0f, 4.0f);
-    color_rect(r, (SDL_Color){34, 40, 50, 255}, x + 62.0f, base_y - 6.0f, 10.0f, 4.0f);
+    color_rect(r, FX_INK, x + 10.0f, base_y - 9.0f, 17.0f, 9.0f);
+    color_rect(r, FX_INK, x + 59.0f, base_y - 9.0f, 17.0f, 9.0f);
+    color_rect(r, fx_mix(FX_BASE, FX_MID, 0.5f), x + 13.0f, base_y - 6.0f, 10.0f, 4.0f);
+    color_rect(r, fx_mix(FX_BASE, FX_MID, 0.5f), x + 62.0f, base_y - 6.0f, 10.0f, 4.0f);
 
     if (brake > 0.01f)
     {
-        SDL_Color tail = fx_dim((SDL_Color){236, 62, 48, 255},
-                                0.35f + brake * 0.65f);
+        SDL_Color tail = fx_dim(FX_RED, 0.35f + brake * 0.65f);
         fx_glow(r, x + 2.0f, base_y - 18.0f, 26.0f, tail,
                 (Uint8)(70.0f * brake + 24.0f));
         color_rect(r, tail, x, base_y - 21.0f, 4.0f, 5.0f);
@@ -1057,22 +1075,20 @@ static void render_street(SDL_Renderer *r, const Intro *intro,
      * the lamp — is reflected light, and reflected light on a pale road is
      * invisible.
      */
-    color_rect(r, (SDL_Color){14, 18, 26, 255}, 0.0f, y, s->w, s->h - y);
-    color_rect(r, (SDL_Color){40, 49, 60, 255}, 0.0f, y, s->w, 1.0f);
-    color_rect(r, (SDL_Color){8, 11, 17, 255}, 0.0f, y + 7.0f, s->w, s->h - y);
+    color_rect(r, COL_NIGHT_MASS, 0.0f, y, s->w, s->h - y);
+    color_rect(r, FX_MID, 0.0f, y, s->w, 1.0f);
+    color_rect(r, COL_VOID, 0.0f, y + 7.0f, s->w, s->h - y);
     fx_vgrad(r, 0.0f, y + 7.0f, s->w, 26.0f,
-             (SDL_Color){30, 40, 54, 255}, 40,
-             (SDL_Color){30, 40, 54, 255}, 0);
+             FX_BASE, 40, FX_BASE, 0);
     fx_vgrad(r, 0.0f, s->h - 44.0f, s->w, 44.0f,
-             (SDL_Color){4, 6, 10, 255}, 0,
-             (SDL_Color){4, 6, 10, 255}, 150);
+             FX_INK, 0, FX_INK, 150);
 
     /* Kerb joints, and two damp patches placed clear of the figure so no seam
      * cuts him off at the knee. */
     for (float jx = 24.0f; jx < s->w; jx += 96.0f)
-        color_rect(r, (SDL_Color){17, 22, 30, 255}, jx, y + 1.0f, 1.0f, 6.0f);
-    fx_rect_a(r, (SDL_Color){40, 52, 66, 255}, 20, 14.0f, y + 30.0f, 116.0f, 7.0f);
-    fx_rect_a(r, (SDL_Color){40, 52, 66, 255}, 16, 622.0f, y + 14.0f, 150.0f, 6.0f);
+        color_rect(r, FX_SHADOW, jx, y + 1.0f, 1.0f, 6.0f);
+    fx_rect_a(r, FX_MID, 20, 14.0f, y + 30.0f, 116.0f, 7.0f);
+    fx_rect_a(r, FX_MID, 16, 622.0f, y + 14.0f, 150.0f, 6.0f);
 
     /* Wet asphalt: every lit pane smears straight down the frame.  Asking
      * pane_light() again is what keeps the reflection honest. */
@@ -1086,7 +1102,7 @@ static void render_street(SDL_Renderer *r, const Intro *intro,
             if (!target && !pane_light(i, pane, time, &light))
                 continue;
             if (target)
-                light = (SDL_Color){250, 206, 130, 255};
+                light = COL_TARGET;
 
             SDL_FRect p = pane_rect(s, i, pane);
             float cx = p.x + p.w * 0.5f;
@@ -1116,23 +1132,24 @@ static void render_street(SDL_Renderer *r, const Intro *intro,
     float lobby_right = tower_edge(s, lobby_top, true);
     float door_x = lobby_left + 52.0f;
     fx_vgrad(r, lobby_left - 24.0f, y, lobby_right - lobby_left + 130.0f, 38.0f,
-             COL_WARM, (Uint8)(46.0f * wake), COL_WARM, 0);
-    fx_glow(r, door_x, y + 12.0f, 132.0f, COL_WARM, (Uint8)(72.0f * wake));
+             FX_WARM, (Uint8)(46.0f * wake), FX_WARM, 0);
+    fx_glow(r, door_x, y + 12.0f, 132.0f, FX_WARM, (Uint8)(72.0f * wake));
     fx_vgrad(r, door_x - 40.0f, y, 80.0f, 52.0f,
-             COL_WARM, (Uint8)(76.0f * wake), COL_WARM, 0);
+             FX_WARM, (Uint8)(76.0f * wake), FX_WARM, 0);
     fx_vgrad(r, door_x - 18.0f, y, 36.0f, 34.0f,
-             (SDL_Color){255, 226, 168, 255}, (Uint8)(58.0f * wake),
-             COL_WARM, 0);
+             fx_ramp(COL_TARGET).lit, (Uint8)(58.0f * wake),
+             FX_WARM, 0);
 
     /* Parked past the right edge of the start plate, so no part of it ends up
      * showing faintly through the translucent plate. */
     draw_suv(r, lobby_right + 30.0f, y + 20.0f, time);
 
     /* Sidewalk furniture on the near side, in near silhouette. */
-    color_rect(r, (SDL_Color){12, 16, 23, 255}, 262.0f, y + 26.0f, 7.0f, 16.0f);
-    color_rect(r, (SDL_Color){12, 16, 23, 255}, 259.0f, y + 30.0f, 13.0f, 4.0f);
-    color_rect(r, (SDL_Color){12, 16, 23, 255}, 263.0f, y + 22.0f, 5.0f, 4.0f);
-    color_rect(r, (SDL_Color){38, 30, 26, 255}, 262.0f, y + 26.0f, 1.0f, 16.0f);
+    color_rect(r, COL_NIGHT_MASS, 262.0f, y + 26.0f, 7.0f, 16.0f);
+    color_rect(r, COL_NIGHT_MASS, 259.0f, y + 30.0f, 13.0f, 4.0f);
+    color_rect(r, COL_NIGHT_MASS, 263.0f, y + 22.0f, 5.0f, 4.0f);
+    color_rect(r, fx_mix(FX_NIGHT, FX_WOOD, 0.25f), 262.0f, y + 26.0f,
+               1.0f, 16.0f);
 
     draw_street_lamp(r, s, 112.0f);
     draw_chuck(r, 162.0f, y + 52.0f, 2.1f, time);
@@ -1149,7 +1166,8 @@ static void render_street(SDL_Renderer *r, const Intro *intro,
         float x = fmodf((float)i * 197.0f + time * speed * dir + span * 4.0f,
                         span) -
                   200.0f;
-        set_rgba(r, 58, 78, 96, (Uint8)(9 + (i % 3) * 2));
+        set_rgba(r, COL_CITY_GLOW.r, COL_CITY_GLOW.g, COL_CITY_GLOW.b,
+                 (Uint8)(9 + (i % 3) * 2));
         fill_rect(r, x, y - 5.0f + (float)i * 5.0f,
                   200.0f + (float)(i % 4) * 60.0f, 6.0f);
     }
@@ -1490,20 +1508,19 @@ static SDL_Color mark_face_color(int facing, SDL_Color body, float glint)
          * street: the sign is hung over a lit road, and a night exterior with
          * nothing but cold in its shadows is a night exterior in a vacuum.
          * The same bounce the game lays off its own floors, aimed upward. */
-        color = fx_mix(fx_mix(body, COL_INK, 0.60f), COL_SODIUM, 0.34f);
+        color = fx_mix(fx_mix(body, FX_INK, 0.60f), FX_SODIUM, 0.34f);
         break;
     case MARK_RIM_L:
         color = fx_mix(body, FX_CREAM, 0.26f);
         break;
     case MARK_RIM_R:
-        color = fx_mix(fx_mix(body, COL_INK, 0.40f), COL_SODIUM, 0.16f);
+        color = fx_mix(fx_mix(body, FX_INK, 0.40f), FX_SODIUM, 0.16f);
         break;
     default:
         break;
     }
     if (glint > 0.0f)
-        color = fx_mix(color, (SDL_Color){255, 246, 226, 255},
-                       glint * take[facing]);
+        color = fx_mix(color, fx_ramp(FX_CREAM).lit, glint * take[facing]);
     return color;
 }
 
@@ -1513,10 +1530,10 @@ static SDL_Color mark_face_color(int facing, SDL_Color body, float glint)
  * else on the plate, or it reads as a hole instead of as a head. */
 static void draw_mark_bolt(SDL_Renderer *r, float x, float y, float level)
 {
-    color_rect(r, fx_dim(COL_INK, level), x, y, 4.0f, 4.0f);
+    color_rect(r, fx_dim(FX_INK, level), x, y, 4.0f, 4.0f);
     color_rect(r, fx_dim(FX_STEEL, level), x, y, 3.0f, 3.0f);
     color_rect(r, fx_dim(FX_PALE, level), x, y, 2.0f, 1.0f);
-    color_rect(r, fx_dim(fx_mix(FX_STEEL_DK, COL_INK, 0.5f), level),
+    color_rect(r, fx_dim(fx_mix(FX_STEEL_DK, FX_INK, 0.5f), level),
                x + 2.0f, y + 2.0f, 1.0f, 1.0f);
 }
 
@@ -1529,7 +1546,8 @@ static void draw_mark_bolt(SDL_Renderer *r, float x, float y, float level)
 static void draw_mark_stain(SDL_Renderer *r, const Uint8 *mask, float ox,
                             float oy, int bx, int by, float level)
 {
-    static const SDL_Color rust = {146, 68, 40, 255};
+    /* Oxide run-off is browner than FX_RUST itself: rainwater dilutes it. */
+    const SDL_Color rust = fx_mix(FX_RUST, FX_WOOD_DK, 0.45f);
     const int reach = 34;
 
     for (int col = 0; col < 4; ++col)
@@ -1561,10 +1579,10 @@ static void draw_mark_letter(SDL_Renderer *r, char letter, unsigned salt,
     /* The plate stands off the sky: its own dark first, then the thickness of
      * its edge, then the outline of the face over that.  The offset goes down
      * and to the right because the light is up and to the left. */
-    mark_fill(r, mask, ox + depth, oy + depth, COL_INK, true);
+    mark_fill(r, mask, ox + depth, oy + depth, FX_INK, true);
     mark_fill(r, mask, ox + depth, oy + depth,
-              fx_dim(fx_mix(FX_STEEL_DK, COL_INK, 0.45f), level), false);
-    mark_fill(r, mask, ox, oy, COL_INK, true);
+              fx_dim(fx_mix(FX_STEEL_DK, FX_INK, 0.45f), level), false);
+    mark_fill(r, mask, ox, oy, FX_INK, true);
 
     for (int y = 0; y < MARK_H; ++y)
     {
@@ -1573,15 +1591,15 @@ static void draw_mark_letter(SDL_Renderer *r, char letter, unsigned salt,
          * sheet — with the weather in the bottom of it, where water sits. */
         float t = (float)y / (float)(MARK_H - 1);
         SDL_Color body = fx_mix(fx_mix(FX_STEEL_LT, FX_STEEL_DK, t),
-                                COL_SODIUM, t * t * 0.16f);
+                                FX_SODIUM, t * t * 0.16f);
         int run = -1;
         int run_key = -1;
-        SDL_Color run_color = COL_INK;
+        SDL_Color run_color = FX_INK;
 
         for (int x = 0; x <= MARK_W; ++x)
         {
             int key = -1;
-            SDL_Color color = COL_INK;
+            SDL_Color color = FX_INK;
 
             if (x < MARK_W && mark_solid(mask, x, y))
             {
@@ -1599,7 +1617,7 @@ static void draw_mark_letter(SDL_Renderer *r, char letter, unsigned salt,
                 float drift = (float)shade / 2.5f - 1.2f;
                 SDL_Color plate = drift > 0.0f
                                       ? fx_mix(body, FX_CREAM, drift * 0.11f)
-                                      : fx_mix(body, COL_INK, -drift * 0.15f);
+                                      : fx_mix(body, FX_INK, -drift * 0.15f);
 
                 key = (facing * 16 + glint) * 8 + shade;
                 color = fx_dim(mark_face_color(facing, plate,
@@ -1673,9 +1691,9 @@ static void render_logo(SDL_Renderer *r, const Intro *intro,
                           fx_dim((SDL_Color){196, 202, 196, 255}, tag), line);
 
     float rule = 40.0f * tag;
-    color_rect(r, fx_dim(COL_RUST, 0.55f + tag * 0.45f),
+    color_rect(r, fx_dim(FX_RUST, 0.55f + tag * 0.45f),
                s->w * 0.5f - width * 0.5f - 16.0f - rule, ty + 3.0f, rule, 2.0f);
-    color_rect(r, fx_dim(COL_RUST, 0.55f + tag * 0.45f),
+    color_rect(r, fx_dim(FX_RUST, 0.55f + tag * 0.45f),
                s->w * 0.5f + width * 0.5f + 16.0f, ty + 3.0f, rule, 2.0f);
 }
 
@@ -1714,7 +1732,7 @@ static void render_start_prompt(SDL_Renderer *r, const Intro *intro,
               button->x, button->y + button->h - 1.0f, button->w, 1.0f);
 
     /* Rust corner brackets: the same marker the cutscenes frame things with. */
-    SDL_Color bracket = fx_dim(COL_RUST, (0.62f + pulse * 0.38f) * appear);
+    SDL_Color bracket = fx_dim(FX_RUST, (0.62f + pulse * 0.38f) * appear);
     const float arm = 10.0f;
     set_color(r, bracket);
     fill_rect(r, button->x - 3.0f, button->y - 3.0f, arm, 2.0f);
@@ -1734,16 +1752,16 @@ static void render_start_prompt(SDL_Renderer *r, const Intro *intro,
     float width = tracked_width(label, 1.0f, START_TRACK);
     float group = START_CHEVRON_W + START_CHEVRON_GAP + width;
     float group_x = cx - group * 0.5f;
-    SDL_Color text = fx_dim(hot ? COL_CREAM : (SDL_Color){206, 212, 202, 255},
+    SDL_Color text = fx_dim(hot ? FX_CREAM : COL_TYPE,
                             appear);
     draw_chevron(r, group_x, button->y + 13.0f,
-                 fx_dim(hot ? COL_AMBER : COL_RUST,
+                 fx_dim(hot ? FX_AMBER : FX_RUST,
                         (0.6f + pulse * 0.4f) * appear));
     draw_tracked(r, group_x + START_CHEVRON_W + START_CHEVRON_GAP,
                  button->y + 13.0f, 1.0f, START_TRACK, text, label);
 
     float accent = hot ? 74.0f : 26.0f + pulse * 22.0f;
-    fx_rect_a(r, COL_RUST, (Uint8)(235.0f * appear), cx - accent * 0.5f,
+    fx_rect_a(r, FX_RUST, (Uint8)(235.0f * appear), cx - accent * 0.5f,
               button->y + button->h - 2.0f, accent, 2.0f);
 }
 
@@ -1765,20 +1783,20 @@ static void render_prompt_chip(SDL_Renderer *r, const SDL_FRect *button,
     float y = button->y;
 
     /* Keycap: dark bezel, lit top edge, sunken base. */
-    fx_rect_a(r, COL_INK, (Uint8)(190.0f * appear), x, y, MANUAL_KEY_W,
+    fx_rect_a(r, FX_INK, (Uint8)(190.0f * appear), x, y, MANUAL_KEY_W,
               MANUAL_ROW_H);
     fx_rect_a(r, (SDL_Color){32, 42, 56, 255}, (Uint8)(215.0f * appear),
               x + 1.0f, y + 1.0f, MANUAL_KEY_W - 2.0f, MANUAL_ROW_H - 2.0f);
-    fx_rect_a(r, hot ? COL_RUST : (SDL_Color){68, 84, 102, 255},
+    fx_rect_a(r, hot ? FX_RUST : (SDL_Color){68, 84, 102, 255},
               (Uint8)(215.0f * appear), x + 1.0f, y + 1.0f,
               MANUAL_KEY_W - 2.0f, 1.0f);
     fx_rect_a(r, (SDL_Color){10, 14, 22, 255}, (Uint8)(215.0f * appear),
               x + 1.0f, y + MANUAL_ROW_H - 2.0f, MANUAL_KEY_W - 2.0f, 1.0f);
     draw_text(r, x + 6.0f, y + 5.0f, 1.0f,
-              fx_dim(hot ? COL_CREAM : (SDL_Color){186, 196, 190, 255}, appear),
+              fx_dim(hot ? FX_CREAM : fx_dim(COL_TYPE, 0.94f), appear),
               key);
     draw_tracked(r, x + MANUAL_KEY_W + MANUAL_KEY_GAP, y + 5.0f, 1.0f,
-                 MANUAL_TRACK, fx_dim(hot ? COL_AMBER : COL_MUTED, appear),
+                 MANUAL_TRACK, fx_dim(hot ? FX_AMBER : FX_LABEL, appear),
                  label);
 }
 
@@ -1819,10 +1837,9 @@ void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,
     /* The shot fades up from black, like the cutscenes it hands over to. */
     float fade = 1.0f - smoothstep01(intro->time / 0.65f);
     if (fade > 0.0f)
-        fx_rect_a(r, COL_INK, (Uint8)(255.0f * fade), 0.0f, 0.0f,
+        fx_rect_a(r, FX_INK, (Uint8)(255.0f * fade), 0.0f, 0.0f,
                   scene.w, scene.h);
 
-    /* Same finishing pass as gameplay so the menu belongs to the film. */
-    fx_vignette(r, win_w, win_h, 72);
-    fx_scanlines(r, win_w, win_h, 11);
+    /* Finishing (vignette, scanlines) is game_render's one shared pass;
+       applying it here too double-exposed the assist sheet's frame. */
 }

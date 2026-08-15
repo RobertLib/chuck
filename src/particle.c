@@ -153,13 +153,21 @@ void particle_system_render(ParticleSystem *ps, SDL_Renderer *r, float oy, float
       SDL_SetRenderDrawColor(r, FX_PALE.r, FX_PALE.g, FX_PALE.b,
                              (Uint8)(left * 140.0f));
     }
-    /* Color varies by size/life to give explosion / spark variety */
-    else if (p->size > 4.5f)
-      SDL_SetRenderDrawColor(r, 240, 160, 30, 255);
-    else if (p->size > 3.0f)
-      SDL_SetRenderDrawColor(r, 220, 80, 20, 255);
     else
-      SDL_SetRenderDrawColor(r, 180, 20, 20, 255);
+    {
+      /* A spark is born bright and dies dark, and both ends of that ramp come
+       * from the palette: fire-sized fragments start at the lamp's amber, the
+       * small ones at blood red, and every one of them cools toward the same
+       * deep red as it falls. Painted at a flat colour and hard-cut at death,
+       * these were the most-seen off-palette pixels in the game — they draw on
+       * every hit and every blast. The alpha holds while the spark still
+       * carries energy and lets go over the last of its life, so it dies out
+       * instead of vanishing between two frames. */
+      SDL_Color hot = p->size > 4.5f ? FX_AMBER : FX_RED;
+      SDL_Color c = fx_mix(FX_RED_DK, hot, left);
+      SDL_SetRenderDrawColor(r, c.r, c.g, c.b,
+                             (Uint8)(255.0f * fminf(1.0f, left * 2.5f)));
+    }
     SDL_FRect rect = {p->x - cam_x - size * 0.5f, p->y + oy - size * 0.5f,
                       size, size};
     SDL_RenderFillRect(r, &rect);

@@ -26,11 +26,14 @@
  * a level's look is authored in its map file rather than hard-coded here.
  */
 
-static const SDL_Color COL_INK = {5, 7, 12, 255};
+/* The sprite outline: a step warmer than FX_INK's void so a figure's edge
+ * reads as drawn rather than as a hole in the room. The one colour this file
+ * owns; everything else comes from fx.h or the level's theme. */
 static const SDL_Color COL_OUTLINE = {13, 18, 27, 255};
-static const SDL_Color COL_CYAN = {74, 222, 212, 255};
-static const SDL_Color COL_AMBER = {248, 188, 74, 255};
-static const SDL_Color COL_RED = {232, 74, 62, 255};
+
+/* Overlay subtitles: cream cooled a step so a verdict's second line
+ * never outshines its first. */
+static const SDL_Color COL_SUBTITLE = {210, 220, 215, 255};
 
 void game_get_view_size(Game *game, int *out_w, int *out_h)
 {
@@ -509,10 +512,10 @@ static void draw_platform(SDL_Renderer *r, float x, float y, SDL_Color accent, b
   /* The shadow it throws. A platform with nothing under it is a bar painted on
    * the backdrop; the shadow is what puts it in the room, and it is the only
    * cue the player has that the thing is hanging in mid-air. */
-  fx_vgrad(r, x - 1.0f, y + 8.0f, TILE_SIZE + 2.0f, 13.0f, COL_INK, 92,
-           COL_INK, 0);
+  fx_vgrad(r, x - 1.0f, y + 8.0f, TILE_SIZE + 2.0f, 13.0f, FX_INK, 92,
+           FX_INK, 0);
 
-  color_rect(r, COL_INK, x - 1.0f, y - 1.0f, TILE_SIZE + 2.0f, 9.0f);
+  color_rect(r, FX_INK, x - 1.0f, y - 1.0f, TILE_SIZE + 2.0f, 9.0f);
   color_rect(r, (SDL_Color){50, 61, 66, 255}, x, y, TILE_SIZE, 7.0f);
   fx_vgrad(r, x, y, TILE_SIZE, 7.0f, (SDL_Color){112, 128, 134, 255}, 90,
            (SDL_Color){10, 14, 19, 255}, 130);
@@ -538,8 +541,8 @@ static void draw_platform(SDL_Renderer *r, float x, float y, SDL_Color accent, b
     for (int chevron = 0; chevron < 3; ++chevron)
     {
       float cx = x + 7.0f + (float)chevron * 7.0f;
-      color_rect(r, COL_AMBER, cx, y + 1.0f, 3.0f, 2.0f);
-      color_rect(r, COL_RED, cx + 3.0f, y + 1.0f, 3.0f, 2.0f);
+      color_rect(r, FX_AMBER, cx, y + 1.0f, 3.0f, 2.0f);
+      color_rect(r, FX_RED, cx + 3.0f, y + 1.0f, 3.0f, 2.0f);
     }
   }
 }
@@ -552,7 +555,7 @@ static void draw_door(SDL_Renderer *r, float x, float y, int index)
   color_rect(r, (SDL_Color){248, 202, 118, 255}, x + 12.0f, y - 1.0f, 8.0f, 1.0f);
 
   /* Sliding steel service door in a machined frame. */
-  color_rect(r, COL_INK, x + 1.0f, y, 30.0f, 32.0f);
+  color_rect(r, FX_INK, x + 1.0f, y, 30.0f, 32.0f);
   color_rect(r, (SDL_Color){62, 75, 90, 255}, x + 2.0f, y + 1.0f, 28.0f, 31.0f);
   color_rect(r, (SDL_Color){88, 104, 120, 255}, x + 2.0f, y + 1.0f, 28.0f, 1.0f);
   color_rect(r, (SDL_Color){34, 43, 56, 255}, x + 5.0f, y + 4.0f, 22.0f, 28.0f);
@@ -578,7 +581,7 @@ static void draw_restroom_door(SDL_Renderer *r, float x, float y)
 {
   fx_glow(r, x + 16.0f, y + 1.0f, 15.0f,
           (SDL_Color){116, 226, 209, 255}, 42);
-  color_rect(r, COL_INK, x + 1.0f, y, 30.0f, 32.0f);
+  color_rect(r, FX_INK, x + 1.0f, y, 30.0f, 32.0f);
   color_rect(r, (SDL_Color){48, 73, 80, 255},
              x + 2.0f, y + 1.0f, 28.0f, 31.0f);
   color_rect(r, (SDL_Color){80, 113, 118, 255},
@@ -602,7 +605,7 @@ static void draw_exit(SDL_Renderer *r, const Game *game, float x, float y)
   if (unlocked)
     draw_soft_glow(r, x + 5.0f, y + 3.0f, 22.0f, 28.0f, signal);
 
-  color_rect(r, COL_INK, x + 1.0f, y, 30.0f, 32.0f);
+  color_rect(r, FX_INK, x + 1.0f, y, 30.0f, 32.0f);
   color_rect(r, (SDL_Color){41, 54, 62, 255}, x + 3.0f, y + 2.0f, 26.0f, 30.0f);
   color_rect(r, (SDL_Color){66, 82, 88, 255}, x + 5.0f, y + 4.0f, 22.0f, 26.0f);
   color_rect(r, (SDL_Color){19, 29, 34, 255}, x + 8.0f, y + 12.0f, 16.0f, 16.0f);
@@ -883,7 +886,7 @@ static void draw_facade_hazard_source(SDL_Renderer *r,
   float pulse = 0.55f + 0.45f * sinf(world_t * 18.0f);
   fx_glow(r, x + 16.0f, y + 6.0f, 18.0f, (SDL_Color){236, 96, 72, 255},
           (Uint8)(70.0f * pulse));
-  draw_text(r, x + 13.0f, y - 2.0f, 1.1f, 244, 132, 96, "!");
+  draw_text(r, x + 13.0f, y - 2.0f, 1.0f, 244, 132, 96, "!");
 }
 
 static void draw_terminal(SDL_Renderer *r, float x, float y,
@@ -902,7 +905,7 @@ static void draw_terminal(SDL_Renderer *r, float x, float y,
     color_rect(r, screen, x + 15.0f, y - 7.0f, 2.0f, 4.0f);
   }
 
-  color_rect(r, COL_INK, x + 2.0f, y + 1.0f, 28.0f, 30.0f);
+  color_rect(r, FX_INK, x + 2.0f, y + 1.0f, 28.0f, 30.0f);
   color_rect(r, active ? (SDL_Color){38, 72, 69, 255}
                        : (SDL_Color){42, 48, 51, 255},
              x + 4.0f, y + 3.0f, 24.0f, 27.0f);
@@ -948,7 +951,7 @@ static void draw_alarm_switch(SDL_Renderer *r, float x, float y,
   SDL_Color signal = alarm_active
                          ? (flash ? (SDL_Color){255, 76, 58, 255}
                                   : (SDL_Color){150, 29, 27, 255})
-                         : (being_used ? COL_AMBER
+                         : (being_used ? FX_AMBER
                                        : (SDL_Color){108, 44, 40, 255});
 
   if (alarm_active || being_used)
@@ -965,7 +968,7 @@ static void draw_alarm_switch(SDL_Renderer *r, float x, float y,
    * lamp and a thumb-sized recessed button. */
   color_rect(r, (SDL_Color){16, 20, 23, 170},
              x + 11.0f, y + 9.0f, 13.0f, 16.0f);
-  color_rect(r, COL_INK, x + 10.0f, y + 7.0f, 12.0f, 16.0f);
+  color_rect(r, FX_INK, x + 10.0f, y + 7.0f, 12.0f, 16.0f);
   color_rect(r, (SDL_Color){68, 76, 77, 255},
              x + 11.0f, y + 8.0f, 10.0f, 14.0f);
   color_rect(r, (SDL_Color){211, 162, 45, 255},
@@ -985,21 +988,21 @@ static void draw_office_chair(SDL_Renderer *r, float x, float y)
   /* Low-backed swivel chair, kept cool and subdued so actors read over it. */
   color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 4.0f, y + 29.0f, 25.0f, 2.0f);
 
-  color_rect(r, COL_INK, x + 5.0f, y + 4.0f, 17.0f, 15.0f);
+  color_rect(r, FX_INK, x + 5.0f, y + 4.0f, 17.0f, 15.0f);
   color_rect(r, (SDL_Color){43, 56, 68, 255}, x + 7.0f, y + 6.0f, 13.0f, 11.0f);
   color_rect(r, (SDL_Color){67, 84, 96, 255}, x + 8.0f, y + 7.0f, 11.0f, 2.0f);
   color_rect(r, (SDL_Color){28, 37, 48, 255}, x + 8.0f, y + 15.0f, 11.0f, 2.0f);
 
-  color_rect(r, COL_INK, x + 7.0f, y + 17.0f, 20.0f, 6.0f);
+  color_rect(r, FX_INK, x + 7.0f, y + 17.0f, 20.0f, 6.0f);
   color_rect(r, (SDL_Color){61, 77, 88, 255}, x + 9.0f, y + 18.0f, 16.0f, 3.0f);
   color_rect(r, (SDL_Color){93, 108, 116, 255}, x + 10.0f, y + 18.0f, 14.0f, 1.0f);
 
   color_rect(r, (SDL_Color){18, 25, 34, 255}, x + 15.0f, y + 22.0f, 4.0f, 7.0f);
   color_rect(r, (SDL_Color){87, 101, 108, 255}, x + 16.0f, y + 22.0f, 2.0f, 6.0f);
-  color_rect(r, COL_INK, x + 8.0f, y + 27.0f, 18.0f, 3.0f);
+  color_rect(r, FX_INK, x + 8.0f, y + 27.0f, 18.0f, 3.0f);
   color_rect(r, (SDL_Color){76, 88, 94, 255}, x + 10.0f, y + 27.0f, 14.0f, 1.0f);
-  color_rect(r, COL_INK, x + 7.0f, y + 29.0f, 5.0f, 3.0f);
-  color_rect(r, COL_INK, x + 23.0f, y + 29.0f, 5.0f, 3.0f);
+  color_rect(r, FX_INK, x + 7.0f, y + 29.0f, 5.0f, 3.0f);
+  color_rect(r, FX_INK, x + 23.0f, y + 29.0f, 5.0f, 3.0f);
 }
 
 static void draw_office_desk(SDL_Renderer *r, float x, float y)
@@ -1007,7 +1010,7 @@ static void draw_office_desk(SDL_Renderer *r, float x, float y)
   /* Compact workstation: desk, drawer, monitor and keyboard in one tile. */
   color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 1.0f, y + 30.0f, 31.0f, 2.0f);
 
-  color_rect(r, COL_INK, x + 8.0f, y + 1.0f, 19.0f, 14.0f);
+  color_rect(r, FX_INK, x + 8.0f, y + 1.0f, 19.0f, 14.0f);
   color_rect(r, (SDL_Color){37, 51, 61, 255}, x + 10.0f, y + 3.0f, 15.0f, 10.0f);
   color_rect(r, (SDL_Color){41, 119, 124, 255}, x + 11.0f, y + 4.0f, 13.0f, 8.0f);
   color_rect(r, (SDL_Color){92, 196, 190, 255}, x + 12.0f, y + 5.0f, 7.0f, 1.0f);
@@ -1015,15 +1018,15 @@ static void draw_office_desk(SDL_Renderer *r, float x, float y)
   color_rect(r, (SDL_Color){21, 74, 80, 255}, x + 12.0f, y + 10.0f, 6.0f, 1.0f);
   color_rect(r, (SDL_Color){91, 104, 108, 255}, x + 16.0f, y + 14.0f, 4.0f, 3.0f);
 
-  color_rect(r, COL_INK, x, y + 16.0f, 32.0f, 6.0f);
+  color_rect(r, FX_INK, x, y + 16.0f, 32.0f, 6.0f);
   color_rect(r, (SDL_Color){91, 69, 49, 255}, x + 1.0f, y + 17.0f, 30.0f, 4.0f);
   color_rect(r, (SDL_Color){150, 111, 66, 255}, x + 2.0f, y + 17.0f, 28.0f, 1.0f);
   color_rect(r, (SDL_Color){25, 32, 38, 255}, x + 20.0f, y + 14.0f, 9.0f, 2.0f);
   color_rect(r, (SDL_Color){99, 109, 108, 255}, x + 21.0f, y + 14.0f, 7.0f, 1.0f);
 
-  color_rect(r, COL_INK, x + 3.0f, y + 21.0f, 5.0f, 11.0f);
+  color_rect(r, FX_INK, x + 3.0f, y + 21.0f, 5.0f, 11.0f);
   color_rect(r, (SDL_Color){70, 54, 43, 255}, x + 4.0f, y + 21.0f, 3.0f, 10.0f);
-  color_rect(r, COL_INK, x + 25.0f, y + 21.0f, 5.0f, 11.0f);
+  color_rect(r, FX_INK, x + 25.0f, y + 21.0f, 5.0f, 11.0f);
   color_rect(r, (SDL_Color){70, 54, 43, 255}, x + 26.0f, y + 21.0f, 3.0f, 10.0f);
   color_rect(r, (SDL_Color){45, 49, 49, 255}, x + 21.0f, y + 22.0f, 7.0f, 6.0f);
   color_rect(r, (SDL_Color){93, 101, 98, 255}, x + 23.0f, y + 24.0f, 3.0f, 1.0f);
@@ -1037,7 +1040,7 @@ static void draw_office_equipment(SDL_Renderer *r, float x, float y,
   if (variant == 0u)
   {
     /* Filing cabinet with alternating label holders and recessed handles. */
-    color_rect(r, COL_INK, x + 5.0f, y + 2.0f, 23.0f, 30.0f);
+    color_rect(r, FX_INK, x + 5.0f, y + 2.0f, 23.0f, 30.0f);
     color_rect(r, (SDL_Color){61, 72, 78, 255}, x + 7.0f, y + 4.0f, 19.0f, 27.0f);
     color_rect(r, (SDL_Color){100, 112, 113, 255}, x + 8.0f, y + 5.0f, 17.0f, 2.0f);
     for (int drawer = 0; drawer < 3; ++drawer)
@@ -1052,9 +1055,9 @@ static void draw_office_equipment(SDL_Renderer *r, float x, float y,
   else if (variant == 1u)
   {
     /* Floor-standing copier/printer with a sheet left in the output tray. */
-    color_rect(r, COL_INK, x + 3.0f, y + 12.0f, 27.0f, 20.0f);
+    color_rect(r, FX_INK, x + 3.0f, y + 12.0f, 27.0f, 20.0f);
     color_rect(r, (SDL_Color){75, 83, 83, 255}, x + 5.0f, y + 14.0f, 23.0f, 17.0f);
-    color_rect(r, COL_INK, x + 7.0f, y + 7.0f, 20.0f, 9.0f);
+    color_rect(r, FX_INK, x + 7.0f, y + 7.0f, 20.0f, 9.0f);
     color_rect(r, (SDL_Color){113, 119, 114, 255}, x + 9.0f, y + 8.0f, 16.0f, 6.0f);
     color_rect(r, (SDL_Color){37, 48, 52, 255}, x + 6.0f, y + 17.0f, 21.0f, 5.0f);
     color_rect(r, (SDL_Color){204, 207, 187, 255}, x + 10.0f, y + 19.0f, 13.0f, 5.0f);
@@ -1065,7 +1068,7 @@ static void draw_office_equipment(SDL_Renderer *r, float x, float y,
   else
   {
     /* Small office server/network rack with asynchronous status lights. */
-    color_rect(r, COL_INK, x + 5.0f, y + 1.0f, 23.0f, 31.0f);
+    color_rect(r, FX_INK, x + 5.0f, y + 1.0f, 23.0f, 31.0f);
     color_rect(r, (SDL_Color){39, 49, 58, 255}, x + 7.0f, y + 3.0f, 19.0f, 28.0f);
     color_rect(r, (SDL_Color){83, 96, 103, 255}, x + 8.0f, y + 4.0f, 17.0f, 2.0f);
     for (int unit = 0; unit < 4; ++unit)
@@ -1098,7 +1101,7 @@ static void draw_lobby_counter(SDL_Renderer *r, float x, float y,
      transaction top, and the working surface implied behind it. */
   color_rect(r, (SDL_Color){3, 5, 9, 120}, x, y + 30.0f, 32.0f, 2.0f);
 
-  color_rect(r, COL_INK, x, y + 8.0f, 32.0f, 24.0f);
+  color_rect(r, FX_INK, x, y + 8.0f, 32.0f, 24.0f);
   color_rect(r, (SDL_Color){124, 118, 108, 255}, x, y + 10.0f, 32.0f, 21.0f);
   /* Polished stone: lit near the top where the counter light falls on it, and
      falling away into shadow at the plinth. */
@@ -1117,14 +1120,14 @@ static void draw_lobby_counter(SDL_Renderer *r, float x, float y,
 
   /* Brass reveal above the plinth and the lit counter top. */
   color_rect(r, (SDL_Color){130, 104, 62, 255}, x, y + 27.0f, 32.0f, 2.0f);
-  color_rect(r, COL_INK, x - 1.0f, y + 5.0f, 34.0f, 4.0f);
+  color_rect(r, FX_INK, x - 1.0f, y + 5.0f, 34.0f, 4.0f);
   color_rect(r, (SDL_Color){158, 132, 86, 255}, x - 1.0f, y + 6.0f, 34.0f, 2.0f);
   color_rect(r, (SDL_Color){228, 206, 158, 255}, x - 1.0f, y + 6.0f, 34.0f, 1.0f);
 
   /* One tile of the run carries the visitor terminal and a card tray. */
   if ((variant % 3u) == 0u)
   {
-    color_rect(r, COL_INK, x + 8.0f, y - 6.0f, 15.0f, 12.0f);
+    color_rect(r, FX_INK, x + 8.0f, y - 6.0f, 15.0f, 12.0f);
     color_rect(r, (SDL_Color){37, 45, 52, 255}, x + 9.0f, y - 5.0f, 13.0f, 10.0f);
     color_rect(r, (SDL_Color){96, 176, 172, 255}, x + 11.0f, y - 3.0f, 9.0f, 6.0f);
     color_rect(r, (SDL_Color){196, 236, 230, 255},
@@ -1132,7 +1135,7 @@ static void draw_lobby_counter(SDL_Renderer *r, float x, float y,
   }
   else
   {
-    color_rect(r, COL_INK, x + 18.0f, y + 1.0f, 11.0f, 5.0f);
+    color_rect(r, FX_INK, x + 18.0f, y + 1.0f, 11.0f, 5.0f);
     color_rect(r, (SDL_Color){206, 198, 178, 255},
                x + 19.0f, y + 2.0f, 9.0f, 3.0f);
     color_rect(r, (SDL_Color){158, 132, 86, 255},
@@ -1146,20 +1149,20 @@ static void draw_lobby_sofa(SDL_Renderer *r, float x, float y)
      tapered legs. Kept dark and warm so actors read over it. */
   color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 2.0f, y + 30.0f, 28.0f, 2.0f);
 
-  color_rect(r, COL_INK, x + 2.0f, y + 12.0f, 28.0f, 10.0f);
+  color_rect(r, FX_INK, x + 2.0f, y + 12.0f, 28.0f, 10.0f);
   color_rect(r, (SDL_Color){74, 56, 52, 255}, x + 3.0f, y + 13.0f, 26.0f, 8.0f);
   color_rect(r, (SDL_Color){104, 78, 68, 255}, x + 4.0f, y + 13.0f, 24.0f, 2.0f);
 
   /* Back cushion set behind the seat, and a bolster at the near arm. */
-  color_rect(r, COL_INK, x + 2.0f, y + 4.0f, 12.0f, 10.0f);
+  color_rect(r, FX_INK, x + 2.0f, y + 4.0f, 12.0f, 10.0f);
   color_rect(r, (SDL_Color){88, 65, 58, 255}, x + 3.0f, y + 5.0f, 10.0f, 9.0f);
   color_rect(r, (SDL_Color){118, 88, 74, 255}, x + 4.0f, y + 5.0f, 8.0f, 2.0f);
-  color_rect(r, COL_INK, x + 24.0f, y + 8.0f, 7.0f, 6.0f);
+  color_rect(r, FX_INK, x + 24.0f, y + 8.0f, 7.0f, 6.0f);
   color_rect(r, (SDL_Color){96, 71, 62, 255}, x + 25.0f, y + 9.0f, 5.0f, 4.0f);
 
   color_rect(r, (SDL_Color){45, 36, 34, 255}, x + 3.0f, y + 21.0f, 26.0f, 2.0f);
-  color_rect(r, COL_INK, x + 5.0f, y + 23.0f, 3.0f, 8.0f);
-  color_rect(r, COL_INK, x + 25.0f, y + 23.0f, 3.0f, 8.0f);
+  color_rect(r, FX_INK, x + 5.0f, y + 23.0f, 3.0f, 8.0f);
+  color_rect(r, FX_INK, x + 25.0f, y + 23.0f, 3.0f, 8.0f);
   color_rect(r, (SDL_Color){130, 104, 62, 255}, x + 6.0f, y + 23.0f, 1.0f, 7.0f);
   color_rect(r, (SDL_Color){130, 104, 62, 255}, x + 26.0f, y + 23.0f, 1.0f, 7.0f);
 }
@@ -1187,7 +1190,7 @@ static void draw_lobby_planter(SDL_Renderer *r, float x, float y,
     float mid_y = (y + 20.0f + tip_y) * 0.5f - 3.0f;
     SDL_Color blade = leaf % 2 == 0 ? (SDL_Color){46, 86, 58, 255}
                                     : (SDL_Color){36, 68, 48, 255};
-    color_quad(r, COL_INK, base_x - 2.0f, y + 21.0f, mid_x - 3.0f, mid_y + 3.0f,
+    color_quad(r, FX_INK, base_x - 2.0f, y + 21.0f, mid_x - 3.0f, mid_y + 3.0f,
                tip_x, tip_y - 1.0f, mid_x + 3.0f, mid_y + 4.0f);
     color_quad(r, blade, base_x - 1.0f, y + 20.0f, mid_x - 2.0f, mid_y + 3.0f,
                tip_x, tip_y + 1.0f, mid_x + 2.0f, mid_y + 4.0f);
@@ -1201,7 +1204,7 @@ static void draw_lobby_planter(SDL_Renderer *r, float x, float y,
   color_rect(r, (SDL_Color){38, 60, 44, 255}, x + 15.0f, y + 14.0f, 2.0f, 8.0f);
 
   /* Planter: stone box with a brass rim and dressed bark inside. */
-  color_rect(r, COL_INK, x + 5.0f, y + 18.0f, 22.0f, 14.0f);
+  color_rect(r, FX_INK, x + 5.0f, y + 18.0f, 22.0f, 14.0f);
   color_rect(r, (SDL_Color){80, 76, 71, 255}, x + 6.0f, y + 19.0f, 20.0f, 12.0f);
   fx_vgrad(r, x + 6.0f, y + 19.0f, 20.0f, 12.0f,
            (SDL_Color){104, 99, 92, 255}, 255,
@@ -1225,7 +1228,7 @@ static void draw_lobby_turnstile(SDL_Renderer *r, float x, float y,
   for (int side = 0; side < 2; ++side)
   {
     float px = x + (side == 0 ? 2.0f : 20.0f);
-    color_rect(r, COL_INK, px, y + 7.0f, 12.0f, 25.0f);
+    color_rect(r, FX_INK, px, y + 7.0f, 12.0f, 25.0f);
     color_rect(r, (SDL_Color){70, 74, 79, 255}, px + 1.0f, y + 8.0f, 10.0f, 23.0f);
     fx_vgrad(r, px + 1.0f, y + 8.0f, 10.0f, 23.0f,
              (SDL_Color){118, 123, 128, 255}, 255,
@@ -1249,7 +1252,7 @@ static void draw_lobby_turnstile(SDL_Renderer *r, float x, float y,
   bool clear = fmodf(world_t * 0.8f, 2.0f) < 1.4f;
   SDL_Color signal = clear ? (SDL_Color){96, 226, 158, 255}
                            : (SDL_Color){206, 168, 78, 255};
-  color_rect(r, COL_INK, x + 21.0f, y + 13.0f, 8.0f, 6.0f);
+  color_rect(r, FX_INK, x + 21.0f, y + 13.0f, 8.0f, 6.0f);
   color_rect(r, (SDL_Color){28, 33, 36, 255}, x + 22.0f, y + 14.0f, 6.0f, 4.0f);
   color_rect(r, signal, x + 23.0f, y + 15.0f, 4.0f, 2.0f);
   fx_glow(r, x + 25.0f, y + 16.0f, 12.0f, signal, 52);
@@ -1263,14 +1266,14 @@ static void draw_restroom_toilet(SDL_Renderer *r, float x, float y)
    * This silhouette stays readable at one-tile resolution. */
   color_rect(r, (SDL_Color){4, 10, 12, 120},
              x + 2.0f, y + 29.0f, 29.0f, 3.0f);
-  color_rect(r, COL_INK, x + 2.0f, y + 4.0f, 13.0f, 20.0f);
+  color_rect(r, FX_INK, x + 2.0f, y + 4.0f, 13.0f, 20.0f);
   color_rect(r, (SDL_Color){201, 218, 211, 255},
              x + 4.0f, y + 6.0f, 9.0f, 16.0f);
   color_rect(r, (SDL_Color){239, 244, 231, 255},
              x + 3.0f, y + 4.0f, 11.0f, 3.0f);
   color_rect(r, (SDL_Color){55, 92, 91, 255},
              x + 11.0f, y + 9.0f, 3.0f, 4.0f);
-  color_rect(r, COL_INK, x + 10.0f, y + 17.0f, 21.0f, 7.0f);
+  color_rect(r, FX_INK, x + 10.0f, y + 17.0f, 21.0f, 7.0f);
   color_rect(r, (SDL_Color){235, 240, 227, 255},
              x + 11.0f, y + 18.0f, 19.0f, 4.0f);
   color_rect(r, (SDL_Color){67, 122, 129, 255},
@@ -1279,32 +1282,32 @@ static void draw_restroom_toilet(SDL_Renderer *r, float x, float y)
              x + 14.0f, y + 23.0f, 13.0f, 5.0f);
   color_rect(r, (SDL_Color){168, 195, 191, 255},
              x + 16.0f, y + 27.0f, 8.0f, 5.0f);
-  color_rect(r, COL_INK, x + 15.0f, y + 30.0f, 11.0f, 2.0f);
+  color_rect(r, FX_INK, x + 15.0f, y + 30.0f, 11.0f, 2.0f);
 }
 
 static void draw_restroom_basin(SDL_Renderer *r, float x, float y)
 {
   /* Wall-mounted side profile: the exposed faucet, open bowl and drain pipe
    * avoid the rectangular monitor-and-stand silhouette of the old sprite. */
-  color_rect(r, COL_INK, x + 1.0f, y + 3.0f, 7.0f, 11.0f);
+  color_rect(r, FX_INK, x + 1.0f, y + 3.0f, 7.0f, 11.0f);
   color_rect(r, (SDL_Color){86, 154, 144, 255},
              x + 3.0f, y + 5.0f, 3.0f, 7.0f);
   color_rect(r, (SDL_Color){221, 232, 218, 255},
              x + 4.0f, y + 4.0f, 1.0f, 3.0f);
 
   /* Tall gooseneck tap with a downward spout. */
-  color_rect(r, COL_INK, x + 8.0f, y + 6.0f, 4.0f, 12.0f);
+  color_rect(r, FX_INK, x + 8.0f, y + 6.0f, 4.0f, 12.0f);
   color_rect(r, (SDL_Color){190, 205, 197, 255},
              x + 9.0f, y + 7.0f, 2.0f, 11.0f);
-  color_rect(r, COL_INK, x + 9.0f, y + 5.0f, 14.0f, 4.0f);
+  color_rect(r, FX_INK, x + 9.0f, y + 5.0f, 14.0f, 4.0f);
   color_rect(r, (SDL_Color){190, 205, 197, 255},
              x + 10.0f, y + 6.0f, 12.0f, 2.0f);
-  color_rect(r, COL_INK, x + 20.0f, y + 7.0f, 4.0f, 9.0f);
+  color_rect(r, FX_INK, x + 20.0f, y + 7.0f, 4.0f, 9.0f);
   color_rect(r, (SDL_Color){190, 205, 197, 255},
              x + 21.0f, y + 8.0f, 2.0f, 7.0f);
 
   /* Wide open ceramic bowl with visible water, sloped underside and U-bend. */
-  color_rect(r, COL_INK, x + 3.0f, y + 15.0f, 29.0f, 8.0f);
+  color_rect(r, FX_INK, x + 3.0f, y + 15.0f, 29.0f, 8.0f);
   color_rect(r, (SDL_Color){230, 238, 225, 255},
              x + 5.0f, y + 16.0f, 26.0f, 5.0f);
   color_rect(r, (SDL_Color){72, 135, 142, 255},
@@ -1323,16 +1326,16 @@ static void draw_restroom_urinal(SDL_Renderer *r, float x, float y)
 {
   /* Wall-hung bowl with an exposed flush pipe. Shorter than the basin and
    * mounted higher, so a row of them reads differently at a glance. */
-  color_rect(r, COL_INK, x + 6.0f, y + 1.0f, 5.0f, 9.0f);
+  color_rect(r, FX_INK, x + 6.0f, y + 1.0f, 5.0f, 9.0f);
   color_rect(r, (SDL_Color){168, 188, 182, 255},
              x + 7.0f, y + 2.0f, 3.0f, 8.0f);
-  color_rect(r, COL_INK, x + 9.0f, y + 3.0f, 12.0f, 4.0f);
+  color_rect(r, FX_INK, x + 9.0f, y + 3.0f, 12.0f, 4.0f);
   color_rect(r, (SDL_Color){190, 205, 197, 255},
              x + 10.0f, y + 4.0f, 10.0f, 2.0f);
 
   color_rect(r, (SDL_Color){4, 10, 12, 110},
              x + 5.0f, y + 27.0f, 22.0f, 3.0f);
-  color_rect(r, COL_INK, x + 4.0f, y + 8.0f, 24.0f, 19.0f);
+  color_rect(r, FX_INK, x + 4.0f, y + 8.0f, 24.0f, 19.0f);
   color_rect(r, (SDL_Color){233, 239, 226, 255},
              x + 6.0f, y + 9.0f, 20.0f, 16.0f);
   color_rect(r, (SDL_Color){199, 214, 207, 255},
@@ -1350,14 +1353,14 @@ static void draw_restroom_partition(SDL_Renderer *r, float x, float y)
   /* Narrow stall divider with a raised foot and a visible latch plate. */
   color_rect(r, (SDL_Color){4, 10, 12, 110},
              x + 21.0f, y + 30.0f, 11.0f, 2.0f);
-  color_rect(r, COL_INK, x + 22.0f, y, 10.0f, 28.0f);
+  color_rect(r, FX_INK, x + 22.0f, y, 10.0f, 28.0f);
   color_rect(r, (SDL_Color){48, 86, 84, 255},
              x + 24.0f, y + 2.0f, 7.0f, 24.0f);
   color_rect(r, (SDL_Color){91, 132, 124, 255},
              x + 25.0f, y + 3.0f, 2.0f, 22.0f);
   color_rect(r, (SDL_Color){174, 190, 180, 255},
              x + 23.0f, y + 15.0f, 3.0f, 5.0f);
-  color_rect(r, COL_INK, x + 25.0f, y + 27.0f, 5.0f, 5.0f);
+  color_rect(r, FX_INK, x + 25.0f, y + 27.0f, 5.0f, 5.0f);
 }
 
 static void draw_restroom_stall_frame(SDL_Renderer *r, float x, float y)
@@ -1366,17 +1369,17 @@ static void draw_restroom_stall_frame(SDL_Renderer *r, float x, float y)
    * a full room doorway. */
   color_rect(r, (SDL_Color){4, 10, 12, 120},
              x - 6.0f, y + 29.0f, 46.0f, 3.0f);
-  color_rect(r, COL_INK, x - 6.0f, y - 7.0f, 46.0f, 5.0f);
+  color_rect(r, FX_INK, x - 6.0f, y - 7.0f, 46.0f, 5.0f);
   color_rect(r, (SDL_Color){43, 82, 79, 255},
              x - 3.0f, y - 5.0f, 40.0f, 2.0f);
-  color_rect(r, COL_INK, x - 6.0f, y - 3.0f, 5.0f, 35.0f);
+  color_rect(r, FX_INK, x - 6.0f, y - 3.0f, 5.0f, 35.0f);
   color_rect(r, (SDL_Color){64, 106, 101, 255},
              x - 4.0f, y - 1.0f, 2.0f, 28.0f);
-  color_rect(r, COL_INK, x + 35.0f, y - 3.0f, 5.0f, 35.0f);
+  color_rect(r, FX_INK, x + 35.0f, y - 3.0f, 5.0f, 35.0f);
   color_rect(r, (SDL_Color){88, 130, 121, 255},
              x + 36.0f, y - 1.0f, 2.0f, 28.0f);
-  color_rect(r, COL_INK, x - 4.0f, y + 27.0f, 4.0f, 5.0f);
-  color_rect(r, COL_INK, x + 36.0f, y + 27.0f, 4.0f, 5.0f);
+  color_rect(r, FX_INK, x - 4.0f, y + 27.0f, 4.0f, 5.0f);
+  color_rect(r, FX_INK, x + 36.0f, y + 27.0f, 4.0f, 5.0f);
 }
 
 static void draw_restroom_stall_open(SDL_Renderer *r, float x, float y)
@@ -1391,7 +1394,7 @@ static void draw_restroom_stall_open(SDL_Renderer *r, float x, float y)
              x + 1.0f, y, 3.0f, 6.0f);
   color_rect(r, (SDL_Color){160, 184, 169, 255},
              x + 2.0f, y, 1.0f, 6.0f);
-  color_rect(r, COL_INK, x + 24.0f, y + 1.0f, 10.0f, 7.0f);
+  color_rect(r, FX_INK, x + 24.0f, y + 1.0f, 10.0f, 7.0f);
   color_rect(r, (SDL_Color){230, 232, 214, 255},
              x + 26.0f, y + 2.0f, 6.0f, 5.0f);
   color_rect(r, (SDL_Color){92, 116, 111, 255},
@@ -1403,7 +1406,7 @@ static void draw_restroom_stall_open(SDL_Renderer *r, float x, float y)
   draw_restroom_stall_frame(r, x, y);
 
   /* Door folded toward the viewer: a trapezoid makes its open state obvious. */
-  color_quad(r, COL_INK,
+  color_quad(r, FX_INK,
              x + 29.0f, y, x + 44.0f, y + 4.0f,
              x + 44.0f, y + 28.0f, x + 29.0f, y + 27.0f);
   color_quad(r, (SDL_Color){52, 103, 96, 255},
@@ -1421,7 +1424,7 @@ static void draw_restroom_stall_closed(SDL_Renderer *r, float x, float y)
   draw_restroom_stall_frame(r, x, y);
 
   /* Full opaque panel with a deliberate floor gap, hinges and occupied latch. */
-  color_rect(r, COL_INK, x - 2.0f, y, 36.0f, 27.0f);
+  color_rect(r, FX_INK, x - 2.0f, y, 36.0f, 27.0f);
   color_rect(r, (SDL_Color){47, 94, 89, 255},
              x + 1.0f, y + 3.0f, 30.0f, 21.0f);
   color_rect(r, (SDL_Color){73, 122, 113, 255},
@@ -1499,7 +1502,7 @@ static void draw_card(SDL_Renderer *r, float x, float y, Uint8 alpha, bool activ
 
 static void draw_gun_pickup(SDL_Renderer *r, float x, float y)
 {
-  draw_soft_glow(r, x + 2.0f, y + 1.0f, 15.0f, 13.0f, COL_AMBER);
+  draw_soft_glow(r, x + 2.0f, y + 1.0f, 15.0f, 13.0f, FX_AMBER);
   color_rect(r, COL_OUTLINE, x + 2.0f, y, 17.0f, 7.0f);
   color_rect(r, (SDL_Color){142, 157, 158, 255}, x + 3.0f, y + 1.0f, 15.0f, 4.0f);
   color_rect(r, (SDL_Color){218, 227, 214, 255}, x + 5.0f, y + 1.0f, 12.0f, 1.0f);
@@ -1525,17 +1528,17 @@ static void draw_grenade(SDL_Renderer *r, float x, float y, float fuse)
   color_rect(r, (SDL_Color){68, 92, 61, 255}, x, y + 2.0f, 10.0f, 8.0f);
   color_rect(r, (SDL_Color){101, 124, 78, 255}, x + 2.0f, y + 2.0f, 3.0f, 7.0f);
   color_rect(r, (SDL_Color){169, 144, 85, 255}, x + 3.0f, y, 5.0f, 3.0f);
-  color_rect(r, COL_INK, x + 7.0f, y - 1.0f, 4.0f, 2.0f);
+  color_rect(r, FX_INK, x + 7.0f, y - 1.0f, 4.0f, 2.0f);
   if (fuse > 0.0f && ((int)(fuse * 14.0f) & 1) == 0)
   {
     color_rect(r, (SDL_Color){255, 235, 128, 255}, x + 10.0f, y - 2.0f, 2.0f, 2.0f);
-    color_rect(r, COL_RED, x + 11.0f, y - 1.0f, 2.0f, 2.0f);
+    color_rect(r, FX_RED, x + 11.0f, y - 1.0f, 2.0f, 2.0f);
   }
 }
 
 static void draw_medkit(SDL_Renderer *r, float x, float y)
 {
-  draw_soft_glow(r, x + 2.0f, y + 2.0f, 16.0f, 16.0f, COL_RED);
+  draw_soft_glow(r, x + 2.0f, y + 2.0f, 16.0f, 16.0f, FX_RED);
   color_rect(r, COL_OUTLINE, x + 1.0f, y + 1.0f, 18.0f, 18.0f);
   color_rect(r, (SDL_Color){197, 48, 48, 255}, x + 2.0f, y + 2.0f, 16.0f, 16.0f);
   color_rect(r, (SDL_Color){244, 82, 65, 255}, x + 4.0f, y + 3.0f, 12.0f, 2.0f);
@@ -1642,7 +1645,7 @@ static void draw_crate(SDL_Renderer *r, const Crate *crate, float cam_x, float o
 {
   float x = crate->x - cam_x;
   float y = crate->y + oy;
-  color_rect(r, COL_INK, x - 1.0f, y - 1.0f, CRATE_W + 2.0f, CRATE_H + 2.0f);
+  color_rect(r, FX_INK, x - 1.0f, y - 1.0f, CRATE_W + 2.0f, CRATE_H + 2.0f);
   color_rect(r, (SDL_Color){105, 67, 38, 255}, x, y, CRATE_W, CRATE_H);
   color_rect(r, (SDL_Color){161, 103, 53, 255}, x + 2.0f, y + 2.0f, CRATE_W - 4.0f, 4.0f);
   color_rect(r, (SDL_Color){73, 48, 32, 255}, x + 2.0f, y + CRATE_H - 6.0f, CRATE_W - 4.0f, 4.0f);
@@ -1663,11 +1666,11 @@ static void draw_mine(SDL_Renderer *r, const Mine *mine, float cam_x, float oy)
   float y = mine->y + oy;
   bool flash = mine->triggered && (((int)(mine->timer * 24.0f) & 1) == 0);
   if (flash)
-    draw_soft_glow(r, x + 5.0f, y, 6.0f, 5.0f, COL_RED);
-  color_rect(r, COL_INK, x - 2.0f, y + 4.0f, MINE_W + 4.0f, 6.0f);
+    draw_soft_glow(r, x + 5.0f, y, 6.0f, 5.0f, FX_RED);
+  color_rect(r, FX_INK, x - 2.0f, y + 4.0f, MINE_W + 4.0f, 6.0f);
   color_rect(r, (SDL_Color){45, 51, 48, 255}, x, y + 2.0f, MINE_W, 7.0f);
   color_rect(r, (SDL_Color){91, 100, 89, 255}, x + 2.0f, y + 1.0f, MINE_W - 4.0f, 3.0f);
-  color_rect(r, flash ? (SDL_Color){255, 230, 167, 255} : COL_RED,
+  color_rect(r, flash ? (SDL_Color){255, 230, 167, 255} : FX_RED,
              x + 6.0f, y + 1.0f, 4.0f, 3.0f);
   color_rect(r, (SDL_Color){157, 146, 90, 255}, x + 1.0f, y + 7.0f, 3.0f, 2.0f);
   color_rect(r, (SDL_Color){157, 146, 90, 255}, x + 12.0f, y + 7.0f, 3.0f, 2.0f);
@@ -1687,17 +1690,17 @@ static void draw_gas_canister(SDL_Renderer *r,
              x - 2.0f, y + 14.0f, GAS_CANISTER_W + 4.0f, 3.0f);
 
   /* Valve, collar and short neck. */
-  color_rect(r, COL_INK, x + 4.0f, y, 5.0f, 3.0f);
+  color_rect(r, FX_INK, x + 4.0f, y, 5.0f, 3.0f);
   color_rect(r, (SDL_Color){201, 174, 93, 255},
              x + 5.0f, y, 3.0f, 2.0f);
-  color_rect(r, COL_INK, x + 3.0f, y + 2.0f, 6.0f, 4.0f);
+  color_rect(r, FX_INK, x + 3.0f, y + 2.0f, 6.0f, 4.0f);
   color_rect(r, (SDL_Color){118, 126, 116, 255},
              x + 4.0f, y + 3.0f, 4.0f, 3.0f);
 
   /* Rounded shoulders and long cylindrical body. */
-  color_rect(r, COL_INK, x + 2.0f, y + 5.0f, 8.0f, 2.0f);
-  color_rect(r, COL_INK, x + 1.0f, y + 6.0f, 10.0f, 9.0f);
-  color_rect(r, COL_INK, x + 2.0f, y + 15.0f, 8.0f, 1.0f);
+  color_rect(r, FX_INK, x + 2.0f, y + 5.0f, 8.0f, 2.0f);
+  color_rect(r, FX_INK, x + 1.0f, y + 6.0f, 10.0f, 9.0f);
+  color_rect(r, FX_INK, x + 2.0f, y + 15.0f, 8.0f, 1.0f);
   color_rect(r, (SDL_Color){224, 70, 53, 255},
              x + 3.0f, y + 6.0f, 6.0f, 1.0f);
   color_rect(r, (SDL_Color){92, 103, 103, 255},
@@ -1770,10 +1773,14 @@ static void draw_rocket_sprite(SDL_Renderer *r, float x, float y, int dir,
               4.0f, 1.0f, (SDL_Color){73, 91, 65, 255});
   if (flame)
   {
+    /* The exhaust lights the air it burns in; fire that illuminates nothing
+       reads as a decal stuck to the tail. */
+    fx_glow(r, sprite_point_x(x, ROCKET_W, dir, -2.5f), y + 3.5f, 12.0f,
+            FX_AMBER, 90);
     sprite_rect(r, x, y, ROCKET_W, dir, -5.0f, 1.0f,
-                5.0f, 5.0f, (SDL_Color){226, 70, 38, 210});
+                5.0f, 5.0f, FX_FLAME);
     sprite_rect(r, x, y, ROCKET_W, dir, -3.0f, 2.0f,
-                4.0f, 3.0f, (SDL_Color){255, 218, 91, 255});
+                4.0f, 3.0f, FX_FLAME_HOT);
   }
 }
 
@@ -1803,10 +1810,12 @@ static void draw_vertical_rocket_sprite(SDL_Renderer *r, float x, float y,
                        4.0f, 1.0f, (SDL_Color){73, 91, 65, 255});
   if (flame)
   {
+    float tail_y = dir > 0 ? y - 2.5f : y + ROCKET_W + 2.5f;
+    fx_glow(r, x + 3.5f, tail_y, 12.0f, FX_AMBER, 90);
     vertical_rocket_rect(r, x, y, dir, -5.0f, 1.0f,
-                         5.0f, 5.0f, (SDL_Color){226, 70, 38, 210});
+                         5.0f, 5.0f, FX_FLAME);
     vertical_rocket_rect(r, x, y, dir, -3.0f, 2.0f,
-                         4.0f, 3.0f, (SDL_Color){255, 218, 91, 255});
+                         4.0f, 3.0f, FX_FLAME_HOT);
   }
 }
 
@@ -1829,10 +1838,12 @@ static void draw_bazooka_weapon(SDL_Renderer *r, float x, float y,
               3.0f, 5.0f, (SDL_Color){73, 60, 43, 255});
   if (firing)
   {
+    fx_glow(r, sprite_point_x(x, sprite_w, dir, lx - 5.0f + recoil),
+            y + ly + 4.5f, 16.0f, FX_AMBER, 100);
     sprite_rect(r, x, y, sprite_w, dir, lx - 8.0f + recoil, ly + 1.0f,
-                6.0f, 7.0f, (SDL_Color){223, 65, 38, 190});
+                6.0f, 7.0f, FX_FLAME);
     sprite_rect(r, x, y, sprite_w, dir, lx - 5.0f + recoil, ly + 3.0f,
-                4.0f, 3.0f, (SDL_Color){255, 218, 94, 255});
+                4.0f, 3.0f, FX_FLAME_HOT);
   }
 }
 
@@ -1854,30 +1865,22 @@ static void draw_vertical_bazooka_weapon(SDL_Renderer *r, float x, float y,
   if (firing)
   {
     float flame_y = dir < 0 ? by + 24.0f : by - 6.0f;
-    color_rect(r, (SDL_Color){223, 65, 38, 190},
-               bx, flame_y, 8.0f, 6.0f);
-    color_rect(r, (SDL_Color){255, 218, 94, 255},
-               bx + 2.0f, flame_y, 4.0f, 4.0f);
+    fx_glow(r, bx + 4.0f, flame_y + 3.0f, 16.0f, FX_AMBER, 100);
+    color_rect(r, FX_FLAME, bx, flame_y, 8.0f, 6.0f);
+    color_rect(r, FX_FLAME_HOT, bx + 2.0f, flame_y, 4.0f, 4.0f);
   }
 }
 
 /*
- * What the cast is made of.
- *
- * Every figure used to carry its garment colours as literals at each of the
- * thirty-odd rects it is built from, which meant a jacket could only be
- * retuned by finding all thirty. These are the same colours, named once; the
- * lit and shaded steps of each come from fx_ramp rather than from more
- * literals, so a figure cannot drift out of the lighting system it is drawn
- * in.
+ * What the cast is made of: fx.h's material constants, so the man in the
+ * sector, the man in the manual, the man on the title screen and the man in
+ * the cutscene are the same man. This block used to carry near-miss copies of
+ * those colours — a jacket a few units off FX_HERO, a fifth skin tone — under
+ * a comment claiming they were identical, which is exactly how one cast
+ * drifts into five. Only the hair's lit step stays local: it is the one step
+ * fx_ramp cannot derive (a warm brown lifted toward the skin rather than
+ * toward the lamp), and it has one name here.
  */
-static const SDL_Color PLAYER_JACKET = {35, 102, 142, 255};
-static const SDL_Color PLAYER_SKIN = {209, 154, 105, 255};
-static const SDL_Color PLAYER_SKIN_DK = {166, 116, 78, 255};
-/* Dark enough to frame the face rather than sit beside it. Hair drawn at the
-   value of tanned skin makes a head one lump the headband is stuck through;
-   the cutscenes have always had it a good deal darker than that. */
-static const SDL_Color PLAYER_HAIR = {70, 42, 30, 255};
 static const SDL_Color PLAYER_HAIR_LT = {102, 62, 42, 255};
 
 /* A body block in sprite-local space, shaded as a solid rather than filled
@@ -2161,6 +2164,26 @@ static bool character_ground(const Level *level, float cx, float feet_y,
   return false;
 }
 
+/*
+ * The rest of the cast gets the same anchoring as the player. A pool pinned
+ * to the boots travels up with a stomped guard or a dropping dog at full
+ * size, which states the floor jumped with them; found below and thinned
+ * with height, it is most of what sells how far off the ground they are.
+ */
+static void npc_contact_shadow(SDL_Renderer *r, const Level *level,
+                               float world_cx, float world_feet_y,
+                               float half_w, Uint8 alpha,
+                               float cam_x, float oy)
+{
+  float ground_y;
+  float lift;
+
+  if (level != NULL &&
+      character_ground(level, world_cx, world_feet_y, &ground_y, &lift))
+    fx_contact_shadow(r, world_cx - cam_x, ground_y + oy - 1.0f,
+                      half_w, lift, alpha);
+}
+
 static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, float y)
 {
   int dir = p->facing;
@@ -2172,32 +2195,32 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
                    p->bazooka_rockets > 0) ||
                  (firing && p->bazooka_firing);
 
-  /* Ground shadow and rear boot. */
-  fx_contact_shadow(r, x + PLAYER_W * 0.5f, y + 17.0f, 13.0f, 0.0f, 190);
+  /* Rear boot; the ground shadow is laid by the caller, anchored to the
+     floor rather than to the belly. */
   sprite_rect(r, x, y, PLAYER_W, dir, 1.0f - shove, 12.0f, 8.0f, 5.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, PLAYER_W, dir, 2.0f - shove, 12.0f, 7.0f, 3.0f, (SDL_Color){26, 48, 72, 255});
+  sprite_rect(r, x, y, PLAYER_W, dir, 2.0f - shove, 12.0f, 7.0f, 3.0f, fx_dim(FX_HERO_DK, 0.80f));
 
   /* Horizontal torso, shoulder plate and head at the leading edge. */
   sprite_body(r, x, y, PLAYER_W, dir, 7.0f, 7.0f, 12.0f, 8.0f,
-              (SDL_Color){38, 100, 139, 255}, COL_OUTLINE, 1, 1);
-  sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 7.0f, 10.0f, 2.0f, (SDL_Color){62, 143, 169, 255});
-  sprite_body(r, x, y, PLAYER_W, dir, 18.0f, 4.0f, 6.0f, 7.0f, PLAYER_SKIN,
+              FX_HERO, COL_OUTLINE, 1, 1);
+  sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 7.0f, 10.0f, 2.0f, FX_HERO_LT);
+  sprite_body(r, x, y, PLAYER_W, dir, 18.0f, 4.0f, 6.0f, 7.0f, FX_SKIN,
               COL_OUTLINE, 1, 2);
   sprite_mass(r, x, y, PLAYER_W, dir, 18.0f, 4.0f, 6.0f, 3.0f,
-              PLAYER_HAIR, 1, 0);
+              FX_HAIR, 1, 0);
   sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 6.0f, 2.0f, 2.0f, (SDL_Color){220, 239, 219, 255});
   sprite_rect(r, x, y, PLAYER_W, dir, 23.0f, 6.0f, 1.0f, 2.0f, (SDL_Color){40, 54, 64, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 18.0f, 9.0f, 5.0f, 1.0f, PLAYER_SKIN_DK);
-  sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 5.0f, 4.0f, 2.0f, COL_RED);
+  sprite_rect(r, x, y, PLAYER_W, dir, 18.0f, 9.0f, 5.0f, 1.0f, FX_SKIN_DK);
+  sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 5.0f, 4.0f, 2.0f, FX_RED);
 
   /* Braced front arm with either the sidearm or an empty-ammo knife thrust. */
   sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 11.0f, 7.0f, 4.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, PLAYER_W, dir, 17.0f, 11.0f, 6.0f, 2.0f, (SDL_Color){209, 154, 106, 255});
+  sprite_rect(r, x, y, PLAYER_W, dir, 17.0f, 11.0f, 6.0f, 2.0f, FX_SKIN);
   if (knife)
   {
     float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f ? 2.0f : 0.0f;
     sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 10.0f, 4.0f + thrust, 4.0f,
-                (SDL_Color){209, 154, 106, 255});
+                FX_SKIN);
     sprite_rect(r, x, y, PLAYER_W, dir, 25.0f + thrust, 9.0f, 3.0f, 5.0f,
                 (SDL_Color){55, 43, 31, 255});
     sprite_rect(r, x, y, PLAYER_W, dir, 28.0f + thrust, 10.0f, 6.0f, 2.0f,
@@ -2218,8 +2241,10 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
                 (SDL_Color){36, 43, 48, 255});
     if (firing && p->action_timer > 0.055f)
     {
-      sprite_rect(r, x, y, PLAYER_W, dir, 29.0f, 9.0f, 3.0f, 5.0f, COL_AMBER);
-      sprite_rect(r, x, y, PLAYER_W, dir, 32.0f, 10.0f, 2.0f, 3.0f, (SDL_Color){255, 239, 165, 255});
+      /* Prone or standing, a shot lights the floor it is fired across. */
+      draw_muzzle_flash(r, x, y, PLAYER_W, dir, 31.0f, 11.5f, FX_AMBER);
+      sprite_rect(r, x, y, PLAYER_W, dir, 29.0f, 9.0f, 3.0f, 5.0f, FX_AMBER);
+      sprite_rect(r, x, y, PLAYER_W, dir, 32.0f, 10.0f, 2.0f, 3.0f, FX_FLAME_HOT);
     }
   }
 }
@@ -2227,11 +2252,11 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
 static void draw_player_hacking(SDL_Renderer *r, float x, float y,
                                 float hack_time)
 {
-  const SDL_Color shirt = {35, 102, 142, 255};
-  const SDL_Color shirt_light = {60, 148, 171, 255};
-  const SDL_Color trousers = {28, 63, 92, 255};
-  const SDL_Color boots = {15, 24, 35, 255};
-  const SDL_Color skin = {209, 154, 106, 255};
+  const SDL_Color shirt = FX_HERO;
+  const SDL_Color shirt_light = FX_HERO_LT;
+  const SDL_Color trousers = FX_HERO_DK;
+  const SDL_Color boots = FX_SHADOW;
+  const SDL_Color skin = FX_SKIN;
   float type_phase = hack_time * 15.0f;
   float tap_a = sinf(type_phase) * 1.2f;
   float tap_b = sinf(type_phase + 3.14159265f) * 1.2f;
@@ -2239,7 +2264,6 @@ static void draw_player_hacking(SDL_Renderer *r, float x, float y,
 
   /* Rear view: Chuck faces the wall-mounted terminal, so the camera sees
      the back of his head, shoulders and torso. */
-  fx_contact_shadow(r, x + PLAYER_W * 0.5f, y + 31.0f, 11.0f, 0.0f, 195);
   sprite_rect(r, x, y, PLAYER_W, 1,
               7.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
   sprite_form(r, x, y, PLAYER_W, 1,
@@ -2251,7 +2275,7 @@ static void draw_player_hacking(SDL_Renderer *r, float x, float y,
   sprite_rect(r, x, y, PLAYER_W, 1,
               13.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
   sprite_form(r, x, y, PLAYER_W, 1,
-              14.0f, 23.0f, 4.0f, 7.0f, (SDL_Color){35, 78, 105, 255});
+              14.0f, 23.0f, 4.0f, 7.0f, fx_mix(FX_HERO_DK, FX_HERO, 0.30f));
   sprite_rect(r, x, y, PLAYER_W, 1,
               13.0f, 29.0f, 8.0f, 3.0f, COL_OUTLINE);
   sprite_rect(r, x, y, PLAYER_W, 1,
@@ -2283,15 +2307,15 @@ static void draw_player_hacking(SDL_Renderer *r, float x, float y,
               13.0f, 12.0f + bob, 3.0f, 11.0f,
               (SDL_Color){21, 54, 76, 255});
   sprite_rect(r, x, y, PLAYER_W, 1,
-              9.0f, 20.0f + bob, 11.0f, 2.0f, COL_AMBER);
+              9.0f, 20.0f + bob, 11.0f, 2.0f, FX_AMBER);
 
   /* Back of the head: no face or eye is visible from this angle. */
   sprite_body(r, x, y, PLAYER_W, 1,
-              10.0f, 2.0f + bob, 8.0f, 9.0f, PLAYER_HAIR, COL_OUTLINE, 2, 2);
+              10.0f, 2.0f + bob, 8.0f, 9.0f, FX_HAIR, COL_OUTLINE, 2, 2);
   sprite_rect(r, x, y, PLAYER_W, 1,
               12.0f, 2.0f + bob, 4.0f, 1.0f, PLAYER_HAIR_LT);
   sprite_rect(r, x, y, PLAYER_W, 1,
-              8.0f, 4.0f + bob, 12.0f, 2.0f, COL_RED);
+              8.0f, 4.0f + bob, 12.0f, 2.0f, FX_RED);
   sprite_rect(r, x, y, PLAYER_W, 1,
               9.0f, 7.0f + bob, 2.0f, 2.0f,
               (SDL_Color){91, 48, 31, 255});
@@ -2313,12 +2337,18 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
 
   if (hacking)
   {
+    /* Both special poses get the same floor-anchored pool as the standing
+       figure; a pose is not a reason for the shadow to jump to the boots. */
+    npc_contact_shadow(r, level, p->x + PLAYER_W * 0.5f, p->y + PLAYER_H,
+                       11.0f, 195, cam_x, oy);
     draw_player_hacking(r, x, y, hacking_time);
     return;
   }
 
   if (p->crawling)
   {
+    npc_contact_shadow(r, level, p->x + PLAYER_W * 0.5f,
+                       p->y + PLAYER_CRAWL_H, 13.0f, 190, cam_x, oy);
     draw_player_crawling(r, p, x, y);
     return;
   }
@@ -2494,7 +2524,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
   if (!climbing && !firing && !knife)
   {
     draw_walking_arm(r, x, y, PLAYER_W, dir, 14.0f, 13.0f + bob,
-                     -arm_swing, (SDL_Color){35, 102, 142, 255},
+                     -arm_swing, FX_HERO,
                      (SDL_Color){189, 132, 91, 255});
   }
 
@@ -2504,7 +2534,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
      thirteen-pixel chest that already carries a crown, a shoulder plate, the
      webbing and a belt has no room left for a third. */
   sprite_body(r, x, y, PLAYER_W, dir, 7.0f + lean, 11.0f + bob, 13.0f, 12.0f,
-              PLAYER_JACKET, COL_OUTLINE, 2, 1);
+              FX_HERO, COL_OUTLINE, 2, 1);
   if (climbing)
   {
     sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 13.0f + bob, 4.0f, 8.0f, (SDL_Color){48, 125, 157, 255});
@@ -2515,7 +2545,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
   {
     /* A shoulder is the top of a torso, not a stripe down the length of it. */
     sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 13.0f + bob, 10.0f, 2.0f,
-                (SDL_Color){60, 148, 171, 255});
+                FX_HERO_LT);
     /* The webbing runs across the chest from the near shoulder to the far hip.
        Two pixels of it standing vertically is a stripe; on the diagonal it is
        a strap, and it is the one line that says this jacket is rigged for a
@@ -2530,7 +2560,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
                 (SDL_Color){30, 76, 106, 255});
   }
   sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 20.0f + bob, 11.0f, 2.0f,
-              COL_AMBER);
+              FX_AMBER);
   sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 20.0f + bob, 11.0f, 1.0f,
               (SDL_Color){255, 214, 128, 255});
   /* The hem of the jacket, one dark line so the two garments part company. It
@@ -2692,9 +2722,9 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
         if (p->action_timer > 0.055f)
         {
           draw_muzzle_flash(r, x, y, PLAYER_W, gun_dir,
-                            36.0f + recoil, 14.0f + bob, COL_AMBER);
+                            36.0f + recoil, 14.0f + bob, FX_AMBER);
           sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                      34.0f + recoil, 11.0f + bob, 4.0f, 6.0f, COL_AMBER);
+                      34.0f + recoil, 11.0f + bob, 4.0f, 6.0f, FX_AMBER);
           sprite_rect(r, x, y, PLAYER_W, gun_dir,
                       38.0f + recoil, 13.0f + bob, 3.0f, 3.0f,
                       (SDL_Color){255, 242, 184, 255});
@@ -2733,9 +2763,9 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
           {
             float flash_y = p->shot_vertical < 0 ? -5.0f : 26.0f;
             draw_muzzle_flash(r, x, y, PLAYER_W, dir,
-                              21.0f, flash_y + 2.0f, COL_AMBER);
+                              21.0f, flash_y + 2.0f, FX_AMBER);
             sprite_rect(r, x, y, PLAYER_W, dir,
-                        18.0f, flash_y, 7.0f, 5.0f, COL_AMBER);
+                        18.0f, flash_y, 7.0f, 5.0f, FX_AMBER);
             sprite_rect(r, x, y, PLAYER_W, dir,
                         20.0f,
                         p->shot_vertical < 0
@@ -2760,14 +2790,14 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
   {
     /* Seen from behind: the nape of the neck below the hair, and no face. */
     sprite_body(r, x, y, PLAYER_W, dir, 10.0f, 2.0f + bob, 8.0f, 9.0f,
-                PLAYER_SKIN, COL_OUTLINE, 2, 2);
+                FX_SKIN, COL_OUTLINE, 2, 2);
     sprite_mass(r, x, y, PLAYER_W, dir, 10.0f, 2.0f + bob, 8.0f, 7.0f,
-                PLAYER_HAIR, 2, 0);
+                FX_HAIR, 2, 0);
     sprite_rect(r, x, y, PLAYER_W, dir, 12.0f, 2.0f + bob, 4.0f, 1.0f,
                 PLAYER_HAIR_LT);
     sprite_rect(r, x, y, PLAYER_W, dir, 11.0f, 9.0f + bob, 6.0f, 1.0f,
-                PLAYER_SKIN_DK);
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 4.0f + bob, 12.0f, 2.0f, COL_RED);
+                FX_SKIN_DK);
+    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 4.0f + bob, 12.0f, 2.0f, FX_RED);
     sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 4.0f + bob, 12.0f, 1.0f,
                 (SDL_Color){246, 104, 88, 255});
   }
@@ -2786,22 +2816,22 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
        however round the head under it is — and it goes on second so its fill
        covers the face's own top outline row instead of being cut by it. */
     sprite_body(r, x, y, PLAYER_W, dir, 10.0f + lean, 4.0f + bob, 8.0f, 7.0f,
-                PLAYER_SKIN, COL_OUTLINE, 0, 2);
+                FX_SKIN, COL_OUTLINE, 0, 2);
     sprite_mass(r, x, y, PLAYER_W, dir, 9.0f + lean, 0.0f + bob, 10.0f, 5.0f,
                 COL_OUTLINE, 3, 0);
     sprite_mass(r, x, y, PLAYER_W, dir, 10.0f + lean, 1.0f + bob, 8.0f, 4.0f,
-                PLAYER_HAIR, 2, 0);
+                FX_HAIR, 2, 0);
     sprite_rect(r, x, y, PLAYER_W, dir, 12.0f + lean, 1.0f + bob, 4.0f, 1.0f,
                 PLAYER_HAIR_LT);
     /* The back of the skull stays hair the whole way down to the nape. */
     sprite_rect(r, x, y, PLAYER_W, dir, 10.0f + lean, 6.0f + bob, 2.0f, 3.0f,
-                PLAYER_HAIR);
+                FX_HAIR);
     /* The brow the fringe shades, and the jaw stepping back under the cheek —
        drawn with the face's own taper so the shading cannot square it off. */
     sprite_rect(r, x, y, PLAYER_W, dir, 12.0f + lean, 6.0f + bob, 6.0f, 1.0f,
                 (SDL_Color){181, 127, 87, 255});
     sprite_mass(r, x, y, PLAYER_W, dir, 10.0f + lean, 9.0f + bob, 8.0f, 2.0f,
-                PLAYER_SKIN_DK, 1, 2);
+                FX_SKIN_DK, 1, 2);
     /* The nose. A profile without one is a rectangle with an eye in it, and to
        be a profile it has to break the head's outline rather than sit inside
        it — so the skin steps one pixel out and the outline moves out in front
@@ -2809,7 +2839,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
     sprite_rect(r, x, y, PLAYER_W, dir, 18.0f + lean, 6.0f + bob, 2.0f, 4.0f,
                 COL_OUTLINE);
     sprite_rect(r, x, y, PLAYER_W, dir, 17.0f + lean, 7.0f + bob, 2.0f, 2.0f,
-                PLAYER_SKIN);
+                FX_SKIN);
     if (fx_blinking(p->anim_time, 0x1u))
     {
       sprite_rect(r, x, y, PLAYER_W, dir, 14.0f + lean, 8.0f + bob, 3.0f, 1.0f,
@@ -2835,7 +2865,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
     /* The headband crosses both the hairline and the brow, so it goes on last
        over the two of them. */
     sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 4.0f + bob, 12.0f, 2.0f,
-                COL_RED);
+                FX_RED);
     sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 4.0f + bob, 12.0f, 1.0f,
                 (SDL_Color){246, 104, 88, 255});
     /* The loose tail of it, trailing behind the run. */
@@ -2888,8 +2918,8 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
       if (p->action_timer > 0.055f)
       {
         draw_muzzle_flash(r, x, y, PLAYER_W, dir, 33.0f + recoil, 14.0f + bob,
-                          COL_AMBER);
-        sprite_rect(r, x, y, PLAYER_W, dir, 31.0f + recoil, 11.0f + bob, 4.0f, 6.0f, COL_AMBER);
+                          FX_AMBER);
+        sprite_rect(r, x, y, PLAYER_W, dir, 31.0f + recoil, 11.0f + bob, 4.0f, 6.0f, FX_AMBER);
         sprite_rect(r, x, y, PLAYER_W, dir, 35.0f + recoil, 13.0f + bob, 3.0f, 3.0f, (SDL_Color){255, 242, 184, 255});
       }
     }
@@ -2909,6 +2939,7 @@ static void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
 }
 
 static void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
+                         const Level *level,
                          float cam_x, float oy)
 {
   float x = janitor->x - cam_x;
@@ -2953,8 +2984,10 @@ static void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
   float cart_y = y + 7.0f;
   /* Short contact shadows keep the two silhouettes grounded without joining
    * them into one long, high-contrast stripe. */
-  fx_contact_shadow(r, x + JANITOR_W * 0.5f, y + 31.0f, 9.0f, 0.0f, 200);
-  fx_contact_shadow(r, cart_x + 11.0f, y + 31.0f, 11.0f, 0.0f, 200);
+  npc_contact_shadow(r, level, janitor->x + JANITOR_W * 0.5f,
+                     janitor->y + 31.0f, 9.0f, 200, cam_x, oy);
+  npc_contact_shadow(r, level, cart_x + cam_x + 11.0f,
+                     janitor->y + 31.0f, 11.0f, 200, cam_x, oy);
   color_rect(r, COL_OUTLINE, cart_x, cart_y + 4.0f, 23.0f, 18.0f);
   color_rect(r, (SDL_Color){52, 59, 62, 255},
              cart_x + 2.0f, cart_y + 6.0f, 19.0f, 14.0f);
@@ -3155,6 +3188,7 @@ static SDL_Color civilian_fade(SDL_Color c, float fade)
  * anything else would have to agree with it.
  */
 static void draw_civilian(SDL_Renderer *r, const Civilian *civilian,
+                          const Level *level,
                           float cam_x, float oy)
 {
   if (civilian->activity == CIVILIAN_GONE || civilian->fade <= 0.0f)
@@ -3193,11 +3227,12 @@ static void draw_civilian(SDL_Renderer *r, const Civilian *civilian,
   if (fade < 1.0f)
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
 
-  /* Contact shadow only while there is contact: these are the one kind of NPC
-     that leaves the floor, dropping down the lobby stair on the way out. */
-  if (civilian->on_ground)
-    fx_contact_shadow(r, x + CIVILIAN_W * 0.5f, y + 31.0f, 9.0f, 0.0f,
-                      (Uint8)(fade * 200.0f));
+  /* Anchored to the floor below rather than gated on contact: a shadow that
+     popped out of existence mid-drop said the figure vanished, where one that
+     stays on the stair and thins with height says he is over it. */
+  npc_contact_shadow(r, level, civilian->x + CIVILIAN_W * 0.5f,
+                     civilian->y + 31.0f, 9.0f, (Uint8)(fade * 200.0f),
+                     cam_x, oy);
 
   if (fallen)
   {
@@ -3248,7 +3283,7 @@ static void draw_civilian(SDL_Renderer *r, const Civilian *civilian,
   sprite_rect(r, x, y, CIVILIAN_W, dir, 12.0f + lean, 6.0f + body,
               3.0f, 2.0f, civilian_fade((SDL_Color){228, 236, 226, 255}, fade));
   sprite_rect(r, x, y, CIVILIAN_W, dir, 13.0f + lean, 6.0f + body,
-              2.0f, 2.0f, civilian_fade(COL_INK, fade));
+              2.0f, 2.0f, civilian_fade(FX_INK, fade));
   /* The open mouth is the one cue that reads as fear at this scale. */
   sprite_rect(r, x, y, CIVILIAN_W, dir, 11.0f + lean, 8.0f + body,
               4.0f, 1.0f, civilian_fade((SDL_Color){28, 12, 14, 255}, fade));
@@ -3314,6 +3349,7 @@ static void draw_civilian(SDL_Renderer *r, const Civilian *civilian,
  * reading as another guard.
  */
 static void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
+                              const Level *level,
                               float cam_x, float oy)
 {
   float x = rec->x - cam_x;
@@ -3343,7 +3379,8 @@ static void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
   SDL_Color hair = {58, 41, 33, 255};
   SDL_Color brass = {158, 132, 86, 255};
 
-  fx_contact_shadow(r, x + RECEPTIONIST_W * 0.5f, y + 31.0f, 8.0f, 0.0f, 200);
+  npc_contact_shadow(r, level, rec->x + RECEPTIONIST_W * 0.5f,
+                     rec->y + 31.0f, 8.0f, 200, cam_x, oy);
 
   if (walking)
   {
@@ -3461,7 +3498,8 @@ static void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
   }
 }
 
-static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
+static void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
+                       float cam_x, float oy)
 {
   float x = e->x - cam_x;
   float y = e->y + oy;
@@ -3477,22 +3515,33 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
   float step = moving ? sinf(phase) : 0.0f;
   float bob = moving ? fabsf(step) * 0.5f : sinf(e->anim_time * 1.8f) * 0.3f;
   float climb = e->climbing ? sinf(phase) * 4.0f : 0.0f;
-  SDL_Color uniform = e->hp >= ENEMY_HP ? (SDL_Color){76, 91, 69, 255}
+  SDL_Color uniform = e->hp >= ENEMY_HP ? FX_GUARD
                                            : e->hp == 2 ? (SDL_Color){103, 83, 54, 255}
                                                         : (SDL_Color){101, 65, 49, 255};
   SDL_Color light = e->hp >= ENEMY_HP ? (SDL_Color){116, 129, 86, 255}
                                         : (SDL_Color){135, 98, 58, 255};
 
-  fx_contact_shadow(r, x + ENEMY_W * 0.5f, y + 31.0f, 10.0f, 0.0f, 200);
+  npc_contact_shadow(r, level, e->x + ENEMY_W * 0.5f, e->y + 31.0f,
+                     10.0f, 200, cam_x, oy);
 
   if (e->climbing)
   {
-    sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, ENEMY_W, dir, 9.0f, 14.0f - climb, 3.0f, 8.0f, uniform);
-    sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 14.0f + climb, 3.0f, 8.0f, uniform);
-    sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 23.0f + climb, 5.0f, 8.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 23.0f - climb, 5.0f, 8.0f, COL_OUTLINE);
+    /* The rear-facing climb in the same limb vocabulary as the player's: a
+       hand and the opposite boot rise while the other pair hold, and every
+       limb is a rounded segment ending in a boot rather than a bare bar of
+       uniform — the bars read as the ladder, not the man on it. */
+    sprite_limb_segment(r, x, y, ENEMY_W, dir,
+                        10.5f, 14.0f - climb, 10.5f, 22.0f - climb, uniform);
+    sprite_limb_segment(r, x, y, ENEMY_W, dir,
+                        15.5f, 14.0f + climb, 15.5f, 22.0f + climb, uniform);
+    sprite_limb_segment(r, x, y, ENEMY_W, dir, 10.5f, 23.0f + climb * 0.5f,
+                        10.5f, 29.0f + climb, (SDL_Color){30, 35, 28, 255});
+    sprite_limb_segment(r, x, y, ENEMY_W, dir, 15.5f, 23.0f - climb * 0.5f,
+                        15.5f, 29.0f - climb, (SDL_Color){30, 35, 28, 255});
+    sprite_shoe(r, x, y, ENEMY_W, dir, 10.5f, 29.0f + climb,
+                (SDL_Color){30, 34, 28, 255});
+    sprite_shoe(r, x, y, ENEMY_W, dir, 15.5f, 29.0f - climb,
+                (SDL_Color){30, 34, 28, 255});
     bob = fabsf(sinf(phase)) * 0.7f;
   }
   else
@@ -3560,10 +3609,10 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
   {
     draw_climbing_arm(r, x, y, ENEMY_W, dir,
                       8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
-                      uniform, (SDL_Color){183, 132, 91, 255});
+                      uniform, fx_dim(FX_SKIN, 0.85f));
     draw_climbing_arm(r, x, y, ENEMY_W, dir,
                       18.0f, 14.0f + bob, 19.5f, 5.0f + climb,
-                      uniform, (SDL_Color){183, 132, 91, 255});
+                      uniform, fx_dim(FX_SKIN, 0.85f));
 
     /* Back of the helmet: no side-facing face or visor while on a ladder. */
     sprite_body(r, x, y, ENEMY_W, dir, 9.0f, 2.0f + bob, 10.0f, 9.0f,
@@ -3584,7 +3633,7 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
        drawn as a rectangle sitting on a rectangle is two boxes; domed, with the
        brim overhanging the brow, it is a helmet on a head. */
     sprite_body(r, x, y, ENEMY_W, dir, 10.0f, 4.0f + bob, 8.0f, 7.0f,
-                (SDL_Color){183, 132, 91, 255}, COL_OUTLINE, 0, 2);
+                fx_dim(FX_SKIN, 0.85f), COL_OUTLINE, 0, 2);
     sprite_mass(r, x, y, ENEMY_W, dir, 7.0f, 0.0f + bob, 14.0f, 7.0f,
                 COL_OUTLINE, 3, 1);
     sprite_mass(r, x, y, ENEMY_W, dir, 8.0f, 1.0f + bob, 12.0f, 5.0f,
@@ -3601,7 +3650,7 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
     /* Jaw shading on the face's own taper, then the visor and the set mouth. */
     sprite_mass(r, x, y, ENEMY_W, dir, 10.0f, 9.0f + bob, 8.0f, 2.0f,
                 (SDL_Color){150, 106, 73, 255}, 1, 2);
-    sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 6.0f + bob, 3.0f, 2.0f, COL_RED);
+    sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 6.0f + bob, 3.0f, 2.0f, FX_RED);
     sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 6.0f + bob, 3.0f, 1.0f,
                 (SDL_Color){255, 138, 122, 255});
     sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 9.0f + bob, 2.0f, 1.0f, (SDL_Color){70, 34, 27, 255});
@@ -3611,15 +3660,15 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
   {
     float recoil = e->recoil_timer > 0.07f ? -2.0f : 0.0f;
     sprite_rect(r, x, y, ENEMY_W, dir, 17.0f + recoil, 13.0f + bob, 8.0f, 5.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, ENEMY_W, dir, 18.0f + recoil, 14.0f + bob, 7.0f, 3.0f, (SDL_Color){183, 132, 91, 255});
+    sprite_rect(r, x, y, ENEMY_W, dir, 18.0f + recoil, 14.0f + bob, 7.0f, 3.0f, fx_dim(FX_SKIN, 0.85f));
     sprite_rect(r, x, y, ENEMY_W, dir, 23.0f + recoil, 12.0f + bob, 8.0f, 4.0f, (SDL_Color){24, 29, 31, 255});
     sprite_rect(r, x, y, ENEMY_W, dir, 25.0f + recoil, 16.0f + bob, 3.0f, 5.0f, (SDL_Color){40, 44, 42, 255});
     if (e->recoil_timer > 0.055f)
     {
       draw_muzzle_flash(r, x, y, ENEMY_W, dir, 33.0f + recoil, 14.0f + bob,
                         (SDL_Color){255, 128, 74, 255});
-      sprite_rect(r, x, y, ENEMY_W, dir, 31.0f + recoil, 11.0f + bob, 4.0f, 6.0f, COL_RED);
-      sprite_rect(r, x, y, ENEMY_W, dir, 35.0f + recoil, 13.0f + bob, 3.0f, 3.0f, COL_AMBER);
+      sprite_rect(r, x, y, ENEMY_W, dir, 31.0f + recoil, 11.0f + bob, 4.0f, 6.0f, FX_RED);
+      sprite_rect(r, x, y, ENEMY_W, dir, 35.0f + recoil, 13.0f + bob, 3.0f, 3.0f, FX_AMBER);
     }
   }
   else if (using_alarm && !e->climbing)
@@ -3630,46 +3679,49 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, float cam_x, float oy)
                         14.0f, 13.0f + bob, 19.0f, 10.0f + bob, uniform);
     sprite_limb_segment(r, x, y, ENEMY_W, dir,
                         19.0f, 10.0f + bob, 23.0f, 8.0f + bob,
-                        (SDL_Color){183, 132, 91, 255});
+                        fx_dim(FX_SKIN, 0.85f));
     sprite_rect(r, x, y, ENEMY_W, dir,
                 21.0f, 6.0f + bob, 5.0f, 5.0f, COL_OUTLINE);
     sprite_rect(r, x, y, ENEMY_W, dir,
                 22.0f, 7.0f + bob, 3.0f, 3.0f,
-                (SDL_Color){201, 148, 101, 255});
+                fx_dim(FX_SKIN, 0.93f));
   }
   else if (!e->climbing)
   {
     float front_swing = moving ? -step : gesture_swing;
     draw_walking_arm(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob,
                      front_swing, uniform,
-                     (SDL_Color){183, 132, 91, 255});
+                     fx_dim(FX_SKIN, 0.85f));
   }
 
-  /* Compact health pips sit in-world without turning into a large UI bar. */
+  /* Compact health pips sit in-world without turning into a large UI bar.
+     Granted-green and a red-shadow socket, because the semantic colours are
+     rationed: green is the palette's "still standing" everywhere else too. */
   for (int hp = 0; hp < ENEMY_HP; ++hp)
   {
-    SDL_Color hc = hp < e->hp ? (SDL_Color){100, 223, 111, 255}
-                              : (SDL_Color){52, 31, 31, 255};
-    color_rect(r, COL_INK, x + 3.0f + hp * 7.0f, y - 6.0f, 6.0f, 4.0f);
+    SDL_Color hc = hp < e->hp ? FX_GREEN
+                              : fx_mix(FX_SHADOW, FX_RED_DK, 0.35f);
+    color_rect(r, FX_INK, x + 3.0f + hp * 7.0f, y - 6.0f, 6.0f, 4.0f);
     color_rect(r, hc, x + 4.0f + hp * 7.0f, y - 5.0f, 4.0f, 2.0f);
   }
 
   if (e->talking)
   {
     float bubble_y = fmaxf(oy + 2.0f, y - 25.0f);
-    color_rect(r, (SDL_Color){8, 12, 17, 220}, x + 2.0f, bubble_y, 22.0f, 11.0f);
-    color_rect(r, (SDL_Color){214, 224, 211, 255}, x + 3.0f, bubble_y + 1.0f, 20.0f, 8.0f);
-    color_rect(r, (SDL_Color){214, 224, 211, 255}, x + 12.0f, bubble_y + 9.0f, 4.0f, 3.0f);
+    color_rect(r, FX_NIGHT, x + 2.0f, bubble_y, 22.0f, 11.0f);
+    color_rect(r, fx_dim(FX_CREAM, 0.92f), x + 3.0f, bubble_y + 1.0f, 20.0f, 8.0f);
+    color_rect(r, fx_dim(FX_CREAM, 0.92f), x + 12.0f, bubble_y + 9.0f, 4.0f, 3.0f);
     for (int dot = 0; dot < 3; ++dot)
     {
       float bounce = (dot == ((int)(e->anim_time * 3.0f) % 3)) ? -1.0f : 0.0f;
-      color_rect(r, (SDL_Color){34, 46, 48, 255}, x + 7.0f + dot * 5.0f,
+      color_rect(r, FX_SHADOW, x + 7.0f + dot * 5.0f,
                  bubble_y + 4.0f + bounce, 2.0f, 2.0f);
     }
   }
 }
 
-static void draw_dog(SDL_Renderer *r, const Dog *dog, float cam_x, float oy)
+static void draw_dog(SDL_Renderer *r, const Dog *dog, const Level *level,
+                     float cam_x, float oy)
 {
   float x = dog->x - cam_x;
   float y = dog->y + oy;
@@ -3685,7 +3737,8 @@ static void draw_dog(SDL_Renderer *r, const Dog *dog, float cam_x, float oy)
   SDL_Color fur_hi = chase ? (SDL_Color){143, 82, 44, 255}
                            : (SDL_Color){109, 76, 51, 255};
 
-  fx_contact_shadow(r, x + DOG_W * 0.5f, y + 15.0f, 11.0f, 0.0f, 185);
+  npc_contact_shadow(r, level, dog->x + DOG_W * 0.5f, dog->y + 15.0f,
+                     11.0f, 185, cam_x, oy);
   sprite_body(r, x, y, DOG_W, dir, 4.0f + lunge, 6.0f + bob, 14.0f, 7.0f, fur,
               COL_OUTLINE, 1, 1);
   sprite_rect(r, x, y, DOG_W, dir, 7.0f + lunge, 6.0f + bob, 8.0f, 2.0f, fur_hi);
@@ -3701,22 +3754,53 @@ static void draw_dog(SDL_Renderer *r, const Dog *dog, float cam_x, float oy)
   sprite_rect(r, x, y, DOG_W, dir, 17.0f + lunge, 0.0f + bob, 4.0f, 5.0f, COL_OUTLINE);
   sprite_rect(r, x, y, DOG_W, dir, 18.0f + lunge, 1.0f + bob, 2.0f, 3.0f, fur);
   sprite_rect(r, x, y, DOG_W, dir, 21.0f + lunge, 6.0f + bob, 4.0f, 4.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, DOG_W, dir, 23.0f + lunge, 7.0f + bob, 2.0f, 2.0f, (SDL_Color){4, 5, 6, 255});
-  sprite_rect(r, x, y, DOG_W, dir, 21.0f + lunge, 4.0f + bob, 2.0f, 2.0f,
-              chase ? COL_RED : (SDL_Color){228, 205, 142, 255});
-  color_rect(r, chase ? COL_RED : COL_AMBER, x + 13.0f, y + 7.0f + bob, 5.0f, 2.0f);
+  sprite_rect(r, x, y, DOG_W, dir, 23.0f + lunge, 7.0f + bob, 2.0f, 2.0f, FX_INK);
+  /* The alert eye blinks like every other eye in the cast — a dog whose eye
+     never closes is a glass one — but never mid-charge. */
+  if (chase || !fx_blinking(dog->anim_time, 0x0d06u))
+    sprite_rect(r, x, y, DOG_W, dir, 21.0f + lunge, 4.0f + bob, 2.0f, 2.0f,
+                chase ? FX_RED : fx_mix(FX_AMBER, FX_CREAM, 0.45f));
+  color_rect(r, chase ? FX_RED : FX_AMBER, x + 13.0f, y + 7.0f + bob, 5.0f, 2.0f);
 
   if (dog->attack_timer > 0.0f)
   {
-    sprite_rect(r, x, y, DOG_W, dir, 21.0f + lunge, 10.0f + bob, 5.0f, 3.0f, (SDL_Color){93, 24, 22, 255});
-    sprite_rect(r, x, y, DOG_W, dir, 23.0f + lunge, 10.0f + bob, 2.0f, 1.0f, (SDL_Color){239, 231, 195, 255});
+    sprite_rect(r, x, y, DOG_W, dir, 21.0f + lunge, 10.0f + bob, 5.0f, 3.0f,
+                fx_dim(FX_RED_DK, 0.70f));
+    sprite_rect(r, x, y, DOG_W, dir, 23.0f + lunge, 10.0f + bob, 2.0f, 1.0f,
+                FX_CREAM);
   }
 
-  /* Four-beat run condensed into two readable leg pairs. */
-  float front_y = 12.0f + fmaxf(0.0f, gait);
-  float rear_y = 12.0f + fmaxf(0.0f, -gait);
-  sprite_rect(r, x, y, DOG_W, dir, 5.0f + lunge, front_y, 4.0f, 4.0f - fmaxf(0.0f, gait * 0.5f), COL_OUTLINE);
-  sprite_rect(r, x, y, DOG_W, dir, 15.0f + lunge, rear_y, 4.0f, 4.0f - fmaxf(0.0f, -gait * 0.5f), COL_OUTLINE);
+  /* Four-beat run condensed into two readable leg pairs, each on the same
+     stance-and-swing cycle the rest of the cast walks: through stance the paw
+     holds its ground and tracks back under the body, through swing it lifts
+     and reaches, half a turn apart. The old sine bobbed both pairs in place —
+     paws that pump vertically while the body slides is the quadruped version
+     of skating. Legs are fur over an outline rather than bare outline; a dog
+     standing on two strokes of ink has no legs, only supports. */
+  float run = phase * 0.5f;
+  for (int pair = 0; pair < 2; ++pair)
+  {
+    /* A parked dog holds mid-stance on all fours instead of freezing one
+       pair mid-swing. */
+    float cycle = moving ? run + (float)pair * 0.5f : 0.25f;
+    cycle -= floorf(cycle);
+    float reach = moving ? 2.5f : 0.0f;
+    float leg_x = pair == 0 ? 15.0f : 5.0f;
+    float leg_lift = 0.0f;
+    if (cycle < 0.5f)
+      leg_x += reach * (1.0f - 4.0f * cycle);
+    else
+    {
+      float t = (cycle - 0.5f) * 2.0f;
+      float ease = t * t * (3.0f - 2.0f * t);
+      leg_x += reach * (-1.0f + 2.0f * ease);
+      leg_lift = sinf(t * 3.14159265f) * 1.5f;
+    }
+    sprite_rect(r, x, y, DOG_W, dir, leg_x + lunge, 12.0f - leg_lift,
+                4.0f, 4.0f + leg_lift * 0.5f, COL_OUTLINE);
+    sprite_rect(r, x, y, DOG_W, dir, leg_x + 1.0f + lunge, 12.0f - leg_lift,
+                2.0f, 3.0f + leg_lift * 0.5f, fur);
+  }
 }
 
 static void draw_thrown_object(SDL_Renderer *r, const ThrownObject *object,
@@ -3726,34 +3810,39 @@ static void draw_thrown_object(SDL_Renderer *r, const ThrownObject *object,
   float y = object->y + oy;
   float wobble_x = cosf(object->angle) * 2.0f;
   float wobble_y = sinf(object->angle) * 2.0f;
-  SDL_Color outline = {17, 20, 26, 255};
+  int dir = object->vx >= 0.0f ? 1 : -1;
 
+  /* Small as they are, these tumble through the lit air of the facade, so
+     each one is a form — lit crown, shaded underside — rather than a flat
+     swatch inside an outline. The materials anchor on the palette: terracotta
+     out of the rust, glass out of the cyan, masonry out of the wood ramp. */
   if (object->variant == 0)
   {
     /* Flower pot. */
-    color_rect(r, outline, x + 2.0f + wobble_x, y + 2.0f, 10.0f, 11.0f);
-    color_rect(r, (SDL_Color){145, 65, 44, 255},
-               x + 3.0f + wobble_x, y + 3.0f, 8.0f, 9.0f);
-    color_rect(r, (SDL_Color){52, 112, 66, 255},
-               x + 5.0f, y + wobble_y, 4.0f, 5.0f);
+    SDL_Color clay = fx_mix(FX_RUST, FX_WOOD, 0.35f);
+    color_rect(r, COL_OUTLINE, x + 2.0f + wobble_x, y + 2.0f, 10.0f, 11.0f);
+    fx_form_block(r, x + 3.0f + wobble_x, y + 3.0f, 8.0f, 9.0f,
+                  fx_ramp(clay), dir);
+    fx_form_block(r, x + 5.0f, y + wobble_y, 4.0f, 5.0f,
+                  fx_ramp(FX_GREEN_DK), dir);
   }
   else if (object->variant == 1)
   {
     /* Bottle. */
-    color_rect(r, outline, x + 4.0f + wobble_x, y + 1.0f, 7.0f, 13.0f);
-    color_rect(r, (SDL_Color){65, 120, 112, 255},
-               x + 5.0f + wobble_x, y + 2.0f, 5.0f, 11.0f);
-    color_rect(r, (SDL_Color){142, 198, 178, 255},
+    SDL_Color glass = fx_mix(FX_CYAN_DK, FX_STEEL, 0.45f);
+    color_rect(r, COL_OUTLINE, x + 4.0f + wobble_x, y + 1.0f, 7.0f, 13.0f);
+    fx_form_block(r, x + 5.0f + wobble_x, y + 2.0f, 5.0f, 11.0f,
+                  fx_ramp(glass), dir);
+    color_rect(r, fx_ramp(glass).lit,
                x + 7.0f + wobble_x, y + 3.0f, 1.0f, 7.0f);
   }
   else
   {
     /* Brick-sized chunk of facade. */
-    color_rect(r, outline, x + 1.0f, y + 2.0f + wobble_y, 13.0f, 10.0f);
-    color_rect(r, (SDL_Color){118, 79, 64, 255},
-               x + 2.0f, y + 3.0f + wobble_y, 11.0f, 8.0f);
-    color_rect(r, (SDL_Color){172, 119, 87, 255},
-               x + 3.0f, y + 4.0f + wobble_y, 7.0f, 2.0f);
+    SDL_Color masonry = fx_mix(FX_WOOD_DK, FX_STEEL, 0.30f);
+    color_rect(r, COL_OUTLINE, x + 1.0f, y + 2.0f + wobble_y, 13.0f, 10.0f);
+    fx_form_block(r, x + 2.0f, y + 3.0f + wobble_y, 11.0f, 8.0f,
+                  fx_ramp(masonry), dir);
   }
 }
 
@@ -3765,24 +3854,34 @@ static void draw_bird(SDL_Renderer *r, const Bird *bird,
   float flap = sinf(bird->anim_time * 15.0f);
   int dir = bird->vx >= 0.0f ? 1 : -1;
   float head_x = dir > 0 ? x + 19.0f : x + 2.0f;
-  SDL_Color body = {31, 35, 43, 255};
-  SDL_Color wing = {48, 53, 62, 255};
+  /* City-pigeon slate out of the room's own darks, not a fourth grey. */
+  SDL_Color body = fx_mix(FX_INK, FX_STEEL_DK, 0.60f);
+  SDL_Color wing = fx_mix(FX_INK, FX_STEEL_DK, 0.95f);
+  FxRamp body_ramp = fx_ramp(body);
+  FxRamp wing_ramp = fx_ramp(wing);
 
-  color_rect(r, body, x + 7.0f, y + 5.0f, 13.0f, 6.0f);
-  color_rect(r, body, head_x, y + 3.0f, 6.0f, 6.0f);
-  color_rect(r, (SDL_Color){193, 139, 49, 255},
+  /* The one animate thing that was still a stack of flat swatches: the body
+     and head are masses with the ceiling light on their crowns, and the wing
+     is a form so the downbeat reads as a surface turning, not a bar moving. */
+  fx_mass(r, COL_OUTLINE, x + 6.0f, y + 4.0f, 15.0f, 8.0f, 1, 1);
+  fx_form_mass(r, x + 7.0f, y + 5.0f, 13.0f, 6.0f, body_ramp, dir, 1, 1);
+  fx_mass(r, COL_OUTLINE, head_x - 1.0f, y + 2.0f, 8.0f, 8.0f, 1, 1);
+  fx_form_mass(r, head_x, y + 3.0f, 6.0f, 6.0f, body_ramp, dir, 1, 1);
+  color_rect(r, fx_mix(FX_AMBER_DK, FX_AMBER, 0.30f),
              dir > 0 ? head_x + 5.0f : head_x - 3.0f, y + 5.0f, 4.0f, 2.0f);
+  color_rect(r, FX_INK, dir > 0 ? head_x + 3.0f : head_x + 1.0f,
+             y + 4.0f, 1.0f, 1.0f);
   if (flap > 0.0f)
   {
-    color_rect(r, wing, x + 8.0f, y, 10.0f, 5.0f);
-    color_rect(r, wing, x + 10.0f, y + 9.0f, 8.0f, 3.0f);
+    fx_form_block(r, x + 8.0f, y, 10.0f, 5.0f, wing_ramp, dir);
+    fx_form_block(r, x + 10.0f, y + 9.0f, 8.0f, 3.0f, wing_ramp, dir);
   }
   else
   {
-    color_rect(r, wing, x + 8.0f, y + 7.0f, 10.0f, 5.0f);
-    color_rect(r, wing, x + 10.0f, y + 2.0f, 8.0f, 3.0f);
+    fx_form_block(r, x + 8.0f, y + 7.0f, 10.0f, 5.0f, wing_ramp, dir);
+    fx_form_block(r, x + 10.0f, y + 2.0f, 8.0f, 3.0f, wing_ramp, dir);
   }
-  color_rect(r, body, dir > 0 ? x + 3.0f : x + 19.0f,
+  color_rect(r, body_ramp.dark, dir > 0 ? x + 3.0f : x + 19.0f,
              y + 6.0f, 5.0f, 3.0f);
 }
 
@@ -3860,7 +3959,7 @@ static void render_facade_wind(Game *game, int win_w, int win_h,
                game->presentation.camera_shake_x;
     float py = state->player.y + HUD_HEIGHT - game->presentation.cam_y +
                game->presentation.camera_shake_y;
-    SDL_Color safe = {96, 230, 140, 255};
+    SDL_Color safe = FX_GREEN;
     float pulse = 0.6f + 0.4f * sinf(world_t * 9.0f);
     fx_rect_a(r, safe, (Uint8)(150.0f * pulse), px - 4.0f, py - 4.0f,
               8.0f, 2.0f);
@@ -4193,7 +4292,7 @@ static void render_world(Game *game)
     const FallPlatform *fp = &lvl->runtime.fall_platforms[i];
     if (!fp->removed)
       draw_platform(r, fp->col * (float)TILE_SIZE - cam_x, fp->y + oy,
-                    fp->triggered ? COL_RED : COL_AMBER, true);
+                    fp->triggered ? FX_RED : FX_AMBER, true);
   }
   for (int i = 0; i < lvl->runtime.moving_platform_count; ++i)
   {
@@ -4276,16 +4375,16 @@ static void render_world(Game *game)
   /* Ambient staff remain subdued, but correctly stand in front of the back
    * wall and its fixtures. Floor props and gameplay actors render later. */
   for (int i = 0; i < game->gameplay.janitor_count; ++i)
-    draw_janitor(r, &game->gameplay.janitors[i], cam_x, oy);
+    draw_janitor(r, &game->gameplay.janitors[i], lvl, cam_x, oy);
   /* Civilians share that layer: they belong to the room the player is walking
    * into, so they pass behind its counters and planting rather than over it. */
   for (int i = 0; i < game->gameplay.civilian_count; ++i)
-    draw_civilian(r, &game->gameplay.civilians[i], cam_x, oy);
+    draw_civilian(r, &game->gameplay.civilians[i], lvl, cam_x, oy);
   /* The front desk belongs on that layer for the same reason, and for one
    * more: the post is behind the counter, so the counter has to be drawn over
    * it or the staff side and the visitor side look the same. */
   for (int i = 0; i < game->gameplay.receptionist_count; ++i)
-    draw_receptionist(r, &game->gameplay.receptionists[i], cam_x, oy);
+    draw_receptionist(r, &game->gameplay.receptionists[i], lvl, cam_x, oy);
 
   /* Redraw ladders as a middle layer so ambient janitors pass behind their
    * rails and rungs. Interactive actors are rendered later and remain in
@@ -4347,14 +4446,15 @@ static void render_world(Game *game)
     float y = drop->y + oy;
     if (x + AMMO_DROP_W < 0.0f || x > (float)win_w)
       continue;
-    color_rect(r, (SDL_Color){70, 84, 99, 255},
+    /* The dropped magazine is the same brass the HUD's pips count. */
+    color_rect(r, FX_STEEL,
                x, y + AMMO_DROP_H - 2.0f, (float)AMMO_DROP_W, 2.0f);
-    color_rect(r, (SDL_Color){222, 172, 84, 255},
+    color_rect(r, fx_dim(FX_AMBER, 0.90f),
                x + 1.0f, y + 1.0f, (float)AMMO_DROP_W - 2.0f,
                (float)AMMO_DROP_H - 3.0f);
-    color_rect(r, (SDL_Color){255, 236, 170, 255},
+    color_rect(r, fx_ramp(FX_AMBER).lit,
                x + 1.0f, y, (float)AMMO_DROP_W - 2.0f, 1.0f);
-    color_rect(r, (SDL_Color){164, 118, 52, 255},
+    color_rect(r, FX_AMBER_DK,
                x + AMMO_DROP_W - 3.0f, y + 1.0f, 2.0f,
                (float)AMMO_DROP_H - 3.0f);
   }
@@ -4380,11 +4480,11 @@ static void render_world(Game *game)
 
   for (int i = 0; i < game->gameplay.dog_count; ++i)
     if (!game->gameplay.dogs[i].dead)
-      draw_dog(r, &game->gameplay.dogs[i], cam_x, oy);
+      draw_dog(r, &game->gameplay.dogs[i], lvl, cam_x, oy);
 
   for (int i = 0; i < game->gameplay.enemy_count; ++i)
     if (!game->gameplay.enemies[i].dead)
-      draw_enemy(r, &game->gameplay.enemies[i], cam_x, oy);
+      draw_enemy(r, &game->gameplay.enemies[i], lvl, cam_x, oy);
 
   for (int i = 0; i < game->gameplay.grenade_count; ++i)
   {
@@ -4502,7 +4602,7 @@ static void render_world(Game *game)
     {
       color_rect(r, (SDL_Color){68, 17, 19, 255},
                  spark->x - cam_x - 7.0f, spark->y + oy - 3.0f, 14.0f, 5.0f);
-      color_rect(r, COL_RED, spark->x - cam_x - 4.0f, spark->y + oy - 4.0f, 8.0f, 2.0f);
+      color_rect(r, FX_RED, spark->x - cam_x - 4.0f, spark->y + oy - 4.0f, 8.0f, 2.0f);
     }
   }
   if (gameplay_alarm_active(&game->gameplay))
@@ -4511,28 +4611,16 @@ static void render_world(Game *game)
 
 static void draw_hud_separator(SDL_Renderer *r, float x)
 {
-  color_rect(r, (SDL_Color){6, 9, 15, 255}, x, 8.0f, 1.0f, 24.0f);
-  color_rect(r, (SDL_Color){56, 72, 92, 255}, x + 1.0f, 8.0f, 1.0f, 24.0f);
+  color_rect(r, FX_INK, x, 8.0f, 1.0f, 24.0f);
+  color_rect(r, fx_mix(FX_STEEL_DK, FX_STEEL_LT, 0.25f),
+             x + 1.0f, 8.0f, 1.0f, 24.0f);
 }
 
+/* The console counts the same heart the manual teaches and the outro hands
+   over — one glyph, one red, drawn in fx.h. */
 static void draw_hud_heart(SDL_Renderer *r, float x, float y, bool filled)
 {
-  static const char *rows[5] = {"01010", "11111", "11111", "01110", "00100"};
-  for (int row = 0; row < 5; ++row)
-  {
-    for (int col = 0; col < 5; ++col)
-    {
-      if (rows[row][col] != '1')
-        continue;
-      SDL_Color c;
-      if (filled)
-        c = row < 2 ? (SDL_Color){246, 92, 92, 255}
-                    : (SDL_Color){198, 44, 52, 255};
-      else
-        c = (SDL_Color){46, 34, 40, 255};
-      color_rect(r, c, x + col * 2.0f, y + row * 2.0f, 2.0f, 2.0f);
-    }
-  }
+  fx_heart(r, x, y, 1.5f, filled);
 }
 
 static const char *player_weapon_label(PlayerWeapon weapon)
@@ -4561,18 +4649,21 @@ static void render_facade_hud(Game *game, int win_w)
            (SDL_Color){11, 17, 28, 255}, 255);
   color_rect(r, (SDL_Color){181, 132, 56, 255},
              0.0f, 38.0f, (float)win_w, 2.0f);
-  draw_text(r, 12.0f, 8.0f, 1.35f, 236, 238, 224, "FACADE");
-  draw_text(r, 12.0f, 25.0f, 0.65f, 154, 164, 176, "MOVE ON WALL");
+  draw_text(r, 12.0f, 8.0f, 1.0f, FX_CREAM.r, FX_CREAM.g, FX_CREAM.b,
+            "FACADE");
+  draw_text(r, 12.0f, 25.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+            "MOVE ON WALL");
   draw_hud_separator(r, 112.0f);
 
-  draw_text(r, 124.0f, 8.0f, 0.7f, 108, 128, 148, "VITAL");
+  draw_text(r, 124.0f, 8.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+            "VITAL");
   int max_hp = gameplay_player_max_hp(&game->gameplay);
   for (int i = 0; i < max_hp; ++i)
     draw_hud_heart(r, 124.0f + i * 14.0f, 19.0f,
                    i < game->gameplay.player.hp);
   char life_buf[8];
   SDL_snprintf(life_buf, sizeof(life_buf), "x%d", game->campaign.lives);
-  draw_text(r, 124.0f + max_hp * 14.0f + 4.0f, 20.0f, 0.9f,
+  draw_text(r, 124.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
             246, 110, 96, life_buf);
   draw_hud_separator(r, 218.0f);
 
@@ -4581,9 +4672,10 @@ static void render_facade_hud(Game *game, int win_w)
   const GameplayState *state = &game->gameplay;
   bool gusting = state->facade_wind_phase == FACADE_WIND_GUSTING;
   bool warning = state->facade_wind_phase == FACADE_WIND_WARNING;
-  draw_text(r, 230.0f, 8.0f, 0.7f, 108, 128, 148, "WIND");
+  draw_text(r, 230.0f, 8.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+            "WIND");
   SDL_Color wind_color = gusting ? (state->facade_wind_sheltered
-                                        ? (SDL_Color){96, 230, 140, 255}
+                                        ? FX_GREEN
                                         : (SDL_Color){236, 132, 84, 255})
                                  : warning ? (SDL_Color){225, 198, 112, 255}
                                            : (SDL_Color){58, 74, 92, 255};
@@ -4600,7 +4692,7 @@ static void render_facade_hud(Game *game, int win_w)
                state->facade_wind_dir >= 0 ? ax : ax + 6.0f - grow * 0.4f,
                22.0f - grow * 0.5f, grow, 1.0f + grow * 0.5f);
   }
-  draw_text(r, 272.0f, 19.0f, 0.75f, wind_color.r, wind_color.g,
+  draw_text(r, 272.0f, 19.0f, 1.0f, wind_color.r, wind_color.g,
             wind_color.b, wind_text);
   draw_hud_separator(r, 330.0f);
 
@@ -4613,12 +4705,13 @@ static void render_facade_hud(Game *game, int win_w)
     progress = 0.0f;
   if (progress > 1.0f)
     progress = 1.0f;
-  draw_text(r, 342.0f, 8.0f, 0.7f, 108, 128, 148, "ALTITUDE");
+  draw_text(r, 342.0f, 8.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+            "ALTITUDE");
   color_rect(r, (SDL_Color){10, 15, 24, 255},
              342.0f, 20.0f, 264.0f, 11.0f);
   color_rect(r, (SDL_Color){54, 128, 128, 255},
              344.0f, 22.0f, 260.0f * progress, 7.0f);
-  color_rect(r, (SDL_Color){123, 226, 204, 255},
+  color_rect(r, FX_CYAN,
              344.0f, 22.0f, 260.0f * progress, 2.0f);
 
   int tiles_remaining = (int)ceilf(fabsf(game->gameplay.player.y - target_y) /
@@ -4634,7 +4727,8 @@ static void render_facade_hud(Game *game, int win_w)
                game->gameplay.player.bullets,
                game->gameplay.player.grenades,
                game->gameplay.player.bazooka_rockets);
-  draw_text(r, 618.0f, 24.0f, 0.7f, 132, 152, 170, loadout);
+  draw_text(r, 618.0f, 24.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+            loadout);
 }
 
 static void render_hud(Game *game)
@@ -4648,27 +4742,30 @@ static void render_hud(Game *game)
     render_facade_hud(game, win_w);
     return;
   }
-  const Uint8 label_r = 108, label_g = 128, label_b = 148;
+  const Uint8 label_r = FX_LABEL.r, label_g = FX_LABEL.g,
+              label_b = FX_LABEL.b;
 
   /* Brushed console body, lit from above, closed by a cyan status line. */
   fx_vgrad(r, 0.0f, 0.0f, (float)win_w, 37.0f,
            (SDL_Color){30, 40, 56, 255}, 255,
            (SDL_Color){13, 19, 30, 255}, 255);
   color_rect(r, (SDL_Color){60, 76, 98, 255}, 0.0f, 0.0f, (float)win_w, 1.0f);
-  color_rect(r, (SDL_Color){5, 7, 12, 255}, 0.0f, 37.0f, (float)win_w, 1.0f);
+  color_rect(r, FX_INK, 0.0f, 37.0f, (float)win_w, 1.0f);
   color_rect(r, (SDL_Color){38, 112, 110, 255}, 0.0f, 38.0f, (float)win_w, 1.0f);
-  color_rect(r, (SDL_Color){5, 7, 12, 255}, 0.0f, 39.0f, (float)win_w, 1.0f);
+  color_rect(r, FX_INK, 0.0f, 39.0f, (float)win_w, 1.0f);
 
   /* Identity block. */
-  color_rect(r, COL_RED, 0.0f, 0.0f, 3.0f, 37.0f);
-  draw_text(r, 12.0f, 9.0f, 1.5f, 236, 238, 224, "CHUCK");
+  color_rect(r, FX_RED, 0.0f, 0.0f, 3.0f, 37.0f);
+  draw_text(r, 12.0f, 9.0f, 2.0f, FX_CREAM.r, FX_CREAM.g, FX_CREAM.b,
+            "CHUCK");
   color_rect(r, (SDL_Color){170, 52, 46, 255}, 12.0f, 23.0f, 58.0f, 2.0f);
-  draw_text(r, 12.0f, 27.0f, 0.7f, 120, 138, 152, "RESCUE OPS");
+  draw_text(r, 12.0f, 27.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+            "RESCUE OPS");
   draw_hud_separator(r, 88.0f);
 
   /* Hearts are the hits left in this life; the counter beside them is the
    * lives left in the run. Empty sockets keep the maximum readable. */
-  draw_text(r, 99.0f, 8.0f, 0.7f, label_r, label_g, label_b, "VITAL");
+  draw_text(r, 99.0f, 8.0f, 1.0f, label_r, label_g, label_b, "VITAL");
   int max_hp = gameplay_player_max_hp(&game->gameplay);
   for (int i = 0; i < max_hp; ++i)
     draw_hud_heart(r, 99.0f + i * 14.0f, 19.0f,
@@ -4677,34 +4774,22 @@ static void render_hud(Game *game)
   SDL_snprintf(life_buf, sizeof(life_buf), "x%d", game->campaign.lives);
   if (game->presentation.extra_life_timer > 0.0f &&
       fmodf(game->presentation.extra_life_timer, 0.3f) > 0.15f)
-    draw_text(r, 99.0f + max_hp * 14.0f + 4.0f, 20.0f, 0.9f,
+    draw_text(r, 99.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
               120, 255, 190, "1UP");
   else
-    draw_text(r, 99.0f + max_hp * 14.0f + 4.0f, 20.0f, 0.9f,
+    draw_text(r, 99.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
               246, 110, 96, life_buf);
   draw_hud_separator(r, 190.0f);
 
   /* All carried ammunition remains visible; the label names the weapon that
    * the next attack will actually use. */
   char weapon_buf[20];
-  SDL_snprintf(weapon_buf, sizeof(weapon_buf), "WPN %s",
+  SDL_snprintf(weapon_buf, sizeof(weapon_buf), "%s",
                player_weapon_label(game->gameplay.player.active_weapon));
-  draw_text(r, 201.0f, 8.0f, 0.7f, label_r, label_g, label_b, weapon_buf);
+  draw_text(r, 201.0f, 8.0f, 1.0f, label_r, label_g, label_b, weapon_buf);
   for (int i = 0; i < MAX_AMMO; ++i)
-  {
-    float ammo_x = 202.0f + i * 7.0f;
-    if (i < game->gameplay.player.bullets)
-    {
-      color_rect(r, (SDL_Color){255, 236, 170, 255}, ammo_x, 19.0f, 3.0f, 3.0f);
-      color_rect(r, (SDL_Color){222, 172, 84, 255}, ammo_x, 22.0f, 3.0f, 8.0f);
-      color_rect(r, (SDL_Color){164, 118, 52, 255}, ammo_x + 2.0f, 22.0f, 1.0f, 8.0f);
-    }
-    else
-    {
-      color_rect(r, (SDL_Color){40, 48, 58, 255}, ammo_x, 19.0f, 3.0f, 11.0f);
-    }
-    color_rect(r, (SDL_Color){70, 84, 99, 255}, ammo_x - 1.0f, 30.0f, 5.0f, 2.0f);
-  }
+    fx_ammo_pip(r, 202.0f + i * 7.0f, 19.0f,
+                i < game->gameplay.player.bullets);
   if (game->gameplay.player.grenades > 0)
     draw_grenade(r, 247.0f, 19.0f, 0.0f);
   if (game->gameplay.player.bazooka_rockets > 0)
@@ -4712,7 +4797,7 @@ static void render_hud(Game *game)
   draw_hud_separator(r, 276.0f);
 
   /* Access status chip with a live LED. */
-  draw_text(r, 287.0f, 8.0f, 0.7f, label_r, label_g, label_b, "ACCESS");
+  draw_text(r, 287.0f, 8.0f, 1.0f, label_r, label_g, label_b, "ACCESS");
   bool blocked = game->gameplay.level.map.has_window;
   bool unlocked = game->gameplay.level.runtime.exit_unlocked;
   float blink = 0.5f + 0.5f * sinf((float)SDL_GetTicksNS() * 1.0e-9f * 4.0f);
@@ -4721,14 +4806,16 @@ static void render_hud(Game *game)
     color_rect(r, (SDL_Color){36, 38, 42, 255}, 287.0f, 19.0f, 70.0f, 13.0f);
     color_rect(r, (SDL_Color){96, 102, 108, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
     color_rect(r, (SDL_Color){166, 142, 91, 255}, 291.0f, 24.0f, 3.0f, 3.0f);
-    draw_text(r, 298.0f, 22.0f, 0.9f, 190, 190, 184, "BLOCKED");
+    draw_text(r, 298.0f, 22.0f, 1.0f, FX_PALE.r, FX_PALE.g, FX_PALE.b,
+              "BLOCKED");
   }
   else if (unlocked)
   {
     color_rect(r, (SDL_Color){16, 52, 40, 255}, 287.0f, 19.0f, 70.0f, 13.0f);
     color_rect(r, (SDL_Color){40, 132, 96, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
-    color_rect(r, (SDL_Color){96, 230, 140, 255}, 291.0f, 24.0f, 3.0f, 3.0f);
-    draw_text(r, 298.0f, 22.0f, 0.9f, 168, 255, 206, "GRANTED");
+    color_rect(r, FX_GREEN, 291.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 298.0f, 22.0f, 1.0f, FX_GREEN.r, FX_GREEN.g, FX_GREEN.b,
+              "GRANTED");
   }
   else
   {
@@ -4736,26 +4823,27 @@ static void render_hud(Game *game)
     color_rect(r, (SDL_Color){124, 52, 46, 255}, 287.0f, 19.0f, 70.0f, 1.0f);
     color_rect(r, fx_dim((SDL_Color){246, 90, 70, 255}, 0.45f + blink * 0.55f),
                291.0f, 24.0f, 3.0f, 3.0f);
-    draw_text(r, 298.0f, 22.0f, 0.9f, 250, 158, 128, "LOCKED");
+    draw_text(r, 298.0f, 22.0f, 1.0f, FX_RED.r, FX_RED.g, FX_RED.b,
+              "LOCKED");
   }
   draw_hud_separator(r, 371.0f);
 
   char level_buf[32];
   SDL_snprintf(level_buf, sizeof(level_buf), "%02d", game->campaign.current_level + 1);
-  draw_text(r, 382.0f, 8.0f, 0.7f, label_r, label_g, label_b, "SECTOR");
-  draw_text(r, 382.0f, 19.0f, 1.5f, 226, 232, 220, level_buf);
+  draw_text(r, 382.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SECTOR");
+  draw_text(r, 382.0f, 19.0f, 2.0f, 226, 232, 220, level_buf);
   draw_hud_separator(r, 440.0f);
 
   /* Score keeps its leading zeros, but only the live digits glow. */
   char score_buf[16];
   SDL_snprintf(score_buf, sizeof(score_buf), "%07d", game->campaign.score);
-  draw_text(r, 451.0f, 8.0f, 0.7f, label_r, label_g, label_b, "SCORE");
+  draw_text(r, 451.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SCORE");
   int first_digit = 0;
   while (first_digit < 6 && score_buf[first_digit] == '0')
     ++first_digit;
-  draw_text(r, 451.0f, 19.0f, 1.5f, 74, 88, 102, score_buf);
-  draw_text(r, 451.0f + first_digit * 12.0f, 19.0f, 1.5f, 248, 196, 92,
-            score_buf + first_digit);
+  draw_text(r, 451.0f, 19.0f, 2.0f, 74, 88, 102, score_buf);
+  draw_text(r, 451.0f + first_digit * 16.0f, 19.0f, 2.0f,
+            FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, score_buf + first_digit);
 
   /* The passive trail meter becomes an unmistakable security readout while
    * the building alarm is active. */
@@ -4763,30 +4851,30 @@ static void render_hud(Game *game)
   if (gameplay_alarm_active(&game->gameplay))
   {
     float pulse = 0.5f + 0.5f * sinf(t * 7.0f);
-    SDL_Color alert = fx_dim((SDL_Color){255, 76, 54, 255},
+    SDL_Color alert = fx_dim(fx_ramp(FX_RED).lit,
                              0.55f + pulse * 0.45f);
     char alarm_buf[24];
     SDL_snprintf(alarm_buf, sizeof(alarm_buf), "ALERT %02d",
                  (int)ceilf(game->gameplay.terminal_alarm_timer));
-    draw_text(r, 650.0f, 8.0f, 0.7f,
+    draw_text(r, 650.0f, 8.0f, 1.0f,
               alert.r, alert.g, alert.b, "SECURITY");
     color_rect(r, (SDL_Color){58, 16, 18, 255},
                648.0f, 17.0f, 134.0f, 16.0f);
     color_rect(r, alert, 648.0f, 17.0f, 134.0f, 2.0f);
     color_rect(r, alert, 653.0f, 22.0f, 5.0f, 5.0f);
-    draw_text(r, 665.0f, 20.0f, 1.1f,
+    draw_text(r, 665.0f, 20.0f, 1.0f,
               alert.r, alert.g, alert.b, alarm_buf);
   }
   else
   {
-    draw_text(r, 650.0f, 8.0f, 0.7f, label_r, label_g, label_b, "TRAIL");
+    draw_text(r, 650.0f, 8.0f, 1.0f, label_r, label_g, label_b, "TRAIL");
     color_rect(r, (SDL_Color){10, 15, 24, 255}, 648.0f, 17.0f, 134.0f, 16.0f);
     color_rect(r, (SDL_Color){30, 42, 58, 255}, 648.0f, 17.0f, 134.0f, 1.0f);
     for (int i = 0; i < 12; ++i)
     {
       float wave = 0.5f + 0.5f * sinf(t * 2.6f + (float)i * 0.9f);
       float height = 3.0f + wave * 9.0f;
-      SDL_Color bar = i < 9 ? fx_mix((SDL_Color){24, 96, 96, 255}, COL_CYAN, wave)
+      SDL_Color bar = i < 9 ? fx_mix((SDL_Color){24, 96, 96, 255}, FX_CYAN, wave)
                             : (SDL_Color){52, 68, 82, 255};
       color_rect(r, bar, 653.0f + i * 10.0f, 30.0f - height, 6.0f, height);
     }
@@ -4849,7 +4937,7 @@ static void render_interaction_prompt(Game *game, int win_w, int win_h)
                                                  "PRESS E TO ENTER DOOR");
   }
 
-  const float text_scale = 1.25f;
+  const float text_scale = 1.0f;
   const float panel_padding = 12.0f;
   float panel_w = draw_text_width(label, text_scale) + panel_padding * 2.0f;
   float panel_h = terminal_available ? 45.0f : 31.0f;
@@ -4879,7 +4967,7 @@ static void render_interaction_prompt(Game *game, int win_w, int win_h)
   fill_rect(r, x + panel_w - 2.0f, y + panel_h - tick, 2.0f, tick);
 
   draw_text(r, x + panel_padding, y + 9.0f, text_scale,
-            174, 255, 213, label);
+            FX_GREEN.r, FX_GREEN.g, FX_GREEN.b, label);
 
   if (terminal_available)
   {
@@ -4923,15 +5011,17 @@ static void draw_overlay_panel(Game *game, float y, SDL_Color accent,
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
   fx_glow(r, (float)win_w * 0.5f, y + 8.0f, 190.0f, accent, 34);
-  draw_text_centered(game, y + 3.0f, 4.0f, 6, 9, 14, title);
+  draw_text_centered(game, y + 3.0f, 4.0f, FX_INK.r, FX_INK.g, FX_INK.b,
+                     title);
   draw_text_centered(game, y, 4.0f, accent.r, accent.g, accent.b, title);
   if (subtitle)
-    draw_text_centered(game, y + 37.0f, 1.5f, 210, 220, 215, subtitle);
+    draw_text_centered(game, y + 37.0f, 2.0f, COL_SUBTITLE.r, COL_SUBTITLE.g,
+                       COL_SUBTITLE.b, subtitle);
 }
 
 static void draw_continue_overlay(Game *game)
 {
-  draw_overlay_panel(game, 190.0f, (SDL_Color){248, 188, 74, 255},
+  draw_overlay_panel(game, 190.0f, FX_AMBER,
                      "CONTINUE?",
                      game->platform.gamepad_active ? "PRESS A OR START" :
                                                      "PRESS ENTER OR SPACE");
@@ -4946,13 +5036,15 @@ static void draw_continue_overlay(Game *game)
                  game->campaign.continues_remaining);
   else
     SDL_snprintf(remaining, sizeof(remaining), "SCORE RESETS ON CONTINUE");
-  draw_text_centered(game, 310.0f, 6.0f, 248, 188, 74, countdown);
-  draw_text_centered(game, 365.0f, 1.5f, 210, 220, 215, remaining);
+  draw_text_centered(game, 310.0f, 6.0f, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b,
+                     countdown);
+  draw_text_centered(game, 365.0f, 2.0f, COL_SUBTITLE.r, COL_SUBTITLE.g,
+                     COL_SUBTITLE.b, remaining);
 }
 
 static void draw_pause_overlay(Game *game)
 {
-  draw_overlay_panel(game, 225.0f, (SDL_Color){123, 226, 204, 255},
+  draw_overlay_panel(game, 225.0f, FX_CYAN,
                      "PAUSED",
                      game->platform.gamepad_active
                          ? "START: RESUME   BACK: MAIN MENU"
@@ -4982,14 +5074,15 @@ static void draw_assist_overlay(Game *game)
            (SDL_Color){13, 19, 30, 255}, 255);
   color_rect(r, (SDL_Color){60, 76, 98, 255},
              panel_x, panel_y, panel_w, 1.0f);
-  color_rect(r, (SDL_Color){5, 7, 12, 255},
+  color_rect(r, FX_INK,
              panel_x, panel_y + panel_h - 1.0f, panel_w, 1.0f);
-  color_rect(r, (SDL_Color){123, 226, 204, 255},
+  color_rect(r, FX_CYAN,
              panel_x, panel_y, 3.0f, panel_h);
 
-  draw_text(r, panel_x + 22.0f, panel_y + 18.0f, 1.5f,
-            236, 238, 224, "ASSIST MODE");
-  draw_text(r, panel_x + 22.0f, panel_y + 40.0f, 0.8f, 132, 152, 170,
+  draw_text(r, panel_x + 22.0f, panel_y + 18.0f, 2.0f,
+            FX_CREAM.r, FX_CREAM.g, FX_CREAM.b, "ASSIST MODE");
+  draw_text(r, panel_x + 22.0f, panel_y + 42.0f, 1.0f,
+            FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
             "THE GAME IS TUNED WITHOUT THESE. TAKE WHAT HELPS.");
 
   static const char *labels[3] = {
@@ -5008,21 +5101,21 @@ static void draw_assist_overlay(Game *game)
     if (selected)
     {
       SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-      set_rgba(r, 123, 226, 204, 26);
+      set_rgba(r, FX_CYAN.r, FX_CYAN.g, FX_CYAN.b, 26);
       fill_rect(r, panel_x + 12.0f, row_y - 7.0f, panel_w - 24.0f, 42.0f);
       SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
       draw_text(r, panel_x + 16.0f, row_y + 2.0f, 1.0f,
-                123, 226, 204, ">");
+                FX_CYAN.r, FX_CYAN.g, FX_CYAN.b, ">");
     }
     char key_buf[4];
     SDL_snprintf(key_buf, sizeof(key_buf), "%d", i + 1);
     draw_text(r, panel_x + 34.0f, row_y + 2.0f, 1.0f,
-              108, 128, 148, key_buf);
-    draw_text(r, panel_x + 56.0f, row_y, 1.2f,
+              FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, key_buf);
+    draw_text(r, panel_x + 56.0f, row_y, 1.0f,
               selected ? 236 : 200, selected ? 238 : 208,
               selected ? 224 : 196, labels[i]);
-    draw_text(r, panel_x + 56.0f, row_y + 17.0f, 0.7f,
-              120, 138, 152, details[i]);
+    draw_text(r, panel_x + 56.0f, row_y + 17.0f, 1.0f,
+              FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, details[i]);
 
     /* The switch itself: a lit chip when on, a dark socket when off. */
     float chip_x = panel_x + panel_w - 84.0f;
@@ -5030,9 +5123,10 @@ static void draw_assist_overlay(Game *game)
     {
       color_rect(r, (SDL_Color){16, 52, 40, 255}, chip_x, row_y, 56.0f, 15.0f);
       color_rect(r, (SDL_Color){40, 132, 96, 255}, chip_x, row_y, 56.0f, 1.0f);
-      color_rect(r, (SDL_Color){96, 230, 140, 255},
+      color_rect(r, FX_GREEN,
                  chip_x + 5.0f, row_y + 6.0f, 3.0f, 3.0f);
-      draw_text(r, chip_x + 15.0f, row_y + 4.0f, 0.9f, 168, 255, 206, "ON");
+      draw_text(r, chip_x + 15.0f, row_y + 4.0f, 1.0f,
+                FX_GREEN.r, FX_GREEN.g, FX_GREEN.b, "ON");
     }
     else
     {
@@ -5040,12 +5134,13 @@ static void draw_assist_overlay(Game *game)
       color_rect(r, (SDL_Color){96, 102, 108, 255}, chip_x, row_y, 56.0f, 1.0f);
       color_rect(r, (SDL_Color){80, 86, 94, 255},
                  chip_x + 5.0f, row_y + 6.0f, 3.0f, 3.0f);
-      draw_text(r, chip_x + 15.0f, row_y + 4.0f, 0.9f, 170, 176, 182, "OFF");
+      draw_text(r, chip_x + 15.0f, row_y + 4.0f, 1.0f,
+                FX_PALE.r, FX_PALE.g, FX_PALE.b, "OFF");
     }
   }
 
-  draw_text(r, panel_x + 22.0f, panel_y + panel_h - 26.0f, 0.8f,
-            132, 152, 170,
+  draw_text(r, panel_x + 22.0f, panel_y + panel_h - 26.0f, 1.0f,
+            FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
             game->platform.gamepad_active
                 ? "D-PAD: SELECT   A: TOGGLE   START: DONE"
                 : "ARROWS: SELECT   ENTER: TOGGLE   ESC: DONE");
@@ -5070,12 +5165,12 @@ static void draw_debug_level_select(Game *game)
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
   set_rgba(r, 5, 9, 15, 230);
   fill_rect(r, panel_x, panel_y, panel_w, 24.0f);
-  set_rgba(r, COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, 210);
+  set_rgba(r, FX_CYAN.r, FX_CYAN.g, FX_CYAN.b, 210);
   fill_rect(r, panel_x, panel_y, 3.0f, 24.0f);
   fill_rect(r, panel_x + panel_w - 3.0f, panel_y, 3.0f, 24.0f);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
   draw_text(r, panel_x + 12.0f, panel_y + 8.0f, 1.0f,
-            COL_CYAN.r, COL_CYAN.g, COL_CYAN.b, label);
+            FX_CYAN.r, FX_CYAN.g, FX_CYAN.b, label);
 }
 #endif
 
@@ -5088,6 +5183,17 @@ void game_render(Game *game)
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
 
+  /*
+   * Every frame leaves through the bottom of this function, where the one
+   * finishing pass lives. The screens the player is playing (the sector, the
+   * chase) keep the light vignette so the playfield's edges stay readable;
+   * the screens the player is watching (title, manual, cutscenes) close in
+   * harder, the way a film frame does. No renderer applies its own finish:
+   * when they did, the pause overlay over the chase floated on top of a
+   * finished frame, and the assist sheet over the title was vignetted twice.
+   */
+  Uint8 vignette = FX_VIGNETTE_PLAY;
+
   if (game->state == STATE_CHASE ||
       (game->state == STATE_PAUSED &&
        game->pause_return_state == STATE_CHASE))
@@ -5098,109 +5204,97 @@ void game_render(Game *game)
                  game->platform.gamepad_active);
     if (game->state == STATE_PAUSED)
       draw_pause_overlay(game);
-    SDL_RenderPresent(r);
-    return;
   }
-
-  if (game->state == STATE_ASSIST)
+  else if (game->state == STATE_ASSIST)
   {
     /* Over the title the sheet floats on the night; over the pause screen it
      * floats on the held frame. Either way it owns the input. */
     if (game->assist_return_state == STATE_INTRO)
+    {
       intro_render(r, &game->presentation.intro, win_w, win_h,
                    game->platform.gamepad_active);
+      vignette = FX_VIGNETTE_SCENE;
+    }
     else
     {
       render_world(game);
       render_hud(game);
     }
     draw_assist_overlay(game);
-    fx_vignette(r, win_w, win_h, 58);
-    fx_scanlines(r, win_w, win_h, 11);
-    SDL_RenderPresent(r);
-    return;
   }
-
-  if (game->state == STATE_OPENING_CUTSCENE)
+  else if (game->state == STATE_OPENING_CUTSCENE)
   {
     opening_cutscene_render(r, &game->presentation.opening_cutscene,
                             win_w, win_h, game->platform.gamepad_active);
-    SDL_RenderPresent(r);
-    return;
+    vignette = FX_VIGNETTE_SCENE;
   }
-
-  if (game->state == STATE_INTRO)
+  else if (game->state == STATE_INTRO)
   {
     intro_render(r, &game->presentation.intro, win_w, win_h,
                  game->platform.gamepad_active);
 #ifdef CHUCK_DEBUG
     draw_debug_level_select(game);
 #endif
-    SDL_RenderPresent(r);
-    return;
+    vignette = FX_VIGNETTE_SCENE;
   }
-
-  if (game->state == STATE_MANUAL)
+  else if (game->state == STATE_MANUAL)
   {
     manual_render(r, &game->presentation.manual, win_w, win_h);
-    SDL_RenderPresent(r);
-    return;
+    vignette = FX_VIGNETTE_SCENE;
   }
-
-  if (game->state == STATE_LEVEL_TRANSITION)
+  else if (game->state == STATE_LEVEL_TRANSITION)
   {
     level_transition_render(r, &game->presentation.level_transition,
                             win_w, win_h, game->platform.gamepad_active);
-    SDL_RenderPresent(r);
-    return;
+    vignette = FX_VIGNETTE_SCENE;
   }
-
-  if (game->state == STATE_OUTRO)
+  else if (game->state == STATE_OUTRO)
   {
     outro_cutscene_render(r, &game->presentation.outro_cutscene,
                           win_w, win_h, game->platform.gamepad_active);
-    SDL_RenderPresent(r);
-    return;
+    vignette = FX_VIGNETTE_SCENE;
   }
-
-  render_world(game);
-  render_hud(game);
-  render_interaction_prompt(game, win_w, win_h);
-
-  if (game->presentation.exit_unlocked_timer > 0.0f)
+  else
   {
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    set_rgba(r, 7, 20, 20, 215);
-    fill_rect(r, 226.0f, 47.0f, 348.0f, 31.0f);
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-    draw_text_centered(game, 63.0f, 2.2f, 94, 255, 201, "PURSUIT ROUTE OPEN");
-    float exit_screen = game->gameplay.level.map.exit_col * (float)TILE_SIZE - game->presentation.cam_x;
-    float exit_screen_y = game->gameplay.level.map.exit_row * (float)TILE_SIZE +
-                          HUD_HEIGHT - game->presentation.cam_y;
-    if (exit_screen + TILE_SIZE < 0.0f)
-      draw_text(r, 199.0f, 52.0f, 2.2f, 226, 216, 94, "<");
-    else if (exit_screen > (float)win_w)
-      draw_text(r, 584.0f, 52.0f, 2.2f, 226, 216, 94, ">");
-    else if (exit_screen_y + TILE_SIZE < HUD_HEIGHT)
-      draw_text(r, 393.0f, 48.0f, 2.2f, 226, 216, 94, "^");
-    else if (exit_screen_y > (float)win_h)
-      draw_text(r, 393.0f, 61.0f, 2.2f, 226, 216, 94, "v");
+    render_world(game);
+    render_hud(game);
+    render_interaction_prompt(game, win_w, win_h);
+
+    if (game->presentation.exit_unlocked_timer > 0.0f)
+    {
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+      set_rgba(r, 7, 20, 20, 215);
+      fill_rect(r, 226.0f, 47.0f, 348.0f, 31.0f);
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+      draw_text_centered(game, 63.0f, 2.0f, FX_GREEN.r, FX_GREEN.g, FX_GREEN.b,
+                         "PURSUIT ROUTE OPEN");
+      float exit_screen = game->gameplay.level.map.exit_col * (float)TILE_SIZE - game->presentation.cam_x;
+      float exit_screen_y = game->gameplay.level.map.exit_row * (float)TILE_SIZE +
+                            HUD_HEIGHT - game->presentation.cam_y;
+      if (exit_screen + TILE_SIZE < 0.0f)
+        draw_text(r, 199.0f, 52.0f, 2.0f, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, "<");
+      else if (exit_screen > (float)win_w)
+        draw_text(r, 584.0f, 52.0f, 2.0f, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, ">");
+      else if (exit_screen_y + TILE_SIZE < HUD_HEIGHT)
+        draw_text(r, 393.0f, 48.0f, 2.0f, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, "^");
+      else if (exit_screen_y > (float)win_h)
+        draw_text(r, 393.0f, 61.0f, 2.0f, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, "v");
+    }
+
+    if (game->state == STATE_LEVEL_CLEARED)
+      draw_overlay_panel(game, 240.0f, FX_GREEN,
+                         "THE TRAIL LEADS UP", NULL);
+    else if (game->state == STATE_CONTINUE)
+      draw_continue_overlay(game);
+    else if (game->state == STATE_GAME_OVER)
+      draw_overlay_panel(game, 225.0f, FX_RED,
+                         "GAME OVER", "RETURNING TO MAIN MENU");
+    else if (game->state == STATE_PAUSED)
+      draw_pause_overlay(game);
   }
 
-  if (game->state == STATE_LEVEL_CLEARED)
-    draw_overlay_panel(game, 240.0f, (SDL_Color){86, 233, 151, 255},
-                       "THE TRAIL LEADS UP", NULL);
-  else if (game->state == STATE_CONTINUE)
-    draw_continue_overlay(game);
-  else if (game->state == STATE_GAME_OVER)
-    draw_overlay_panel(game, 225.0f, (SDL_Color){235, 72, 65, 255},
-                       "GAME OVER", "RETURNING TO MAIN MENU");
-  else if (game->state == STATE_PAUSED)
-    draw_pause_overlay(game);
-  /* One shared finishing pass keeps every frame looking like the same film:
-   * gentle scanlines for texture and a vignette that focuses the action. */
-  fx_vignette(r, win_w, win_h, 58);
-  fx_scanlines(r, win_w, win_h, 11);
+  fx_vignette(r, win_w, win_h, vignette);
+  fx_scanlines(r, win_w, win_h, FX_SCANLINE_ALPHA);
 
   SDL_RenderPresent(r);
 }

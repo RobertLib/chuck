@@ -30,13 +30,12 @@
 
 /* ---- Palette ---------------------------------------------------------- */
 
+/* The paper stock this screen owns: a steel-blue sheet a step lighter than
+ * the room behind it, so the manual reads as a thing under a lamp rather
+ * than a mode. Everything else on the desk comes from fx.h. */
 static const SDL_Color COL_SHEET = {22, 29, 42, 255};
 static const SDL_Color COL_SHEET_LIT = {56, 70, 90, 255};
-static const SDL_Color COL_RUST = {198, 62, 50, 255};
-static const SDL_Color COL_HEAD = {248, 188, 74, 255};  /* section heads   */
 static const SDL_Color COL_TEXT = {176, 190, 200, 255}; /* body            */
-static const SDL_Color COL_LABEL = {108, 128, 148, 255};
-static const SDL_Color COL_WARM = {240, 190, 112, 255}; /* interior light  */
 static const SDL_Color COL_COLD = {104, 188, 196, 255}; /* strip lighting  */
 
 /* ---- Layout ----------------------------------------------------------- */
@@ -204,7 +203,7 @@ static void draw_keycap(SDL_Renderer *r, float x, float y, float w, float h,
     color_rect(r, FX_INK, x, y, w, h);
     color_rect(r, (SDL_Color){32, 42, 56, 255}, x + 1.0f, y + 1.0f, w - 2.0f, h - 2.0f);
     color_rect(r, (SDL_Color){68, 84, 102, 255}, x + 1.0f, y + 1.0f, w - 2.0f, 1.0f);
-    color_rect(r, (SDL_Color){10, 14, 22, 255}, x + 1.0f, y + h - 2.0f, w - 2.0f, 1.0f);
+    color_rect(r, FX_NIGHT, x + 1.0f, y + h - 2.0f, w - 2.0f, 1.0f);
     if (label != NULL && label[0] != '\0')
         draw_text(r, x + (w - text_width(label)) * 0.5f,
                   y + (h - CH) * 0.5f + 1.0f, 1.0f, face, label);
@@ -258,7 +257,7 @@ typedef struct
 
 static FigureLook look_chuck(void)
 {
-    return (FigureLook){FX_HERO, {26, 32, 46, 255}, COL_RUST, false};
+    return (FigureLook){FX_HERO, {26, 32, 46, 255}, FX_RUST, false};
 }
 
 static FigureLook look_guard(void)
@@ -271,8 +270,18 @@ static void ink_block(SDL_Renderer *r, float x, float y, float w, float h)
     color_rect(r, FX_INK, x - 1.0f, y - 1.0f, w + 2.0f, h + 2.0f);
 }
 
+/* The outline under a tapered mass follows the same taper one pixel further
+ * out. A rounded fill inside a square outline is still a box with something
+ * drawn in it — the silhouette itself has to lose its corners. */
+static void ink_mass(SDL_Renderer *r, float x, float y, float w, float h,
+                     int top, int bottom)
+{
+    fx_mass(r, FX_INK, x - 1.0f, y - 1.0f, w + 2.0f, h + 2.0f,
+            top + 1, bottom + 1);
+}
+
 static void draw_figure(SDL_Renderer *r, float x, float feet_y, int dir,
-                        FigurePose pose, FigureLook look)
+                        FigurePose pose, FigureLook look, float time)
 {
     FxRamp coat = fx_ramp(look.garment);
     FxRamp trouser = fx_ramp(look.legs);
@@ -319,7 +328,7 @@ static void draw_figure(SDL_Renderer *r, float x, float feet_y, int dir,
         fx_form_block(r, x + FIG_W - 1.0f, torso_y - 1.0f, 3.0f, 8.0f, coat, dir);
     }
 
-    ink_block(r, x, torso_y, FIG_W, 10.0f);
+    ink_mass(r, x, torso_y, FIG_W, 10.0f, 2, 0);
     fx_form_mass(r, x, torso_y, FIG_W, 10.0f, coat, dir, 2, 0);
 
     if (pose == POSE_AIM)
@@ -345,15 +354,24 @@ static void draw_figure(SDL_Renderer *r, float x, float feet_y, int dir,
 
     /* The head last, and whatever is worn on it after the face, so the fill
      * covers the face's own top outline row instead of being cut by it. */
-    ink_block(r, x + 2.0f, head_y, 8.0f, 7.0f);
+    ink_mass(r, x + 2.0f, head_y, 8.0f, 7.0f, 2, 2);
     fx_form_mass(r, x + 2.0f, head_y, 8.0f, 7.0f, skin, dir, 2, 2);
 
     if (!rear)
     {
         float eye_x = dir > 0 ? x + 6.0f : x + 4.0f;
         float eye_y = head_y + (pose == POSE_LOOK_UP ? 2.0f : 3.0f);
-        color_rect(r, FX_CREAM, eye_x, eye_y, 2.0f, 1.0f);
-        color_rect(r, FX_INK, dir > 0 ? eye_x + 1.0f : eye_x, eye_y, 1.0f, 1.0f);
+        /* The diagrams are drawings of the people in the game, and the
+           people in the game blink; salted by post so the sheet's figures
+           never blink in unison. */
+        if (fx_blinking(time, (unsigned)(x * 7.0f + feet_y)))
+            color_rect(r, skin.dark, eye_x, eye_y, 2.0f, 1.0f);
+        else
+        {
+            color_rect(r, FX_CREAM, eye_x, eye_y, 2.0f, 1.0f);
+            color_rect(r, FX_INK, dir > 0 ? eye_x + 1.0f : eye_x, eye_y,
+                       1.0f, 1.0f);
+        }
         /* The nose has to break the outline or the head is not a profile. */
         color_rect(r, skin.base, dir > 0 ? x + 10.0f : x + 1.0f,
                    eye_y + 1.0f, 1.0f, 1.0f);
@@ -375,12 +393,12 @@ static void draw_figure(SDL_Renderer *r, float x, float feet_y, int dir,
  * being one. */
 static void draw_slab(SDL_Renderer *r, float x, float y, float w, float h)
 {
-    fx_vgrad(r, x, y, w, h, (SDL_Color){50, 60, 74, 255}, 255,
+    fx_vgrad(r, x, y, w, h, FX_STEEL_DK, 255,
              (SDL_Color){24, 31, 43, 255}, 255);
     color_rect(r, (SDL_Color){126, 142, 156, 255}, x, y, w, 1.0f);
     color_rect(r, (SDL_Color){14, 19, 28, 255}, x, y + h - 1.0f, w, 1.0f);
     for (float rivet = x + 8.0f; rivet < x + w - 4.0f; rivet += 22.0f)
-        color_rect(r, (SDL_Color){70, 84, 99, 255}, rivet, y + 5.0f, 2.0f, 2.0f);
+        color_rect(r, FX_STEEL, rivet, y + 5.0f, 2.0f, 2.0f);
 }
 
 static void draw_ladder(SDL_Renderer *r, float x, float y, float h)
@@ -504,8 +522,8 @@ static void draw_icon_ammo(SDL_Renderer *r, float x, float y)
     for (int i = 0; i < 3; ++i)
     {
         float bx = x + 3.0f + (float)i * 4.0f;
-        color_rect(r, (SDL_Color){255, 236, 170, 255}, bx, y + 3.0f, 3.0f, 2.0f);
-        color_rect(r, (SDL_Color){222, 172, 84, 255}, bx, y + 5.0f, 3.0f, 4.0f);
+        color_rect(r, fx_ramp(FX_AMBER).lit, bx, y + 3.0f, 3.0f, 2.0f);
+        color_rect(r, fx_dim(FX_AMBER, 0.90f), bx, y + 5.0f, 3.0f, 4.0f);
     }
 }
 
@@ -538,30 +556,17 @@ static void draw_icon_rocket(SDL_Renderer *r, float x, float y)
 
 /* ---- Console parts --------------------------------------------------- */
 
+/* The heart and the cartridge are the HUD's own glyphs out of fx.h — the
+   manual is a diagram of that console, and a diagram of a different heart
+   teaches a different game. */
 static void draw_heart(SDL_Renderer *r, float x, float y, bool full)
 {
-    SDL_Color c = full ? (SDL_Color){236, 84, 78, 255} : (SDL_Color){42, 50, 60, 255};
-    SDL_Color lit = full ? (SDL_Color){255, 152, 132, 255} : c;
-    color_rect(r, c, x + 1.0f, y, 2.0f, 2.0f);
-    color_rect(r, c, x + 5.0f, y, 2.0f, 2.0f);
-    color_rect(r, c, x, y + 2.0f, 8.0f, 3.0f);
-    color_rect(r, c, x + 1.0f, y + 5.0f, 6.0f, 1.0f);
-    color_rect(r, c, x + 2.0f, y + 6.0f, 4.0f, 1.0f);
-    color_rect(r, c, x + 3.0f, y + 7.0f, 2.0f, 1.0f);
-    color_rect(r, lit, x + 1.0f, y + 2.0f, 2.0f, 1.0f);
+    fx_heart(r, x, y, 1.0f, full);
 }
 
 static void draw_ammo_pip(SDL_Renderer *r, float x, float y, bool full)
 {
-    if (full)
-    {
-        color_rect(r, (SDL_Color){255, 236, 170, 255}, x, y, 3.0f, 3.0f);
-        color_rect(r, (SDL_Color){222, 172, 84, 255}, x, y + 3.0f, 3.0f, 8.0f);
-        color_rect(r, (SDL_Color){164, 118, 52, 255}, x + 2.0f, y + 3.0f, 1.0f, 8.0f);
-    }
-    else
-        color_rect(r, (SDL_Color){40, 48, 58, 255}, x, y, 3.0f, 11.0f);
-    color_rect(r, FX_STEEL, x - 1.0f, y + 11.0f, 5.0f, 2.0f);
+    fx_ammo_pip(r, x, y, full);
 }
 
 /* One of the three states the ACCESS chip shows, drawn the way the HUD draws
@@ -630,7 +635,7 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time)
             bool lit = (h % 100u) < 38u &&
                        time > 0.25f + (float)(h % 12u) * 0.05f;
             SDL_Color glass = lit
-                                  ? fx_dim((h & 8u) ? COL_WARM : COL_COLD,
+                                  ? fx_dim((h & 8u) ? FX_WARM : COL_COLD,
                                            0.55f + (float)(h % 6u) * 0.06f)
                                   : (SDL_Color){13, 18, 27, 255};
             color_rect(r, glass, wx, wy, pane, 9.0f);
@@ -645,11 +650,11 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time)
         float half = top_half + (base_half - top_half) * t - 9.0f;
         float pane = (half * 2.0f - 3.0f * 4.0f) / 4.0f;
         float wx = cx - half + (pane + 4.0f) * 2.0f;
-        color_rect(r, fx_dim(COL_WARM, 0.85f), wx, wy, pane, 9.0f);
+        color_rect(r, fx_dim(FX_WARM, 0.85f), wx, wy, pane, 9.0f);
         color_rect(r, FX_INK, wx + pane * 0.5f - 2.0f, wy + 2.0f, 4.0f, 7.0f);
         float pulse = 0.55f + 0.45f * sinf(time * 3.1f);
         SDL_FRect mark = {wx - 4.0f, wy - 4.0f, pane + 8.0f, 17.0f};
-        draw_brackets(r, fx_dim(COL_RUST, pulse), mark, 5.0f, 1.0f);
+        draw_brackets(r, fx_dim(FX_RUST, pulse), mark, 5.0f, 1.0f);
     }
 
     /* The route: fifteen sectors bottom to top, the four climbs called out in
@@ -663,9 +668,9 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time)
         float t = (float)(sector - 1) / 14.0f;
         float y = street - 8.0f - t * (street - roof - 16.0f);
         bool climb = sector == 3 || sector == 7 || sector == 11 || sector == 13;
-        color_rect(r, climb ? COL_HEAD : FX_CYAN, route_x - 3.0f, y, 8.0f, 2.0f);
+        color_rect(r, climb ? FX_AMBER : FX_CYAN, route_x - 3.0f, y, 8.0f, 2.0f);
     }
-    draw_text(r, route_x - 34.0f, roof - 2.0f, 1.0f, COL_LABEL, "ROOF");
+    draw_text(r, route_x - 34.0f, roof - 2.0f, 1.0f, FX_LABEL, "ROOF");
 
     /* Blocks cropping both edges, a step darker than the tower. Without them
      * one slab stands in the middle of an empty plate; the point of the shot is
@@ -683,7 +688,7 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time)
             continue;
         float lx = p.x + p.w - 46.0f + (float)(i % 3u) * 14.0f;
         float ly = street - 78.0f + (float)(i / 3u) * 22.0f;
-        color_rect(r, fx_dim(COL_WARM, 0.42f), lx, ly, 6.0f, 5.0f);
+        color_rect(r, fx_dim(FX_WARM, 0.42f), lx, ly, 6.0f, 5.0f);
     }
 
     /* Street, lamp, and the man looking up at it. */
@@ -695,7 +700,7 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time)
     color_rect(r, (SDL_Color){206, 226, 232, 255}, p.x + 26.0f, street - 42.0f,
                8.0f, 3.0f);
     fx_contact_shadow(r, p.x + 52.0f, street, 9.0f, 0.0f, 150);
-    draw_figure(r, p.x + 46.0f, street, 1, POSE_LOOK_UP, look_chuck());
+    draw_figure(r, p.x + 46.0f, street, 1, POSE_LOOK_UP, look_chuck(), time);
 }
 
 /*
@@ -708,14 +713,14 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time)
 static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time)
 {
     (void)time;
-    fx_vgrad(r, p.x, p.y, p.w, p.h, (SDL_Color){17, 23, 34, 255}, 255,
+    fx_vgrad(r, p.x, p.y, p.w, p.h, FX_SHADOW, 255,
              (SDL_Color){11, 15, 24, 255}, 255);
 
     float cx = p.x + p.w * 0.5f;
     const float cap = 22.0f;
     const float pitch = 25.0f;
 
-    draw_text(r, p.x + 10.0f, p.y + 8.0f, 1.0f, COL_LABEL, "KEYBOARD");
+    draw_text(r, p.x + 10.0f, p.y + 8.0f, 1.0f, FX_LABEL, "KEYBOARD");
 
     /* The movement cluster, drawn as the cross it is under the hand. */
     float wy = p.y + 28.0f;
@@ -723,9 +728,9 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time)
     draw_keycap(r, cx - cap * 0.5f - pitch, wy + pitch, cap, CHIP_H, "A", FX_CREAM);
     draw_keycap(r, cx - cap * 0.5f, wy + pitch, cap, CHIP_H, "S", FX_CREAM);
     draw_keycap(r, cx - cap * 0.5f + pitch, wy + pitch, cap, CHIP_H, "D", FX_CREAM);
-    draw_text(r, cx + 20.0f, wy + 5.0f, 1.0f, COL_HEAD, "JUMP");
-    draw_text(r, cx + 44.0f, wy + pitch + 5.0f, 1.0f, COL_HEAD, "CRAWL");
-    draw_text(r, cx - 116.0f, wy + pitch + 5.0f, 1.0f, COL_HEAD, "MOVE");
+    draw_text(r, cx + 20.0f, wy + 5.0f, 1.0f, FX_AMBER, "JUMP");
+    draw_text(r, cx + 44.0f, wy + pitch + 5.0f, 1.0f, FX_AMBER, "CRAWL");
+    draw_text(r, cx - 116.0f, wy + pitch + 5.0f, 1.0f, FX_AMBER, "MOVE");
     dash_h(r, fx_dim(FX_STEEL, 0.8f), cx - 74.0f, wy + pitch + 9.0f, 24.0f,
            3.0f, 3.0f);
 
@@ -735,20 +740,20 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time)
     draw_keycap(r, cx - 96.0f, row, 62.0f, CHIP_H, "SPACE", FX_CREAM);
     draw_keycap(r, cx - 22.0f, row, 34.0f, CHIP_H, "TAB", FX_CREAM);
     draw_keycap(r, cx + 34.0f, row, cap, CHIP_H, "E", FX_CREAM);
-    draw_text(r, cx - 96.0f, row + CHIP_H + 6.0f, 1.0f, COL_HEAD, "ATTACK");
-    draw_text(r, cx - 30.0f, row + CHIP_H + 6.0f, 1.0f, COL_HEAD, "WEAPON");
-    draw_text(r, cx + 36.0f, row + CHIP_H + 6.0f, 1.0f, COL_HEAD, "USE");
+    draw_text(r, cx - 96.0f, row + CHIP_H + 6.0f, 1.0f, FX_AMBER, "ATTACK");
+    draw_text(r, cx - 30.0f, row + CHIP_H + 6.0f, 1.0f, FX_AMBER, "WEAPON");
+    draw_text(r, cx + 36.0f, row + CHIP_H + 6.0f, 1.0f, FX_AMBER, "USE");
 
     /* The pad. Same actions, one thumb. */
     float gw = 176.0f;
     float gx = cx - gw * 0.5f;
     float gy = p.y + p.h - 108.0f;
-    draw_text(r, p.x + 10.0f, gy - 30.0f, 1.0f, COL_LABEL, "GAMEPAD");
+    draw_text(r, p.x + 10.0f, gy - 30.0f, 1.0f, FX_LABEL, "GAMEPAD");
 
     color_rect(r, FX_STEEL_DK, gx + 22.0f, gy - 6.0f, 30.0f, 6.0f);
     color_rect(r, FX_STEEL_DK, gx + gw - 52.0f, gy - 6.0f, 30.0f, 6.0f);
-    draw_text(r, gx + 30.0f, gy - 18.0f, 1.0f, COL_LABEL, "LB");
-    draw_text(r, gx + gw - 44.0f, gy - 18.0f, 1.0f, COL_LABEL, "RB");
+    draw_text(r, gx + 30.0f, gy - 18.0f, 1.0f, FX_LABEL, "LB");
+    draw_text(r, gx + gw - 44.0f, gy - 18.0f, 1.0f, FX_LABEL, "RB");
     fx_mass(r, FX_INK, gx - 1.0f, gy - 1.0f, gw + 2.0f, 72.0f, 7, 10);
     fx_mass(r, (SDL_Color){40, 50, 64, 255}, gx, gy, gw, 70.0f, 7, 10);
     fx_mass(r, (SDL_Color){62, 76, 94, 255}, gx, gy, gw, 3.0f, 7, 0);
@@ -783,9 +788,9 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time)
     }
 
     float legend_y = gy + 80.0f;
-    draw_text(r, p.x + 14.0f, legend_y, 1.0f, COL_HEAD, "A JUMP");
-    draw_text(r, p.x + 110.0f, legend_y, 1.0f, COL_HEAD, "X ATTACK");
-    draw_text(r, p.x + 216.0f, legend_y, 1.0f, COL_HEAD, "Y USE");
+    draw_text(r, p.x + 14.0f, legend_y, 1.0f, FX_AMBER, "A JUMP");
+    draw_text(r, p.x + 110.0f, legend_y, 1.0f, FX_AMBER, "X ATTACK");
+    draw_text(r, p.x + 216.0f, legend_y, 1.0f, FX_AMBER, "Y USE");
 }
 
 /* What the floor plan will and will not let a pair of boots do. */
@@ -814,12 +819,14 @@ static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time)
     dash_arc(r, fx_dim(FX_CYAN, 0.8f), gap_left - 14.0f, upper_y - 6.0f,
              gap_right + 14.0f, upper_y - 6.0f, 24.0f, 11, 2.0f);
     fx_contact_shadow(r, gap_left + 13.0f, upper_y, 10.0f, 0.9f, 170);
-    draw_figure(r, gap_left + 7.0f, upper_y - 30.0f, 1, POSE_JUMP, look_chuck());
+    draw_figure(r, gap_left + 7.0f, upper_y - 30.0f, 1, POSE_JUMP,
+                look_chuck(), time);
 
     /* The ladder between the storeys, with someone on the rungs. */
     float ladder_x = p.x + 46.0f;
     draw_ladder(r, ladder_x, upper_y + 14.0f, floor_y - upper_y - 14.0f);
-    draw_figure(r, ladder_x - 3.0f, floor_y - 18.0f, 1, POSE_CLIMB, look_chuck());
+    draw_figure(r, ladder_x - 3.0f, floor_y - 18.0f, 1, POSE_CLIMB,
+                look_chuck(), time);
 
     /* The floor's furniture: something to shove, something not to touch. */
     draw_crate(r, p.x + p.w - 46.0f, floor_y - 22.0f, 22.0f);
@@ -827,10 +834,10 @@ static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time)
                  -1, 0);
     draw_spikes(r, p.x + 116.0f, floor_y - 7.0f, 4);
 
-    draw_text(r, p.x + 8.0f, floor_y + 24.0f, 1.0f, COL_LABEL, "LADDER");
+    draw_text(r, p.x + 8.0f, floor_y + 24.0f, 1.0f, FX_LABEL, "LADDER");
     draw_text(r, p.x + 112.0f, floor_y + 24.0f, 1.0f, fx_dim(FX_RED, 0.9f),
               "SPIKES");
-    draw_text(r, p.x + p.w - 50.0f, floor_y + 24.0f, 1.0f, COL_LABEL, "CRATE");
+    draw_text(r, p.x + p.w - 50.0f, floor_y + 24.0f, 1.0f, FX_LABEL, "CRATE");
 }
 
 /* The two things worth knowing about a guard: where he is looking, and what
@@ -846,41 +853,41 @@ static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time)
     float ledge_y = p.y + p.h * 0.42f;
     draw_slab(r, p.x, ledge_y, p.w, 14.0f);
     fx_vgrad(r, p.x, ledge_y + 14.0f, p.w, 14.0f, FX_INK, 120, FX_INK, 0);
-    draw_text(r, p.x + 8.0f, p.y + 8.0f, 1.0f, COL_LABEL, "FROM ABOVE");
+    draw_text(r, p.x + 8.0f, p.y + 8.0f, 1.0f, FX_LABEL, "FROM ABOVE");
 
     float stomp_x = p.x + p.w * 0.56f;
-    draw_figure(r, stomp_x, ledge_y, -1, POSE_STAND, look_guard());
+    draw_figure(r, stomp_x, ledge_y, -1, POSE_STAND, look_guard(), time);
     float bob = sinf(time * 2.4f) * 2.0f;
     draw_figure(r, stomp_x - 2.0f, ledge_y - 46.0f + bob, -1, POSE_JUMP,
-                look_chuck());
-    draw_chevron(r, fx_dim(COL_HEAD, 0.9f), stomp_x + 5.0f,
+                look_chuck(), time);
+    draw_chevron(r, fx_dim(FX_AMBER, 0.9f), stomp_x + 5.0f,
                  ledge_y - 40.0f + bob, 0, 1);
-    draw_text(r, p.x + 8.0f, ledge_y - 40.0f, 1.0f, COL_HEAD, "LAND ON");
-    draw_text(r, p.x + 8.0f, ledge_y - 28.0f, 1.0f, COL_HEAD, "HIS HEAD");
+    draw_text(r, p.x + 8.0f, ledge_y - 40.0f, 1.0f, FX_AMBER, "LAND ON");
+    draw_text(r, p.x + 8.0f, ledge_y - 28.0f, 1.0f, FX_AMBER, "HIS HEAD");
 
     /* Lower vignette: the cone, and the only side of it worth being on. */
     float floor_y = p.y + p.h - 34.0f;
     draw_slab(r, p.x, floor_y, p.w, 20.0f);
     fx_vgrad(r, p.x, floor_y - 14.0f, p.w, 14.0f, FX_INK, 0, FX_INK, 90);
-    draw_text(r, p.x + 8.0f, ledge_y + 34.0f, 1.0f, COL_LABEL, "SEVEN TILES");
+    draw_text(r, p.x + 8.0f, ledge_y + 34.0f, 1.0f, FX_LABEL, "SEVEN TILES");
 
     float guard_x = p.x + p.w * 0.46f;
     float eye_y = floor_y - 22.0f;
     draw_sight_cone(r, guard_x + 1.0f, eye_y, -1, 118.0f, 34.0f, FX_RED, 52);
     dash_h(r, fx_dim(FX_RED, 0.7f), guard_x - 118.0f, eye_y - 34.0f, 6.0f, 3.0f, 3.0f);
-    draw_figure(r, guard_x, floor_y, -1, POSE_STAND, look_guard());
+    draw_figure(r, guard_x, floor_y, -1, POSE_STAND, look_guard(), time);
 
     /* Chuck behind the cone, answering it. */
     float chuck_x = p.x + p.w - 52.0f;
     fx_contact_shadow(r, chuck_x + 6.0f, floor_y, 9.0f, 0.0f, 150);
-    draw_figure(r, chuck_x, floor_y, -1, POSE_AIM, look_chuck());
+    draw_figure(r, chuck_x, floor_y, -1, POSE_AIM, look_chuck(), time);
     float flash = fmodf(time, 1.6f) < 0.12f ? 1.0f : 0.0f;
     if (flash > 0.0f)
     {
-        fx_glow(r, chuck_x - 10.0f, floor_y - 15.0f, 22.0f, COL_WARM, 120);
+        fx_glow(r, chuck_x - 10.0f, floor_y - 15.0f, 22.0f, FX_WARM, 120);
         color_rect(r, FX_CREAM, chuck_x - 13.0f, floor_y - 16.0f, 5.0f, 2.0f);
     }
-    dash_h(r, fx_dim(COL_HEAD, 0.9f), guard_x + 16.0f, floor_y - 15.0f,
+    dash_h(r, fx_dim(FX_AMBER, 0.9f), guard_x + 16.0f, floor_y - 15.0f,
            chuck_x - guard_x - 30.0f, 5.0f, 4.0f);
 }
 
@@ -902,12 +909,13 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time)
     float win_y = p.y + 30.0f;
     color_rect(r, FX_INK, win_x - 2.0f, win_y - 2.0f, 34.0f, 30.0f);
     color_rect(r, (SDL_Color){14, 16, 22, 255}, win_x, win_y, 30.0f, 26.0f);
-    color_rect(r, fx_dim(COL_WARM, 0.35f), win_x + 2.0f, win_y + 2.0f, 26.0f, 8.0f);
-    draw_figure(r, win_x + 9.0f, win_y + 26.0f, 1, POSE_STAND, look_guard());
+    color_rect(r, fx_dim(FX_WARM, 0.35f), win_x + 2.0f, win_y + 2.0f, 26.0f, 8.0f);
+    draw_figure(r, win_x + 9.0f, win_y + 26.0f, 1, POSE_STAND, look_guard(),
+                time);
     float wind_up = 0.5f + 0.5f * sinf(time * 2.0f);
     /* Pale, not rust: a dark trajectory drawn on dark brick is a trajectory
      * nobody can follow. */
-    dash_arc(r, fx_dim(fx_mix(COL_WARM, FX_CREAM, 0.5f), 0.6f + wind_up * 0.4f),
+    dash_arc(r, fx_dim(fx_mix(FX_WARM, FX_CREAM, 0.5f), 0.6f + wind_up * 0.4f),
              win_x + 30.0f, win_y + 14.0f, p.x + p.w * 0.40f, lower - 8.0f,
              26.0f, 12, 3.0f);
     color_rect(r, FX_WOOD_DK, win_x + 32.0f, win_y + 12.0f, 6.0f, 4.0f);
@@ -916,7 +924,7 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time)
      * the far side of it: the shelter has to be between him and the wind or
      * the picture says nothing the text does not have to say twice. */
     float climber_x = p.x + p.w * 0.34f;
-    draw_figure(r, climber_x, lower, 1, POSE_CLING, look_chuck());
+    draw_figure(r, climber_x, lower, 1, POSE_CLING, look_chuck(), time);
 
     float shelter_x = climber_x + 24.0f;
     color_rect(r, FX_INK, shelter_x - 1.0f, lower - 43.0f, 20.0f, 30.0f);
@@ -924,7 +932,7 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time)
              (SDL_Color){112, 108, 98, 255}, 255, (SDL_Color){52, 50, 46, 255}, 255);
     color_rect(r, (SDL_Color){186, 180, 164, 255}, shelter_x, lower - 42.0f,
                18.0f, 1.0f);
-    draw_text(r, climber_x - 10.0f, lower + 20.0f, 1.0f, COL_HEAD, "SHELTER");
+    draw_text(r, climber_x - 10.0f, lower + 20.0f, 1.0f, FX_AMBER, "SHELTER");
 
     /* The gust: streaks that stop dead on the masonry. */
     float gust = 0.5f + 0.5f * sinf(time * 1.3f);
@@ -959,7 +967,7 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time)
 /* The strip along the top of the screen, and what is worth picking up. */
 static void illus_console(SDL_Renderer *r, SDL_FRect p, float time)
 {
-    fx_vgrad(r, p.x, p.y, p.w, p.h, (SDL_Color){17, 23, 34, 255}, 255,
+    fx_vgrad(r, p.x, p.y, p.w, p.h, FX_SHADOW, 255,
              (SDL_Color){11, 15, 24, 255}, 255);
 
     /* A cutting of the real console, brushed and lit from above. */
@@ -969,25 +977,25 @@ static void illus_console(SDL_Renderer *r, SDL_FRect p, float time)
     color_rect(r, (SDL_Color){60, 76, 98, 255}, p.x + 6.0f, strip_y, p.w - 12.0f, 1.0f);
     color_rect(r, (SDL_Color){38, 112, 110, 255}, p.x + 6.0f, strip_y + 41.0f,
                p.w - 12.0f, 1.0f);
-    color_rect(r, COL_RUST, p.x + 6.0f, strip_y, 3.0f, 40.0f);
+    color_rect(r, FX_RUST, p.x + 6.0f, strip_y, 3.0f, 40.0f);
 
-    draw_text(r, p.x + 16.0f, strip_y + 6.0f, 1.0f, COL_LABEL, "VITAL");
+    draw_text(r, p.x + 16.0f, strip_y + 6.0f, 1.0f, FX_LABEL, "VITAL");
     for (int i = 0; i < 5; ++i)
         draw_heart(r, p.x + 16.0f + (float)i * 12.0f, strip_y + 20.0f, i < 3);
     color_rect(r, (SDL_Color){34, 44, 58, 255}, p.x + 86.0f, strip_y + 6.0f,
                1.0f, 28.0f);
-    draw_text(r, p.x + 96.0f, strip_y + 6.0f, 1.0f, COL_LABEL, "WPN GUN");
+    draw_text(r, p.x + 96.0f, strip_y + 6.0f, 1.0f, FX_LABEL, "WPN GUN");
     for (int i = 0; i < 6; ++i)
         draw_ammo_pip(r, p.x + 97.0f + (float)i * 7.0f, strip_y + 19.0f, i < 4);
     color_rect(r, (SDL_Color){34, 44, 58, 255}, p.x + 148.0f, strip_y + 6.0f,
                1.0f, 28.0f);
-    draw_text(r, p.x + 158.0f, strip_y + 6.0f, 1.0f, COL_LABEL, "ACCESS");
+    draw_text(r, p.x + 158.0f, strip_y + 6.0f, 1.0f, FX_LABEL, "ACCESS");
     float blink = 0.45f + 0.55f * sinf(time * 4.0f);
     draw_access_chip(r, p.x + 158.0f, strip_y + 19.0f, 66.0f,
                      fx_dim((SDL_Color){246, 90, 70, 255}, blink),
                      (SDL_Color){54, 24, 24, 255}, (SDL_Color){124, 52, 46, 255},
-                     (SDL_Color){250, 158, 128, 255}, "LOCKED");
-    draw_text(r, p.x + 234.0f, strip_y + 6.0f, 1.0f, COL_LABEL, "SECTOR");
+                     FX_RED, "LOCKED");
+    draw_text(r, p.x + 234.0f, strip_y + 6.0f, 1.0f, FX_LABEL, "SECTOR");
     draw_text(r, p.x + 236.0f, strip_y + 19.0f, 2.0f, (SDL_Color){226, 232, 220, 255},
               "07");
 
@@ -995,7 +1003,7 @@ static void illus_console(SDL_Renderer *r, SDL_FRect p, float time)
     float alt_y = strip_y + 54.0f;
     draw_access_chip(r, p.x + 10.0f, alt_y, 74.0f, FX_GREEN,
                      (SDL_Color){16, 52, 40, 255}, (SDL_Color){40, 132, 96, 255},
-                     (SDL_Color){168, 255, 206, 255}, "GRANTED");
+                     FX_GREEN, "GRANTED");
     draw_text(r, p.x + 92.0f, alt_y + 3.0f, 1.0f, COL_TEXT, "DOOR IS OPEN");
     draw_access_chip(r, p.x + 10.0f, alt_y + 20.0f, 74.0f,
                      (SDL_Color){166, 142, 91, 255}, (SDL_Color){36, 38, 42, 255},
@@ -1430,19 +1438,19 @@ static void render_sheet(SDL_Renderer *r, SDL_FRect sheet, float appear)
               sheet.x + sheet.w * 0.5f - 46.0f, sheet.y - 4.0f, 92.0f, 8.0f);
     fx_rect_a(r, FX_STEEL_LT, (Uint8)(235.0f * appear),
               sheet.x + sheet.w * 0.5f - 46.0f, sheet.y - 4.0f, 92.0f, 1.0f);
-    draw_brackets(r, fx_dim(COL_RUST, 0.85f * appear), sheet, 12.0f, 2.0f);
+    draw_brackets(r, fx_dim(FX_RUST, 0.85f * appear), sheet, 12.0f, 2.0f);
 }
 
 static void render_header(SDL_Renderer *r, const ManualPage *page,
                           float w, float appear)
 {
-    draw_tracked(r, TEXT_X, 32.0f, 3.0f, fx_dim(COL_LABEL, appear),
+    draw_tracked(r, TEXT_X, 32.0f, 3.0f, fx_dim(FX_LABEL, appear),
                  "FIELD MANUAL");
     draw_text(r, TEXT_X, 46.0f, 2.0f, fx_dim(FX_CREAM, appear), page->title);
-    draw_text(r, TEXT_X, 74.0f, 1.0f, fx_dim(COL_LABEL, appear), page->strap);
+    draw_text(r, TEXT_X, 74.0f, 1.0f, fx_dim(FX_LABEL, appear), page->strap);
 
     float rule_y = 88.0f;
-    color_rect(r, fx_dim(COL_RUST, 0.9f * appear), TEXT_X, rule_y, 64.0f, 2.0f);
+    color_rect(r, fx_dim(FX_RUST, 0.9f * appear), TEXT_X, rule_y, 64.0f, 2.0f);
     color_rect(r, fx_dim(FX_STEEL_DK, appear), TEXT_X + 70.0f, rule_y,
                w - TEXT_X * 2.0f - 70.0f, 1.0f);
 }
@@ -1470,7 +1478,7 @@ static void render_text_column(SDL_Renderer *r, const ManualPage *page,
             if (!first_head)
                 y += HEAD_LEAD;
             first_head = false;
-            draw_tracked(r, x, y, 1.0f, fx_dim(COL_HEAD, appear), line->text);
+            draw_tracked(r, x, y, 1.0f, fx_dim(FX_AMBER, appear), line->text);
             color_rect(r, fx_dim(FX_STEEL_DK, appear), x, y + 11.0f,
                        TEXT_RIGHT - TEXT_X, 1.0f);
             y += HEAD_PITCH;
@@ -1493,7 +1501,7 @@ static void render_text_column(SDL_Renderer *r, const ManualPage *page,
             draw_keycap(r, x, y - 3.0f, key_w, CHIP_H, key,
                         fx_dim((SDL_Color){198, 208, 200, 255}, appear));
             draw_keycap(r, x + key_w + 8.0f, y - 3.0f, pad_w, CHIP_H, pad,
-                        fx_dim(COL_LABEL, appear));
+                        fx_dim(FX_LABEL, appear));
             draw_text(r, x + key_w + pad_w + 20.0f, y + 2.0f, 1.0f,
                       fx_dim(COL_TEXT, appear), action);
             y += KEY_PITCH;
@@ -1524,14 +1532,14 @@ static void render_panel(SDL_Renderer *r, const ManualPage *page,
      * about the page turn, so the veil is what carries them through it. */
     fx_rect_a(r, FX_INK, (Uint8)(215.0f * (1.0f - appear)), inner.x, inner.y,
               inner.w, inner.h);
-    draw_brackets(r, fx_dim(COL_RUST, 0.7f * appear), frame, 10.0f, 2.0f);
+    draw_brackets(r, fx_dim(FX_RUST, 0.7f * appear), frame, 10.0f, 2.0f);
 
     /* Clipped to the plate's own width rather than trusted to be short: a
      * caption that outgrows the panel runs off the sheet entirely. */
     char caption[CAPTION_MAX + 1];
     SDL_strlcpy(caption, page->caption, sizeof(caption));
     draw_text(r, frame.x, frame.y + frame.h + 8.0f, 1.0f,
-              fx_dim(COL_LABEL, appear), caption);
+              fx_dim(FX_LABEL, appear), caption);
 }
 
 static void render_chip(SDL_Renderer *r, SDL_FRect box, const char *label,
@@ -1544,7 +1552,7 @@ static void render_chip(SDL_Renderer *r, SDL_FRect box, const char *label,
     fx_rect_a(r, FX_INK, (Uint8)(190.0f * level), box.x, box.y, box.w, box.h);
     fx_rect_a(r, (SDL_Color){32, 42, 56, 255}, (Uint8)(215.0f * level),
               box.x + 1.0f, box.y + 1.0f, box.w - 2.0f, box.h - 2.0f);
-    fx_rect_a(r, hot && live ? COL_RUST : (SDL_Color){68, 84, 102, 255},
+    fx_rect_a(r, hot && live ? FX_RUST : (SDL_Color){68, 84, 102, 255},
               (Uint8)(215.0f * level), box.x + 1.0f, box.y + 1.0f,
               box.w - 2.0f, 1.0f);
     draw_text(r, box.x + 8.0f, box.y + 5.0f, 1.0f,
@@ -1569,7 +1577,7 @@ static void render_footer(SDL_Renderer *r, const Manual *manual, float appear)
     for (int i = 0; i < MANUAL_PAGE_COUNT; ++i)
     {
         bool live = i == manual->page;
-        color_rect(r, fx_dim(live ? COL_HEAD : FX_STEEL_DK, appear),
+        color_rect(r, fx_dim(live ? FX_AMBER : FX_STEEL_DK, appear),
                    x + (float)i * 10.0f, live ? y - 1.0f : y, 6.0f,
                    live ? 4.0f : 3.0f);
     }
@@ -1600,6 +1608,6 @@ void manual_render(SDL_Renderer *r, const Manual *manual, int win_w, int win_h)
     render_panel(r, page, manual->time, slide, content);
     render_footer(r, manual, appear);
 
-    fx_vignette(r, win_w, win_h, 64);
-    fx_scanlines(r, win_w, win_h, 11);
+    /* The frame is finished (vignette, scanlines) by game_render's one
+       shared pass, so the sheet cannot drift from the film. */
 }

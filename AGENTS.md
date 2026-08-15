@@ -484,7 +484,27 @@ the staff side of the desk stays legible.
   rather than inline.
 - [fx.h](src/fx.h) is the shared palette and lighting vocabulary for every
   renderer (world, HUD, intro, cutscenes). Use its ramps instead of new literal
-  colors so the screens stay one visual system.
+  colors so the screens stay one visual system. The accents are semantic and
+  rationed — cyan is technology, amber is light and warning, red is danger,
+  green is granted, `FX_RUST` is weathering (never danger), `FX_FLAME` /
+  `FX_FLAME_HOT` are the one fire, `FX_LAMP`/`FX_WARM`/`FX_SODIUM` are the
+  only three light temperatures, `FX_LABEL` is the one grey interface labels
+  are set in. A renderer may keep a colour of its own only if it names it
+  once, with a comment saying why the palette cannot supply it; a literal
+  that repeats an fx.h value, or lands within a few units of one, is that
+  constant misspelt. The heart and the ammo cartridge are drawn by
+  `fx_heart`/`fx_ammo_pip` — one glyph across the HUD, the manual and the
+  outro, because the player is asked to recognise them everywhere.
+- **Every frame is finished exactly once, in `game_render`.** The vignette
+  and scanlines are applied at the bottom of `game_render` and nowhere else,
+  with two strengths and a rule between them: screens being *played*
+  (the sector, the chase) get `FX_VIGNETTE_PLAY`, screens being *watched*
+  (title, manual, cutscenes) get `FX_VIGNETTE_SCENE`; scanlines are
+  `FX_SCANLINE_ALPHA` everywhere and the cutscenes add `fx_grain` inside
+  their own render as their film texture. A renderer that finishes its own
+  frame puts every overlay drawn after it (the pause sheet, the assist
+  sheet, the debug picker) on top of the finish instead of under it, which
+  is exactly the bug this rule replaced.
 - [level_art.c](src/level_art.c) holds the per-level wall materials and
   backdrops. It is the only place a level's look is decided; the themes shift
   hue and value inside the fx.h system rather than inventing one per sector.
@@ -654,7 +674,10 @@ the staff side of the desk stays legible.
 - **`SDL_RenderDebugText` is an 8x8 bitmap: draw it at scale 1.0 or a multiple
   of it.** Any other scale resamples the glyphs, and a line of mushy type
   cheapens a screen faster than anything else on it. If a row does not fit at
-  1.0, cut words, not scale.
+  1.0, cut words, not scale. The rule is about interface: text *painted into
+  the world* — the WC plate on a door, a stencilled door number, the tower's
+  nameplate — is signage, part of the art, and sits at whatever size the prop
+  it is painted on demands.
 - Sound effects are synthesized once during `audio_init` and cached as PCM,
   replayed through a 16-voice pool. A new effect means: an entry in the
   `SoundEffect` enum in [sound_id.h](src/sound_id.h) (before `SFX_COUNT`) plus

@@ -376,8 +376,10 @@ static void update_thrown_objects(GameplayState *state, float dt)
         {
             gameplay_world_sound(state, SFX_BULLET_IMPACT,
                                  center_x, center_y);
-            game_events_particles(&state->events, center_x, center_y, 6,
-                                  object->vx < 0.0f ? -1 : 1);
+            /* Dust, not sparks: a clay pot bursting on a cornice sheds pale
+             * masonry, and the spark burst is drawn in blood red. */
+            game_events_dust(&state->events, center_x, center_y, 6,
+                             THROWN_OBJECT_SIZE);
             object->active = false;
             continue;
         }
@@ -441,8 +443,10 @@ static void update_birds(GameplayState *state, float dt)
         {
             gameplay_world_sound(state, SFX_BIRD_CALL,
                                  bird_center_x, bird_center_y);
-            game_events_particles(&state->events, bird_center_x, bird_center_y,
-                                  5, bird->vx < 0.0f ? -1 : 1);
+            /* A puff of feathers reads as dust, not as the arterial spray the
+             * spark burst was drawn for. */
+            game_events_dust(&state->events, bird_center_x, bird_center_y,
+                             5, BIRD_W);
             bird->active = false;
             continue;
         }

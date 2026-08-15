@@ -583,7 +583,8 @@ void ed_draw_canvas(EditorApp *app)
         for (int col = 0; col <= app->doc.grid.width; ++col)
         {
             Uint8 alpha = col % 4 == 0 ? 70 : 30;
-            SDL_SetRenderDrawColor(r, 150, 180, 200, alpha);
+            SDL_SetRenderDrawColor(r, FX_STEEL_LT.r, FX_STEEL_LT.g,
+                                   FX_STEEL_LT.b, alpha);
             float x = ox + (float)col * TILE_SIZE;
             SDL_RenderLine(r, x, oy, x,
                            oy + (float)app->doc.grid.height * TILE_SIZE);
@@ -591,7 +592,8 @@ void ed_draw_canvas(EditorApp *app)
         for (int row = 0; row <= app->doc.grid.height; ++row)
         {
             Uint8 alpha = row % 4 == 0 ? 70 : 30;
-            SDL_SetRenderDrawColor(r, 150, 180, 200, alpha);
+            SDL_SetRenderDrawColor(r, FX_STEEL_LT.r, FX_STEEL_LT.g,
+                                   FX_STEEL_LT.b, alpha);
             float y = oy + (float)row * TILE_SIZE;
             SDL_RenderLine(r, ox, y,
                            ox + (float)app->doc.grid.width * TILE_SIZE, y);

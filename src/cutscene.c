@@ -9,12 +9,6 @@
 
 #include "fx.h"
 
-static const SDL_Color COL_INK = {5, 7, 12, 255};
-static const SDL_Color COL_NIGHT = {10, 14, 23, 255};
-static const SDL_Color COL_CREAM = {236, 238, 224, 255};
-static const SDL_Color COL_RUST = {186, 54, 46, 255};
-static const SDL_Color COL_AMBER = {248, 188, 74, 255};
-static const SDL_Color COL_CYAN = {74, 222, 212, 255};
 static const float TRANSITION_DOOR_TOP = 358.0f;
 static const float TRANSITION_DOOR_INNER_TOP = 368.0f;
 static const float TRANSITION_DOOR_DEPTH_TOP = 376.0f;
@@ -185,7 +179,7 @@ static void draw_window(SDL_Renderer *r, float x, float y,
 static void render_city(SDL_Renderer *r, float time, int win_w, int win_h)
 {
     /* Smooth night gradient with a storm-lit teal horizon. */
-    color_rect(r, COL_NIGHT, 0.0f, 0.0f, (float)win_w, (float)win_h);
+    color_rect(r, FX_NIGHT, 0.0f, 0.0f, (float)win_w, (float)win_h);
     fx_vgrad(r, 0.0f, 0.0f, (float)win_w, (float)win_h,
              (SDL_Color){6, 9, 16, 255}, 255,
              (SDL_Color){18, 28, 40, 255}, 255);
@@ -278,8 +272,8 @@ static void render_tower(SDL_Renderer *r, float time, int win_w)
                x + 259.0f, ground - 59.0f, 4.0f, 59.0f);
     color_rect(r, (SDL_Color){118, 128, 116, 255},
                x + 205.0f, ground - 68.0f, 112.0f, 4.0f);
-    color_rect(r, COL_AMBER, x + 220.0f, ground - 76.0f, 82.0f, 3.0f);
-    fx_glow(r, x + 261.0f, ground - 74.0f, 46.0f, COL_AMBER, 42);
+    color_rect(r, FX_AMBER, x + 220.0f, ground - 76.0f, 82.0f, 3.0f);
+    fx_glow(r, x + 261.0f, ground - 74.0f, 46.0f, FX_AMBER, 42);
     fx_light_cone(r, x + 261.0f, ground - 73.0f, 42.0f, 58.0f, 74.0f,
                   (SDL_Color){248, 205, 130, 255}, 26);
 
@@ -298,9 +292,9 @@ static void render_tower(SDL_Renderer *r, float time, int win_w)
     float beacon = sinf(time * 4.6f) > 0.2f ? 1.0f : 0.24f;
     color_rect(r, (SDL_Color){42, 47, 48, 255},
                x + 278.0f, y - 9.0f, 31.0f, 9.0f);
-    color_rect(r, (SDL_Color){(Uint8)(COL_RUST.r * beacon),
-                              (Uint8)(COL_RUST.g * beacon),
-                              (Uint8)(COL_RUST.b * beacon), 255},
+    color_rect(r, (SDL_Color){(Uint8)(FX_RUST.r * beacon),
+                              (Uint8)(FX_RUST.g * beacon),
+                              (Uint8)(FX_RUST.b * beacon), 255},
                x + 287.0f, y - 14.0f, 13.0f, 5.0f);
 }
 
@@ -328,7 +322,7 @@ static void draw_wheel(SDL_Renderer *r, float cx, float cy,
                        float scale, float rotation)
 {
     float radius = 12.0f * scale;
-    color_rect(r, COL_INK, cx - radius, cy - radius,
+    color_rect(r, FX_INK, cx - radius, cy - radius,
                radius * 2.0f, radius * 2.0f);
     color_rect(r, (SDL_Color){38, 44, 47, 255},
                cx - radius + 3.0f * scale, cy - radius + 3.0f * scale,
@@ -352,11 +346,13 @@ static void draw_suv(SDL_Renderer *r, float x, float ground_y,
     float rotation = moving ? time * 15.0f : 0.35f;
 
     if (moving)
-        draw_headlight_beam(r, x + 146.0f, y + 33.0f, 106.0f, COL_CREAM);
+        draw_headlight_beam(r, x + 146.0f, y + 33.0f, 106.0f, FX_CREAM);
 
-    color_rect(r, (SDL_Color){3, 5, 8, 150},
-               x - 6.0f, ground_y - 4.0f, 166.0f, 7.0f);
-    color_rect(r, COL_INK, x, y + 20.0f, 151.0f, 31.0f);
+    /* A real pool with real blending: the old slab passed alpha into a
+       helper that never set a blend mode, so every shadow in the film
+       rendered as solid black. */
+    fx_contact_shadow(r, x + 77.0f, ground_y - 4.0f, 83.0f, 0.0f, 200);
+    color_rect(r, FX_INK, x, y + 20.0f, 151.0f, 31.0f);
     color_rect(r, (SDL_Color){30, 35, 38, 255},
                x + 4.0f, y + 16.0f, 142.0f, 31.0f);
     color_rect(r, (SDL_Color){47, 51, 49, 255},
@@ -372,15 +368,15 @@ static void draw_suv(SDL_Renderer *r, float x, float ground_y,
     color_rect(r, (SDL_Color){18, 21, 22, 255},
                x + 105.0f, y + 23.0f, 2.0f, 21.0f);
 
-    color_rect(r, COL_RUST, x + 2.0f, y + 29.0f, 6.0f, 8.0f);
-    color_rect(r, moving ? COL_CREAM : (SDL_Color){149, 145, 113, 255},
+    color_rect(r, FX_RUST, x + 2.0f, y + 29.0f, 6.0f, 8.0f);
+    color_rect(r, moving ? FX_CREAM : (SDL_Color){149, 145, 113, 255},
                x + 142.0f, y + 28.0f, 7.0f, 7.0f);
     color_rect(r, (SDL_Color){93, 99, 94, 255},
                x + 119.0f, y + 41.0f, 19.0f, 4.0f);
 
     if (door_open)
     {
-        color_rect(r, COL_INK, x + 67.0f, y + 23.0f, 38.0f, 26.0f);
+        color_rect(r, FX_INK, x + 67.0f, y + 23.0f, 38.0f, 26.0f);
         color_rect(r, (SDL_Color){55, 59, 56, 255},
                    x + 61.0f, y + 20.0f, 6.0f, 30.0f);
         color_rect(r, (SDL_Color){95, 99, 90, 255},
@@ -398,11 +394,10 @@ static void draw_agent_car(SDL_Renderer *r, float x, float ground_y,
     float rotation = moving ? time * 17.0f : 0.65f;
 
     if (moving)
-        draw_headlight_beam(r, x + 137.0f, y + 29.0f, 92.0f, COL_CREAM);
+        draw_headlight_beam(r, x + 137.0f, y + 29.0f, 92.0f, FX_CREAM);
 
-    color_rect(r, (SDL_Color){3, 5, 8, 150},
-               x - 5.0f, ground_y - 4.0f, 151.0f, 7.0f);
-    color_rect(r, COL_INK, x, y + 15.0f, 141.0f, 28.0f);
+    fx_contact_shadow(r, x + 70.0f, ground_y - 4.0f, 76.0f, 0.0f, 200);
+    color_rect(r, FX_INK, x, y + 15.0f, 141.0f, 28.0f);
     color_rect(r, (SDL_Color){28, 70, 91, 255},
                x + 4.0f, y + 17.0f, 133.0f, 22.0f);
     color_rect(r, (SDL_Color){41, 101, 121, 255},
@@ -422,11 +417,11 @@ static void draw_agent_car(SDL_Renderer *r, float x, float ground_y,
                    x + 75.0f, y + 8.0f, 7.0f, 8.0f);
         color_rect(r, (SDL_Color){47, 27, 22, 255},
                    x + 74.0f, y + 6.0f, 9.0f, 4.0f);
-        color_rect(r, COL_CREAM, x + 80.0f, y + 10.0f, 2.0f, 1.0f);
+        color_rect(r, FX_CREAM, x + 80.0f, y + 10.0f, 2.0f, 1.0f);
     }
 
-    color_rect(r, COL_RUST, x + 3.0f, y + 25.0f, 6.0f, 7.0f);
-    color_rect(r, COL_CREAM, x + 133.0f, y + 24.0f, 7.0f, 7.0f);
+    color_rect(r, FX_RUST, x + 3.0f, y + 25.0f, 6.0f, 7.0f);
+    color_rect(r, FX_CREAM, x + 133.0f, y + 24.0f, 7.0f, 7.0f);
     color_rect(r, (SDL_Color){109, 133, 133, 255},
                x + 113.0f, y + 34.0f, 19.0f, 4.0f);
 
@@ -444,73 +439,143 @@ static void sprite_rect(SDL_Renderer *r, float x, float y, float sprite_w,
                ceilf(w * scale), ceilf(h * scale));
 }
 
+/*
+ * Scale-aware versions of the three passes every figure in the sector gets:
+ * a tapered ink silhouette, the garment as a ramp with a lit crown and a
+ * shaded underside, one rim down the leading flank. The film's cast used to
+ * be flat stacks of rects inside square outlines — a cheaper drawing exactly
+ * where the game asks the player to care most.
+ */
+static void mass_scaled(SDL_Renderer *r, float x, float y, float sprite_w,
+                        int dir, float scale, float lx, float ly,
+                        float w, float h, SDL_Color c, int top, int bottom)
+{
+    int rows = (int)h;
+
+    for (int i = 0; i < rows; ++i)
+    {
+        float inset = fx_taper(i, rows, top, bottom);
+        if (inset * 2.0f >= w)
+            continue;
+        sprite_rect(r, x, y, sprite_w, dir, scale,
+                    lx + inset, ly + (float)i, w - inset * 2.0f, 1.0f, c);
+    }
+}
+
+static void body_scaled(SDL_Renderer *r, float x, float y, float sprite_w,
+                        int dir, float scale, float lx, float ly,
+                        float w, float h, SDL_Color base, int top, int bottom)
+{
+    FxRamp ramp = fx_ramp(base);
+    SDL_Color rim = fx_mix(ramp.base, ramp.lit, 0.50f);
+    int rows = (int)h;
+
+    mass_scaled(r, x, y, sprite_w, dir, scale, lx - 1.0f, ly - 1.0f,
+                w + 2.0f, h + 2.0f, FX_INK, top + 1, bottom + 1);
+    for (int i = 0; i < rows; ++i)
+    {
+        float inset = fx_taper(i, rows, top, bottom);
+        float rw = w - inset * 2.0f;
+        if (rw < 1.0f)
+            continue;
+        SDL_Color c = i == 0 ? ramp.lit
+                             : (i == rows - 1 ? ramp.dark : ramp.base);
+        sprite_rect(r, x, y, sprite_w, dir, scale,
+                    lx + inset, ly + (float)i, rw, 1.0f, c);
+        if (i > 0 && i < rows - 1 && rw >= 6.0f)
+            sprite_rect(r, x, y, sprite_w, dir, scale,
+                        lx + inset + rw - 1.0f, ly + (float)i, 1.0f, 1.0f,
+                        rim);
+    }
+}
+
+/*
+ * One leg of the same two-beat walk the sector cast uses: stance tracks the
+ * foot back under the body at a constant rate, swing lifts and reaches on an
+ * arc. A sine is slowest exactly where the foot carries the body fastest,
+ * which is what made the film's cast skate. Callers offset the phase a
+ * quarter turn so a figure handed a frozen clock stands planted.
+ */
+static void walk_leg(float cycle, float reach, float *out_dx, float *out_lift)
+{
+    cycle -= floorf(cycle);
+    if (cycle < 0.5f)
+    {
+        *out_dx = reach * (1.0f - 4.0f * cycle);
+        *out_lift = 0.0f;
+    }
+    else
+    {
+        float t = (cycle - 0.5f) * 2.0f;
+        float ease = t * t * (3.0f - 2.0f * t);
+        *out_dx = reach * (-1.0f + 2.0f * ease);
+        *out_lift = sinf(t * 3.14159265f) * reach * 1.1f;
+    }
+}
+
 static void draw_agent(SDL_Renderer *r, float x, float ground_y,
                        float scale, float time, int dir)
 {
-    float stride = sinf(time * 12.0f);
     float y = ground_y - 32.0f * scale;
-    float bob = fabsf(stride) * scale;
+    float dx_a, lift_a, dx_b, lift_b;
+    walk_leg(time * 1.91f + 0.25f, 0.9f, &dx_a, &lift_a);
+    walk_leg(time * 1.91f + 0.75f, 0.9f, &dx_b, &lift_b);
+    float bob = (lift_a + lift_b) * scale;
 
-    color_rect(r, (SDL_Color){2, 4, 7, 150},
-               x + 2.0f * scale, ground_y - 2.0f,
-               24.0f * scale, 4.0f);
+    fx_contact_shadow(r, x + 14.0f * scale, ground_y - 2.0f,
+                      12.0f * scale, 0.0f, 190);
 
-    sprite_rect(r, x, y + fabsf(stride) * scale, 28.0f, dir, scale,
-                7 + stride * 0.75f, 21, 6, 11, COL_INK);
-    sprite_rect(r, x, y + (1.0f - fabsf(stride)) * scale, 28.0f, dir, scale,
-                14 - stride * 0.75f, 21, 6, 11, COL_INK);
+    sprite_rect(r, x, y - lift_a * scale, 28.0f, dir, scale,
+                7 + dx_a, 21, 6, 11, FX_INK);
+    sprite_rect(r, x, y - lift_b * scale, 28.0f, dir, scale,
+                14 + dx_b, 21, 6, 11, FX_INK);
+    body_scaled(r, x, y + bob, 28.0f, dir, scale,
+                7, 11, 13, 12, FX_HERO, 1, 0);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                5, 10, 17, 14, COL_INK);
+                8, 12, 4, 9, FX_HERO_LT);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                7, 11, 13, 12, (SDL_Color){35, 102, 142, 255});
+                8, 20, 11, 2, FX_AMBER);
+    body_scaled(r, x, y + bob, 28.0f, dir, scale,
+                10, 2, 9, 9, FX_SKIN, 2, 1);
+    mass_scaled(r, x, y + bob, 28.0f, dir, scale,
+                9, 1, 11, 4, fx_dim(FX_HAIR, 0.88f), 1, 0);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                8, 12, 4, 9, (SDL_Color){60, 148, 171, 255});
+                18, 13, 11, 5, FX_INK);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                8, 20, 11, 2, COL_AMBER);
-    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                9, 1, 11, 11, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                10, 3, 9, 8, (SDL_Color){210, 154, 105, 255});
-    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                9, 1, 11, 4, (SDL_Color){70, 38, 28, 255});
-    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                18, 13, 11, 5, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                19, 14, 10, 3, (SDL_Color){209, 154, 105, 255});
+                19, 14, 10, 3, FX_SKIN);
 }
 
 static void draw_terrorist(SDL_Renderer *r, float x, float ground_y,
                            float scale, float time, float phase, int dir)
 {
-    float stride = sinf(time * 9.0f + phase);
     float y = ground_y - 32.0f * scale;
-    float bob = fabsf(stride) * 0.7f * scale;
+    float dx_a, lift_a, dx_b, lift_b;
+    walk_leg(time * 1.43f + phase * 0.159f + 0.25f, 0.7f, &dx_a, &lift_a);
+    walk_leg(time * 1.43f + phase * 0.159f + 0.75f, 0.7f, &dx_b, &lift_b);
+    float bob = (lift_a + lift_b) * 0.9f * scale;
 
-    color_rect(r, (SDL_Color){2, 4, 7, 155},
-               x + 2.0f * scale, ground_y - 2.0f,
-               24.0f * scale, 4.0f);
-    sprite_rect(r, x, y + fabsf(stride) * scale, 28.0f, dir, scale,
-                7 + stride * 0.6f, 21, 6, 11, COL_INK);
-    sprite_rect(r, x, y + (1.0f - fabsf(stride)) * scale, 28.0f, dir, scale,
-                14 - stride * 0.6f, 21, 6, 11, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                4, 10, 19, 14, (SDL_Color){17, 21, 22, 255});
+    fx_contact_shadow(r, x + 14.0f * scale, ground_y - 2.0f,
+                      12.0f * scale, 0.0f, 190);
+    sprite_rect(r, x, y - lift_a * scale, 28.0f, dir, scale,
+                7 + dx_a, 21, 6, 11, FX_INK);
+    sprite_rect(r, x, y - lift_b * scale, 28.0f, dir, scale,
+                14 + dx_b, 21, 6, 11, FX_INK);
+    body_scaled(r, x, y + bob, 28.0f, dir, scale,
+                5, 11, 17, 12, (SDL_Color){22, 27, 26, 255}, 1, 0);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 7, 12, 13, 9, (SDL_Color){49, 54, 49, 255});
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                7, 16, 13, 3, COL_RUST);
+                7, 16, 13, 3, FX_RUST);
+    body_scaled(r, x, y + bob, 28.0f, dir, scale,
+                10, 2, 9, 9, (SDL_Color){145, 103, 75, 255}, 2, 1);
+    mass_scaled(r, x, y + bob, 28.0f, dir, scale,
+                8, 1, 13, 5, (SDL_Color){24, 28, 27, 255}, 1, 0);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                8, 1, 12, 11, COL_INK);
-    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                10, 4, 9, 7, (SDL_Color){145, 103, 75, 255});
-    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                8, 1, 13, 5, (SDL_Color){24, 28, 27, 255});
-    sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                17, 6, 2, 2, COL_RUST);
+                17, 6, 2, 2, FX_RUST);
 
     /* Low-ready rifle makes the captors unmistakable at pixel scale. */
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
-                17, 13, 13, 4, COL_INK);
+                17, 13, 13, 4, FX_INK);
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
                 21, 14, 13, 2, (SDL_Color){67, 73, 69, 255});
     sprite_rect(r, x, y + bob, 28.0f, dir, scale,
@@ -522,7 +587,10 @@ static void draw_hostage(SDL_Renderer *r, float x, float ground_y,
 {
     float step = sinf(time * 8.3f + 1.4f);
     float y = ground_y - 34.0f * scale;
-    float bob = fabsf(step) * 0.55f * scale;
+    float dx_a, lift_a, dx_b, lift_b;
+    walk_leg(time * 1.32f + 0.47f, 0.45f, &dx_a, &lift_a);
+    walk_leg(time * 1.32f + 0.97f, 0.45f, &dx_b, &lift_b);
+    float bob = (lift_a + lift_b) * 1.1f * scale;
     float hair_sway = step * 0.25f;
     SDL_Color hair_dark = {76, 51, 35, 255};
     SDL_Color hair = {137, 94, 55, 255};
@@ -533,59 +601,54 @@ static void draw_hostage(SDL_Renderer *r, float x, float ground_y,
     SDL_Color trousers = {39, 48, 58, 255};
     SDL_Color boots = {15, 19, 25, 255};
 
-    color_rect(r, (SDL_Color){2, 4, 7, 145},
-               x + 3.0f * scale, ground_y - 2.0f,
-               20.0f * scale, 4.0f);
+    fx_contact_shadow(r, x + 13.0f * scale, ground_y - 2.0f,
+                      10.0f * scale, 0.0f, 185);
 
-    /* Practical trousers and flat boots, animated with the same restrained step. */
-    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, dir, scale,
-                8 + step * 0.45f, 23, 5, 11, COL_INK);
-    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, dir, scale,
-                9 + step * 0.45f, 24, 3, 8, trousers);
-    sprite_rect(r, x, y + fabsf(step) * scale, 26.0f, dir, scale,
-                7 + step * 0.45f, 31, 7, 3, boots);
-    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, dir, scale,
-                14 - step * 0.45f, 23, 5, 11, COL_INK);
-    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, dir, scale,
-                15 - step * 0.45f, 24, 3, 8, trousers);
-    sprite_rect(r, x, y + (1.0f - fabsf(step)) * scale, 26.0f, dir, scale,
-                13 - step * 0.45f, 31, 7, 3, boots);
+    /* Practical trousers and flat boots, on the same restrained cycle. */
+    sprite_rect(r, x, y - lift_a * scale, 26.0f, dir, scale,
+                8 + dx_a, 23, 5, 11, FX_INK);
+    sprite_rect(r, x, y - lift_a * scale, 26.0f, dir, scale,
+                9 + dx_a, 24, 3, 8, trousers);
+    sprite_rect(r, x, y - lift_a * scale, 26.0f, dir, scale,
+                7 + dx_a, 31, 7, 3, boots);
+    sprite_rect(r, x, y - lift_b * scale, 26.0f, dir, scale,
+                14 + dx_b, 23, 5, 11, FX_INK);
+    sprite_rect(r, x, y - lift_b * scale, 26.0f, dir, scale,
+                15 + dx_b, 24, 3, 8, trousers);
+    sprite_rect(r, x, y - lift_b * scale, 26.0f, dir, scale,
+                13 + dx_b, 31, 7, 3, boots);
 
-    /* Shoulder-length hair provides the main readable cue at pixel scale. */
-    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                7 + hair_sway, 1, 13, 15, COL_INK);
-    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                8 + hair_sway, 2, 11, 13, hair_dark);
+    /* Shoulder-length hair provides the main readable cue at pixel scale;
+       it lies over a skull, so it keeps the skull's rounding. */
+    mass_scaled(r, x, y + bob, 26.0f, dir, scale,
+                7 + hair_sway, 1, 13, 15, FX_INK, 1, 1);
+    mass_scaled(r, x, y + bob, 26.0f, dir, scale,
+                8 + hair_sway, 2, 11, 13, hair_dark, 1, 1);
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 7 - hair_sway, 7, 4, 9, hair_dark);
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 8 - hair_sway, 8, 2, 7, hair);
 
     /* Simple profile without makeup accents. */
-    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                10, 2, 10, 11, COL_INK);
-    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                11, 3, 8, 8, skin);
-    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                12, 10, 7, 2, skin);
+    body_scaled(r, x, y + bob, 26.0f, dir, scale,
+                11, 3, 8, 9, skin, 2, 1);
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 8, 0, 12, 5, hair_dark);
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 9, 1, 9, 2, hair);
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 8, 3, 4, 8, hair);
-    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                17, 5, 2, 1, COL_INK);
+    if (time <= 0.0f || !fx_blinking(time, 0x0eu))
+        sprite_rect(r, x, y + bob, 26.0f, dir, scale,
+                    17, 5, 2, 1, FX_INK);
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 18, 9, 1, 1, hair_dark);
 
     /* Straight-cut red coat keeps her silhouette distinct but grounded. */
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 12, 11, 5, 4, skin);
-    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                7, 12, 14, 15, COL_INK);
-    sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                8, 13, 12, 13, coat);
+    body_scaled(r, x, y + bob, 26.0f, dir, scale,
+                8, 13, 12, 13, coat, 1, 0);
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                 9, 14, 4, 10, coat_light);
     sprite_rect(r, x, y + bob, 26.0f, dir, scale,
@@ -599,7 +662,7 @@ static void draw_hostage(SDL_Renderer *r, float x, float ground_y,
     {
         /* Bent sleeves lead into small hands tied together in front of her. */
         sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                    18, 14, 6, 5, COL_INK);
+                    18, 14, 6, 5, FX_INK);
         sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                     19, 15, 5, 3, coat);
         sprite_rect(r, x, y + bob, 26.0f, dir, scale,
@@ -613,7 +676,7 @@ static void draw_hostage(SDL_Renderer *r, float x, float ground_y,
     {
         /* Once safe, her arm rests naturally at her side. */
         sprite_rect(r, x, y + bob, 26.0f, dir, scale,
-                    18, 14, 6, 12, COL_INK);
+                    18, 14, 6, 12, FX_INK);
         sprite_rect(r, x, y + bob, 26.0f, dir, scale,
                     19, 15, 4, 10, coat);
         sprite_rect(r, x, y + bob, 26.0f, dir, scale,
@@ -624,9 +687,9 @@ static void draw_hostage(SDL_Renderer *r, float x, float ground_y,
 static void draw_target_brackets(SDL_Renderer *r, float x, float y,
                                  float w, float h, float pulse)
 {
-    SDL_Color color = {(Uint8)(COL_RUST.r * (0.7f + pulse * 0.3f)),
-                       (Uint8)(COL_RUST.g * (0.7f + pulse * 0.3f)),
-                       (Uint8)(COL_RUST.b * (0.7f + pulse * 0.3f)), 255};
+    SDL_Color color = {(Uint8)(FX_RUST.r * (0.7f + pulse * 0.3f)),
+                       (Uint8)(FX_RUST.g * (0.7f + pulse * 0.3f)),
+                       (Uint8)(FX_RUST.b * (0.7f + pulse * 0.3f)), 255};
     set_color(r, color);
 
     SDL_RenderLine(r, x, y, x + 15.0f, y);
@@ -701,11 +764,11 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
     {
         float reveal = smoothstep01((time - 0.55f) / 0.5f);
         draw_text(r, 35.0f, 38.0f, 1.0f,
-                  (SDL_Color){(Uint8)(COL_CYAN.r * reveal),
-                              (Uint8)(COL_CYAN.g * reveal),
-                              (Uint8)(COL_CYAN.b * reveal), 255},
+                  (SDL_Color){(Uint8)(FX_CYAN.r * reveal),
+                              (Uint8)(FX_CYAN.g * reveal),
+                              (Uint8)(FX_CYAN.b * reveal), 255},
                   "23:47 // FINANCIAL DISTRICT");
-        color_rect(r, COL_RUST, 35.0f, 53.0f, 52.0f * reveal, 2.0f);
+        color_rect(r, FX_RUST, 35.0f, 53.0f, 52.0f * reveal, 2.0f);
     }
 
     if (time > 3.0f && time < 6.5f)
@@ -713,19 +776,19 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
         float pulse = 0.5f + 0.5f * sinf(time * 5.0f);
         draw_target_brackets(r, target_x - 8.0f, 371.0f,
                              167.0f, 72.0f, pulse);
-        draw_text(r, target_x + 3.0f, 351.0f, 0.75f,
-                  COL_RUST, "FIANCEE ABDUCTED // VEHICLE CONFIRMED");
+        draw_text(r, target_x + 3.0f, 351.0f, 1.0f,
+                  FX_RUST, "FIANCEE ABDUCTED // VEHICLE CONFIRMED");
     }
 
     if (time > 7.1f && time < 10.8f)
     {
         float reveal = smoothstep01((time - 7.1f) / 0.35f);
         draw_text(r, 35.0f, 38.0f, 1.0f,
-                  (SDL_Color){(Uint8)(COL_AMBER.r * reveal),
-                              (Uint8)(COL_AMBER.g * reveal),
-                              (Uint8)(COL_AMBER.b * reveal), 255},
+                  (SDL_Color){(Uint8)(FX_AMBER.r * reveal),
+                              (Uint8)(FX_AMBER.g * reveal),
+                              (Uint8)(FX_AMBER.b * reveal), 255},
                   "CHUCK // RESCUE IN PROGRESS");
-        color_rect(r, COL_RUST, 35.0f, 53.0f, 52.0f * reveal, 2.0f);
+        color_rect(r, FX_RUST, 35.0f, 53.0f, 52.0f * reveal, 2.0f);
     }
 
     if (time > 0.9f && time < 11.15f)
@@ -735,7 +798,7 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
                           (Uint8)(108.0f + pulse * 42.0f),
                           (Uint8)(106.0f + pulse * 38.0f), 255};
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f,
-                  0.75f, skip,
+                  1.0f, skip,
                   gamepad_active ? "A / START TO SKIP" :
                                    "ENTER / SPACE TO SKIP");
     }
@@ -786,15 +849,13 @@ void opening_cutscene_render(SDL_Renderer *r,
     render_rain(r, time, win_w, win_h);
     render_cinematic_ui(r, time, win_w, win_h, suv_x, gamepad_active);
 
-    /* Film finish: vignette and animated grain under the letterbox bars. */
-    fx_vignette(r, win_w, win_h, 74);
-    fx_grain(r, win_w, win_h, time, 26);
+    /* Film grain is the cutscene's own texture; the vignette and scanlines
+       are laid on by game_render's one shared finishing pass. */
+    fx_grain(r, win_w, win_h, time, FX_GRAIN_FILM);
 
     /* Narrow letterbox bars frame the scene without hiding the gameplay art. */
-    color_rect(r, (SDL_Color){3, 5, 8, 255},
-               0.0f, 0.0f, (float)win_w, 19.0f);
-    color_rect(r, (SDL_Color){3, 5, 8, 255},
-               0.0f, (float)win_h - 19.0f, (float)win_w, 19.0f);
+    color_rect(r, FX_INK, 0.0f, 0.0f, (float)win_w, 19.0f);
+    color_rect(r, FX_INK, 0.0f, (float)win_h - 19.0f, (float)win_w, 19.0f);
 
     float fade_in = 1.0f - smoothstep01(time / 0.68f);
     float fade_out = smoothstep01((time - 11.15f) / 1.15f);
@@ -802,7 +863,7 @@ void opening_cutscene_render(SDL_Renderer *r,
     if (fade > 0.0f)
     {
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-        set_rgba(r, 2, 4, 7, (Uint8)(fade * 255.0f));
+        set_rgba(r, FX_INK.r, FX_INK.g, FX_INK.b, (Uint8)(fade * 255.0f));
         fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
@@ -863,17 +924,17 @@ static void render_transition_report(SDL_Renderer *r,
     float reveal = smoothstep01((time - 0.12f) / 0.58f);
     float line_reveal = smoothstep01((time - 0.42f) / 0.55f);
     SDL_Color title = {
-        (Uint8)(COL_CREAM.r * reveal),
-        (Uint8)(COL_CREAM.g * reveal),
-        (Uint8)(COL_CREAM.b * reveal), 255};
+        (Uint8)(FX_CREAM.r * reveal),
+        (Uint8)(FX_CREAM.g * reveal),
+        (Uint8)(FX_CREAM.b * reveal), 255};
     SDL_Color muted = {
         (Uint8)(122.0f * line_reveal),
         (Uint8)(139.0f * line_reveal),
         (Uint8)(141.0f * line_reveal), 255};
     SDL_Color value = {
-        (Uint8)(COL_AMBER.r * line_reveal),
-        (Uint8)(COL_AMBER.g * line_reveal),
-        (Uint8)(COL_AMBER.b * line_reveal), 255};
+        (Uint8)(FX_AMBER.r * line_reveal),
+        (Uint8)(FX_AMBER.g * line_reveal),
+        (Uint8)(FX_AMBER.b * line_reveal), 255};
     char buffer[64];
 
     color_rect(r, (SDL_Color){7, 12, 18, 255},
@@ -883,50 +944,50 @@ static void render_transition_report(SDL_Renderer *r,
     color_rect(r, (SDL_Color){34, 62, 65, 255},
                0.0f, 148.0f, (float)win_w, 3.0f);
     color_rect(r, (SDL_Color){
-                      (Uint8)(COL_CYAN.r * reveal),
-                      (Uint8)(COL_CYAN.g * reveal),
-                      (Uint8)(COL_CYAN.b * reveal), 255},
+                      (Uint8)(FX_CYAN.r * reveal),
+                      (Uint8)(FX_CYAN.g * reveal),
+                      (Uint8)(FX_CYAN.b * reveal), 255},
                27.0f, 61.0f, 72.0f * reveal, 2.0f);
 
-    draw_text(r, 27.0f, 34.0f, 1.75f, title, "PURSUIT CONTINUES");
+    draw_text(r, 27.0f, 34.0f, 2.0f, title, "PURSUIT CONTINUES");
 
     int elapsed = (int)transition->elapsed_seconds;
     int minutes = elapsed / 60;
     int seconds = elapsed % 60;
-    draw_text(r, 27.0f, 88.0f, 0.75f, muted, "TIME");
+    draw_text(r, 27.0f, 88.0f, 1.0f, muted, "TIME");
     SDL_snprintf(buffer, sizeof(buffer), "%02d:%02d", minutes, seconds);
-    draw_text(r, 27.0f, 106.0f, 1.25f, value, buffer);
+    draw_text(r, 27.0f, 106.0f, 1.0f, value, buffer);
 
     color_rect(r, (SDL_Color){31, 47, 52, 255},
                129.0f, 85.0f, 1.0f, 43.0f);
-    draw_text(r, 151.0f, 88.0f, 0.75f, muted, "SCORE");
+    draw_text(r, 151.0f, 88.0f, 1.0f, muted, "SCORE");
     SDL_snprintf(buffer, sizeof(buffer), "+%06d", transition->level_score);
-    draw_text(r, 151.0f, 106.0f, 1.25f, value, buffer);
+    draw_text(r, 151.0f, 106.0f, 1.0f, value, buffer);
 
     color_rect(r, (SDL_Color){31, 47, 52, 255},
                282.0f, 85.0f, 1.0f, 43.0f);
-    draw_text(r, 307.0f, 88.0f, 0.75f, muted, "HOSTILES");
+    draw_text(r, 307.0f, 88.0f, 1.0f, muted, "HOSTILES");
     SDL_snprintf(buffer, sizeof(buffer), "%02d",
                  transition->hostiles_neutralized);
-    draw_text(r, 307.0f, 106.0f, 1.25f, value, buffer);
+    draw_text(r, 307.0f, 106.0f, 1.0f, value, buffer);
 
     /* Deaths are reported neutrally — a number to beat next run, never a
      * grade. A clean sector earns the one word of praise. */
     color_rect(r, (SDL_Color){31, 47, 52, 255},
                412.0f, 85.0f, 1.0f, 43.0f);
-    draw_text(r, 434.0f, 88.0f, 0.75f, muted, "DEATHS");
+    draw_text(r, 434.0f, 88.0f, 1.0f, muted, "DEATHS");
     if (transition->deaths == 0)
         SDL_snprintf(buffer, sizeof(buffer), "CLEAN");
     else
         SDL_snprintf(buffer, sizeof(buffer), "%02d", transition->deaths);
-    draw_text(r, 434.0f, 106.0f, 1.25f, value, buffer);
+    draw_text(r, 434.0f, 106.0f, 1.0f, value, buffer);
 
     color_rect(r, (SDL_Color){31, 47, 52, 255},
                526.0f, 37.0f, 1.0f, 91.0f);
-    draw_text(r, 558.0f, 45.0f, 0.75f, muted, "TRAIL LEADS TO");
+    draw_text(r, 558.0f, 45.0f, 1.0f, muted, "TRAIL LEADS TO");
     SDL_snprintf(buffer, sizeof(buffer), "SECTOR %02d",
                  transition->next_level + 1);
-    draw_text(r, 558.0f, 69.0f, 1.75f, COL_CREAM, buffer);
+    draw_text(r, 558.0f, 69.0f, 2.0f, FX_CREAM, buffer);
 }
 
 static float transition_door_open(float time)
@@ -1027,10 +1088,10 @@ static void render_transition_corridor(SDL_Renderer *r, float time,
         color_rect(r, (SDL_Color){62, 68, 63, 255},
                    door_x + 90.0f - half_panel, TRANSITION_DOOR_INNER_TOP,
                    half_panel, ground_y - TRANSITION_DOOR_INNER_TOP);
-        color_rect(r, COL_RUST,
+        color_rect(r, FX_RUST,
                    door_x + half_panel - 3.0f, TRANSITION_DOOR_INNER_TOP,
                    3.0f, ground_y - TRANSITION_DOOR_INNER_TOP);
-        color_rect(r, COL_RUST,
+        color_rect(r, FX_RUST,
                    door_x + 90.0f - half_panel, TRANSITION_DOOR_INNER_TOP,
                    3.0f, ground_y - TRANSITION_DOOR_INNER_TOP);
     }
@@ -1074,34 +1135,29 @@ static void draw_agent_held_fire(SDL_Renderer *r, float x, float ground_y,
     float y = ground_y - 32.0f * scale;
     float breath = sinf(time * 4.5f) * 0.35f * scale;
 
-    color_rect(r, (SDL_Color){2, 4, 7, 150},
-               x + 2.0f * scale, ground_y - 2.0f,
-               28.0f * scale, 4.0f);
+    fx_contact_shadow(r, x + 16.0f * scale, ground_y - 2.0f,
+                      14.0f * scale, 0.0f, 190);
     sprite_rect(r, x, y, 30.0f, dir, scale,
-                8, 21, 6, 11, COL_INK);
+                8, 21, 6, 11, FX_INK);
     sprite_rect(r, x, y, 30.0f, dir, scale,
-                15, 21, 6, 11, COL_INK);
+                15, 21, 6, 11, FX_INK);
+    body_scaled(r, x, y + breath, 30.0f, dir, scale,
+                7, 11, 14, 12, FX_HERO, 1, 0);
     sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                5, 10, 18, 14, COL_INK);
+                8, 12, 4, 9, FX_HERO_LT);
     sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                7, 11, 14, 12, (SDL_Color){35, 102, 142, 255});
-    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                8, 12, 4, 9, (SDL_Color){60, 148, 171, 255});
-    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                8, 20, 12, 2, COL_AMBER);
-    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                9, 1, 11, 11, COL_INK);
-    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                10, 3, 9, 8, (SDL_Color){210, 154, 105, 255});
-    sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                9, 1, 11, 4, (SDL_Color){70, 38, 28, 255});
+                8, 20, 12, 2, FX_AMBER);
+    body_scaled(r, x, y + breath, 30.0f, dir, scale,
+                10, 2, 9, 9, FX_SKIN, 2, 1);
+    mass_scaled(r, x, y + breath, 30.0f, dir, scale,
+                9, 1, 11, 4, fx_dim(FX_HAIR, 0.88f), 1, 0);
 
     if (aiming)
     {
         sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                    18, 12, 13, 4, (SDL_Color){209, 154, 105, 255});
+                    18, 12, 13, 4, FX_SKIN);
         sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                    27, 11, 10, 4, COL_INK);
+                    27, 11, 10, 4, FX_INK);
         sprite_rect(r, x, y + breath, 30.0f, dir, scale,
                     35, 12, 6, 2, (SDL_Color){77, 84, 81, 255});
     }
@@ -1109,9 +1165,9 @@ static void draw_agent_held_fire(SDL_Renderer *r, float x, float ground_y,
     {
         /* He lowers the pistol rather than taking the obstructed shot. */
         sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                    18, 13, 8, 8, (SDL_Color){209, 154, 105, 255});
+                    18, 13, 8, 8, FX_SKIN);
         sprite_rect(r, x, y + breath, 30.0f, dir, scale,
-                    23, 19, 5, 9, COL_INK);
+                    23, 19, 5, 9, FX_INK);
     }
 }
 
@@ -1127,19 +1183,19 @@ static void render_transition_action_ui(SDL_Renderer *r, float time,
         float target_x = hostage_x + 10.0f;
         draw_target_brackets(r, target_x - 10.0f,
                              ground_y - 55.0f, 52.0f, 61.0f, pulse);
-        draw_text(r, 35.0f, 192.0f, 0.75f,
-                  (SDL_Color){(Uint8)(COL_RUST.r * reveal),
-                              (Uint8)(COL_RUST.g * reveal),
-                              (Uint8)(COL_RUST.b * reveal), 255},
+        draw_text(r, 35.0f, 192.0f, 1.0f,
+                  (SDL_Color){(Uint8)(FX_RUST.r * reveal),
+                              (Uint8)(FX_RUST.g * reveal),
+                              (Uint8)(FX_RUST.b * reveal), 255},
                   "SHE'S TOO CLOSE // KEEP MOVING");
-        color_rect(r, COL_RUST, 35.0f, 207.0f, 142.0f * reveal, 2.0f);
+        color_rect(r, FX_RUST, 35.0f, 207.0f, 142.0f * reveal, 2.0f);
     }
 
     if (time > 0.75f && time < 8.55f)
     {
         float pulse = 0.45f + 0.55f * sinf(time * 2.0f);
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f,
-                  0.75f,
+                  1.0f,
                   (SDL_Color){(Uint8)(100.0f + pulse * 42.0f),
                               (Uint8)(108.0f + pulse * 42.0f),
                               (Uint8)(106.0f + pulse * 38.0f), 255},
@@ -1201,13 +1257,10 @@ void level_transition_render(SDL_Renderer *r,
     render_transition_action_ui(r, time, hostage_x, ground_y,
                                 win_w, win_h, gamepad_active);
 
-    fx_vignette(r, win_w, win_h, 70);
-    fx_grain(r, win_w, win_h, time, 24);
+    fx_grain(r, win_w, win_h, time, FX_GRAIN_FILM);
 
-    color_rect(r, (SDL_Color){3, 5, 8, 255},
-               0.0f, 0.0f, (float)win_w, 18.0f);
-    color_rect(r, (SDL_Color){3, 5, 8, 255},
-               0.0f, (float)win_h - 18.0f, (float)win_w, 18.0f);
+    color_rect(r, FX_INK, 0.0f, 0.0f, (float)win_w, 18.0f);
+    color_rect(r, FX_INK, 0.0f, (float)win_h - 18.0f, (float)win_w, 18.0f);
 
     float fade_in = 1.0f - smoothstep01(time / 0.48f);
     float fade_out = smoothstep01((time - 8.45f) / 0.85f);
@@ -1215,7 +1268,7 @@ void level_transition_render(SDL_Renderer *r,
     if (fade > 0.0f)
     {
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-        set_rgba(r, 2, 4, 7, (Uint8)(fade * 255.0f));
+        set_rgba(r, FX_INK.r, FX_INK.g, FX_INK.b, (Uint8)(fade * 255.0f));
         fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
@@ -1281,7 +1334,7 @@ static void draw_cutscene_text_centered(SDL_Renderer *r, float center_x,
 static void render_outro_sky(SDL_Renderer *r, float time,
                              int win_w, int win_h)
 {
-    color_rect(r, COL_NIGHT, 0.0f, 0.0f, (float)win_w, (float)win_h);
+    color_rect(r, FX_NIGHT, 0.0f, 0.0f, (float)win_w, (float)win_h);
     fx_vgrad(r, 0.0f, 0.0f, (float)win_w, (float)win_h,
              (SDL_Color){7, 11, 20, 255}, 255,
              (SDL_Color){22, 32, 46, 255}, 255);
@@ -1402,9 +1455,9 @@ static void render_rooftop(SDL_Renderer *r, float time, int win_w, int win_h)
               (SDL_Color){169, 168, 145, 255}, "ROOF");
 
     float beacon = 0.38f + 0.62f * (sinf(time * 5.5f) > 0.25f);
-    color_rect(r, (SDL_Color){(Uint8)(COL_RUST.r * beacon),
-                              (Uint8)(COL_RUST.g * beacon),
-                              (Uint8)(COL_RUST.b * beacon), 255},
+    color_rect(r, (SDL_Color){(Uint8)(FX_RUST.r * beacon),
+                              (Uint8)(FX_RUST.g * beacon),
+                              (Uint8)(FX_RUST.b * beacon), 255},
                625.0f, ground - 105.0f, 10.0f, 5.0f);
 }
 
@@ -1481,9 +1534,9 @@ static void draw_helicopter(SDL_Renderer *r, float x, float y,
     float tail_x = 0.0f, tail_y = 0.0f;
     rotate_local(x, y, 100.0f, -8.0f, angle, &tail_x, &tail_y);
     draw_rotated_box(r, tail_x, tail_y, -18.0f, -1.5f, 36.0f, 3.0f,
-                     angle + rotor_angle * 1.7f, COL_INK);
+                     angle + rotor_angle * 1.7f, FX_INK);
     draw_rotated_box(r, tail_x, tail_y, -14.0f, -1.5f, 28.0f, 3.0f,
-                     angle + rotor_angle * 1.7f + 1.5708f, COL_INK);
+                     angle + rotor_angle * 1.7f + 1.5708f, FX_INK);
 
     /* Landing skids and main rotor. */
     draw_rotated_box(r, x, y, -31.0f, 24.0f, 62.0f, 3.0f,
@@ -1539,7 +1592,7 @@ static void draw_outro_agent_sky_aim(SDL_Renderer *r, float x,
     float shoulder_x = x + 20.0f * scale;
     float shoulder_y = ground_y - 20.0f * scale;
     SDL_Color skin = {209, 154, 105, 255};
-    set_color(r, COL_INK);
+    set_color(r, FX_INK);
     for (int i = -2; i <= 2; ++i)
         SDL_RenderLine(r, shoulder_x, shoulder_y + (float)i,
                        shoulder_x + 20.0f * scale,
@@ -1561,10 +1614,13 @@ static void draw_muzzle_flash(SDL_Renderer *r, float x, float y,
 {
     float dx = cosf(angle);
     float dy = sinf(angle);
-    set_color(r, (SDL_Color){255, 236, 153, 255});
+    /* The brightest thing in the frame illuminates the air around it, or it
+       reads as a decal stuck on the gun. */
+    fx_glow(r, x, y, 26.0f, FX_AMBER, 120);
+    set_color(r, FX_FLAME_HOT);
     SDL_RenderLine(r, x - dy * 5.0f, y + dx * 5.0f,
                    x + dy * 5.0f, y - dx * 5.0f);
-    set_color(r, (SDL_Color){255, 151, 37, 255});
+    set_color(r, FX_FLAME);
     SDL_RenderLine(r, x, y, x + dx * (13.0f * strength),
                    y + dy * (13.0f * strength));
 }
@@ -1585,9 +1641,9 @@ static void draw_shot_tracer(SDL_Renderer *r, float time, float shot_time,
     float ty = lerpf(from_y, to_y, tail);
 
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    set_rgba(r, 255, 135, 28, 105);
+    set_rgba(r, FX_FLAME.r, FX_FLAME.g, FX_FLAME.b, 105);
     SDL_RenderLine(r, tx, ty + 2.0f, hx, hy + 2.0f);
-    set_rgba(r, 255, 239, 160, 255);
+    set_rgba(r, FX_FLAME_HOT.r, FX_FLAME_HOT.g, FX_FLAME_HOT.b, 255);
     SDL_RenderLine(r, tx, ty, hx, hy);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
@@ -1600,26 +1656,25 @@ static void draw_terrorist_down(SDL_Renderer *r, float x, float ground_y,
                                 bool faces_right)
 {
     float dir = faces_right ? 1.0f : -1.0f;
-    color_rect(r, (SDL_Color){2, 4, 7, 155},
-               x - 5.0f, ground_y - 3.0f, 57.0f, 5.0f);
-    color_rect(r, COL_INK, x, ground_y - 13.0f, 43.0f, 13.0f);
+    fx_contact_shadow(r, x + 23.0f, ground_y - 3.0f, 28.0f, 0.0f, 190);
+    color_rect(r, FX_INK, x, ground_y - 13.0f, 43.0f, 13.0f);
     color_rect(r, (SDL_Color){42, 47, 43, 255},
                x + 5.0f, ground_y - 11.0f, 27.0f, 8.0f);
-    color_rect(r, COL_RUST, x + 13.0f, ground_y - 9.0f, 12.0f, 2.0f);
-    color_rect(r, (SDL_Color){143, 101, 73, 255},
+    color_rect(r, FX_RUST, x + 13.0f, ground_y - 9.0f, 12.0f, 2.0f);
+    color_rect(r, fx_dim(FX_SKIN, 0.68f),
                x + (faces_right ? 34.0f : -2.0f),
                ground_y - 12.0f, 10.0f, 9.0f);
     color_rect(r, (SDL_Color){20, 24, 24, 255},
                x + 8.0f + dir * 3.0f, ground_y - 20.0f, 9.0f, 10.0f);
-    color_rect(r, COL_INK, x + 30.0f, ground_y - 5.0f, 26.0f, 4.0f);
+    color_rect(r, FX_INK, x + 30.0f, ground_y - 5.0f, 26.0f, 4.0f);
 }
 
 static void draw_shock_mark(SDL_Renderer *r, float x, float y, float time)
 {
     float pulse = 0.65f + 0.35f * sinf(time * 13.0f);
-    SDL_Color color = {(Uint8)(COL_AMBER.r * pulse),
-                       (Uint8)(COL_AMBER.g * pulse),
-                       (Uint8)(COL_AMBER.b * pulse), 255};
+    SDL_Color color = {(Uint8)(FX_AMBER.r * pulse),
+                       (Uint8)(FX_AMBER.g * pulse),
+                       (Uint8)(FX_AMBER.b * pulse), 255};
     color_rect(r, color, x, y, 4.0f, 14.0f);
     color_rect(r, color, x, y + 18.0f, 4.0f, 4.0f);
 }
@@ -1633,7 +1688,7 @@ static void draw_explosion(SDL_Renderer *r, float x, float y, float age)
     float fade = 1.0f - clamp01((age - 0.95f) / 2.25f);
 
     if (age < 1.4f)
-        fx_glow(r, x, y, 150.0f, (SDL_Color){255, 150, 60, 255},
+        fx_glow(r, x, y, 150.0f, fx_mix(FX_FLAME, FX_AMBER, 0.45f),
                 (Uint8)(120.0f * (1.0f - age / 1.4f)));
 
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
@@ -1641,10 +1696,10 @@ static void draw_explosion(SDL_Renderer *r, float x, float y, float age)
     if (age < 0.85f)
     {
         float radius = 18.0f + expand * 78.0f;
-        set_rgba(r, 255, 99, 28, (Uint8)(205.0f * (1.0f - age / 0.85f)));
+        set_rgba(r, FX_FLAME.r, FX_FLAME.g, FX_FLAME.b, (Uint8)(205.0f * (1.0f - age / 0.85f)));
         fill_rect(r, x - radius, y - radius * 0.55f,
                   radius * 2.0f, radius * 1.10f);
-        set_rgba(r, 255, 229, 126,
+        set_rgba(r, FX_FLAME_HOT.r, FX_FLAME_HOT.g, FX_FLAME_HOT.b,
                  (Uint8)(240.0f * (1.0f - age / 0.85f)));
         fill_rect(r, x - radius * 0.45f, y - radius * 0.38f,
                   radius * 0.90f, radius * 0.72f);
@@ -1673,18 +1728,17 @@ static void draw_explosion(SDL_Renderer *r, float x, float y, float age)
 static void draw_wreckage(SDL_Renderer *r, float x, float ground_y,
                           float time)
 {
-    color_rect(r, (SDL_Color){4, 7, 9, 160},
-               x - 72.0f, ground_y - 5.0f, 142.0f, 7.0f);
-    color_rect(r, COL_INK, x - 48.0f, ground_y - 23.0f, 82.0f, 20.0f);
+    fx_contact_shadow(r, x - 1.0f, ground_y - 5.0f, 71.0f, 0.0f, 200);
+    color_rect(r, FX_INK, x - 48.0f, ground_y - 23.0f, 82.0f, 20.0f);
     color_rect(r, (SDL_Color){48, 50, 45, 255},
                x - 41.0f, ground_y - 19.0f, 67.0f, 12.0f);
     draw_rotated_box(r, x, ground_y, -91.0f, -5.0f, 150.0f, 4.0f,
                      -0.15f, (SDL_Color){20, 25, 26, 255});
     float fire = 0.5f + 0.5f * sinf(time * 17.0f);
-    color_rect(r, (SDL_Color){238, 83, 24, 255},
+    color_rect(r, FX_FLAME,
                x - 12.0f, ground_y - 28.0f - fire * 8.0f,
                18.0f, 16.0f + fire * 8.0f);
-    color_rect(r, (SDL_Color){255, 198, 72, 255},
+    color_rect(r, FX_FLAME_HOT,
                x - 7.0f, ground_y - 23.0f - fire * 5.0f,
                9.0f, 12.0f + fire * 5.0f);
 }
@@ -1692,36 +1746,15 @@ static void draw_wreckage(SDL_Renderer *r, float x, float ground_y,
 static void draw_pixel_heart(SDL_Renderer *r, float center_x,
                              float y, float time)
 {
-    static const char *rows[] = {
-        "0110110",
-        "1111111",
-        "1111111",
-        "0111110",
-        "0011100",
-        "0001000"};
+    /* fx.h's one heart, held up large: the same glyph the HUD counts and
+       the manual teaches, pulsing on the outro's own clock. */
     float pulse = 1.0f + (0.5f + 0.5f * sinf(time * 4.0f)) * 0.10f;
     float pixel = 3.0f * pulse;
-    float width = 7.0f * pixel;
     float bob = sinf(time * 2.2f) * 2.0f;
 
-    fx_glow(r, center_x, y + bob + 3.0f * pixel, width + 14.0f,
-            (SDL_Color){236, 70, 84, 255}, 66);
-
-    for (int row = 0; row < 6; ++row)
-    {
-        for (int col = 0; col < 7; ++col)
-        {
-            if (rows[row][col] != '1')
-                continue;
-            SDL_Color color = row < 2
-                                  ? (SDL_Color){247, 83, 91, 255}
-                                  : (SDL_Color){207, 43, 55, 255};
-            color_rect(r, color,
-                       center_x - width * 0.5f + (float)col * pixel,
-                       y + bob + (float)row * pixel,
-                       ceilf(pixel), ceilf(pixel));
-        }
-    }
+    fx_glow(r, center_x, y + bob + 3.0f * pixel, 7.0f * pixel + 14.0f,
+            FX_RED, 66);
+    fx_heart(r, center_x - 3.5f * pixel, y + bob, pixel, true);
 }
 
 static void draw_reunion_pair(SDL_Renderer *r, float center_x,
@@ -1745,12 +1778,12 @@ static void render_outro_ui(SDL_Renderer *r, float time,
     if (time >= 4.35f && time < 7.45f)
     {
         float reveal = smoothstep01((time - 4.35f) / 0.35f);
-        draw_text(r, 34.0f, 39.0f, 0.9f,
-                  (SDL_Color){(Uint8)(COL_AMBER.r * reveal),
-                              (Uint8)(COL_AMBER.g * reveal),
-                              (Uint8)(COL_AMBER.b * reveal), 255},
+        draw_text(r, 34.0f, 39.0f, 1.0f,
+                  (SDL_Color){(Uint8)(FX_AMBER.r * reveal),
+                              (Uint8)(FX_AMBER.g * reveal),
+                              (Uint8)(FX_AMBER.b * reveal), 255},
                   "ROOFTOP // EXTRACTION INBOUND");
-        color_rect(r, COL_AMBER, 34.0f, 54.0f, 105.0f * reveal, 2.0f);
+        color_rect(r, FX_AMBER, 34.0f, 54.0f, 105.0f * reveal, 2.0f);
     }
 
     if (time >= 6.00f && time < 9.30f)
@@ -1758,27 +1791,27 @@ static void render_outro_ui(SDL_Renderer *r, float time,
         float pulse = 0.5f + 0.5f * sinf(time * 6.0f);
         draw_target_brackets(r, hostage_x - 10.0f, 352.0f,
                              94.0f, 73.0f, pulse);
-        draw_text(r, 34.0f, 78.0f, 0.8f, COL_RUST,
+        draw_text(r, 34.0f, 78.0f, 1.0f, FX_RUST,
                   "NO CLEAR SHOT // HOSTAGE IN LINE OF FIRE");
     }
 
     if (time >= 9.25f && time < 10.25f)
     {
         float reveal = smoothstep01((time - 9.25f) / 0.18f);
-        draw_text(r, 34.0f, 78.0f, 0.9f,
-                  (SDL_Color){(Uint8)(COL_CYAN.r * reveal),
-                              (Uint8)(COL_CYAN.g * reveal),
-                              (Uint8)(COL_CYAN.b * reveal), 255},
+        draw_text(r, 34.0f, 78.0f, 1.0f,
+                  (SDL_Color){(Uint8)(FX_CYAN.r * reveal),
+                              (Uint8)(FX_CYAN.g * reveal),
+                              (Uint8)(FX_CYAN.b * reveal), 255},
                   "NEW TARGET // ROTORCRAFT");
     }
 
     if (time >= 13.35f && time < 16.50f)
     {
         float reveal = smoothstep01((time - 13.35f) / 0.22f);
-        draw_text(r, 34.0f, 39.0f, 0.9f,
-                  (SDL_Color){(Uint8)(COL_RUST.r * reveal),
-                              (Uint8)(COL_RUST.g * reveal),
-                              (Uint8)(COL_RUST.b * reveal), 255},
+        draw_text(r, 34.0f, 39.0f, 1.0f,
+                  (SDL_Color){(Uint8)(FX_RUST.r * reveal),
+                              (Uint8)(FX_RUST.g * reveal),
+                              (Uint8)(FX_RUST.b * reveal), 255},
                   "EXTRACTION DENIED // RESCUE WINDOW OPEN");
     }
 
@@ -1786,7 +1819,7 @@ static void render_outro_ui(SDL_Renderer *r, float time,
     {
         float pulse = 0.45f + 0.55f * sinf(time * 2.0f);
         draw_text(r, (float)win_w - 181.0f, (float)win_h - 31.0f,
-                  0.75f,
+                  1.0f,
                   (SDL_Color){(Uint8)(101.0f + pulse * 40.0f),
                               (Uint8)(109.0f + pulse * 40.0f),
                               (Uint8)(108.0f + pulse * 38.0f), 255},
@@ -1975,13 +2008,10 @@ void outro_cutscene_render(SDL_Renderer *r,
 
     render_outro_ui(r, time, hostage_x, win_w, win_h, gamepad_active);
 
-    fx_vignette(r, win_w, win_h, 74);
-    fx_grain(r, win_w, win_h, time, 24);
+    fx_grain(r, win_w, win_h, time, FX_GRAIN_FILM);
 
-    color_rect(r, (SDL_Color){3, 5, 8, 255},
-               0.0f, 0.0f, (float)win_w, 19.0f);
-    color_rect(r, (SDL_Color){3, 5, 8, 255},
-               0.0f, (float)win_h - 19.0f, (float)win_w, 19.0f);
+    color_rect(r, FX_INK, 0.0f, 0.0f, (float)win_w, 19.0f);
+    color_rect(r, FX_INK, 0.0f, (float)win_h - 19.0f, (float)win_w, 19.0f);
 
     if (time >= OUTRO_FINAL_REVEAL_TIME)
     {
@@ -1991,36 +2021,36 @@ void outro_cutscene_render(SDL_Renderer *r,
         set_rgba(r, 3, 7, 11, (Uint8)(190.0f * reveal));
         fill_rect(r, 0.0f, 19.0f, (float)win_w,
                   (float)win_h - 38.0f);
-        set_rgba(r, COL_CYAN.r, COL_CYAN.g, COL_CYAN.b,
+        set_rgba(r, FX_CYAN.r, FX_CYAN.g, FX_CYAN.b,
                  (Uint8)(70.0f * reveal));
         fill_rect(r, 0.0f, 99.0f, (float)win_w, 2.0f);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
         draw_reunion_pair(r, reunion_center_x, ground, time);
         draw_cutscene_text_centered(
-            r, (float)win_w * 0.5f, 69.0f, 2.2f,
-            (SDL_Color){(Uint8)(91.0f * reveal),
-                        (Uint8)(237.0f * reveal),
-                        (Uint8)(169.0f * reveal), 255},
+            r, (float)win_w * 0.5f, 69.0f, 2.0f,
+            (SDL_Color){(Uint8)((float)FX_GREEN.r * reveal),
+                        (Uint8)((float)FX_GREEN.g * reveal),
+                        (Uint8)((float)FX_GREEN.b * reveal), 255},
             "SHE'S SAFE");
         draw_cutscene_text_centered(
-            r, (float)win_w * 0.5f, 122.0f, 1.55f,
-            (SDL_Color){(Uint8)(226.0f * reveal),
-                        (Uint8)(222.0f * reveal),
-                        (Uint8)(199.0f * reveal), 255},
+            r, (float)win_w * 0.5f, 122.0f, 2.0f,
+            (SDL_Color){(Uint8)((float)FX_CREAM.r * reveal),
+                        (Uint8)((float)FX_CREAM.g * reveal),
+                        (Uint8)((float)FX_CREAM.b * reveal), 255},
             "THANK YOU FOR PLAYING");
         draw_cutscene_text_centered(
-            r, (float)win_w * 0.5f, 151.0f, 0.85f,
-            (SDL_Color){(Uint8)(128.0f * reveal),
-                        (Uint8)(145.0f * reveal),
-                        (Uint8)(143.0f * reveal), 255},
+            r, (float)win_w * 0.5f, 151.0f, 1.0f,
+            (SDL_Color){(Uint8)((float)FX_LABEL.r * reveal),
+                        (Uint8)((float)FX_LABEL.g * reveal),
+                        (Uint8)((float)FX_LABEL.b * reveal), 255},
             "CHUCK BROUGHT HER HOME");
 
         if (time >= 21.0f)
         {
             float pulse = 0.55f + 0.45f * sinf(time * 2.4f);
             draw_cutscene_text_centered(
-                r, (float)win_w * 0.5f, 505.0f, 0.85f,
+                r, (float)win_w * 0.5f, 505.0f, 1.0f,
                 (SDL_Color){(Uint8)(130.0f + pulse * 48.0f),
                             (Uint8)(139.0f + pulse * 48.0f),
                             (Uint8)(136.0f + pulse * 45.0f), 255},
@@ -2033,7 +2063,7 @@ void outro_cutscene_render(SDL_Renderer *r,
     if (fade_in > 0.0f)
     {
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-        set_rgba(r, 2, 4, 7, (Uint8)(fade_in * 255.0f));
+        set_rgba(r, FX_INK.r, FX_INK.g, FX_INK.b, (Uint8)(fade_in * 255.0f));
         fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }

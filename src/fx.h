@@ -43,6 +43,27 @@ static const SDL_Color FX_RED = {232, 74, 62, 255};
 static const SDL_Color FX_RED_DK = {130, 36, 34, 255};
 static const SDL_Color FX_GREEN = {96, 230, 140, 255};
 static const SDL_Color FX_GREEN_DK = {32, 120, 76, 255};
+/* Weathering red: rust stains, corroded fixings, dried oxide. Not a danger
+ * signal — FX_RED keeps that job — which is why it is its own constant
+ * instead of a dimmed FX_RED that would still read as "enemy". */
+static const SDL_Color FX_RUST = {198, 62, 50, 255};
+/* Fire, the one emissive material: a core between FX_RED and FX_AMBER and a
+ * near-white heart. A rocket's exhaust, a muzzle line and a cutscene blast
+ * burn the same fuel or they read as three different chemistries. */
+static const SDL_Color FX_FLAME = {226, 70, 38, 255};
+static const SDL_Color FX_FLAME_HOT = {255, 218, 94, 255};
+
+/* ---- Light temperatures ---------------------------------------------- */
+/* Every named light in the game. A screen that invents its own lamp colour
+ * is a screen lit from a fixture the rest of the game does not own. */
+static const SDL_Color FX_LAMP = {150, 206, 214, 255};   /* cool fluorescent */
+static const SDL_Color FX_WARM = {240, 190, 112, 255};   /* warm interior    */
+static const SDL_Color FX_SODIUM = {182, 116, 62, 255};  /* street sodium    */
+
+/* ---- Interface greys -------------------------------------------------- */
+/* The one grey UI labels are set in, everywhere a label is quieter than its
+ * value: HUD captions, manual keycaps, the chase objective line. */
+static const SDL_Color FX_LABEL = {108, 128, 148, 255};
 
 /* ---- Character materials ------------------------------------------- */
 static const SDL_Color FX_SKIN = {216, 160, 110, 255};
@@ -452,6 +473,21 @@ static inline void fx_light_cone(SDL_Renderer *r, float apex_x, float apex_y,
 
 /* ---- Full-frame finishing pass ------------------------------------- */
 
+/*
+ * One finish, two strengths, and every screen picks from these three numbers.
+ *
+ * Scanlines are one constant everywhere. The vignette has exactly two
+ * strengths with a rule between them: screens the player is *playing*
+ * (the sector, the chase) stay light so the edges of the playfield remain
+ * readable; screens the player is *watching* (title, manual, cutscenes)
+ * close in harder, the way a film frame does. Five hand-tuned alphas in five
+ * files is how the one production splits back into five screens.
+ */
+#define FX_SCANLINE_ALPHA 11
+#define FX_VIGNETTE_PLAY 58
+#define FX_VIGNETTE_SCENE 72
+#define FX_GRAIN_FILM 24
+
 /* Subtle CRT scanlines; one dark row every third pixel keeps the pixel-art
  * grid alive without dimming the scene. */
 static inline void fx_scanlines(SDL_Renderer *r, int w, int h, Uint8 alpha)
@@ -492,6 +528,69 @@ static inline void fx_vignette(SDL_Renderer *r, int w, int h, Uint8 alpha)
     SDL_RenderGeometry(r, NULL, left, 4, idx, 6);
     SDL_RenderGeometry(r, NULL, right, 4, idx, 6);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+/* ---- Shared interface glyphs ---------------------------------------- */
+
+/*
+ * The one heart.
+ *
+ * The HUD counts hearts, the manual teaches them and the outro hands one
+ * over, and for a while each of those screens drew its own — three shapes,
+ * three reds, none of them FX_RED. A player is asked to recognise this glyph
+ * across every screen it appears on, so it is drawn once, here, out of the
+ * same ramp a garment gets: lit crown where the ceiling light lands, base
+ * body, shaded point. `px` is the size of one heart pixel, so the HUD can set
+ * it small and a cutscene can hold it up large without a second bitmap.
+ */
+static inline void fx_heart(SDL_Renderer *r, float x, float y, float px,
+                            bool filled)
+{
+    static const char *rows[6] = {"0110110", "1111111", "1111111",
+                                  "0111110", "0011100", "0001000"};
+    FxRamp ramp = fx_ramp(FX_RED);
+    /* An empty heart is a socket, not a pale heart: the console's own dark
+     * with one lit row so it still reads as an indent in a lit panel. */
+    SDL_Color empty = {46, 40, 48, 255};
+    SDL_Color empty_lit = {66, 58, 68, 255};
+
+    for (int row = 0; row < 6; ++row)
+        for (int col = 0; col < 7; ++col)
+        {
+            if (rows[row][col] != '1')
+                continue;
+            SDL_Color c;
+            if (filled)
+                c = row < 2 ? ramp.lit : (row >= 4 ? ramp.dark : ramp.base);
+            else
+                c = row < 2 ? empty_lit : empty;
+            fx_rect(r, c, x + (float)col * px, y + (float)row * px,
+                    ceilf(px), ceilf(px));
+        }
+}
+
+#define FX_HEART_COLS 7.0f
+#define FX_HEART_ROWS 6.0f
+
+/*
+ * The one cartridge.
+ *
+ * Brass out of the amber ramp — lit tip, body, shaded flank — with the steel
+ * seat under it. The HUD's magazine and the manual's diagram of it must be
+ * the same object or the diagram teaches a different gun.
+ */
+static inline void fx_ammo_pip(SDL_Renderer *r, float x, float y, bool full)
+{
+    if (full)
+    {
+        FxRamp brass = fx_ramp(FX_AMBER);
+        fx_rect(r, brass.lit, x, y, 3.0f, 3.0f);
+        fx_rect(r, fx_dim(FX_AMBER, 0.90f), x, y + 3.0f, 3.0f, 8.0f);
+        fx_rect(r, FX_AMBER_DK, x + 2.0f, y + 3.0f, 1.0f, 8.0f);
+    }
+    else
+        fx_rect(r, (SDL_Color){40, 48, 58, 255}, x, y, 3.0f, 11.0f);
+    fx_rect(r, FX_STEEL, x - 1.0f, y + 11.0f, 5.0f, 2.0f);
 }
 
 /* Animated film grain for the cinematic screens. */

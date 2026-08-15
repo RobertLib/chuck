@@ -1253,7 +1253,8 @@ static void backdrop_plant(const LevelArtScene *s, const LevelThemeArt *art,
                 x + 150.0f, oy + 34.0f, 10.0f, fh - 98.0f);
         float blink = sinf(s->time * 1.4f + (float)(h % 7u)) > 0.86f ? 1.0f
                                                                     : 0.28f;
-        fx_rect(r, fx_dim((SDL_Color){194, 84, 66, 255}, blink),
+        /* The stack's warning light is FX_RED knocked back by distance. */
+        fx_rect(r, fx_dim(FX_RED, 0.85f * blink),
                 x + 153.0f, oy + 30.0f, 4.0f, 3.0f);
     }
 
@@ -1284,9 +1285,11 @@ static void backdrop_plant(const LevelArtScene *s, const LevelThemeArt *art,
                                         0.09f
                                 ? 0.3f
                                 : 1.0f;
+            /* Warm fittings are street sodium, cool ones the fluorescent
+             * lamp, both dimmed to backdrop distance. */
             SDL_Color lc = warm
-                               ? fx_dim((SDL_Color){126, 88, 44, 255}, flicker)
-                               : (SDL_Color){40, 96, 104, 255};
+                               ? fx_dim(FX_SODIUM, 0.70f * flicker)
+                               : fx_dim(FX_LAMP, 0.45f);
             fx_rect(r, lc, x + 36.0f + (float)lamp * 26.0f, oy + 70.0f,
                     12.0f, 4.0f);
             fx_rect_a(r, lc, 26, x + 34.0f + (float)lamp * 26.0f, oy + 68.0f,
@@ -1300,7 +1303,7 @@ static void backdrop_plant(const LevelArtScene *s, const LevelThemeArt *art,
     {
         float sway = sinf(s->time * 0.21f + x * 0.01f) * 14.0f;
         fx_light_cone(r, x + 150.0f + sway, oy - 6.0f, 14.0f, 52.0f, fh * 0.9f,
-                      (SDL_Color){120, 190, 196, 255}, 13);
+                      FX_LAMP, 13);
     }
 
     /* Near layer: wall seams and conduit shadows at a faster parallax. */
@@ -1512,8 +1515,7 @@ static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
                 /* The lit windows are the only bright thing outside, so they
                  * carry the whole read of "a city out there". Most are warm;
                  * a handful are cold office fluorescent. */
-                SDL_Color lit = (wh & 8u) ? art->lamp
-                                          : (SDL_Color){170, 202, 224, 255};
+                SDL_Color lit = (wh & 8u) ? art->lamp : FX_LAMP;
                 /* One light in a few has a brief, time-driven fluorescent
                  * flutter. It is deliberately rare and keyed to the same
                  * stable identity, so movement can never trigger it. */
@@ -1533,7 +1535,8 @@ static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
         {
             float pulse = sinf(s->time * 1.9f + (float)(h % 9u)) > 0.72f ? 1.0f
                                                                         : 0.2f;
-            fx_rect(r, fx_dim((SDL_Color){214, 78, 62, 255}, pulse),
+            /* Rooftop beacon: FX_RED, a step back for the distance. */
+            fx_rect(r, fx_dim(FX_RED, 0.92f * pulse),
                     x + 60.0f, top - 4.0f, 4.0f, 4.0f);
         }
     }
@@ -1550,12 +1553,19 @@ static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
     for (float mark = fmodf(-s->cam_x * 0.1f, 44.0f); mark < (float)s->win_w;
          mark += 44.0f)
     {
-        fx_rect_a(r, (SDL_Color){208, 196, 150, 255}, 60, mark,
+        /* Lane paint gone yellow under years of sodium light. */
+        fx_rect_a(r, fx_mix(FX_CREAM, FX_AMBER_DK, 0.35f), 60, mark,
                   street + 26.0f, 16.0f, 2.0f);
     }
 
     /* Traffic. A car needs a body: a bare pair of glows in the dark reads as
      * lens flare, not as a vehicle passing the window. */
+    /* Two dark saloon paints, kept below sky_low so a passing body reads by
+     * its lights rather than its panels; and one headlamp white for the lamp,
+     * its core and the wet-kerb reflection, so they can never disagree. */
+    static const SDL_Color SALOON_WARM = {44, 40, 52, 255};
+    static const SDL_Color SALOON_COOL = {36, 42, 50, 255};
+    SDL_Color headlamp = fx_mix(FX_WARM, FX_CREAM, 0.70f);
     for (int car = 0; car < 3; ++car)
     {
         bool leftward = (car & 1) != 0;
@@ -1564,8 +1574,7 @@ static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
         float travel = fmodf(s->time * speed + (float)car * 210.0f, span);
         float x = leftward ? span - travel - 95.0f : travel - 95.0f;
         float y = street + (leftward ? 12.0f : 26.0f);
-        SDL_Color body = car == 1 ? (SDL_Color){44, 40, 52, 255}
-                                  : (SDL_Color){36, 42, 50, 255};
+        SDL_Color body = car == 1 ? SALOON_WARM : SALOON_COOL;
         fx_rect(r, FX_INK, x + 2.0f, y + 12.0f, 62.0f, 4.0f);
         fx_rect(r, body, x + 4.0f, y + 4.0f, 58.0f, 9.0f);
         fx_rect(r, fx_mix(body, sky_low, 0.5f), x + 4.0f, y + 4.0f, 58.0f, 2.0f);
@@ -1574,12 +1583,12 @@ static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
         fx_rect(r, FX_INK, x + 46.0f, y + 14.0f, 8.0f, 4.0f);
         float lead = leftward ? x + 2.0f : x + 64.0f;
         float tail = leftward ? x + 64.0f : x + 2.0f;
-        fx_glow(r, lead, y + 8.0f, 22.0f, (SDL_Color){250, 232, 186, 255}, 70);
-        fx_rect(r, (SDL_Color){252, 240, 204, 255}, lead - 2.0f, y + 6.0f,
+        fx_glow(r, lead, y + 8.0f, 22.0f, headlamp, 70);
+        fx_rect(r, fx_mix(FX_WARM, FX_CREAM, 0.90f), lead - 2.0f, y + 6.0f,
                 4.0f, 3.0f);
-        fx_glow(r, tail, y + 8.0f, 14.0f, (SDL_Color){228, 74, 58, 255}, 52);
+        fx_glow(r, tail, y + 8.0f, 14.0f, FX_RED, 52);
         /* Wet asphalt carries the lights back up at the kerb. */
-        fx_rect_a(r, (SDL_Color){250, 232, 186, 255}, 26, lead - 14.0f,
+        fx_rect_a(r, headlamp, 26, lead - 14.0f,
                   y + 17.0f, 28.0f, 2.0f);
     }
 
@@ -1587,7 +1596,10 @@ static void backdrop_lobby(const LevelArtScene *s, const LevelThemeArt *art,
      * the most work: without something between the room and the view, a lit
      * window in a tower two streets away sits at exactly the same depth as a
      * lamp on the wall behind Chuck. */
-    fx_rect_a(r, (SDL_Color){96, 126, 158, 255}, 30, 0.0f, head,
+    /* Bluer than any lamp in the palette on purpose: this is night sky
+     * filtered through glass, not a light source of its own. */
+    const SDL_Color veil = {96, 126, 158, 255};
+    fx_rect_a(r, veil, 30, 0.0f, head,
               (float)s->win_w, street + 10.0f - head);
 
     /* The curtain wall. Mullions land on a three-tile rhythm so the glazing
@@ -1863,8 +1875,7 @@ static void backdrop_server(const LevelArtScene *s, const LevelThemeArt *art,
             float rate = 1.1f + (float)(uh % 9u) * 0.4f;
             bool lit = fmodf(s->time * rate + art_unit(uh, 5) * 4.0f, 2.0f) <
                        1.2f;
-            SDL_Color led = (uh & 4u) ? art->accent
-                                      : (SDL_Color){120, 240, 150, 255};
+            SDL_Color led = (uh & 4u) ? art->accent : FX_GREEN;
             fx_rect(r, lit ? led : fx_dim(led, 0.16f), x + 88.0f, uy + 2.0f,
                     3.0f, 4.0f);
             if (lit && (uh % 5u) == 0u)
@@ -2364,7 +2375,7 @@ static void backdrop_roof(const LevelArtScene *s, const LevelThemeArt *art,
             float pulse = sinf(s->time * 1.6f + (float)(h % 5u)) > 0.7f ? 1.0f
                                                                        : 0.15f;
             fx_glow(r, x + 42.0f, top - 4.0f, 14.0f,
-                    (SDL_Color){236, 78, 62, 255}, (Uint8)(90.0f * pulse));
+                    FX_RED, (Uint8)(90.0f * pulse));
         }
     }
     /* Ground haze thick enough to lose the foot of the towers in, but not so
@@ -2597,6 +2608,10 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
     {
     case BACKDROP_FACADE_STORM:
     {
+        /* The storm's one cold light: the discharge itself, with the rain
+         * lit by the same colour a step down so the two can never disagree.
+         * Bluer than FX_LAMP on purpose — a discharge is not a fixture. */
+        static const SDL_Color STORM_FLASH = {186, 206, 236, 255};
         /* Lightning is scheduled off a coarse slice of the clock so the whole
          * sky flashes at once; the wall is repainted wet underneath it. */
         float beat = fmodf(s->time, 7.3f);
@@ -2604,7 +2619,7 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
                                    : (beat < 0.24f && beat > 0.16f ? 0.6f
                                                                    : 0.0f);
         if (flash > 0.0f)
-            fx_rect_a(r, (SDL_Color){186, 206, 236, 255},
+            fx_rect_a(r, STORM_FLASH,
                       (Uint8)(70.0f * flash), 0.0f, top, (float)s->win_w,
                       height);
         facade_skyline(s, art, 40.0f);
@@ -2615,12 +2630,13 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
                       fmodf(s->cam_y * 0.05f, 300.0f);
             float x = fmodf(s->time * (7.0f + (float)band * 3.0f), 460.0f) -
                       230.0f;
-            fx_rect_a(r, (SDL_Color){44, 48, 58, 255}, 90, x, y,
+            fx_rect_a(r, fx_mix(FX_SHADOW, FX_STEEL_DK, 0.8f), 90, x, y,
                       (float)s->win_w + 260.0f, 26.0f + (float)band * 7.0f);
         }
         facade_shell(s, art, top, height);
         /* Rain in two sheets: a fast near one and a slow far one. */
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        SDL_Color rain = fx_dim(STORM_FLASH, 0.94f);
         for (int drop = 0; drop < 150; ++drop)
         {
             unsigned h = art_hash(drop * 31, 613);
@@ -2631,7 +2647,8 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
                       100.0f;
             float y = top + fmodf(s->time * speed + (float)((h >> 6) % 800u),
                                   height);
-            SDL_SetRenderDrawColor(r, 176, 198, 222, near_sheet ? 90 : 45);
+            SDL_SetRenderDrawColor(r, rain.r, rain.g, rain.b,
+                                   near_sheet ? 90 : 45);
             fx_fill(r, x, y, 1.0f, near_sheet ? 14.0f : 8.0f);
         }
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
@@ -2643,13 +2660,15 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
          * light touches goes warm, and the towers become silhouettes. */
         float sun_x = (float)s->win_w * 0.78f;
         float sun_y = (float)s->win_h * 0.72f;
-        fx_glow(r, sun_x, sun_y, 300.0f, (SDL_Color){255, 196, 120, 255}, 110);
-        fx_glow(r, sun_x, sun_y, 120.0f, (SDL_Color){255, 236, 190, 255}, 150);
+        /* The sun is the game's warm light writ large: FX_WARM for the halo,
+         * lifted toward cream at the core. */
+        fx_glow(r, sun_x, sun_y, 300.0f, FX_WARM, 110);
+        fx_glow(r, sun_x, sun_y, 120.0f, fx_mix(FX_WARM, FX_CREAM, 0.65f), 150);
         facade_skyline(s, art, 0.0f);
         for (int band = 0; band < 3; ++band)
         {
             float y = (float)s->win_h - 150.0f + (float)band * 34.0f;
-            fx_rect_a(r, (SDL_Color){250, 186, 132, 255}, 60, 0.0f, y,
+            fx_rect_a(r, fx_mix(FX_WARM, FX_CREAM, 0.20f), 60, 0.0f, y,
                       (float)s->win_w, 12.0f);
         }
         facade_shell(s, art, top, height);
@@ -2664,7 +2683,8 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
             float y = top + 40.0f + (float)((h >> 5) % 130u) +
                       sinf(s->time * 1.4f + (float)bird) * 5.0f;
             float flap = sinf(s->time * 7.0f + (float)bird) * 3.0f;
-            fx_set(r, (SDL_Color){52, 40, 44, 255});
+            /* A bird against the dawn is a warm dark, not interface ink. */
+            fx_set(r, fx_mix(FX_SHADOW, FX_WOOD, 0.3f));
             SDL_RenderLine(r, x - 5.0f, y - flap, x, y);
             SDL_RenderLine(r, x, y, x + 5.0f, y - flap);
         }
@@ -2672,6 +2692,15 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
     }
     case BACKDROP_FACADE_HIGH:
     {
+        /* The one purple in the game, and it is deliberate: seen from above
+         * the weather, the sodium-and-neon city sums to a violet haze that no
+         * single fixture in the palette owns — anchoring it to FX_LAMP or
+         * FX_CYAN would hang a lamp in the sky. Owned here as one named trio
+         * (the glow, the cloud deck it soaks, the deck's lit tops) so the hue
+         * has exactly one home and cannot multiply. */
+        static const SDL_Color CITY_GLOW = {150, 130, 220, 255};
+        static const SDL_Color CLOUD_DECK = {58, 56, 104, 255};
+        static const SDL_Color CLOUD_DECK_LIT = {96, 92, 156, 255};
         /* Above the weather: thin air, hard stars, and the city reduced to a
          * glow coming up through a floor of cloud. */
         for (int i = 0; i < 60; ++i)
@@ -2686,7 +2715,7 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
         }
         float deck = (float)s->win_h - 90.0f + fmodf(s->cam_y * 0.1f, 60.0f);
         fx_glow(r, (float)s->win_w * 0.4f, deck + 40.0f, 260.0f,
-                (SDL_Color){150, 130, 220, 255}, 70);
+                CITY_GLOW, 70);
         for (int puff = 0; puff < 7; ++puff)
         {
             unsigned h = art_hash(puff * 19, 811);
@@ -2695,9 +2724,9 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
                             (float)s->win_w + 320.0f) -
                       160.0f;
             float w = 150.0f + (float)(h % 160u);
-            fx_rect_a(r, (SDL_Color){58, 56, 104, 255}, 150, x,
+            fx_rect_a(r, CLOUD_DECK, 150, x,
                       deck + (float)((h >> 4) % 40u), w, 30.0f);
-            fx_rect_a(r, (SDL_Color){96, 92, 156, 255}, 90, x,
+            fx_rect_a(r, CLOUD_DECK_LIT, 90, x,
                       deck + (float)((h >> 4) % 40u), w, 6.0f);
         }
         facade_shell(s, art, top, height);
