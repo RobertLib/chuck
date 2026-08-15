@@ -20,35 +20,51 @@ bool player_weapon_available(const Player *player, PlayerWeapon weapon)
     return false;
 }
 
-void player_select_next_weapon(Player *player)
+/* This order makes one press after a temporary pickup return to the ordinary
+ * sidearm, while still keeping the always-available knife in the cycle. */
+static const PlayerWeapon WEAPON_CYCLE[] = {
+    PLAYER_WEAPON_KNIFE,
+    PLAYER_WEAPON_BAZOOKA,
+    PLAYER_WEAPON_GRENADE,
+    PLAYER_WEAPON_PISTOL};
+
+/* One step through the cycle in either direction, skipping whatever is out of
+ * ammo. `step` is +1 for the next weapon and PLAYER_WEAPON_COUNT - 1 for the
+ * one before it, so both bumpers walk the same ring rather than two lists that
+ * could disagree about what follows what. */
+static void select_weapon_step(Player *player, int step)
 {
-    /* This order makes one press after a temporary pickup return to the
-     * ordinary sidearm, while still keeping the always-available knife in
-     * the cycle. */
-    static const PlayerWeapon cycle[] = {
-        PLAYER_WEAPON_KNIFE,
-        PLAYER_WEAPON_BAZOOKA,
-        PLAYER_WEAPON_GRENADE,
-        PLAYER_WEAPON_PISTOL};
     int current = -1;
     for (int i = 0; i < PLAYER_WEAPON_COUNT; ++i)
     {
-        if (cycle[i] == player->active_weapon)
+        if (WEAPON_CYCLE[i] == player->active_weapon)
         {
             current = i;
             break;
         }
     }
+    if (current < 0)
+        current = 0; /* never, but a negative index would not stay never */
     for (int offset = 1; offset <= PLAYER_WEAPON_COUNT; ++offset)
     {
         PlayerWeapon candidate =
-            cycle[(current + offset) % PLAYER_WEAPON_COUNT];
+            WEAPON_CYCLE[(current + offset * step) % PLAYER_WEAPON_COUNT];
         if (player_weapon_available(player, candidate))
         {
             player->active_weapon = candidate;
             return;
         }
     }
+}
+
+void player_select_next_weapon(Player *player)
+{
+    select_weapon_step(player, 1);
+}
+
+void player_select_prev_weapon(Player *player)
+{
+    select_weapon_step(player, PLAYER_WEAPON_COUNT - 1);
 }
 
 void player_reset(Player *player, const Level *level)

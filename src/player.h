@@ -12,14 +12,23 @@ typedef struct
     bool right;
     bool up;
     bool down;
-    bool jump;          /* edge-triggered: set on input press, consumed each frame */
-    bool jump_held;     /* level-triggered: true while the jump key is down */
+    bool jump;      /* edge-triggered: set on input press, consumed each frame */
+    bool jump_held; /* level-triggered: true while the jump key is down */
+    /* The two pedals of the prologue drive. A car is not a platformer figure:
+     * nobody reaches for the d-pad to make one go, so the throttle and the
+     * brake are the letters under the thumbs — A and B — and the sticks and
+     * arrows that already meant "up" and "down" keep working alongside them.
+     * They are their own inputs rather than aliases of up/down so that binding
+     * a face button to the accelerator cannot quietly make it climb a ladder. */
+    bool gas;   /* held: accelerate in the prologue drive */
+    bool brake; /* held: slow down in the prologue drive */
     bool shoot;         /* edge-triggered: set on input press, consumed each frame */
     bool use_door;      /* edge-triggered: enter a door while standing in it */
     bool interact;      /* held: operate the active terminal */
     bool confirm;       /* edge-triggered: accept/start/skip */
-    bool restart;       /* edge-triggered: replay after an ending */
-    bool switch_weapon; /* edge-triggered: select the next usable weapon */
+    bool restart;            /* edge-triggered: replay after an ending */
+    bool switch_weapon;      /* edge-triggered: select the next usable weapon */
+    bool switch_weapon_back; /* edge-triggered: and the one before it */
 } Input;
 
 typedef enum
@@ -72,5 +81,7 @@ void player_reset(Player *player, const Level *level);
 float player_update(Player *player, Level *level, const Input *input, float dt);
 bool player_weapon_available(const Player *player, PlayerWeapon weapon);
 void player_select_next_weapon(Player *player);
+/* The same cycle walked the other way, for the left bumper. */
+void player_select_prev_weapon(Player *player);
 
 #endif /* CHUCK_PLAYER_H */

@@ -528,6 +528,11 @@
 #define CHASE_PAVEMENT_WIDTH 26.0f
 #define CHASE_DEPARTURE_DURATION 6.0f
 #define CHASE_PURSUIT_DURATION 40.0f
+/* How long the pedals stay named on the road at the head of every attempt.
+ * A car is the one thing in the game nobody guesses the controls for — the
+ * platformer never asks for a throttle — so the prompt is shown outright and
+ * comes back after every crash, not only at the very start. */
+#define CHASE_CONTROL_HINT_TIME 7.0f
 /* A failed attempt rewinds the drive by a beat instead of to zero, and after
  * a couple of failures the whole drive can be skipped: the prologue must
  * never be the wall someone quits the game on. */

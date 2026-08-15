@@ -2,6 +2,7 @@
 #define CHUCK_INTRO_H
 
 #include "common.h"
+#include "pad_hint.h"
 
 #define INTRO_STAR_COUNT 150
 
@@ -26,8 +27,10 @@ typedef struct
 
 void intro_init(Intro *intro, int win_w, int win_h);
 void intro_update(Intro *intro, float dt, int win_w, int win_h, float mouse_x, float mouse_y);
+/* `pad` spells the prompts for whatever is in the player's hands, and is NULL
+ * when that is the keyboard. */
 void intro_render(SDL_Renderer *renderer, const Intro *intro,
-                  int win_w, int win_h, bool gamepad_active);
+                  int win_w, int win_h, const PadHints *pad);
 
 /* True when (x, y), in logical render coordinates, lies within the START button. */
 bool intro_hit_start_button(const Intro *intro, float x, float y);

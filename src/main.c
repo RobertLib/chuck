@@ -74,15 +74,18 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
             game_close_assist(game);
             return SDL_APP_CONTINUE;
         }
+        /* The report between sectors is mid-campaign and has nothing to close,
+         * so ESC does nothing there rather than dropping a run in progress on
+         * the title screen — the same rule the pad's B follows. */
+        if (game->state == STATE_LEVEL_TRANSITION)
+        {
+            return SDL_APP_CONTINUE;
+        }
         game_return_to_intro(game);
         return SDL_APP_CONTINUE;
     }
 
     game_handle_event(game, event);
-    if (game->platform.quit_requested)
-    {
-        return SDL_APP_SUCCESS;
-    }
     return SDL_APP_CONTINUE;
 }
 

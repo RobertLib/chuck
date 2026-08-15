@@ -88,7 +88,8 @@ Two layers, and the split is the most important invariant in the codebase:
   [game_input.c](src/game_input.c), [game_render.c](src/game_render.c),
   [chase_render.c](src/chase_render.c), [audio.c](src/audio.c),
   [intro.c](src/intro.c), [manual.c](src/manual.c),
-  [cutscene.c](src/cutscene.c), [particle.c](src/particle.c).
+  [cutscene.c](src/cutscene.c), [pad_hint.c](src/pad_hint.c),
+  [particle.c](src/particle.c).
 - **Gameplay core** (no SDL, no knowledge of `Game`): `src/gameplay_*.c`,
   [level.c](src/level.c), [level_route.c](src/level_route.c),
   [player.c](src/player.c), [enemy.c](src/enemy.c),
@@ -236,6 +237,88 @@ core stays deterministic and menu-free. The sheet opens from the title
 screen or from pause (`J`, or X on a pad) and returns to whichever opened
 it.
 
+### The letter on the button
+
+SDL names a face button by its **position** — `SDL_GAMEPAD_BUTTON_SOUTH` is the
+bottom one on every pad ever made — and binding straight to those positions is
+what the game used to do. It is right on an Xbox pad and quietly wrong on a
+Nintendo one, which prints A where an Xbox pad prints B: the title screen asked
+for A, and the button printed A was the one that quit the game.
+
+So the game binds by **letter**, in [pad_hint.c](src/pad_hint.c). A pad is asked
+what it prints on each of its four faces the moment it is plugged in
+(`pad_hints_read` → `PlatformState.pad`), and the four letters are filed by what
+they say rather than by where they sit: **A confirms, jumps and skips; B backs
+out, and attacks inside a sector; X attacks and opens the assist sheet; Y uses
+a door and opens the manual.**
+A PlayStation pad needs no swap, only a spelling — its cross, circle, square and
+triangle already sit where an Xbox pad's letters do, and since every prompt goes
+through `SDL_RenderDebugText`, whose 8x8 font is ASCII only, they are spelled
+`X`, `O`, `[]` and `/\` rather than drawn. START and SELECT never move and only
+change name (`+` and `-` on a Switch pad, OPTIONS on a PlayStation), so they are
+read off `SDL_GetGamepadType` instead.
+
+The rest of the pad is bound the way the platform holders' own guidance binds
+it, because a player arrives already knowing what these buttons do and every
+departure from that is a bug the player blames on themselves:
+
+- **START pauses. Nothing else does.** It is the pause button on every pad ever
+  made. B carrying it as well is what this used to do, and it meant a stray
+  thumb froze a sector and — once the drive put the brake on B — that braking
+  opened the pause sheet.
+- **B backs out, and backing out never destroys anything.** It closes the
+  manual, the assist sheet and the pause sheet — and that is the whole list.
+  Inside a sector there is nothing open to close, so B attacks there instead,
+  beside X: A and B are the two buttons every thumb finds first, and a dead
+  button under the thumb while the game is being played is its own kind of
+  wrong.
+  It does not close the game from the title screen, because the player did not
+  open the game the way they opened a sheet, and a first press of B on the
+  first screen ending the session is the worst version of that mistake;
+  quitting is `ESC` or the window's close box. During a sector, a cutscene,
+  the report between sectors or the drive it does nothing at all:
+  dropping a run on one press of the button players use to say "not that" is
+  the same bug wearing a hat. The way out of a run is deliberate and from the
+  pause screen only (SELECT, `abandons_run`), and `ESC` follows the same rule
+  on the keyboard.
+- **The bumpers cycle.** RB takes the next weapon and LB the one before it
+  (`player_select_prev_weapon`, one ring walked in both directions so the two
+  can never disagree), and in the manual they turn the sheet, which is the one
+  job Microsoft's own gamepad guidance gives a bumper. What they must not carry
+  is a setting: mute used to sit on LB, where nothing would look for it and
+  where a thumb reaching for a weapon found it. It is on the pause screen now,
+  with the rest of the settings.
+- **The triggers drive.** The drive answers RT and LT as throttle and brake as
+  well as the letters it prompts for, because that is where a driver's fingers
+  go.
+
+The drive is the one state that reassigns a letter, and it is worth knowing why
+the exception is allowed: a car is not a platformer figure, so **A is the
+accelerator and B the brake for as long as `STATE_CHASE` is up**, held rather
+than pressed. A therefore stops confirming there (`confirm_with_gamepad`
+returns early) and the skip moves to the one letter still free, Y, which
+reaches the simulation as `use_door`. START still pauses, as it does
+everywhere.
+
+Two rules follow, and both are the reason this is one module rather than a
+ternary at each prompt:
+
+- **Nothing spells a letter itself.** A prompt is a template — `$A`, `$B`, `$X`,
+  `$Y`, `$START`, `$SELECT`, `$LB`, `$RB` — handed to `pad_hint` along with the
+  keyboard line, and it comes back spelled for whatever is in the player's
+  hands, or as the keyboard line when that is the keyboard. The manual's control
+  table is written in the same tokens, and its chip columns are measured
+  **after** spelling, because `$START` is six characters and OPTIONS is seven.
+- **One answer per frame.** `game_pad_hints` returns the pad the frame is drawn
+  for or NULL, and every renderer takes that pointer where it used to take a
+  `bool gamepad_active`, so no two screens can disagree about which pad the
+  player is holding.
+
+The rule for a new prompt is therefore: name the letter, never the position, and
+route it through `pad_hint`. A prompt that names a button the state does not
+actually accept is the same bug in a smaller way — the drive advertised START as
+its skip while START was pausing it.
+
 ### The prologue: three beats, one shot
 
 Pressing START plays the whole abduction before the platformer begins, in
@@ -272,9 +355,24 @@ shell's cue to play the opening cutscene. Crashing out or letting the gap exceed
 `CHASE_LOSE_GAP` only fails the attempt — and only costs a beat of it:
 `CHASE_PHASE_FAILED` resumes the drive `CHASE_FAIL_REWIND` seconds back from
 where it went wrong, not from zero, and after `CHASE_SKIP_AFTER_ATTEMPTS`
-failures confirm skips straight to the arrival. The prologue is a
+failures a skip press goes straight to the arrival. The prologue is a
 curtain-raiser and must never be the wall someone quits the game on; both
 rules are tested.
+
+**The car has two pedals, and it says so.** `Input.gas` and `Input.brake` are
+the only things `drive_player_car` reads, and the shell fills them from the
+letter under each thumb as well as from the stick, the d-pad and the arrows
+(`game_read_input`) — A and UP accelerate, B and DOWN brake. They are their own
+inputs rather than aliases of `up`/`down` so that binding a face button to the
+throttle cannot quietly bind it to climbing a ladder, and `skip_pressed` reads
+`confirm || use_door` because the pad and the keyboard cannot agree on one
+button once A is a pedal. None of it works if the player is never told: the
+platformer never asks for a throttle, so an unaided player holds a direction
+and watches the SUV pull away without ever learning the car had to be driven.
+So the pedals are named twice — permanently, in the HUD line under `PURSUIT`,
+which names the buttons rather than the hardware, and outright on the road at
+the head of **every** attempt for `CHASE_CONTROL_HINT_TIME` seconds, because a
+crash is exactly when someone needs to read them again.
 
 Two rules keep it fair, and both are tested: traffic is never generated more
 than `CHASE_MAX_CARS_ABREAST` cars wide, so at least two lanes are always open,

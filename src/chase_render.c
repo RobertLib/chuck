@@ -861,7 +861,7 @@ static void draw_car_pip(SDL_Renderer *r, float x, float y, bool intact)
 }
 
 static void render_hud(SDL_Renderer *r, const Chase *chase, int win_w,
-                       bool gamepad_active)
+                       const PadHints *pad)
 {
     fx_vgrad(r, 0.0f, 0.0f, (float)win_w, 37.0f,
              fx_mix(FX_BASE, FX_MID, 0.30f), 255,
@@ -874,9 +874,13 @@ static void render_hud(SDL_Renderer *r, const Chase *chase, int win_w,
     fx_rect(r, FX_RED, 0.0f, 0.0f, 3.0f, 37.0f);
     draw_text(r, 12.0f, 4.0f, 2.0f, FX_CREAM, "PURSUIT");
     fx_rect(r, fx_dim(FX_RED, 0.73f), 12.0f, 22.0f, 112.0f, 2.0f);
+    /* The readout under the title names the pedals rather than the hardware:
+     * "STICK / DPAD DRIVE" told a player holding a pad everything except the
+     * one thing they needed, which is which button makes the car go. */
+    char pedals[40];
     draw_text(r, 12.0f, 27.0f, 1.0f, FX_LABEL,
-              gamepad_active ? "STICK / DPAD  DRIVE" :
-                               "ARROWS / WASD  DRIVE");
+              pad_hint(pad, pedals, sizeof(pedals), "$A GAS   $B BRAKE",
+                       "UP GAS   DOWN BRAKE"));
 
     draw_text(r, 196.0f, 8.0f, 1.0f, FX_LABEL, "CAR");
     for (int i = 0; i < CHASE_INTEGRITY; ++i)
@@ -952,12 +956,60 @@ static void render_junction_warning(SDL_Renderer *r, const ChaseView *view,
     draw_text(r, x + 14.0f, y + 6.0f, 1.0f, fx_dim(accent, pulse), text);
 }
 
+/*
+ * The pedals, spelled out on the road.
+ *
+ * The drive is the one beat of the game that is not a platformer, and the
+ * platformer never asks for a throttle: told nothing, a player holds a
+ * direction and watches the SUV pull away without ever learning that the car
+ * had to be driven. So the two pedals are named at the head of every attempt —
+ * a crash is exactly when someone needs to read them again — and they fade out
+ * once the drive is under way, because a prompt that never leaves is a prompt
+ * nobody reads. What stays is the HUD line under PURSUIT, which names the same
+ * two buttons for anyone who arrives late.
+ */
+static void render_control_hint(SDL_Renderer *r, const Chase *chase, int win_w,
+                                int win_h, const PadHints *pad)
+{
+    /* Only over the drive itself: the departure is watched rather than driven,
+     * and its own beat already carries a caption and a skip prompt. */
+    if (chase->phase != CHASE_PHASE_PURSUIT)
+        return;
+    float fade = fminf(clamp01(chase->phase_time / 0.4f),
+                       clamp01(CHASE_CONTROL_HINT_TIME - chase->phase_time));
+    if (fade <= 0.0f)
+        return;
+
+    char pedals[64];
+    pad_hint(pad, pedals, sizeof(pedals), "$A ACCELERATE    $B BRAKE",
+             "UP ACCELERATE    DOWN BRAKE");
+    const char *steer = pad != NULL ? "STICK OR DPAD STEERS"
+                                    : "LEFT AND RIGHT STEER";
+
+    float width = fmaxf(text_width(pedals, 2.0f), text_width(steer, 1.0f)) +
+                  40.0f;
+    float x = ((float)win_w - width) * 0.5f;
+    /* Under the car, not over it: the camera keeps Chuck's bonnet a fixed
+     * CHASE_CAMERA_LEAD off the bottom edge, so this band is the one strip of
+     * road the player never drives through. */
+    float y = (float)win_h - 88.0f;
+    Uint8 alpha = (Uint8)(fade * 200.0f);
+    fx_rect_a(r, FX_INK, alpha, x, y, width, 44.0f);
+    fx_rect_a(r, FX_AMBER, alpha, x, y, 3.0f, 44.0f);
+    float center_x = (float)win_w * 0.5f;
+    draw_text_centered(r, center_x, y + 7.0f, 2.0f, fx_dim(FX_CREAM, fade),
+                       pedals);
+    draw_text_centered(r, center_x, y + 29.0f, 1.0f, fx_dim(FX_LABEL, fade),
+                       steer);
+}
+
 static void render_overlays(SDL_Renderer *r, const ChaseView *view,
                             const Chase *chase, int win_w, int win_h,
-                            bool gamepad_active)
+                            const PadHints *pad)
 {
     float center_x = (float)win_w * 0.5f;
     render_junction_warning(r, view, chase, win_w);
+    render_control_hint(r, chase, win_w, win_h, pad);
 
     /* Off-screen target: the player still needs to know where the SUV went. */
     float target_screen_y = screen_y(view, chase->target.y);
@@ -984,10 +1036,11 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
         draw_text_centered(r, center_x, view->view_top + 14.0f, 2.0f,
                            fx_dim(FX_CREAM, fade), caption);
         float blink = 0.45f + 0.55f * sinf(chase->time * 2.0f);
+        char hint[32];
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f, 1.0f,
                   fx_dim(FX_STEEL_LT, blink),
-                  gamepad_active ? "A / START TO SKIP" :
-                                   "ENTER / SPACE TO SKIP");
+                  pad_hint(pad, hint, sizeof(hint), "$Y TO SKIP",
+                           "ENTER / SPACE TO SKIP"));
     }
 
     if (chase->phase == CHASE_PHASE_FAILED)
@@ -1007,10 +1060,11 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
         chase->attempts >= CHASE_SKIP_AFTER_ATTEMPTS)
     {
         float blink = 0.45f + 0.55f * sinf(chase->time * 2.0f);
+        char hint[32];
         draw_text(r, (float)win_w - 196.0f, (float)win_h - 31.0f, 1.0f,
                   fx_dim(FX_STEEL_LT, blink),
-                  gamepad_active ? "A / START: SKIP DRIVE"
-                                 : "ENTER: SKIP THE DRIVE");
+                  pad_hint(pad, hint, sizeof(hint), "$Y: SKIP THE DRIVE",
+                           "ENTER: SKIP THE DRIVE"));
     }
 
     if (chase->phase == CHASE_PHASE_ARRIVAL && chase->phase_time > 1.4f)
@@ -1028,7 +1082,7 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
 }
 
 void chase_render(SDL_Renderer *r, const Chase *chase, int win_w, int win_h,
-                  float shake_x, float shake_y, bool gamepad_active)
+                  float shake_x, float shake_y, const PadHints *pad)
 {
     ChaseView view;
     view.road_left = ((float)win_w - CHASE_ROAD_WIDTH) * 0.5f;
@@ -1064,8 +1118,8 @@ void chase_render(SDL_Renderer *r, const Chase *chase, int win_w, int win_h,
     draw_chuck_on_foot(r, &view, chase);
     render_speed_streaks(r, &view, chase);
 
-    render_overlays(r, &view, chase, win_w, win_h, gamepad_active);
-    render_hud(r, chase, win_w, gamepad_active);
+    render_overlays(r, &view, chase, win_w, win_h, pad);
+    render_hud(r, chase, win_w, pad);
 
     /* Finishing (vignette, scanlines) belongs to game_render's one shared
        pass — the pause overlay has to sit under it, and it is drawn by the

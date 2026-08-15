@@ -493,6 +493,7 @@ static void clear_edge_input(Game *game)
     game->input.confirm = false;
     game->input.restart = false;
     game->input.switch_weapon = false;
+    game->input.switch_weapon_back = false;
 }
 
 void game_toggle_pause(Game *game)
@@ -624,7 +625,8 @@ static void game_enter_state(Game *game, GameState next_state)
         int win_w = 0;
         int win_h = 0;
         game_get_view_size(game, &win_w, &win_h);
-        manual_init(&game->presentation.manual, win_w, win_h);
+        manual_init(&game->presentation.manual, win_w, win_h,
+                    game_pad_hints(game));
         break;
     }
     case STATE_LEVEL_START:
@@ -748,7 +750,8 @@ static bool update_scene(Game *game, float dt)
 
         int win_w = 0, win_h = 0;
         game_get_view_size(game, &win_w, &win_h);
-        manual_update(&game->presentation.manual, dt, win_w, win_h, mx, my);
+        manual_update(&game->presentation.manual, dt, win_w, win_h, mx, my,
+                      game_pad_hints(game));
         clear_edge_input(game);
         return true;
     }
@@ -1098,6 +1101,7 @@ static void update_facade_playing(Game *game, float dt)
     game->input.shoot = false;
     game->input.use_door = false;
     game->input.switch_weapon = false;
+    game->input.switch_weapon_back = false;
     gameplay_climb_update(&game->gameplay, dt);
     /* Loadout carried up the wall is spent inside the next sector, so the
      * detour to a pickup is the climb's own risk/reward decision. */
@@ -1162,9 +1166,11 @@ static void update_playing(Game *game, float dt)
         player_input.shoot = false;
         player_input.use_door = false;
         player_input.switch_weapon = false;
+        player_input.switch_weapon_back = false;
         game->input.shoot = false;
         game->input.use_door = false;
         game->input.switch_weapon = false;
+        game->input.switch_weapon_back = false;
         game->gameplay.player.vx = 0.0f;
     }
     float player_fall_speed =

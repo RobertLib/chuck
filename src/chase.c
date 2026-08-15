@@ -496,9 +496,9 @@ static void steer_and_clamp(Chase *chase, const Input *input, float dt)
 
 static void drive_player_car(Chase *chase, const Input *input, float dt)
 {
-    if (input->up && !input->down)
+    if (input->gas && !input->brake)
         chase->player.speed += CHASE_ACCEL * dt;
-    else if (input->down && !input->up)
+    else if (input->brake && !input->gas)
         chase->player.speed -= CHASE_BRAKE * dt;
     else
         chase->player.speed = approach(chase->player.speed, CHASE_CRUISE_SPEED,
@@ -642,6 +642,17 @@ static void update_engine_sound(Chase *chase, float dt)
     game_events_sound(&chase->events, SFX_CHASE_ENGINE);
 }
 
+/*
+ * The press that means "get me past this". It is two inputs rather than one
+ * because the pad and the keyboard cannot agree on a single button here: on a
+ * pad A is the accelerator, so the shell reports the skip on Y (`use_door`),
+ * while the keyboard's Space and Enter still arrive as an ordinary confirm.
+ */
+static bool skip_pressed(const Input *input)
+{
+    return input->confirm || input->use_door;
+}
+
 static void update_departure(Chase *chase, const Input *input, float dt)
 {
     float previous = chase->phase_time;
@@ -683,7 +694,7 @@ static void update_departure(Chase *chase, const Input *input, float dt)
                                    CHASE_STEER_SPEED * 0.45f, dt);
     }
 
-    if (now >= CHASE_DEPARTURE_DURATION || input->confirm)
+    if (now >= CHASE_DEPARTURE_DURATION || skip_pressed(input))
     {
         /*
          * Chuck's late start would otherwise leave the SUV a whole block ahead.
@@ -731,7 +742,7 @@ static void update_pursuit(Chase *chase, const Input *input, float dt)
     /* After a couple of failed attempts the drive stops insisting: confirm
      * jumps straight to the arrival. The prologue is a curtain-raiser, and a
      * curtain-raiser must never be the wall someone quits the game on. */
-    if (input->confirm && chase->attempts >= CHASE_SKIP_AFTER_ATTEMPTS)
+    if (skip_pressed(input) && chase->attempts >= CHASE_SKIP_AFTER_ATTEMPTS)
     {
         begin_arrival(chase);
         return;

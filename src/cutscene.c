@@ -851,7 +851,7 @@ static void render_rain(SDL_Renderer *r, float time, int win_w, int win_h)
 
 static void render_cinematic_ui(SDL_Renderer *r, float time,
                                 int win_w, int win_h,
-                                float target_x, bool gamepad_active)
+                                float target_x, const PadHints *pad)
 {
     if (time > 0.55f && time < 4.5f)
     {
@@ -890,16 +890,17 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
         SDL_Color skip = {(Uint8)(100.0f + pulse * 42.0f),
                           (Uint8)(108.0f + pulse * 42.0f),
                           (Uint8)(106.0f + pulse * 38.0f), 255};
+        char hint[32];
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f,
                   1.0f, skip,
-                  gamepad_active ? "A / START TO SKIP" :
-                                   "ENTER / SPACE TO SKIP");
+                  pad_hint(pad, hint, sizeof(hint), "$A / $START TO SKIP",
+                           "ENTER / SPACE TO SKIP"));
     }
 }
 
 void opening_cutscene_render(SDL_Renderer *r,
                              const OpeningCutscene *cutscene,
-                             int win_w, int win_h, bool gamepad_active)
+                             int win_w, int win_h, const PadHints *pad)
 {
     const float time = cutscene->time;
     const float ground = 437.0f;
@@ -941,7 +942,7 @@ void opening_cutscene_render(SDL_Renderer *r,
     }
 
     render_rain(r, time, win_w, win_h);
-    render_cinematic_ui(r, time, win_w, win_h, suv_x, gamepad_active);
+    render_cinematic_ui(r, time, win_w, win_h, suv_x, pad);
 
     /* Film grain is the cutscene's own texture; the vignette and scanlines
        are laid on by game_render's one shared finishing pass. */
@@ -1176,7 +1177,7 @@ static void render_kerb_backdrop(SDL_Renderer *r, float time, int win_w)
 }
 
 static void render_kerb_ui(SDL_Renderer *r, float time, int win_w, int win_h,
-                           float suv_x, bool gamepad_active)
+                           float suv_x, const PadHints *pad)
 {
     if (time > 0.45f && time < 4.40f)
     {
@@ -1216,9 +1217,10 @@ static void render_kerb_ui(SDL_Renderer *r, float time, int win_w, int win_h,
         SDL_Color skip = {(Uint8)(100.0f + pulse * 42.0f),
                           (Uint8)(108.0f + pulse * 42.0f),
                           (Uint8)(106.0f + pulse * 38.0f), 255};
+        char hint[32];
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f, 1.0f, skip,
-                  gamepad_active ? "A / START TO SKIP" :
-                                   "ENTER / SPACE TO SKIP");
+                  pad_hint(pad, hint, sizeof(hint), "$A / $START TO SKIP",
+                           "ENTER / SPACE TO SKIP"));
     }
 }
 
@@ -1278,7 +1280,7 @@ bool abduction_cutscene_update(AbductionCutscene *cutscene, float dt,
 
 void abduction_cutscene_render(SDL_Renderer *r,
                                const AbductionCutscene *cutscene,
-                               int win_w, int win_h, bool gamepad_active)
+                               int win_w, int win_h, const PadHints *pad)
 {
     const float time = cutscene->time;
     const float ground = KERB_GROUND;
@@ -1414,7 +1416,7 @@ void abduction_cutscene_render(SDL_Renderer *r,
     }
 
     render_rain(r, time, win_w, win_h);
-    render_kerb_ui(r, time, win_w, win_h, suv_x, gamepad_active);
+    render_kerb_ui(r, time, win_w, win_h, suv_x, pad);
 
     fx_grain(r, win_w, win_h, time, FX_GRAIN_FILM);
 
@@ -1754,7 +1756,7 @@ static void draw_transition_door_foreground(SDL_Renderer *r,
 static void render_transition_action_ui(SDL_Renderer *r, float time,
                                         float hostage_x, float ground_y,
                                         int win_w, int win_h,
-                                        bool gamepad_active)
+                                        const PadHints *pad)
 {
     if (time >= 2.18f && time < 3.72f)
     {
@@ -1774,19 +1776,20 @@ static void render_transition_action_ui(SDL_Renderer *r, float time,
     if (time > 0.75f && time < 8.55f)
     {
         float pulse = 0.45f + 0.55f * sinf(time * 2.0f);
+        char hint[32];
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f,
                   1.0f,
                   (SDL_Color){(Uint8)(100.0f + pulse * 42.0f),
                               (Uint8)(108.0f + pulse * 42.0f),
                               (Uint8)(106.0f + pulse * 38.0f), 255},
-                  gamepad_active ? "A / START: SKIP" :
-                                   "SPACE / ENTER: SKIP");
+                  pad_hint(pad, hint, sizeof(hint), "$A / $START: SKIP",
+                           "SPACE / ENTER: SKIP"));
     }
 }
 
 void level_transition_render(SDL_Renderer *r,
                              const LevelTransition *transition,
-                             int win_w, int win_h, bool gamepad_active)
+                             int win_w, int win_h, const PadHints *pad)
 {
     float time = transition->time;
     float ground_y = 482.0f;
@@ -1835,7 +1838,7 @@ void level_transition_render(SDL_Renderer *r,
 
     draw_transition_door_foreground(r, door_x, ground_y);
     render_transition_action_ui(r, time, hostage_x, ground_y,
-                                win_w, win_h, gamepad_active);
+                                win_w, win_h, pad);
 
     fx_grain(r, win_w, win_h, time, FX_GRAIN_FILM);
 
@@ -2361,7 +2364,7 @@ static void draw_reunion_pair(SDL_Renderer *r, float center_x,
 
 static void render_outro_ui(SDL_Renderer *r, float time,
                             float hostage_x, int win_w, int win_h,
-                            bool gamepad_active)
+                            const PadHints *pad)
 {
     if (time >= 4.35f && time < 7.45f)
     {
@@ -2406,19 +2409,20 @@ static void render_outro_ui(SDL_Renderer *r, float time,
     if (time > 0.85f && time < OUTRO_FINAL_REVEAL_TIME)
     {
         float pulse = 0.45f + 0.55f * sinf(time * 2.0f);
+        char hint[32];
         draw_text(r, (float)win_w - 181.0f, (float)win_h - 31.0f,
                   1.0f,
                   (SDL_Color){(Uint8)(101.0f + pulse * 40.0f),
                               (Uint8)(109.0f + pulse * 40.0f),
                               (Uint8)(108.0f + pulse * 38.0f), 255},
-                  gamepad_active ? "A / START: SKIP" :
-                                   "SPACE / ENTER: SKIP");
+                  pad_hint(pad, hint, sizeof(hint), "$A / $START: SKIP",
+                           "SPACE / ENTER: SKIP"));
     }
 }
 
 void outro_cutscene_render(SDL_Renderer *r,
                            const OutroCutscene *cutscene,
-                           int win_w, int win_h, bool gamepad_active)
+                           int win_w, int win_h, const PadHints *pad)
 {
     const float time = cutscene->time;
     const float ground = 438.0f;
@@ -2594,7 +2598,7 @@ void outro_cutscene_render(SDL_Renderer *r,
                      agent_stop_x - 16.0f, ground - 30.0f,
                      captor_one_x + 17.0f, ground - 28.0f);
 
-    render_outro_ui(r, time, hostage_x, win_w, win_h, gamepad_active);
+    render_outro_ui(r, time, hostage_x, win_w, win_h, pad);
 
     fx_grain(r, win_w, win_h, time, FX_GRAIN_FILM);
 
@@ -2637,13 +2641,15 @@ void outro_cutscene_render(SDL_Renderer *r,
         if (time >= 21.0f)
         {
             float pulse = 0.55f + 0.45f * sinf(time * 2.4f);
+            char hint[40];
             draw_cutscene_text_centered(
                 r, (float)win_w * 0.5f, 505.0f, 1.0f,
                 (SDL_Color){(Uint8)(130.0f + pulse * 48.0f),
                             (Uint8)(139.0f + pulse * 48.0f),
                             (Uint8)(136.0f + pulse * 45.0f), 255},
-                gamepad_active ? "PRESS A TO REPLAY THE RESCUE" :
-                                 "PRESS R TO REPLAY THE RESCUE");
+                pad_hint(pad, hint, sizeof(hint),
+                         "PRESS $A TO REPLAY THE RESCUE",
+                         "PRESS R TO REPLAY THE RESCUE"));
         }
     }
 

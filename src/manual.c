@@ -1304,28 +1304,35 @@ static const ManualLine PAGE_MISSION[] = {
     {LINE_BODY, "goes back to the lobby."},
 };
 
+/*
+ * The pad column is written in `$` tokens rather than in letters, because the
+ * letter is a property of the pad and not of the game: `$A` is whatever the
+ * thing in the player's hands prints on its confirm button, which is A on an
+ * Xbox pad, A on a Switch pad (the one on the *right*) and a cross on a
+ * PlayStation. With nothing plugged in the sheet falls back to the Xbox
+ * lettering it has always shown.
+ */
 static const ManualLine PAGE_CONTROLS[] = {
     {LINE_HEAD, "IN THE SECTORS"},
     {LINE_KEY, "WASD/ARROWS|LS/DPAD|MOVE - CLIMB - AIM"},
-    {LINE_KEY, "W or UP|A|JUMP"},
+    {LINE_KEY, "W or UP|$A|JUMP"},
     {LINE_KEY, "S or DOWN|DPAD|CRAWL"},
-    {LINE_KEY, "SPACE|X|ATTACK"},
-    {LINE_KEY, "TAB or Q|RB|NEXT WEAPON"},
-    {LINE_KEY, "E|Y|USE DOOR / HOLD TO HACK"},
+    {LINE_KEY, "SPACE|$B $X|ATTACK"},
+    {LINE_KEY, "TAB or Q|$LB $RB|CYCLE WEAPON"},
+    {LINE_KEY, "E|$Y|USE DOOR / HOLD TO HACK"},
     {LINE_GAP, NULL},
     {LINE_HEAD, "ANYWHERE"},
-    {LINE_KEY, "ENTER|START|CONFIRM - SKIP"},
-    {LINE_KEY, "ESC|START|PAUSE - RESUME"},
-    {LINE_KEY, "Q|BACK|QUIT TO TITLE, FROM PAUSE"},
-    {LINE_KEY, "J|X|ASSIST, FROM TITLE OR PAUSE"},
-    {LINE_KEY, "M|LB|MUTE"},
+    {LINE_KEY, "ENTER|$A|CONFIRM - SKIP"},
+    {LINE_KEY, "ESC|$START|PAUSE - RESUME"},
+    {LINE_KEY, "BACKSPACE|$B|BACK OUT OF WHAT IS OPEN"},
+    {LINE_KEY, "Q|$SELECT|QUIT TO TITLE, FROM PAUSE"},
+    {LINE_KEY, "J|$X|ASSIST, FROM TITLE OR PAUSE"},
+    {LINE_KEY, "M|$Y|MUTE, FROM PAUSE"},
     {LINE_KEY, "F|-|FULLSCREEN"},
     {LINE_GAP, NULL},
     {LINE_HEAD, "TWO THINGS WORTH KNOWING"},
-    {LINE_BULLET, "SPACE attacks and UP jumps. They are"},
-    {LINE_BODY, "not the same key."},
-    {LINE_BULLET, "On a ladder, UP or DOWN aims the shot"},
-    {LINE_BODY, "straight up or straight down."},
+    {LINE_BULLET, "SPACE attacks and UP jumps. Not one key."},
+    {LINE_BULLET, "On a ladder, UP and DOWN aim the shot."},
 };
 
 static const ManualLine PAGE_MOVEMENT[] = {
@@ -1489,16 +1496,29 @@ static void key_field(const char *text, int index, char *out, size_t size)
     out[len] = '\0';
 }
 
+/* A pad column entry, spelled for whatever is plugged in. With nothing
+ * plugged in the tokens still expand, into the Xbox letters the sheet is
+ * written in — an unspelled `$A` on the page would be worse than either. */
+static const char *pad_column(const PadHints *pad, const char *field,
+                              char *buf, size_t size)
+{
+    return pad_hint(pad != NULL ? pad : &PAD_HINTS_XBOX, buf, size, field,
+                    field);
+}
+
 /*
  * The two chip columns are as wide as the widest label on the sheet, not as
  * wide as each row needs: a table whose columns move from row to row is a list
- * of pairs, not a table.
+ * of pairs, not a table. The pad column is measured after spelling, because
+ * `$START` is six characters and OPTIONS is seven.
  */
-static void key_columns(const ManualPage *page, float *out_key, float *out_pad)
+static void key_columns(const ManualPage *page, const PadHints *pad,
+                        float *out_key, float *out_pad)
 {
     size_t key_max = 0;
     size_t pad_max = 0;
     char buf[32];
+    char spelled[32];
 
     for (int i = 0; i < page->line_count; ++i)
     {
@@ -1508,8 +1528,9 @@ static void key_columns(const ManualPage *page, float *out_key, float *out_pad)
         if (SDL_strlen(buf) > key_max)
             key_max = SDL_strlen(buf);
         key_field(page->lines[i].text, 1, buf, sizeof(buf));
-        if (SDL_strlen(buf) > pad_max)
-            pad_max = SDL_strlen(buf);
+        const char *label = pad_column(pad, buf, spelled, sizeof(spelled));
+        if (SDL_strlen(label) > pad_max)
+            pad_max = SDL_strlen(label);
     }
     *out_key = CH * (float)key_max + 12.0f;
     *out_pad = CH * (float)pad_max + 12.0f;
@@ -1528,12 +1549,23 @@ static float chip_width(const char *label)
     return text_width(label) + 16.0f;
 }
 
-static void layout_chips(Manual *manual, float w, float h)
+static void layout_chips(Manual *manual, float w, float h,
+                         const PadHints *pad)
 {
+    /* The way out is named for the thing in the player's hands, and the chip
+     * is sized from that name — a label decided at draw time and a width
+     * decided at layout time is how a chip ends up with its text hanging out
+     * of it. Kept rather than used in place, so it is copied: with no pad in
+     * hand pad_hint hands back its own constant and writes no buffer. */
+    char label[sizeof(manual->back_label)];
+    SDL_strlcpy(manual->back_label,
+                pad_hint(pad, label, sizeof(label), "$B BACK", "ESC BACK"),
+                sizeof(manual->back_label));
+
     float dots = (float)MANUAL_PAGE_COUNT * 10.0f;
     float prev_w = chip_width("< PREV");
     float next_w = chip_width("NEXT >");
-    float back_w = chip_width("ESC BACK");
+    float back_w = chip_width(manual->back_label);
     float total = prev_w + 18.0f + dots + 18.0f + next_w + 28.0f + back_w;
     float x = (w - total) * 0.5f;
     float y = h - 46.0f;
@@ -1553,15 +1585,15 @@ static bool in_rect(SDL_FRect box, float x, float y)
 
 /* ---- Public interface ------------------------------------------------ */
 
-void manual_init(Manual *manual, int win_w, int win_h)
+void manual_init(Manual *manual, int win_w, int win_h, const PadHints *pad)
 {
     SDL_zerop(manual);
     layout_chips(manual, win_w > 0 ? (float)win_w : 800.0f,
-                 win_h > 0 ? (float)win_h : 552.0f);
+                 win_h > 0 ? (float)win_h : 552.0f, pad);
 }
 
 void manual_update(Manual *manual, float dt, int win_w, int win_h,
-                   float mouse_x, float mouse_y)
+                   float mouse_x, float mouse_y, const PadHints *pad)
 {
     manual->time += dt;
     if (manual->settle > 0.0f)
@@ -1572,7 +1604,7 @@ void manual_update(Manual *manual, float dt, int win_w, int win_h,
     }
 
     layout_chips(manual, win_w > 0 ? (float)win_w : 800.0f,
-                 win_h > 0 ? (float)win_h : 552.0f);
+                 win_h > 0 ? (float)win_h : 552.0f, pad);
     manual->hovered = manual_hit_test(manual, mouse_x, mouse_y);
 }
 
@@ -1647,17 +1679,18 @@ static void render_header(SDL_Renderer *r, const ManualPage *page,
 }
 
 static void render_text_column(SDL_Renderer *r, const ManualPage *page,
-                               float slide, float appear)
+                               const PadHints *hints, float slide, float appear)
 {
     float key_w = 0.0f;
     float pad_w = 0.0f;
-    key_columns(page, &key_w, &pad_w);
+    key_columns(page, hints, &key_w, &pad_w);
 
     float x = TEXT_X + slide;
     float y = BODY_Y;
     bool first_head = true;
     char key[32];
     char pad[32];
+    char spelled[32];
     char action[48];
 
     for (int i = 0; i < page->line_count && y < BODY_BOTTOM; ++i)
@@ -1691,7 +1724,8 @@ static void render_text_column(SDL_Renderer *r, const ManualPage *page,
             key_field(line->text, 2, action, sizeof(action));
             draw_keycap(r, x, y - 3.0f, key_w, CHIP_H, key,
                         fx_dim((SDL_Color){198, 208, 200, 255}, appear));
-            draw_keycap(r, x + key_w + 8.0f, y - 3.0f, pad_w, CHIP_H, pad,
+            draw_keycap(r, x + key_w + 8.0f, y - 3.0f, pad_w, CHIP_H,
+                        pad_column(hints, pad, spelled, sizeof(spelled)),
                         fx_dim(FX_LABEL, appear));
             draw_text(r, x + key_w + pad_w + 20.0f, y + 2.0f, 1.0f,
                       fx_dim(COL_TEXT, appear), action);
@@ -1759,7 +1793,7 @@ static void render_footer(SDL_Renderer *r, const Manual *manual, float appear)
     render_chip(r, manual->next_chip, "NEXT >",
                 manual->hovered == MANUAL_HOT_NEXT,
                 manual->page < MANUAL_PAGE_COUNT - 1, appear);
-    render_chip(r, manual->back_chip, "ESC BACK",
+    render_chip(r, manual->back_chip, manual->back_label,
                 manual->hovered == MANUAL_HOT_BACK, true, appear);
 
     /* Where in the sheaf this sheet is. */
@@ -1780,7 +1814,8 @@ static void render_footer(SDL_Renderer *r, const Manual *manual, float appear)
                CHIP_H - 4.0f);
 }
 
-void manual_render(SDL_Renderer *r, const Manual *manual, int win_w, int win_h)
+void manual_render(SDL_Renderer *r, const Manual *manual, int win_w, int win_h,
+                   const PadHints *pad)
 {
     float w = win_w > 0 ? (float)win_w : 800.0f;
     float h = win_h > 0 ? (float)win_h : 552.0f;
@@ -1795,7 +1830,7 @@ void manual_render(SDL_Renderer *r, const Manual *manual, int win_w, int win_h)
     render_desk(r, w, h);
     render_sheet(r, sheet_rect(w, h), appear);
     render_header(r, page, w, content);
-    render_text_column(r, page, slide, content);
+    render_text_column(r, page, pad, slide, content);
     render_panel(r, page, manual->time, slide, content);
     render_footer(r, manual, appear);
 

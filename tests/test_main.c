@@ -877,7 +877,7 @@ static void test_chase_is_reproducible_from_a_seed(void)
     chase_init(&other_seed, 20260726u);
 
     Input input = {0};
-    input.up = true;
+    input.gas = true;
     input.left = true;
     for (int frame = 0; frame < 900; ++frame)
     {
@@ -1000,6 +1000,73 @@ static void test_chase_kerb_scrape_bleeds_speed_without_damage(void)
     CHECK(chase.player.speed < CHASE_CRUISE_SPEED);
 }
 
+/*
+ * The car is driven with two pedals of its own. The shell folds the letter
+ * under each thumb into them — A into `gas`, B into `brake` — alongside the
+ * stick and the arrows, and the drive reads nothing else: a raw direction
+ * arriving here must not move the car, because the day a face button also had
+ * to mean "up" is the day the accelerator started climbing ladders.
+ */
+static void test_chase_pedals_drive_the_car(void)
+{
+    Chase chase;
+    chase_init(&chase, 5150);
+    chase_skip_departure(&chase);
+
+    float cruise = chase.player.speed;
+    Input input = {0};
+    input.gas = true;
+    for (int i = 0; i < 30; ++i)
+    {
+        chase_clear_traffic(&chase);
+        chase_step(&chase, &input);
+    }
+    CHECK(chase.player.speed > cruise);
+
+    float fast = chase.player.speed;
+    input.gas = false;
+    input.brake = true;
+    for (int i = 0; i < 30; ++i)
+    {
+        chase_clear_traffic(&chase);
+        chase_step(&chase, &input);
+    }
+    CHECK(chase.player.speed < fast);
+
+    /* Up and down on their own are not pedals: with neither held the car only
+     * ever coasts back toward the cruise speed. */
+    Input directions = {0};
+    directions.up = true;
+    for (int i = 0; i < 30; ++i)
+    {
+        chase_clear_traffic(&chase);
+        chase_step(&chase, &directions);
+    }
+    CHECK(chase.player.speed <= CHASE_CRUISE_SPEED + 0.01f);
+}
+
+/*
+ * Which leaves the skip needing a button of its own on a pad, since A is now
+ * the throttle: it arrives as `use_door`, the letter Y, and has to work both
+ * where confirm used to — the departure, and the drive itself once it has been
+ * failed often enough to stop insisting.
+ */
+static void test_chase_skip_answers_the_pad_letter(void)
+{
+    Chase chase;
+    chase_init(&chase, 4242);
+
+    Input input = {0};
+    input.use_door = true;
+    chase_step(&chase, &input);
+    CHECK(chase.phase == CHASE_PHASE_PURSUIT);
+    CHECK(chase.player.engine_running);
+
+    chase.attempts = CHASE_SKIP_AFTER_ATTEMPTS;
+    chase_step(&chase, &input);
+    CHECK(chase.phase == CHASE_PHASE_ARRIVAL);
+}
+
 static void test_chase_holding_the_throttle_never_catches_the_suv(void)
 {
     Chase chase;
@@ -1007,7 +1074,7 @@ static void test_chase_holding_the_throttle_never_catches_the_suv(void)
     chase_skip_departure(&chase);
 
     Input input = {0};
-    input.up = true;
+    input.gas = true;
     float smallest_gap = chase_gap(&chase);
     for (int i = 0; i < 900; ++i)
     {
@@ -2685,6 +2752,48 @@ static void test_player_can_switch_between_carried_weapons(void)
     state.player.grenades = 0;
     state.player.bazooka_rockets = 0;
     input = (Input){.switch_weapon = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_KNIFE);
+}
+
+/*
+ * The bumpers cycle, which is the job every platform's own guidance gives
+ * them, so the ring has to run both ways: RB takes the next usable weapon and
+ * LB the one before it, both skipping whatever is out of ammo. One step each
+ * way has to land back where it started, or the two bumpers are walking two
+ * different lists.
+ */
+static void test_weapon_cycle_runs_both_ways(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    state.player.bullets = 5;
+    state.player.grenades = 1;
+    state.player.bazooka_rockets = 0; /* nothing to stop on */
+    state.player.active_weapon = PLAYER_WEAPON_PISTOL;
+
+    Input input = {.switch_weapon = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_KNIFE);
+
+    input = (Input){.switch_weapon = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_GRENADE);
+
+    input = (Input){.switch_weapon_back = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(!input.switch_weapon_back);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_KNIFE);
+
+    input = (Input){.switch_weapon_back = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_PISTOL);
+
+    /* With only the knife left, neither bumper can leave it. */
+    state.player.bullets = 0;
+    state.player.grenades = 0;
+    state.player.active_weapon = PLAYER_WEAPON_KNIFE;
+    input = (Input){.switch_weapon_back = true};
     gameplay_combat_handle_player_action(&state, &campaign, &input);
     CHECK(state.player.active_weapon == PLAYER_WEAPON_KNIFE);
 }
@@ -4835,7 +4944,7 @@ static void test_chase_cordon_thickens_toward_the_building(void)
         chase_skip_departure(&chase);
 
         Input input = {0};
-        input.up = true;
+        input.gas = true;
         bool seen[CHASE_MAX_INTERSECTIONS] = {false};
         float last_y[CHASE_MAX_INTERSECTIONS] = {0.0f};
 
@@ -4907,6 +5016,8 @@ int main(void)
     test_chase_departure_hands_over_to_the_drive();
     test_chase_collision_costs_integrity_and_speed();
     test_chase_kerb_scrape_bleeds_speed_without_damage();
+    test_chase_pedals_drive_the_car();
+    test_chase_skip_answers_the_pad_letter();
     test_chase_holding_the_throttle_never_catches_the_suv();
     test_chase_lost_trail_restarts_the_pursuit();
     test_chase_wreck_restarts_the_pursuit();
@@ -4948,6 +5059,7 @@ int main(void)
     test_grenade_fuse_and_explosion_emit_sounds();
     test_bazooka_pickup_and_rocket_explosion();
     test_player_can_switch_between_carried_weapons();
+    test_weapon_cycle_runs_both_ways();
     test_gas_canister_requires_crawling_shot();
     test_weak_wall_only_opens_to_a_blast();
     test_weak_wall_is_masonry_to_the_route_model();

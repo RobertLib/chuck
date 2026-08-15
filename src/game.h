@@ -8,6 +8,7 @@
 #include "gameplay_state.h"
 #include "intro.h"
 #include "manual.h"
+#include "pad_hint.h"
 #include "particle.h"
 
 typedef enum
@@ -46,10 +47,13 @@ typedef struct
     SDL_Renderer *renderer;
     SDL_Gamepad *gamepad;
     SDL_JoystickID gamepad_id;
+    /* What the open pad prints on its face buttons, and where. Read once when
+     * it is plugged in, because every prompt on every screen is spelled from
+     * it and none of them should be asking a driver mid-frame. */
+    PadHints pad;
     AudioSystem audio;
     bool fullscreen;
     bool gamepad_active;
-    bool quit_requested;
     Uint64 last_tick;
 } PlatformState;
 
@@ -175,6 +179,11 @@ void game_get_view_size(Game *game, int *out_w, int *out_h);
 /* Open/close the first available gamepad and track hot-plug events. */
 void game_input_init(Game *game);
 void game_input_shutdown(Game *game);
+
+/* The pad every prompt is spelled for, or NULL when the keyboard is the thing
+ * in the player's hands. One answer, so no two screens can disagree about
+ * which set of hints the frame is wearing. */
+const PadHints *game_pad_hints(const Game *game);
 
 /* Read current keyboard and gamepad state into `game->input`. */
 void game_read_input(Game *game);

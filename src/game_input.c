@@ -21,12 +21,18 @@ static void open_gamepad(Game *game, SDL_JoystickID id)
 
   game->platform.gamepad_id = id;
   game->platform.gamepad_active = true;
+  /* Everything downstream — which button jumps, which letter the title screen
+   * asks for — is decided here, once, from what this pad says it is. */
+  pad_hints_read(&game->platform.pad, game->platform.gamepad);
   const char *name = SDL_GetGamepadName(game->platform.gamepad);
-  SDL_Log("Gamepad connected: %s", name != NULL ? name : "unknown");
+  SDL_Log("Gamepad connected: %s (%s = confirm)", name != NULL ? name : "unknown",
+          game->platform.pad.face[PAD_FACE_CONFIRM]);
 }
 
 void game_input_init(Game *game)
 {
+  pad_hints_read(&game->platform.pad, NULL);
+
   int count = 0;
   SDL_JoystickID *ids = SDL_GetGamepads(&count);
   for (int i = 0; i < count && game->platform.gamepad == NULL; ++i)
@@ -41,13 +47,26 @@ void game_input_shutdown(Game *game)
     SDL_CloseGamepad(game->platform.gamepad);
     game->platform.gamepad = NULL;
     game->platform.gamepad_id = 0;
+    pad_hints_read(&game->platform.pad, NULL);
   }
+}
+
+const PadHints *game_pad_hints(const Game *game)
+{
+  return game->platform.gamepad_active ? &game->platform.pad : NULL;
 }
 
 static bool gamepad_button(const Game *game, SDL_GamepadButton button)
 {
   return game->platform.gamepad != NULL &&
          SDL_GetGamepadButton(game->platform.gamepad, button);
+}
+
+/* The button carrying a letter on this pad, for the two inputs read every
+ * frame rather than delivered as presses. */
+static bool gamepad_face(const Game *game, PadFace face)
+{
+  return gamepad_button(game, pad_hints_button(&game->platform.pad, face));
 }
 
 void game_read_input(Game *game)
@@ -65,6 +84,9 @@ void game_read_input(Game *game)
   bool pad_down = false;
   bool pad_interact = false;
   bool pad_jump_held = false;
+  bool pad_brake = false;
+  bool pad_gas_trigger = false;
+  bool pad_brake_trigger = false;
   if (game->platform.gamepad != NULL)
   {
     Sint16 x = SDL_GetGamepadAxis(game->platform.gamepad,
@@ -79,8 +101,19 @@ void game_read_input(Game *game)
              gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_UP);
     pad_down = y > GAMEPAD_AXIS_DEAD_ZONE ||
                gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
-    pad_interact = gamepad_button(game, SDL_GAMEPAD_BUTTON_NORTH);
-    pad_jump_held = gamepad_button(game, SDL_GAMEPAD_BUTTON_SOUTH);
+    pad_interact = gamepad_face(game, PAD_FACE_DOOR);
+    pad_jump_held = gamepad_face(game, PAD_FACE_CONFIRM);
+    pad_brake = gamepad_face(game, PAD_FACE_CANCEL);
+    /* The triggers are what a driver's fingers go to, so the drive answers
+     * them as well as the letters it prompts for: RT accelerates, LT brakes.
+     * They are analogue, but this car has one throttle position, so anything
+     * past the dead zone counts as down. */
+    pad_gas_trigger = SDL_GetGamepadAxis(game->platform.gamepad,
+                                         SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) >
+                      GAMEPAD_AXIS_DEAD_ZONE;
+    pad_brake_trigger = SDL_GetGamepadAxis(game->platform.gamepad,
+                                           SDL_GAMEPAD_AXIS_LEFT_TRIGGER) >
+                        GAMEPAD_AXIS_DEAD_ZONE;
   }
 
   game->input.left = key_left || pad_left;
@@ -90,10 +123,18 @@ void game_read_input(Game *game)
   game->input.interact = key_interact || pad_interact;
   /* Held state feeds the variable jump height: release mid-rise cuts it. */
   game->input.jump_held = key_up || pad_jump_held;
+  /* The pedals of the prologue drive: A goes, B stops, the triggers do the
+   * same for the fingers that expect a car to be driven with them, and the
+   * stick, the d-pad and the arrows keep working for anyone who reaches for
+   * those first. All of it is read every frame rather than delivered as
+   * presses, because a throttle is held. */
+  game->input.gas = game->input.up || pad_jump_held || pad_gas_trigger;
+  game->input.brake = game->input.down || pad_brake || pad_brake_trigger;
 
   if (key_left || key_right || key_up || key_down || key_interact)
     game->platform.gamepad_active = false;
-  else if (pad_left || pad_right || pad_up || pad_down || pad_interact)
+  else if (pad_left || pad_right || pad_up || pad_down || pad_interact ||
+           pad_jump_held || pad_brake || pad_gas_trigger || pad_brake_trigger)
     game->platform.gamepad_active = true;
 }
 
@@ -169,59 +210,80 @@ static void turn_manual_page(Game *game, int delta)
 }
 
 /*
- * The manual's own bindings, on the pad. Left and right walk the sheaf; A,
- * START and Y all put it away, because whichever button opened it is the one
- * the player will press again. B and BACK fall through to the ordinary route
- * out, which is the same route.
+ * The manual's own bindings, on the pad. The sheaf is walked with left and
+ * right — on the d-pad and on the **bumpers**, which is what a bumper is for:
+ * paging through a list is the one job every platform's own guidance gives
+ * them. Everything that means "done" puts the sheet away, B included, which is
+ * the whole reason a player reaches for B; A, Y and START are here because
+ * whichever button opened the manual is the one the thumb will press again.
  */
-static bool handle_manual_gamepad(Game *game, SDL_GamepadButton button)
+static bool handle_manual_gamepad(Game *game, SDL_GamepadButton button,
+                                  PadFace face)
 {
-  switch (button)
+  if (button == SDL_GAMEPAD_BUTTON_DPAD_LEFT ||
+      button == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER)
   {
-  case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
     turn_manual_page(game, -1);
     return true;
-  case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+  }
+  if (button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT ||
+      button == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)
+  {
     turn_manual_page(game, 1);
     return true;
-  case SDL_GAMEPAD_BUTTON_SOUTH:
-  case SDL_GAMEPAD_BUTTON_START:
-  case SDL_GAMEPAD_BUTTON_NORTH:
+  }
+  if (button == SDL_GAMEPAD_BUTTON_START ||
+      button == SDL_GAMEPAD_BUTTON_BACK || face == PAD_FACE_CONFIRM ||
+      face == PAD_FACE_CANCEL || face == PAD_FACE_DOOR)
+  {
     game_return_to_intro(game);
     return true;
-  default:
-    return false;
   }
+  return false;
 }
 
 /* The assist sheet's pad bindings: up/down walk the rows, A flips the row,
- * and everything that means "done" puts the sheet away. */
-static bool handle_assist_gamepad(Game *game, SDL_GamepadButton button)
+ * and everything that means "done" puts the sheet away. It closes through
+ * game_close_assist and never through the route out below, because the sheet
+ * opens from the pause screen as well and has to hand that run back rather
+ * than drop it on the title screen. */
+static bool handle_assist_gamepad(Game *game, SDL_GamepadButton button,
+                                  PadFace face)
 {
-  switch (button)
+  if (button == SDL_GAMEPAD_BUTTON_DPAD_UP)
   {
-  case SDL_GAMEPAD_BUTTON_DPAD_UP:
     game_assist_move_cursor(game, -1);
     return true;
-  case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
+  }
+  if (button == SDL_GAMEPAD_BUTTON_DPAD_DOWN)
+  {
     game_assist_move_cursor(game, 1);
     return true;
-  case SDL_GAMEPAD_BUTTON_SOUTH:
-  case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
-  case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+  }
+  if (face == PAD_FACE_CONFIRM || button == SDL_GAMEPAD_BUTTON_DPAD_LEFT ||
+      button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT)
+  {
     game_assist_toggle_selected(game);
     return true;
-  case SDL_GAMEPAD_BUTTON_START:
-  case SDL_GAMEPAD_BUTTON_NORTH:
+  }
+  if (button == SDL_GAMEPAD_BUTTON_START ||
+      button == SDL_GAMEPAD_BUTTON_BACK || face == PAD_FACE_CANCEL ||
+      face == PAD_FACE_ATTACK || face == PAD_FACE_DOOR)
+  {
     game_close_assist(game);
     return true;
-  default:
-    return false;
   }
+  return false;
 }
 
 static void confirm_with_gamepad(Game *game, bool allow_jump)
 {
+  /* During the drive A is the accelerator and nothing else: a letter that is
+   * being held down to move cannot also be the button that skips the scene it
+   * is moving through. The drive is skipped with Y instead. */
+  if (game->state == STATE_CHASE)
+    return;
+
   if (game->state == STATE_OUTRO &&
       game->presentation.outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)
   {
@@ -237,18 +299,99 @@ static void confirm_with_gamepad(Game *game, bool allow_jump)
   }
 }
 
+/*
+ * Backing out of whatever is on screen.
+ *
+ * B is the back button on every pad ever made, and back is all it does here:
+ * it closes what was opened, and on the title screen — where there is nothing
+ * left to close — it leaves the game. Two things it used to do and must never
+ * do again, because both cost a player something they did not ask to spend:
+ *
+ * - **It does not pause.** Pause is START's job. B carrying it as well meant a
+ *   stray thumb froze a sector, and once the drive put the brake pedal on B it
+ *   meant braking opened the pause sheet.
+ * - **It does not abandon a run.** During a sector, a cutscene, a transition
+ *   or the drive it does nothing at all. Dropping a run on one press of the
+ *   button players use to say "not that" is the same bug wearing a hat; the
+ *   way out of a run is deliberate, from the pause screen, and `abandons_run`
+ *   (SELECT) is only honoured there.
+ */
+static void back_out_with_gamepad(Game *game, bool abandons_run)
+{
+  if (game->state == STATE_PAUSED)
+  {
+    if (abandons_run)
+      game_return_to_intro(game);
+    else
+      game_toggle_pause(game);
+    return;
+  }
+  /* And on the title screen it does nothing either. Closing the game is not
+   * "backing out" of anything the player opened — they opened the game — and
+   * a first press of B on the first screen ending the session is the worst
+   * version of that mistake. Quitting is ESC or the window's own close box,
+   * both of which are asked for on purpose. */
+}
+
 static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
 {
   game->platform.gamepad_active = true;
-  if (game->state == STATE_MANUAL && handle_manual_gamepad(game, button))
+
+  /* The letter this pad prints on the button that was pressed. Everything the
+   * player is told to press is a letter, so everything they press is read as
+   * one; the buttons that carry no letter are handled as themselves below. */
+  PadFace face = pad_hints_face(&game->platform.pad, button);
+
+  if (game->state == STATE_MANUAL && handle_manual_gamepad(game, button, face))
     return;
-  if (game->state == STATE_ASSIST && handle_assist_gamepad(game, button))
+  if (game->state == STATE_ASSIST && handle_assist_gamepad(game, button, face))
     return;
+
+  switch (face)
+  {
+  case PAD_FACE_CONFIRM:
+    confirm_with_gamepad(game, true);
+    return;
+  case PAD_FACE_CANCEL:
+    /* In a sector B is the second trigger finger. A and B are the two buttons
+     * every thumb finds first, so leaving B inert while the game is being
+     * played reads as a dead button on the pad; there is nothing to back out
+     * of mid-sector anyway. Attack sits on both B and X, and B keeps meaning
+     * "back" everywhere something is actually open. */
+    if (game->state == STATE_PLAYING)
+      game->input.shoot = true;
+    else
+      back_out_with_gamepad(game, false);
+    return;
+  case PAD_FACE_ATTACK:
+    if (game->state == STATE_PLAYING)
+      game->input.shoot = true;
+    else
+      /* The sheet opens from the title screen and from pause and returns to
+       * whichever opened it; game_open_assist ignores every other state. */
+      game_open_assist(game);
+    return;
+  case PAD_FACE_DOOR:
+    /* The drive reads use_door as its skip: A and B are the pedals there, so
+     * the way past the prologue moved to the one letter still free. */
+    if (game->state == STATE_PLAYING || game->state == STATE_CHASE)
+      game->input.use_door = true;
+    else if (game->state == STATE_INTRO)
+      game_open_manual(game);
+    else if (game->state == STATE_PAUSED)
+      /* Sound is a setting, and settings live behind the pause button. It
+       * used to sit on the left bumper, where nothing in any platform's
+       * guidance would look for it and where a thumb reaching for a weapon
+       * found it instead. */
+      audio_toggle_mute(&game->platform.audio);
+    return;
+  case PAD_FACE_NONE:
+  case PAD_FACE_COUNT:
+    break;
+  }
+
   switch (button)
   {
-  case SDL_GAMEPAD_BUTTON_SOUTH:
-    confirm_with_gamepad(game, true);
-    break;
   case SDL_GAMEPAD_BUTTON_START:
     /* START is the pause button while anything is running; everywhere else
      * it keeps meaning "confirm". */
@@ -257,38 +400,14 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
     else
       confirm_with_gamepad(game, false);
     break;
-  case SDL_GAMEPAD_BUTTON_EAST:
   case SDL_GAMEPAD_BUTTON_BACK:
-    /* Backing out of a running game pauses it first; abandoning the run is
-     * only ever done from the pause screen, never by one stray press. */
-    if (game->state == STATE_INTRO)
-      game->platform.quit_requested = true;
-    else if (state_accepts_pause(game->state))
-      game_toggle_pause(game);
-    else if (game->state == STATE_PAUSED)
-    {
-      if (button == SDL_GAMEPAD_BUTTON_BACK)
-        game_return_to_intro(game);
-      else
-        game_toggle_pause(game);
-    }
-    else
-      game_return_to_intro(game);
+    back_out_with_gamepad(game, true);
     break;
-  case SDL_GAMEPAD_BUTTON_WEST:
-    if (game->state == STATE_PLAYING)
-      game->input.shoot = true;
-    else if (game->state == STATE_INTRO)
-      game_open_assist(game);
-    break;
-  case SDL_GAMEPAD_BUTTON_NORTH:
-    if (game->state == STATE_PLAYING)
-      game->input.use_door = true;
-    else if (game->state == STATE_INTRO)
-      game_open_manual(game);
-    break;
+  /* The bumpers cycle, which is the one job every platform's own guidance
+   * gives them: RB takes the next weapon, LB the one before it. */
   case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
-    audio_toggle_mute(&game->platform.audio);
+    if (game->state == STATE_PLAYING)
+      game->input.switch_weapon_back = true;
     break;
   case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
     if (game->state == STATE_PLAYING)

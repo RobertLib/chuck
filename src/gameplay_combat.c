@@ -472,6 +472,11 @@ void gameplay_combat_handle_player_action(GameplayState *state,
         player_select_next_weapon(&state->player);
         input->switch_weapon = false;
     }
+    if (input->switch_weapon_back)
+    {
+        player_select_prev_weapon(&state->player);
+        input->switch_weapon_back = false;
+    }
     if (!input->shoot)
         return;
 

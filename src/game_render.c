@@ -5129,36 +5129,34 @@ static void render_interaction_prompt(Game *game, int win_w, int win_h)
   if (progress > 1.0f)
     progress = 1.0f;
 
-  char label[64];
+  const PadHints *pad = game_pad_hints(game);
+  char buf[64];
+  const char *label;
   if (terminal_available && game->gameplay.terminal_hacking)
   {
     int percent = (int)(progress * 100.0f);
-    SDL_snprintf(label, sizeof(label), "BREACHING SECURITY... %d%%", percent);
+    SDL_snprintf(buf, sizeof(buf), "BREACHING SECURITY... %d%%", percent);
+    label = buf;
   }
   else if (terminal_available)
   {
-    SDL_snprintf(label, sizeof(label),
-                 game->platform.gamepad_active ?
-                     "HOLD Y TO HACK ACTIVE TERMINAL" :
+    label = pad_hint(pad, buf, sizeof(buf), "HOLD $Y TO HACK ACTIVE TERMINAL",
                      "HOLD E TO HACK ACTIVE TERMINAL");
   }
   else if (sublevel_action == SUBLEVEL_DOOR_ENTER)
   {
-    SDL_snprintf(label, sizeof(label),
-                 game->platform.gamepad_active ? "PRESS Y TO ENTER WC" :
-                                                 "PRESS E TO ENTER WC");
+    label = pad_hint(pad, buf, sizeof(buf), "PRESS $Y TO ENTER WC",
+                     "PRESS E TO ENTER WC");
   }
   else if (sublevel_action == SUBLEVEL_DOOR_RETURN)
   {
-    SDL_snprintf(label, sizeof(label),
-                 game->platform.gamepad_active ? "PRESS Y TO LEAVE WC" :
-                                                 "PRESS E TO LEAVE WC");
+    label = pad_hint(pad, buf, sizeof(buf), "PRESS $Y TO LEAVE WC",
+                     "PRESS E TO LEAVE WC");
   }
   else
   {
-    SDL_snprintf(label, sizeof(label),
-                 game->platform.gamepad_active ? "PRESS Y TO ENTER DOOR" :
-                                                 "PRESS E TO ENTER DOOR");
+    label = pad_hint(pad, buf, sizeof(buf), "PRESS $Y TO ENTER DOOR",
+                     "PRESS E TO ENTER DOOR");
   }
 
   const float text_scale = 1.0f;
@@ -5245,10 +5243,11 @@ static void draw_overlay_panel(Game *game, float y, SDL_Color accent,
 
 static void draw_continue_overlay(Game *game)
 {
+  char hint[40];
   draw_overlay_panel(game, 190.0f, FX_AMBER,
                      "CONTINUE?",
-                     game->platform.gamepad_active ? "PRESS A OR START" :
-                                                     "PRESS ENTER OR SPACE");
+                     pad_hint(game_pad_hints(game), hint, sizeof(hint),
+                              "PRESS $A OR $START", "PRESS ENTER OR SPACE"));
 
   int seconds = (int)ceilf(game->campaign.continue_timer);
   char countdown[16];
@@ -5268,11 +5267,13 @@ static void draw_continue_overlay(Game *game)
 
 static void draw_pause_overlay(Game *game)
 {
+  char hint[64];
   draw_overlay_panel(game, 225.0f, FX_CYAN,
                      "PAUSED",
-                     game->platform.gamepad_active
-                         ? "START: RESUME   BACK: MAIN MENU"
-                         : "ESC: RESUME   Q: MAIN MENU   J: ASSIST");
+                     pad_hint(game_pad_hints(game), hint, sizeof(hint),
+                              "$B: RESUME   $X: ASSIST   $Y: MUTE   "
+                              "$SELECT: TITLE",
+                              "ESC: RESUME   J: ASSIST   M: MUTE   Q: TITLE"));
 }
 
 /* The assist sheet: three switches on a plate, drawn with the same console
@@ -5363,11 +5364,12 @@ static void draw_assist_overlay(Game *game)
     }
   }
 
+  char hint[64];
   draw_text(r, panel_x + 22.0f, panel_y + panel_h - 26.0f, 1.0f,
             FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
-            game->platform.gamepad_active
-                ? "D-PAD: SELECT   A: TOGGLE   START: DONE"
-                : "ARROWS: SELECT   ENTER: TOGGLE   ESC: DONE");
+            pad_hint(game_pad_hints(game), hint, sizeof(hint),
+                     "D-PAD: SELECT   $A: TOGGLE   $START: DONE",
+                     "ARROWS: SELECT   ENTER: TOGGLE   ESC: DONE"));
 }
 
 #ifdef CHUCK_DEBUG
@@ -5425,7 +5427,7 @@ void game_render(Game *game)
     chase_render(r, &game->chase, win_w, win_h,
                  game->presentation.camera_shake_x,
                  game->presentation.camera_shake_y,
-                 game->platform.gamepad_active);
+                 game_pad_hints(game));
     if (game->state == STATE_PAUSED)
       draw_pause_overlay(game);
   }
@@ -5436,7 +5438,7 @@ void game_render(Game *game)
     if (game->assist_return_state == STATE_INTRO)
     {
       intro_render(r, &game->presentation.intro, win_w, win_h,
-                   game->platform.gamepad_active);
+                   game_pad_hints(game));
       vignette = FX_VIGNETTE_SCENE;
     }
     else
@@ -5449,19 +5451,19 @@ void game_render(Game *game)
   else if (game->state == STATE_ABDUCTION)
   {
     abduction_cutscene_render(r, &game->presentation.abduction_cutscene,
-                              win_w, win_h, game->platform.gamepad_active);
+                              win_w, win_h, game_pad_hints(game));
     vignette = FX_VIGNETTE_SCENE;
   }
   else if (game->state == STATE_OPENING_CUTSCENE)
   {
     opening_cutscene_render(r, &game->presentation.opening_cutscene,
-                            win_w, win_h, game->platform.gamepad_active);
+                            win_w, win_h, game_pad_hints(game));
     vignette = FX_VIGNETTE_SCENE;
   }
   else if (game->state == STATE_INTRO)
   {
     intro_render(r, &game->presentation.intro, win_w, win_h,
-                 game->platform.gamepad_active);
+                 game_pad_hints(game));
 #ifdef CHUCK_DEBUG
     draw_debug_level_select(game);
 #endif
@@ -5469,19 +5471,20 @@ void game_render(Game *game)
   }
   else if (game->state == STATE_MANUAL)
   {
-    manual_render(r, &game->presentation.manual, win_w, win_h);
+    manual_render(r, &game->presentation.manual, win_w, win_h,
+                  game_pad_hints(game));
     vignette = FX_VIGNETTE_SCENE;
   }
   else if (game->state == STATE_LEVEL_TRANSITION)
   {
     level_transition_render(r, &game->presentation.level_transition,
-                            win_w, win_h, game->platform.gamepad_active);
+                            win_w, win_h, game_pad_hints(game));
     vignette = FX_VIGNETTE_SCENE;
   }
   else if (game->state == STATE_OUTRO)
   {
     outro_cutscene_render(r, &game->presentation.outro_cutscene,
-                          win_w, win_h, game->platform.gamepad_active);
+                          win_w, win_h, game_pad_hints(game));
     vignette = FX_VIGNETTE_SCENE;
   }
   else

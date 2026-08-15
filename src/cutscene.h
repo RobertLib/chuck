@@ -2,6 +2,7 @@
 #define CHUCK_CUTSCENE_H
 
 #include "common.h"
+#include "pad_hint.h"
 
 #define ABDUCTION_CUTSCENE_DURATION 13.6f
 #define OPENING_CUTSCENE_DURATION 12.4f
@@ -93,7 +94,7 @@ bool abduction_cutscene_update(AbductionCutscene *cutscene, float dt,
                                Uint32 *out_cues);
 void abduction_cutscene_render(SDL_Renderer *renderer,
                                const AbductionCutscene *cutscene,
-                               int win_w, int win_h, bool gamepad_active);
+                               int win_w, int win_h, const PadHints *pad);
 
 void opening_cutscene_init(OpeningCutscene *cutscene);
 
@@ -107,7 +108,7 @@ bool opening_cutscene_update(OpeningCutscene *cutscene, float dt,
 
 void opening_cutscene_render(SDL_Renderer *renderer,
                              const OpeningCutscene *cutscene,
-                             int win_w, int win_h, bool gamepad_active);
+                             int win_w, int win_h, const PadHints *pad);
 
 /*
  * The between-level report and pursuit vignette share the opening's
@@ -121,7 +122,7 @@ bool level_transition_update(LevelTransition *transition, float dt,
                              Uint32 *out_cues);
 void level_transition_render(SDL_Renderer *renderer,
                              const LevelTransition *transition,
-                             int win_w, int win_h, bool gamepad_active);
+                             int win_w, int win_h, const PadHints *pad);
 
 /*
  * Final rooftop rescue. The scene remains on its thank-you frame after the
@@ -132,6 +133,6 @@ void outro_cutscene_update(OutroCutscene *cutscene, float dt,
                            Uint32 *out_cues);
 void outro_cutscene_render(SDL_Renderer *renderer,
                            const OutroCutscene *cutscene,
-                           int win_w, int win_h, bool gamepad_active);
+                           int win_w, int win_h, const PadHints *pad);
 
 #endif /* CHUCK_CUTSCENE_H */

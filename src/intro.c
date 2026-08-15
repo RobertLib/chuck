@@ -1707,7 +1707,7 @@ static void draw_chevron(SDL_Renderer *r, float x, float y, SDL_Color color)
 }
 
 static void render_start_prompt(SDL_Renderer *r, const Intro *intro,
-                                const IntroScene *s, bool gamepad_active)
+                                const IntroScene *s, const PadHints *pad)
 {
     const SDL_FRect *button = &intro->start_button;
     float appear = smoothstep01((intro->time - 1.15f) / 0.55f);
@@ -1748,7 +1748,10 @@ static void render_start_prompt(SDL_Renderer *r, const Intro *intro,
 
     /* Chevron and label are one group, centred as a group — so whichever
      * label is showing, the padding is equal on both sides. */
-    const char *label = gamepad_active ? "PRESS A TO START" : START_LABEL;
+    char pad_label[32];
+    const char *label =
+        pad_hint(pad, pad_label, sizeof(pad_label), "PRESS $A TO START",
+                 START_LABEL);
     float width = tracked_width(label, 1.0f, START_TRACK);
     float group = START_CHEVRON_W + START_CHEVRON_GAP + width;
     float group_x = cx - group * 0.5f;
@@ -1792,7 +1795,12 @@ static void render_prompt_chip(SDL_Renderer *r, const SDL_FRect *button,
               MANUAL_KEY_W - 2.0f, 1.0f);
     fx_rect_a(r, (SDL_Color){10, 14, 22, 255}, (Uint8)(215.0f * appear),
               x + 1.0f, y + MANUAL_ROW_H - 2.0f, MANUAL_KEY_W - 2.0f, 1.0f);
-    draw_text(r, x + 6.0f, y + 5.0f, 1.0f,
+    /* Centred in the cap rather than set at a fixed inset: a PlayStation pad
+     * spells two of its faces with two characters, and a keycap the label
+     * hangs out of is worse than no keycap at all. */
+    float key_w = (float)SDL_strlen(key) *
+                  (float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE;
+    draw_text(r, x + (MANUAL_KEY_W - key_w) * 0.5f, y + 5.0f, 1.0f,
               fx_dim(hot ? FX_CREAM : fx_dim(COL_TYPE, 0.94f), appear),
               key);
     draw_tracked(r, x + MANUAL_KEY_W + MANUAL_KEY_GAP, y + 5.0f, 1.0f,
@@ -1801,7 +1809,7 @@ static void render_prompt_chip(SDL_Renderer *r, const SDL_FRect *button,
 }
 
 static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
-                                 const IntroScene *s, bool gamepad_active)
+                                 const IntroScene *s, const PadHints *pad)
 {
     float appear = smoothstep01((intro->time - 1.45f) / 0.6f);
     if (appear <= 0.0f)
@@ -1812,16 +1820,20 @@ static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
                 intro->manual_button.y + MANUAL_ROW_H * 0.5f, 116.0f,
                 (SDL_Color){226, 104, 78, 255}, 26);
 
+    char manual_key[8];
+    char assist_key[8];
     render_prompt_chip(r, &intro->manual_button, appear,
                        intro->manual_hovered,
-                       gamepad_active ? "Y" : "H", MANUAL_LABEL);
+                       pad_hint(pad, manual_key, sizeof(manual_key), "$Y", "H"),
+                       MANUAL_LABEL);
     render_prompt_chip(r, &intro->assist_button, appear,
                        intro->assist_hovered,
-                       gamepad_active ? "X" : "J", ASSIST_LABEL);
+                       pad_hint(pad, assist_key, sizeof(assist_key), "$X", "J"),
+                       ASSIST_LABEL);
 }
 
 void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,
-                  bool gamepad_active)
+                  const PadHints *pad)
 {
     IntroScene scene = scene_layout(win_w, win_h);
 
@@ -1831,8 +1843,8 @@ void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,
     render_tower(r, intro, &scene);
     render_street(r, intro, &scene);
     render_logo(r, intro, &scene);
-    render_start_prompt(r, intro, &scene, gamepad_active);
-    render_manual_prompt(r, intro, &scene, gamepad_active);
+    render_start_prompt(r, intro, &scene, pad);
+    render_manual_prompt(r, intro, &scene, pad);
 
     /* The shot fades up from black, like the cutscenes it hands over to. */
     float fade = 1.0f - smoothstep01(intro->time / 0.65f);
