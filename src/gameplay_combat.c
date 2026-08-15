@@ -100,6 +100,10 @@ static void damage_enemy(GameplayState *state, CampaignState *campaign,
         gameplay_world_sound(state, SFX_ENEMY_DOWN,
                              enemy->x + ENEMY_W * 0.5f,
                              enemy->y + ENEMY_H * 0.5f);
+        /* Downed in direct combat, the guard's spare magazine survives; an
+         * explosion would have taken it with him. */
+        gameplay_spawn_ammo_drop(state, enemy->x + ENEMY_W * 0.5f,
+                                 enemy->y + ENEMY_H - AMMO_DROP_H);
     }
     else
     {
@@ -240,12 +244,11 @@ static void explode_gas_canister(GameplayState *state,
     damage_crates_in_radius(state, campaign, x, y, GAS_CANISTER_RADIUS);
     gameplay_break_walls_in_radius(state, campaign, x, y,
                                    GAS_CANISTER_RADIUS);
-    if (state->invuln_timer <= 0.0f &&
-        within_radius(state->player.x + PLAYER_W * 0.5f,
+    if (within_radius(state->player.x + PLAYER_W * 0.5f,
                       state->player.y + player_height(state) * 0.5f,
                       x, y, GAS_CANISTER_RADIUS))
     {
-        gameplay_hit_player(state);
+        gameplay_damage_player(state, EXPLOSION_DAMAGE, x, y);
     }
 }
 
@@ -299,11 +302,10 @@ static void explode_grenade(GameplayState *state, CampaignState *campaign,
     }
     damage_crates_in_radius(state, campaign, x, y, GRENADE_RADIUS);
     gameplay_break_walls_in_radius(state, campaign, x, y, GRENADE_RADIUS);
-    if (state->invuln_timer <= 0.0f &&
-        within_radius(state->player.x + PLAYER_W * 0.5f,
+    if (within_radius(state->player.x + PLAYER_W * 0.5f,
                       state->player.y + player_height(state) * 0.5f,
                       x, y, GRENADE_RADIUS))
-        gameplay_hit_player(state);
+        gameplay_damage_player(state, EXPLOSION_DAMAGE, x, y);
 }
 
 static void explode_rocket(GameplayState *state, CampaignState *campaign,
@@ -375,12 +377,11 @@ static void explode_rocket(GameplayState *state, CampaignState *campaign,
             explode_gas_canister(state, campaign, canister);
         }
     }
-    if (state->invuln_timer <= 0.0f &&
-        within_radius(state->player.x + PLAYER_W * 0.5f,
+    if (within_radius(state->player.x + PLAYER_W * 0.5f,
                       state->player.y + player_height(state) * 0.5f,
                       x, y, ROCKET_RADIUS))
     {
-        gameplay_hit_player(state);
+        gameplay_damage_player(state, EXPLOSION_DAMAGE, x, y);
     }
 }
 
@@ -419,11 +420,10 @@ void gameplay_combat_update_explosives(GameplayState *state,
         gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
         damage_crates_in_radius(state, campaign, x, y, MINE_RADIUS);
         gameplay_break_walls_in_radius(state, campaign, x, y, MINE_RADIUS);
-        if (state->invuln_timer <= 0.0f &&
-            within_radius(state->player.x + PLAYER_W * 0.5f,
+        if (within_radius(state->player.x + PLAYER_W * 0.5f,
                           state->player.y + player_height(state) * 0.5f,
                           x, y, MINE_RADIUS))
-            gameplay_hit_player(state);
+            gameplay_damage_player(state, EXPLOSION_DAMAGE, x, y);
     }
 
     for (int i = 0; i < state->grenade_count; ++i)
@@ -646,7 +646,7 @@ void gameplay_combat_update_hazards(GameplayState *state)
                                    CEILING_FAN_HIT_HEIGHT))
         {
             gameplay_world_sound(state, SFX_FAN_HIT, fan->x, fan->y);
-            gameplay_hit_player(state);
+            gameplay_damage_player(state, 1, fan->x, fan->y);
             return;
         }
     }
@@ -660,7 +660,10 @@ void gameplay_combat_update_hazards(GameplayState *state)
             gameplay_world_sound(state, SFX_SPIKE_HIT,
                                  spike->x + SPIKE_W * 0.5f,
                                  spike->y + SPIKE_H * 0.5f);
-            gameplay_hit_player(state);
+            /* The pop in gameplay_damage_player lifts the boots back out of
+             * the spike bed, so one misstep is one heart, not a lock-in. */
+            gameplay_damage_player(state, 1, spike->x + SPIKE_W * 0.5f,
+                                   spike->y + SPIKE_H * 0.5f);
             return;
         }
     }
@@ -953,7 +956,9 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt)
                                    PLAYER_W, player_height(state)))
         {
             bullet->active = false;
-            gameplay_hit_player(state);
+            gameplay_damage_player(state, 1,
+                                   bullet->x + width * 0.5f,
+                                   bullet->y + height * 0.5f);
         }
     }
 }
@@ -991,11 +996,16 @@ void gameplay_combat_check_contacts(GameplayState *state,
             state->player.on_ladder = false;
             state->player.ladder_direction = 0;
             state->player.ladder_lockout_timer = ENEMY_STOMP_LADDER_LOCKOUT;
+            /* The bounce is not a jump: releasing the jump key must never
+             * shorten it back down into the guard. */
+            state->player.jump_cut_ok = false;
             damage_enemy(state, campaign, i);
             return;
         }
 
-        gameplay_hit_player(state);
+        gameplay_damage_player(state, 1,
+                               enemy->x + ENEMY_W * 0.5f,
+                               enemy->y + ENEMY_H * 0.5f);
         return;
     }
     for (int i = 0; i < state->dog_count; ++i)
@@ -1007,6 +1017,22 @@ void gameplay_combat_check_contacts(GameplayState *state,
                                    PLAYER_W, height,
                                    dog->x, dog->y, DOG_W, DOG_H))
         {
+            /* A bite is announced: the first contact only starts the crouch
+             * and growl, and the teeth land a beat later if Chuck is still
+             * there. The windup ticks (and is cancelled by escape) in the dog
+             * AI update, which owns dt. */
+            if (!dog->bite_ready)
+            {
+                if (dog->bite_windup <= 0.0f)
+                {
+                    dog->bite_windup = DOG_BITE_WINDUP;
+                    gameplay_world_sound(state, SFX_DOG_GROWL,
+                                         dog->x + DOG_W * 0.5f,
+                                         dog->y + DOG_H * 0.5f);
+                }
+                continue;
+            }
+            dog->bite_ready = false;
             dog->bite_cooldown = DOG_BITE_COOLDOWN;
             dog->attack_timer = 0.18f;
             dog->state = DOG_CHASE;
@@ -1016,7 +1042,9 @@ void gameplay_combat_check_contacts(GameplayState *state,
             gameplay_world_sound(state, SFX_DOG_BITE,
                                  dog->x + DOG_W * 0.5f,
                                  dog->y + DOG_H * 0.5f);
-            gameplay_hit_player(state);
+            gameplay_damage_player(state, 1,
+                                   dog->x + DOG_W * 0.5f,
+                                   dog->y + DOG_H * 0.5f);
             return;
         }
     }

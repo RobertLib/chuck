@@ -855,6 +855,17 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
                            "CUTTING THROUGH THE BLOCKS TO GET BACK ON THEM");
     }
 
+    /* After enough failed attempts the drive stops insisting on itself. */
+    if (chase->phase == CHASE_PHASE_PURSUIT &&
+        chase->attempts >= CHASE_SKIP_AFTER_ATTEMPTS)
+    {
+        float blink = 0.45f + 0.55f * sinf(chase->time * 2.0f);
+        draw_text(r, (float)win_w - 196.0f, (float)win_h - 31.0f, 0.75f,
+                  fx_dim(FX_STEEL_LT, blink),
+                  gamepad_active ? "A / START: SKIP DRIVE"
+                                 : "ENTER: SKIP THE DRIVE");
+    }
+
     if (chase->phase == CHASE_PHASE_ARRIVAL && chase->phase_time > 1.4f)
     {
         float fade = clamp01((chase->phase_time - 1.4f) / 0.5f);

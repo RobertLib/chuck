@@ -113,6 +113,7 @@ static void reset_level_presentation(Game *game)
 {
     game->presentation.message_timer = 0.0f;
     game->presentation.exit_unlocked_timer = 0.0f;
+    game->presentation.extra_life_timer = 0.0f;
     game->presentation.camera_shake_timer = 0.0f;
     game->presentation.camera_shake_duration = 0.0f;
     game->presentation.camera_shake_strength = 0.0f;
@@ -145,6 +146,16 @@ static void transfer_player_loadout(Player *destination,
     destination->bazooka_rockets = source->bazooka_rockets;
     destination->active_weapon = source->active_weapon;
     destination->facing = source->facing;
+}
+
+/* Hand the shell-owned assist choices to a simulation as plain flags. The
+ * gameplay core stays deterministic and never knows a menu exists. */
+static void apply_assist_to_state(Game *game, GameplayState *state)
+{
+    state->assist_slow_enemies = game->assist.slower_guards;
+    state->assist_more_hearts = game->assist.more_hearts;
+    if (state->player.hp > gameplay_player_max_hp(state))
+        state->player.hp = gameplay_player_max_hp(state);
 }
 
 static void camera_target(Game *game, float *target_x, float *target_y)
@@ -195,6 +206,7 @@ static bool initialize_restroom(Game *game)
     }
 
     player_reset(&restroom->player, &restroom->level);
+    apply_assist_to_state(game, restroom);
     level_reveal_init(&restroom->level);
     level_reveal_step(&restroom->level, 10.0f);
     gameplay_ai_spawn_level_entities(restroom);
@@ -226,6 +238,8 @@ static bool enter_restroom(Game *game)
     game->main_level_cam_y = game->presentation.cam_y;
     swap_gameplay_areas(game);
     transfer_player_loadout(&game->gameplay.player, &travelling_player);
+    /* Hearts travel with the loadout: the door is not a heal. */
+    game->gameplay.player.hp = travelling_player.hp;
     game->gameplay.teleport_cooldown = TELEPORT_COOLDOWN;
     game_events_clear(&game->gameplay.events);
     game_events_sound(&game->gameplay.events, SFX_DOOR);
@@ -243,6 +257,7 @@ static bool leave_restroom(Game *game)
     Player travelling_player = game->gameplay.player;
     swap_gameplay_areas(game);
     transfer_player_loadout(&game->gameplay.player, &travelling_player);
+    game->gameplay.player.hp = travelling_player.hp;
     game->gameplay.teleport_cooldown = TELEPORT_COOLDOWN;
     game_events_clear(&game->gameplay.events);
     game_events_sound(&game->gameplay.events, SFX_DOOR);
@@ -275,9 +290,12 @@ static bool load_level(Game *game, int index)
                      level_theme_music(game->gameplay.level.map.theme));
 
     player_reset(&game->gameplay.player, &game->gameplay.level);
+    apply_assist_to_state(game, &game->gameplay);
+    game->gameplay.player.hp = gameplay_player_max_hp(&game->gameplay);
 
     game->campaign.level_elapsed_time = 0.0f;
     game->campaign.level_start_score = game->campaign.score;
+    game->campaign.level_deaths = 0;
     reset_level_presentation(game);
     game_enter_state(game, STATE_LEVEL_START);
 
@@ -434,8 +452,11 @@ static void finish_player_death(Game *game)
     game->gameplay.player.dying = false;
     game->gameplay.player.death_timer = 0.0f;
     particle_system_clear(&game->presentation.particles);
+    game->campaign.level_deaths++;
 
-    bool out_of_lives = campaign_lose_life(&game->campaign);
+    bool out_of_lives = false;
+    if (!game->assist.infinite_lives)
+        out_of_lives = campaign_lose_life(&game->campaign);
     game->gameplay.invuln_timer = INVULN_TIME;
 
     if (out_of_lives)
@@ -448,10 +469,17 @@ static void finish_player_death(Game *game)
     }
     else
     {
+        /* A death costs the walk back, never the kit: the grenade and the
+         * rocket saved for the hard part survive it, and the sidearm is
+         * topped back up as the consolation. */
+        Player fallen = game->gameplay.player;
         player_reset(&game->gameplay.player, &game->gameplay.level);
-        /* On the wall, height already earned is kept: the climb resumes from
-         * the last banked floor rather than from the pavement. */
-        gameplay_climb_restore_checkpoint(&game->gameplay);
+        transfer_player_loadout(&game->gameplay.player, &fallen);
+        game->gameplay.player.bullets = MAX_AMMO;
+        game->gameplay.player.hp = gameplay_player_max_hp(&game->gameplay);
+        /* Progress already banked is kept: the climb resumes from the last
+         * banked floor, an interior from the last card, terminal or door. */
+        gameplay_restore_checkpoint(&game->gameplay);
         snap_camera_to_player(game);
         game_events_sound(&game->gameplay.events, SFX_RESPAWN);
     }
@@ -465,6 +493,93 @@ static void clear_edge_input(Game *game)
     game->input.confirm = false;
     game->input.restart = false;
     game->input.switch_weapon = false;
+}
+
+void game_toggle_pause(Game *game)
+{
+    if (game->state == STATE_PAUSED)
+    {
+        audio_play(&game->platform.audio, SFX_MENU_PAGE);
+        /* Resume the exact state that was interrupted. Going through
+         * game_enter_state would replay STATE_LEVEL_START's reveal. */
+        game->state = game->pause_return_state;
+        clear_edge_input(game);
+        return;
+    }
+    if (game->state != STATE_PLAYING && game->state != STATE_LEVEL_START &&
+        game->state != STATE_SHOW_KEYCARD && game->state != STATE_CHASE)
+        return;
+
+    game->pause_return_state = game->state;
+    audio_play(&game->platform.audio, SFX_MENU_PAGE);
+    game_enter_state(game, STATE_PAUSED);
+}
+
+/* Assist changes take effect immediately in whatever is running, so a toggle
+ * flipped from the pause screen is felt on the very next frame. */
+static void game_apply_assist_everywhere(Game *game)
+{
+    apply_assist_to_state(game, &game->gameplay);
+    if (game->sublevel_initialized)
+        apply_assist_to_state(game, &game->inactive_gameplay);
+}
+
+void game_open_assist(Game *game)
+{
+    if (game->state != STATE_INTRO && game->state != STATE_PAUSED)
+        return;
+    game->assist_return_state = game->state;
+    game->assist_cursor = 0;
+    audio_play(&game->platform.audio, SFX_MENU_PAGE);
+    game_enter_state(game, STATE_ASSIST);
+}
+
+void game_close_assist(Game *game)
+{
+    if (game->state != STATE_ASSIST)
+        return;
+    audio_play(&game->platform.audio, SFX_MENU_BACK);
+    if (game->assist_return_state == STATE_PAUSED)
+        game->state = STATE_PAUSED;
+    else
+        game_enter_state(game, STATE_INTRO);
+}
+
+void game_assist_move_cursor(Game *game, int delta)
+{
+    game->assist_cursor = (game->assist_cursor + delta + 3) % 3;
+    audio_play(&game->platform.audio, SFX_MENU_PAGE);
+}
+
+void game_assist_toggle(Game *game, int option)
+{
+    switch (option)
+    {
+    case 0:
+        game->assist.more_hearts = !game->assist.more_hearts;
+        break;
+    case 1:
+        game->assist.slower_guards = !game->assist.slower_guards;
+        break;
+    case 2:
+        game->assist.infinite_lives = !game->assist.infinite_lives;
+        break;
+    default:
+        return;
+    }
+    game->assist_cursor = option;
+    game_apply_assist_everywhere(game);
+    /* Turning the bigger pool on fills it: an assist that arrives as two
+     * empty sockets would read as a penalty. */
+    if (option == 0 && game->assist.more_hearts &&
+        !game->gameplay.player.dying)
+        game->gameplay.player.hp = gameplay_player_max_hp(&game->gameplay);
+    audio_play(&game->platform.audio, SFX_CARD_TARGET);
+}
+
+void game_assist_toggle_selected(Game *game)
+{
+    game_assist_toggle(game, game->assist_cursor);
 }
 
 static void game_enter_state(Game *game, GameState next_state)
@@ -521,6 +636,8 @@ static void game_enter_state(Game *game, GameState next_state)
         break;
     case STATE_SHOW_KEYCARD:
     case STATE_PLAYING:
+    case STATE_PAUSED:
+    case STATE_ASSIST:
     case STATE_LEVEL_TRANSITION:
     case STATE_CONTINUE:
         break;
@@ -595,6 +712,23 @@ static bool update_scene(Game *game, float dt)
         int win_w = 0, win_h = 0;
         game_get_view_size(game, &win_w, &win_h);
         manual_update(&game->presentation.manual, dt, win_w, win_h, mx, my);
+        clear_edge_input(game);
+        return true;
+    }
+
+    if (game->state == STATE_ASSIST)
+    {
+        /* All interaction happens in the input layer; the sheet just holds. */
+        clear_edge_input(game);
+        return true;
+    }
+
+    if (game->state == STATE_PAUSED)
+    {
+        /* Time stands still; confirm resumes, everything else is handled by
+         * the input layer (Q or BACK abandons the run, J opens assist). */
+        if (game->input.confirm)
+            game_toggle_pause(game);
         clear_edge_input(game);
         return true;
     }
@@ -700,7 +834,7 @@ static bool update_scene(Game *game, float dt)
     if (game->state == STATE_GAME_OVER)
     {
         game->presentation.message_timer -= dt;
-        if (game->presentation.message_timer <= 0.0f)
+        if (game->input.confirm || game->presentation.message_timer <= 0.0f)
             game_return_to_intro(game);
         clear_edge_input(game);
         return true;
@@ -709,8 +843,16 @@ static bool update_scene(Game *game, float dt)
     /* Level start reveal animation: show tiles progressively, then spawn entities. */
     if (game->state == STATE_LEVEL_START)
     {
+        bool skip_reveal = game->input.confirm;
         /* Do not defer actions pressed during a non-interactive transition. */
         clear_edge_input(game);
+
+        if (skip_reveal && !game->gameplay.level.reveal.done)
+        {
+            /* Confirm finishes the reveal in one step. */
+            level_reveal_step(&game->gameplay.level, 1000.0f);
+            audio_play(&game->platform.audio, SFX_REVEAL_TICK);
+        }
 
         /* Advance reveal; if not finished yet, skip the rest of update. */
         int reveal_row = game->gameplay.level.reveal.next_row;
@@ -778,6 +920,25 @@ static bool update_scene(Game *game, float dt)
     /* Key-card intro animation: cycle highlight until target reached, then begin play */
     if (game->state == STATE_SHOW_KEYCARD)
     {
+        if (game->input.confirm &&
+            game->presentation.card_anim_step <
+                game->presentation.card_anim_total_steps)
+        {
+            /* Confirm lands the sweep on its target at once. */
+            int remaining = game->presentation.card_anim_total_steps -
+                            game->presentation.card_anim_step;
+            if (game->presentation.card_anim_count > 0)
+                game->presentation.card_anim_current =
+                    (game->presentation.card_anim_current + remaining) %
+                    game->presentation.card_anim_count;
+            game->presentation.card_anim_step =
+                game->presentation.card_anim_total_steps;
+            audio_play(&game->platform.audio, SFX_CARD_TARGET);
+            gameplay_ai_spawn_level_entities(&game->gameplay);
+            game_enter_state(game, STATE_PLAYING);
+            clear_edge_input(game);
+            return true;
+        }
         game->presentation.card_anim_timer += dt;
         if (game->presentation.card_anim_timer >= game->presentation.card_anim_interval)
         {
@@ -861,7 +1022,8 @@ static bool try_finish_current_level(Game *game)
                 next_level,
                 game->campaign.level_elapsed_time,
                 game->campaign.score - game->campaign.level_start_score,
-                gameplay_neutralized_hostiles(&game->gameplay));
+                gameplay_neutralized_hostiles(&game->gameplay),
+                game->campaign.level_deaths);
             audio_stop_music(&game->platform.audio);
             game_enter_state(game, STATE_LEVEL_TRANSITION);
         }
@@ -904,6 +1066,14 @@ static void update_facade_playing(Game *game, float dt)
      * detour to a pickup is the climb's own risk/reward decision. */
     gameplay_collect_items(&game->gameplay, &game->campaign, dt);
 
+    while (campaign_check_extra_life(&game->campaign))
+    {
+        game_events_sound(&game->gameplay.events, SFX_PICKUP_HEALTH);
+        game->presentation.extra_life_timer = 2.5f;
+    }
+    if (game->presentation.extra_life_timer > 0.0f)
+        game->presentation.extra_life_timer -= dt;
+
     if (!try_finish_current_level(game))
         update_follow_camera(game, dt);
 }
@@ -932,10 +1102,6 @@ static void update_playing(Game *game, float dt)
     gameplay_prepare_terminal(&game->gameplay, &game->input, dt);
 
     bool player_was_grounded = game->gameplay.player.on_ground;
-    bool jump_requested =
-        !game->gameplay.terminal_hacking &&
-        game->input.jump &&
-        game->gameplay.player.on_ground;
     int previous_elevator = game->gameplay.player_on_elevator;
     int previous_moving_platform =
         game->gameplay.player_on_moving_platform;
@@ -979,7 +1145,9 @@ static void update_playing(Game *game, float dt)
     gameplay_resolve_player_crates(&game->gameplay, prev_player_x, prev_player_y, prev_player_h);
     gameplay_ride_platforms(&game->gameplay, dt);
 
-    if (jump_requested && game->gameplay.player.vy < -1.0f)
+    /* The player module reports the frame a jump actually started — which,
+     * with the jump buffer, may be frames after the press. */
+    if (game->gameplay.player.jumped)
         game_events_sound(&game->gameplay.events, SFX_JUMP);
     gameplay_handle_player_landing(&game->gameplay, player_was_grounded,
                                    player_fall_speed);
@@ -1088,6 +1256,7 @@ static void update_playing(Game *game, float dt)
 
     bool exit_was_unlocked = game->gameplay.level.runtime.exit_unlocked;
     gameplay_collect_items(&game->gameplay, &game->campaign, dt);
+    gameplay_update_ammo_drops(&game->gameplay, dt);
     if (!exit_was_unlocked && game->gameplay.level.runtime.exit_unlocked)
         game->presentation.exit_unlocked_timer = 2.5f;
 
@@ -1104,6 +1273,14 @@ static void update_playing(Game *game, float dt)
     /* Tick the calm countdown after perception updates, so a guard or dog
      * seeing Chuck on the would-be final frame keeps the alarm alive. */
     gameplay_update_alarm(&game->gameplay, dt);
+
+    while (campaign_check_extra_life(&game->campaign))
+    {
+        game_events_sound(&game->gameplay.events, SFX_PICKUP_HEALTH);
+        game->presentation.extra_life_timer = 2.5f;
+    }
+    if (game->presentation.extra_life_timer > 0.0f)
+        game->presentation.extra_life_timer -= dt;
 
     if (!try_finish_current_level(game))
     {

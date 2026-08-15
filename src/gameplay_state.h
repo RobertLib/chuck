@@ -66,6 +66,14 @@ typedef struct
     float timer;
 } Mine;
 
+/* A magazine shaken loose from a guard downed in direct combat. */
+typedef struct
+{
+    float x, y;
+    float vy;
+    bool active;
+} AmmoDrop;
+
 typedef enum
 {
     JANITOR_WALK,
@@ -171,6 +179,9 @@ typedef struct
     int score;
     float level_elapsed_time;
     int level_start_score;
+    int level_deaths;
+    /* The next score threshold that pays out an extra life. */
+    int next_extra_life_score;
     float continue_timer;
 } CampaignState;
 
@@ -179,6 +190,9 @@ bool campaign_lose_life(CampaignState *campaign);
 bool campaign_begin_continue(CampaignState *campaign);
 bool campaign_update_continue(CampaignState *campaign, float dt);
 bool campaign_accept_continue(CampaignState *campaign);
+/* Returns true each time the score crosses an extra-life threshold, granting
+ * the life; the shell turns the report into sound and HUD flash. */
+bool campaign_check_extra_life(CampaignState *campaign);
 
 typedef struct
 {
@@ -218,6 +232,20 @@ typedef struct
     float facade_checkpoint_x;
     float facade_checkpoint_y;
     bool facade_has_checkpoint;
+    /* The interior counterpart: banked at real progress (a card, a hacked
+     * terminal, a used door), so a lost life resumes near the work instead of
+     * back at the street entrance. */
+    float interior_checkpoint_x;
+    float interior_checkpoint_y;
+    bool interior_has_checkpoint;
+
+    AmmoDrop ammo_drops[MAX_AMMO_DROPS];
+
+    /* Assist choices, handed in by the shell at level load. Both are false in
+     * a zeroed state, so every plainly-initialised simulation — the game's
+     * and the tests' — runs at the authored difficulty. */
+    bool assist_slow_enemies;
+    bool assist_more_hearts;
 
     float invuln_timer;
     int door_spawns[MAX_DOORS];
@@ -243,5 +271,9 @@ typedef struct
 
 /* Clear all per-level simulation state while preserving the RNG stream. */
 void gameplay_state_begin_level(GameplayState *state);
+
+/* The assist choices as the numbers the simulation actually uses. */
+int gameplay_player_max_hp(const GameplayState *state);
+float gameplay_enemy_speed_scale(const GameplayState *state);
 
 #endif /* CHUCK_GAMEPLAY_STATE_H */

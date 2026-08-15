@@ -400,7 +400,7 @@ static void update_thrown_objects(GameplayState *state, float dt)
             gameplay_world_sound(state, SFX_CRATE_BREAK,
                                  center_x, center_y);
             object->active = false;
-            gameplay_hit_player(state);
+            gameplay_damage_player(state, 1, center_x, center_y);
         }
     }
 }
@@ -456,7 +456,9 @@ static void update_birds(GameplayState *state, float dt)
                                  bird->x + BIRD_W * 0.5f,
                                  bird->y + BIRD_H * 0.5f);
             bird->active = false;
-            gameplay_hit_player(state);
+            gameplay_damage_player(state, 1,
+                                   bird->x + BIRD_W * 0.5f,
+                                   bird->y + BIRD_H * 0.5f);
         }
     }
 }

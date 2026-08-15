@@ -1149,6 +1149,36 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
         if (dog->bite_cooldown < 0.0f)
             dog->bite_cooldown = 0.0f;
     }
+    /* The announced bite: the crouch counts down only while the contact
+     * holds. Stepping or jumping clear cancels the lunge entirely — that is
+     * what makes the growl an answerable telegraph rather than a death rattle
+     * played over a decided outcome. */
+    if (dog->bite_windup > 0.0f || dog->bite_ready)
+    {
+        float player_h = state->player.crawling
+                             ? (float)PLAYER_CRAWL_H
+                             : (float)PLAYER_H;
+        bool contact = !state->player.dying &&
+                       gameplay_boxes_overlap(state->player.x,
+                                              state->player.y,
+                                              PLAYER_W, player_h,
+                                              dog->x, dog->y,
+                                              DOG_W, DOG_H);
+        if (!contact)
+        {
+            dog->bite_windup = 0.0f;
+            dog->bite_ready = false;
+        }
+        else if (dog->bite_windup > 0.0f)
+        {
+            dog->bite_windup -= dt;
+            if (dog->bite_windup <= 0.0f)
+            {
+                dog->bite_windup = 0.0f;
+                dog->bite_ready = true;
+            }
+        }
+    }
     if (dog->turn_cooldown > 0.0f)
     {
         dog->turn_cooldown -= dt;
@@ -1201,7 +1231,7 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
     if (dog->state == DOG_CHASE)
     {
         target_x = dog->chase_target_x - DOG_W * 0.5f;
-        speed = DOG_CHASE_SPEED;
+        speed = DOG_CHASE_SPEED * gameplay_enemy_speed_scale(state);
         wants_move = fabsf(target_x - dog->x) > DOG_BITE_RANGE * 0.6f;
     }
     else
@@ -1566,7 +1596,8 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
             actor_or_tile_blocks_side(state, i, 1);
         enemy_update(enemy, &state->level, dt, pursuing, alarm_pursuit,
                      enemy->pursuit_target_x, enemy->pursuit_target_y,
-                     hemmed_in, &state->rng);
+                     hemmed_in, gameplay_enemy_speed_scale(state),
+                     &state->rng);
         gameplay_resolve_enemy_crates(state, enemy, previous_y);
     }
 
@@ -1819,6 +1850,14 @@ void gameplay_ai_update_combat(GameplayState *state, float dt)
         Enemy *enemy = &state->enemies[i];
         if (enemy->dead || enemy->climbing || enemy->raising_alarm)
             continue;
+        /* The suspicion ramp: an unbroken sight line has to be held for a
+         * beat before the aim telegraph may start, so a fresh sighting never
+         * fires below reaction time. Guards already provoked, and every guard
+         * under an active alarm, are past noticing. */
+        if (enemy_has_los(state, enemy))
+            enemy->sight_timer += dt;
+        else
+            enemy->sight_timer = 0.0f;
         if (enemy->aim_timer > 0.0f)
         {
             enemy->aim_timer -= dt;
@@ -1836,6 +1875,9 @@ void gameplay_ai_update_combat(GameplayState *state, float dt)
             continue;
         }
         enemy->shoot_cooldown -= dt;
+        if (!enemy->provoked && !gameplay_alarm_active(state) &&
+            enemy->sight_timer < ENEMY_NOTICE_TIME)
+            continue;
         int vdir = 0;
         if (enemy->shoot_cooldown > 0.0f ||
             !enemy_shot_solution(state, enemy, &vdir))

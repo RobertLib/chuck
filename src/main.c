@@ -59,6 +59,21 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         {
             return SDL_APP_SUCCESS;
         }
+        /* Anything actually running pauses instead of being thrown away; an
+         * accidental ESC must never cost the run. Quitting to the title is a
+         * deliberate second step from the pause screen. */
+        if (game->state == STATE_PLAYING || game->state == STATE_LEVEL_START ||
+            game->state == STATE_SHOW_KEYCARD || game->state == STATE_CHASE ||
+            game->state == STATE_PAUSED)
+        {
+            game_toggle_pause(game);
+            return SDL_APP_CONTINUE;
+        }
+        if (game->state == STATE_ASSIST)
+        {
+            game_close_assist(game);
+            return SDL_APP_CONTINUE;
+        }
         game_return_to_intro(game);
         return SDL_APP_CONTINUE;
     }

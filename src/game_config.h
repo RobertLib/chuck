@@ -169,10 +169,30 @@
 #define CONTINUE_COUNTDOWN_TIME 10.0f
 #define GAME_OVER_DISPLAY_TIME 3.0f
 #define MAX_LIVES 9
+/* Hearts within one life. Ordinary contact damage costs hearts; only the
+ * physics deaths (a fatal fall, a crushing elevator) skip them, so "what hits
+ * you hurts, what crushes you kills" stays one legible rule. */
+#define PLAYER_MAX_HP 3
+#define PLAYER_ASSIST_MAX_HP 5
+/* Mercy window and the pop away from whatever connected. Knockback is only
+ * vertical because the walk speed is rewritten from input every frame. */
+#define PLAYER_HIT_INVULN 1.2f
+#define PLAYER_HIT_KNOCKBACK_Y 230.0f
+#define EXPLOSION_DAMAGE 2
+/* Forgiving jump input: a jump still works for a beat after the boots leave
+ * the ledge, and a press just before landing is kept until the boots arrive.
+ * Without both, the game discards inputs the player visibly made. */
+#define PLAYER_COYOTE_TIME 0.10f
+#define PLAYER_JUMP_BUFFER 0.12f
+/* Releasing the button caps the rise, so a tap hops and a hold clears. */
+#define PLAYER_JUMP_CUT_FACTOR 0.45f
 #define PLAYER_CRAWL_H 18
-#define PLAYER_CRAWL_SPEED 60.0f
+#define PLAYER_CRAWL_SPEED 75.0f
 #define PLAYER_KNIFE_RANGE 18.0f
 #define PLAYER_KNIFE_ACTION_TIME 0.18f
+/* An extra life every this many points gives the score a mechanical meaning:
+ * better play literally buys more attempts. */
+#define EXTRA_LIFE_SCORE_STEP 10000
 /* A landing becomes audible well before it becomes dangerous. The fatal
  * threshold is about five tiles of uninterrupted free fall. */
 #define PLAYER_LAND_SOUND_SPEED 150.0f
@@ -246,9 +266,16 @@
 /* A search party fans out around the last sighting instead of clustering. */
 #define ENEMY_SEARCH_FAN 1.5f
 #define ENEMY_ALARM_SPEED_MULTIPLIER 1.28f
-#define ENEMY_ALARM_AIM_MULTIPLIER 0.62f
+/* Alarm aggression is floored above human reaction time: 0.45s x 0.78 is
+ * 0.35s of aim, and the first synchronized volley waits most of a second.
+ * An alarm should raise pressure, not fire below what a player can answer. */
+#define ENEMY_ALARM_AIM_MULTIPLIER 0.78f
 #define ENEMY_ALARM_COOLDOWN_MULTIPLIER 0.55f
-#define ENEMY_ALARM_INITIAL_SHOT_DELAY 0.55f
+#define ENEMY_ALARM_INITIAL_SHOT_DELAY 0.8f
+/* A guard that freshly spots Chuck spends this long noticing him before the
+ * aim telegraph even starts. Provoked guards and an active alarm skip it:
+ * they are already looking for him. */
+#define ENEMY_NOTICE_TIME 0.35f
 #define ENEMY_ALARM_SEARCH_RADIUS (2.0f * TILE_SIZE)
 #define ENEMY_ALARM_SEARCH_NEAR_RADIUS (2.4f * TILE_SIZE)
 
@@ -258,7 +285,11 @@
 #define DOG_HP 1
 #define DOG_PATROL_SPEED 90.0f
 #define DOG_RETURN_SPEED 135.0f
-#define DOG_CHASE_SPEED 185.0f
+/* Faster than Chuck's 135, so a dog still wins a flat footrace, but slow
+ * enough that a jump over it or a ladder is a real answer. */
+#define DOG_CHASE_SPEED 165.0f
+/* The crouch-and-growl beat before a bite connects. */
+#define DOG_BITE_WINDUP 0.30f
 #define DOG_JUMP_SPEED 285.0f
 #define DOG_JUMP_MIN_SPEED 150.0f
 #define DOG_JUMP_MAX_GAP_TILES 2
@@ -280,6 +311,17 @@
 #define ENEMY_TALK_NOTICE_RADIUS (TILE_SIZE * 1.5f)
 #define ENEMY_TALK_CHANCE 30
 #define ENEMY_TALK_COOLDOWN 5.0f
+
+/* Ammunition dropped by guards downed in direct combat (bullet, knife or
+ * stomp). Explosions destroy the magazine along with its owner. */
+#define MAX_AMMO_DROPS 16
+#define AMMO_DROP_BULLETS 2
+#define AMMO_DROP_W 10
+#define AMMO_DROP_H 8
+
+/* Assist options, chosen on the title screen. Multipliers of the defaults;
+ * leaving them off changes nothing. */
+#define ASSIST_ENEMY_SPEED 0.8f
 
 /* Projectiles */
 #define MAX_BULLETS 8
@@ -476,6 +518,11 @@
 #define CHASE_PAVEMENT_WIDTH 26.0f
 #define CHASE_DEPARTURE_DURATION 6.0f
 #define CHASE_PURSUIT_DURATION 40.0f
+/* A failed attempt rewinds the drive by a beat instead of to zero, and after
+ * a couple of failures the whole drive can be skipped: the prologue must
+ * never be the wall someone quits the game on. */
+#define CHASE_FAIL_REWIND 12.0f
+#define CHASE_SKIP_AFTER_ATTEMPTS 2
 #define CHASE_FAILED_DURATION 2.4f
 #define CHASE_ARRIVAL_DURATION 5.4f
 /* Both cars are on their marks before the beat ends. */

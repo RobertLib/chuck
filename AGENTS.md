@@ -96,26 +96,99 @@ seeing Chuck on the final frame keeps the alarm alive) → exit check → camera
 lerp. Reordering these has caused real bugs; several tests pin the resulting
 behavior.
 
+### Hearts, damage and the two real deaths
+
+The player has hearts (`Player.hp`, `PLAYER_MAX_HP`), and the rule is one
+sentence: **what hits you costs hearts, what crushes you or breaks your fall
+kills you.** Ordinary contact — a guard, a bullet, a bite, spikes, a fan, a
+brick, a bird — goes through `gameplay_damage_player`
+([gameplay_world.c](src/gameplay_world.c)): one heart (explosions cost
+`EXPLOSION_DAMAGE`), a `PLAYER_HIT_INVULN` mercy window, and a vertical pop
+away from the source (vertical only, because the walk speed is rewritten from
+input every frame; on a ladder or the facade even that is skipped). Only a
+fatal fall and an elevator crush still call `gameplay_hit_player` directly,
+and so does the last heart. The mercy window reuses `invuln_timer`, so every
+damage source already respects it and the renderer already blinks it.
+
+Two consequences worth knowing. The spike pop is what lifts the boots back
+out of the spike bed, so one misstep costs one heart rather than locking into
+a loop. And a dog's bite is announced: the first contact only starts a
+`DOG_BITE_WINDUP` crouch-and-growl, the teeth land a beat later if Chuck is
+still there, and stepping clear cancels the lunge (the windup ticks, and is
+cancelled, in the dog's AI update, which owns `dt`).
+
+A guard downed in direct combat — bullet, knife or stomp — drops a magazine
+(`gameplay_spawn_ammo_drop`, `AMMO_DROP_BULLETS`); explosions destroy it with
+its owner. The drop is only collected while the sidearm is short, so it waits
+on the floor instead of vanishing into a full clip.
+
 ### Stomping a guard
 
-Touching a guard is normally instant death (`gameplay_hit_player`), but
-`gameplay_combat_check_contacts` ([gameplay_combat.c](src/gameplay_combat.c#L961))
-carves out one exception: landing on its head. It tells a stomp from a side
+Walking into a guard costs a heart, but `gameplay_combat_check_contacts`
+([gameplay_combat.c](src/gameplay_combat.c#L961))
+carves out one free answer: landing on its head. It tells a stomp from a side
 collision without swept collision by comparing penetration depth on each
 axis — a falling player (`vy > 0`) whose vertical overlap with the guard is
 shallower than the horizontal overlap only just tagged the top of the box, so
 it bounces Chuck upward (`ENEMY_STOMP_BOUNCE_SPEED`) and calls the same
-`damage_enemy` a bullet or knife hit would, instead of killing him. Dogs are
-unaffected; only guards can be stomped.
+`damage_enemy` a bullet or knife hit would, instead of hurting him. Dogs are
+unaffected; only guards can be stomped. The bounce also clears
+`jump_cut_ok`, because it is not a player-started jump: releasing the jump
+key must never shorten it back down into the guard.
 
 A stomp lands mid-climb as often as mid-jump, and that case needs its own
 fix: the ladder branch of `player_update` ([player.c](src/player.c)) sets `vy`
 from the climb input every frame, so a bounce set while `on_ladder` is true
 would be overwritten the very next frame by the climb speed, driving Chuck
-back down into what now reads as a deep, lethal side hit. The stomp handler
+back down into what now reads as a deep side hit. The stomp handler
 also clears `on_ladder` and arms `ladder_lockout_timer`
 (`ENEMY_STOMP_LADDER_LOCKOUT`) so the ladder cannot be re-grabbed until the
 bounce has had time to actually clear the guard.
+
+### Forgiving input, checkpoints, continues
+
+The jump is deliberately forgiving, and all of it lives in `player_update`:
+a `PLAYER_COYOTE_TIME` window keeps a ledge jumpable for a beat after the
+boots leave it, a `PLAYER_JUMP_BUFFER` keeps a press alive until the boots
+arrive, and releasing the key mid-rise caps the climb at
+`PLAYER_JUMP_CUT_FACTOR` of the jump speed (only for rises the player
+started — `jump_cut_ok` — so stomp bounces are never cut). The input layer
+reports every jump press except over a ladder, where the same key means
+climb; whether the press is honoured, now or a few frames later, is the
+player module's decision, and `Player.jumped` reports the frame a jump
+actually started so the shell can play the sound. Tests pin all three.
+
+Progress is banked and a death resumes at it. Facade climbs bank height every
+`FACADE_CHECKPOINT_STEP`; interiors bank at real progress — any key card, a
+finished hack, a teleport door, a medkit (`gameplay_bank_checkpoint`, called
+from [gameplay_interaction.c](src/gameplay_interaction.c)) — and
+`gameplay_restore_checkpoint` handles both modes, deactivating anything
+already in flight. A death keeps the carried grenade and rocket
+(`finish_player_death` transfers the loadout across `player_reset`), refills
+the sidearm, and never reloads the level, so the world keeps its dead guards
+and opened walls.
+
+Running out of lives always offers a retry of the current sector:
+`campaign_begin_continue` no longer gates on the continue count. Continues
+are the score insurance — while one is left the retry keeps the score, after
+that it costs it (`campaign_accept_continue`). The campaign never returns to
+level one uninvited. The score itself now pays out: every
+`EXTRA_LIFE_SCORE_STEP` points is an extra life
+(`campaign_check_extra_life`, polled once per playing frame).
+
+ESC (or START on a pad) pauses — `STATE_PAUSED` holds the interrupted state
+in `Game.pause_return_state` and resumes it directly, never through
+`game_enter_state`, which would replay `STATE_LEVEL_START`'s reveal.
+Abandoning the run is a deliberate second step (`Q`/BACK from pause). The
+reveal, the key-card sweep and the game-over hold all accept confirm to
+skip. Assist options (`AssistOptions` in [game.h](src/game.h): five hearts,
+80% guard speed, infinite lives) live in the shell, survive campaign resets,
+and reach the simulation only as two flags applied at level load
+(`assist_more_hearts`, `assist_slow_enemies` — read through
+`gameplay_player_max_hp` / `gameplay_enemy_speed_scale`), so the gameplay
+core stays deterministic and menu-free. The sheet opens from the title
+screen or from pause (`J`, or X on a pad) and returns to whichever opened
+it.
 
 ### The prologue pursuit
 
@@ -132,8 +205,12 @@ world scale. Four phases run in order: `DEPARTURE` (the SUV pulls away, Chuck
 runs to his car — skippable), `PURSUIT` (`CHASE_PURSUIT_DURATION` seconds of
 driving), `ARRIVAL` (both cars brake onto their marks) and `DONE`, which is the
 shell's cue to play the opening cutscene. Crashing out or letting the gap exceed
-`CHASE_LOSE_GAP` only fails the attempt: `CHASE_PHASE_FAILED` restarts the drive
-after a beat, so the prologue can never block the campaign.
+`CHASE_LOSE_GAP` only fails the attempt — and only costs a beat of it:
+`CHASE_PHASE_FAILED` resumes the drive `CHASE_FAIL_REWIND` seconds back from
+where it went wrong, not from zero, and after `CHASE_SKIP_AFTER_ATTEMPTS`
+failures confirm skips straight to the arrival. The prologue is a
+curtain-raiser and must never be the wall someone quits the game on; both
+rules are tested.
 
 Two rules keep it fair, and both are tested: traffic is never generated more
 than `CHASE_MAX_CARS_ABREAST` cars wide, so at least two lanes are always open,
@@ -158,9 +235,11 @@ second plate under it and a keycap row under that left the bottom eighty pixels
 of the shot carrying three bands of interface, which reads as a menu stacked on
 a picture. The hints were only ever there because there was nowhere else to
 learn the controls; the manual is that place, and it is named on the line they
-used to occupy. Anything added to the title screen from here owes the same
-question — the shot holds the wordmark, START and one quiet line, and a fourth
-element has to earn a band of its own.
+used to occupy. That line now carries two chips — the manual and the assist
+options — centred together as one line of things to know about, at the same
+hint weight; it is still one band. Anything added to the title screen from
+here owes the same question — the shot holds the wordmark, START and one quiet
+line, and a fourth element has to earn a band of its own.
 
 Three decisions carry it, and they are the reason it is one file.
 

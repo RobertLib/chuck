@@ -4336,6 +4336,29 @@ static void render_world(Game *game)
       draw_bazooka_pickup(r, x - 4.0f, y + 1.0f);
   }
 
+  /* Dropped magazines: the HUD's cartridge pictogram laid on the floor, so
+   * the pickup is read as ammunition before it is walked over. */
+  for (int i = 0; i < MAX_AMMO_DROPS; ++i)
+  {
+    const AmmoDrop *drop = &game->gameplay.ammo_drops[i];
+    if (!drop->active)
+      continue;
+    float x = drop->x - cam_x;
+    float y = drop->y + oy;
+    if (x + AMMO_DROP_W < 0.0f || x > (float)win_w)
+      continue;
+    color_rect(r, (SDL_Color){70, 84, 99, 255},
+               x, y + AMMO_DROP_H - 2.0f, (float)AMMO_DROP_W, 2.0f);
+    color_rect(r, (SDL_Color){222, 172, 84, 255},
+               x + 1.0f, y + 1.0f, (float)AMMO_DROP_W - 2.0f,
+               (float)AMMO_DROP_H - 3.0f);
+    color_rect(r, (SDL_Color){255, 236, 170, 255},
+               x + 1.0f, y, (float)AMMO_DROP_W - 2.0f, 1.0f);
+    color_rect(r, (SDL_Color){164, 118, 52, 255},
+               x + AMMO_DROP_W - 3.0f, y + 1.0f, 2.0f,
+               (float)AMMO_DROP_H - 3.0f);
+  }
+
   for (int i = 0; i < lvl->map.spike_count; ++i)
     draw_spike_strip(r, lvl->map.spike_spawns[i].x - cam_x,
                      lvl->map.spike_spawns[i].y + oy);
@@ -4543,9 +4566,14 @@ static void render_facade_hud(Game *game, int win_w)
   draw_hud_separator(r, 112.0f);
 
   draw_text(r, 124.0f, 8.0f, 0.7f, 108, 128, 148, "VITAL");
-  for (int i = 0; i < 5; ++i)
+  int max_hp = gameplay_player_max_hp(&game->gameplay);
+  for (int i = 0; i < max_hp; ++i)
     draw_hud_heart(r, 124.0f + i * 14.0f, 19.0f,
-                   i < game->campaign.lives);
+                   i < game->gameplay.player.hp);
+  char life_buf[8];
+  SDL_snprintf(life_buf, sizeof(life_buf), "x%d", game->campaign.lives);
+  draw_text(r, 124.0f + max_hp * 14.0f + 4.0f, 20.0f, 0.9f,
+            246, 110, 96, life_buf);
   draw_hud_separator(r, 218.0f);
 
   /* Wind gauge. During the warning it shows which way the gust will push;
@@ -4638,16 +4666,22 @@ static void render_hud(Game *game)
   draw_text(r, 12.0f, 27.0f, 0.7f, 120, 138, 152, "RESCUE OPS");
   draw_hud_separator(r, 88.0f);
 
-  /* Lives as pixel hearts, with empty slots so the max is always visible. */
+  /* Hearts are the hits left in this life; the counter beside them is the
+   * lives left in the run. Empty sockets keep the maximum readable. */
   draw_text(r, 99.0f, 8.0f, 0.7f, label_r, label_g, label_b, "VITAL");
-  for (int i = 0; i < 5; ++i)
-    draw_hud_heart(r, 99.0f + i * 14.0f, 19.0f, i < game->campaign.lives);
-  if (game->campaign.lives > 5)
-  {
-    char life_buf[8];
-    SDL_snprintf(life_buf, sizeof(life_buf), "+%d", game->campaign.lives - 5);
-    draw_text(r, 168.0f, 20.0f, 0.9f, 246, 110, 96, life_buf);
-  }
+  int max_hp = gameplay_player_max_hp(&game->gameplay);
+  for (int i = 0; i < max_hp; ++i)
+    draw_hud_heart(r, 99.0f + i * 14.0f, 19.0f,
+                   i < game->gameplay.player.hp);
+  char life_buf[8];
+  SDL_snprintf(life_buf, sizeof(life_buf), "x%d", game->campaign.lives);
+  if (game->presentation.extra_life_timer > 0.0f &&
+      fmodf(game->presentation.extra_life_timer, 0.3f) > 0.15f)
+    draw_text(r, 99.0f + max_hp * 14.0f + 4.0f, 20.0f, 0.9f,
+              120, 255, 190, "1UP");
+  else
+    draw_text(r, 99.0f + max_hp * 14.0f + 4.0f, 20.0f, 0.9f,
+              246, 110, 96, life_buf);
   draw_hud_separator(r, 190.0f);
 
   /* All carried ammunition remains visible; the label names the weapon that
@@ -4904,12 +4938,117 @@ static void draw_continue_overlay(Game *game)
 
   int seconds = (int)ceilf(game->campaign.continue_timer);
   char countdown[16];
-  char remaining[40];
+  char remaining[48];
   SDL_snprintf(countdown, sizeof(countdown), "%d", seconds);
-  SDL_snprintf(remaining, sizeof(remaining), "CONTINUES LEFT: %d",
-               game->campaign.continues_remaining);
+  /* The retry is always on the table; what runs out is the score insurance. */
+  if (game->campaign.continues_remaining > 0)
+    SDL_snprintf(remaining, sizeof(remaining), "SCORE KEPT - %d LEFT",
+                 game->campaign.continues_remaining);
+  else
+    SDL_snprintf(remaining, sizeof(remaining), "SCORE RESETS ON CONTINUE");
   draw_text_centered(game, 310.0f, 6.0f, 248, 188, 74, countdown);
   draw_text_centered(game, 365.0f, 1.5f, 210, 220, 215, remaining);
+}
+
+static void draw_pause_overlay(Game *game)
+{
+  draw_overlay_panel(game, 225.0f, (SDL_Color){123, 226, 204, 255},
+                     "PAUSED",
+                     game->platform.gamepad_active
+                         ? "START: RESUME   BACK: MAIN MENU"
+                         : "ESC: RESUME   Q: MAIN MENU   J: ASSIST");
+}
+
+/* The assist sheet: three switches on a plate, drawn with the same console
+ * vocabulary as the HUD. Options, not apologies. */
+static void draw_assist_overlay(Game *game)
+{
+  SDL_Renderer *r = game->platform.renderer;
+  int win_w = 0, win_h = 0;
+  game_get_view_size(game, &win_w, &win_h);
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  set_rgba(r, 4, 6, 11, 205);
+  fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+
+  float panel_w = 460.0f;
+  float panel_h = 268.0f;
+  float panel_x = ((float)win_w - panel_w) * 0.5f;
+  float panel_y = ((float)win_h - panel_h) * 0.5f - 12.0f;
+
+  fx_vgrad(r, panel_x, panel_y, panel_w, panel_h,
+           (SDL_Color){30, 40, 56, 255}, 255,
+           (SDL_Color){13, 19, 30, 255}, 255);
+  color_rect(r, (SDL_Color){60, 76, 98, 255},
+             panel_x, panel_y, panel_w, 1.0f);
+  color_rect(r, (SDL_Color){5, 7, 12, 255},
+             panel_x, panel_y + panel_h - 1.0f, panel_w, 1.0f);
+  color_rect(r, (SDL_Color){123, 226, 204, 255},
+             panel_x, panel_y, 3.0f, panel_h);
+
+  draw_text(r, panel_x + 22.0f, panel_y + 18.0f, 1.5f,
+            236, 238, 224, "ASSIST MODE");
+  draw_text(r, panel_x + 22.0f, panel_y + 40.0f, 0.8f, 132, 152, 170,
+            "THE GAME IS TUNED WITHOUT THESE. TAKE WHAT HELPS.");
+
+  static const char *labels[3] = {
+      "MORE HEARTS", "SLOWER GUARDS", "INFINITE LIVES"};
+  static const char *details[3] = {
+      "FIVE HEARTS PER LIFE INSTEAD OF THREE",
+      "GUARDS AND DOGS MOVE AT 80% SPEED",
+      "A DEATH NEVER COSTS A LIFE"};
+  bool values[3] = {game->assist.more_hearts,
+                    game->assist.slower_guards,
+                    game->assist.infinite_lives};
+  for (int i = 0; i < 3; ++i)
+  {
+    float row_y = panel_y + 66.0f + (float)i * 48.0f;
+    bool selected = game->assist_cursor == i;
+    if (selected)
+    {
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+      set_rgba(r, 123, 226, 204, 26);
+      fill_rect(r, panel_x + 12.0f, row_y - 7.0f, panel_w - 24.0f, 42.0f);
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+      draw_text(r, panel_x + 16.0f, row_y + 2.0f, 1.0f,
+                123, 226, 204, ">");
+    }
+    char key_buf[4];
+    SDL_snprintf(key_buf, sizeof(key_buf), "%d", i + 1);
+    draw_text(r, panel_x + 34.0f, row_y + 2.0f, 1.0f,
+              108, 128, 148, key_buf);
+    draw_text(r, panel_x + 56.0f, row_y, 1.2f,
+              selected ? 236 : 200, selected ? 238 : 208,
+              selected ? 224 : 196, labels[i]);
+    draw_text(r, panel_x + 56.0f, row_y + 17.0f, 0.7f,
+              120, 138, 152, details[i]);
+
+    /* The switch itself: a lit chip when on, a dark socket when off. */
+    float chip_x = panel_x + panel_w - 84.0f;
+    if (values[i])
+    {
+      color_rect(r, (SDL_Color){16, 52, 40, 255}, chip_x, row_y, 56.0f, 15.0f);
+      color_rect(r, (SDL_Color){40, 132, 96, 255}, chip_x, row_y, 56.0f, 1.0f);
+      color_rect(r, (SDL_Color){96, 230, 140, 255},
+                 chip_x + 5.0f, row_y + 6.0f, 3.0f, 3.0f);
+      draw_text(r, chip_x + 15.0f, row_y + 4.0f, 0.9f, 168, 255, 206, "ON");
+    }
+    else
+    {
+      color_rect(r, (SDL_Color){36, 38, 42, 255}, chip_x, row_y, 56.0f, 15.0f);
+      color_rect(r, (SDL_Color){96, 102, 108, 255}, chip_x, row_y, 56.0f, 1.0f);
+      color_rect(r, (SDL_Color){80, 86, 94, 255},
+                 chip_x + 5.0f, row_y + 6.0f, 3.0f, 3.0f);
+      draw_text(r, chip_x + 15.0f, row_y + 4.0f, 0.9f, 170, 176, 182, "OFF");
+    }
+  }
+
+  draw_text(r, panel_x + 22.0f, panel_y + panel_h - 26.0f, 0.8f,
+            132, 152, 170,
+            game->platform.gamepad_active
+                ? "D-PAD: SELECT   A: TOGGLE   START: DONE"
+                : "ARROWS: SELECT   ENTER: TOGGLE   ESC: DONE");
 }
 
 #ifdef CHUCK_DEBUG
@@ -4949,12 +5088,35 @@ void game_render(Game *game)
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
 
-  if (game->state == STATE_CHASE)
+  if (game->state == STATE_CHASE ||
+      (game->state == STATE_PAUSED &&
+       game->pause_return_state == STATE_CHASE))
   {
     chase_render(r, &game->chase, win_w, win_h,
                  game->presentation.camera_shake_x,
                  game->presentation.camera_shake_y,
                  game->platform.gamepad_active);
+    if (game->state == STATE_PAUSED)
+      draw_pause_overlay(game);
+    SDL_RenderPresent(r);
+    return;
+  }
+
+  if (game->state == STATE_ASSIST)
+  {
+    /* Over the title the sheet floats on the night; over the pause screen it
+     * floats on the held frame. Either way it owns the input. */
+    if (game->assist_return_state == STATE_INTRO)
+      intro_render(r, &game->presentation.intro, win_w, win_h,
+                   game->platform.gamepad_active);
+    else
+    {
+      render_world(game);
+      render_hud(game);
+    }
+    draw_assist_overlay(game);
+    fx_vignette(r, win_w, win_h, 58);
+    fx_scanlines(r, win_w, win_h, 11);
     SDL_RenderPresent(r);
     return;
   }
@@ -5033,6 +5195,8 @@ void game_render(Game *game)
   else if (game->state == STATE_GAME_OVER)
     draw_overlay_panel(game, 225.0f, (SDL_Color){235, 72, 65, 255},
                        "GAME OVER", "RETURNING TO MAIN MENU");
+  else if (game->state == STATE_PAUSED)
+    draw_pause_overlay(game);
   /* One shared finishing pass keeps every frame looking like the same film:
    * gentle scanlines for texture and a vignette that focuses the action. */
   fx_vignette(r, win_w, win_h, 58);

@@ -18,8 +18,10 @@ typedef struct
     IntroStar stars[INTRO_STAR_COUNT];
     SDL_FRect start_button;
     SDL_FRect manual_button;
+    SDL_FRect assist_button;
     bool start_hovered;
     bool manual_hovered;
+    bool assist_hovered;
 } Intro;
 
 void intro_init(Intro *intro, int win_w, int win_h);
@@ -32,5 +34,8 @@ bool intro_hit_start_button(const Intro *intro, float x, float y);
 
 /* The same, for the quieter plate that opens the field manual. */
 bool intro_hit_manual_button(const Intro *intro, float x, float y);
+
+/* And for its neighbour on the same line, the assist options. */
+bool intro_hit_assist_button(const Intro *intro, float x, float y);
 
 #endif /* CHUCK_INTRO_H */

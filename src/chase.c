@@ -710,6 +710,15 @@ static void update_pursuit(Chase *chase, const Input *input, float dt)
     chase->phase_time += dt;
     chase->pursuit_time += dt;
 
+    /* After a couple of failed attempts the drive stops insisting: confirm
+     * jumps straight to the arrival. The prologue is a curtain-raiser, and a
+     * curtain-raiser must never be the wall someone quits the game on. */
+    if (input->confirm && chase->attempts >= CHASE_SKIP_AFTER_ATTEMPTS)
+    {
+        begin_arrival(chase);
+        return;
+    }
+
     if (chase->player.invuln_timer > 0.0f)
         chase->player.invuln_timer -= dt;
 
@@ -740,7 +749,13 @@ static void update_failed(Chase *chase, float dt)
     if (chase->phase_time >= CHASE_FAILED_DURATION)
     {
         chase->attempts++;
+        /* A failure costs a beat of the drive, not the whole drive: the
+         * pursuit resumes a stretch back from where it went wrong. */
+        float resume_time = chase->pursuit_time - CHASE_FAIL_REWIND;
+        if (resume_time < 0.0f)
+            resume_time = 0.0f;
         reset_pursuit_layout(chase);
+        chase->pursuit_time = resume_time;
         begin_phase(chase, CHASE_PHASE_PURSUIT);
         game_events_sound(&chase->events, SFX_RESPAWN);
     }

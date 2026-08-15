@@ -1246,6 +1246,13 @@ static void test_gameplay_reset_preserves_rng_only(void)
     CHECK(state.facade_hazard_windup_timers[0] == 0.0f);
     CHECK(!state.facade_has_checkpoint);
     CHECK(state.facade_checkpoint_y == 0.0f);
+    CHECK(!state.interior_has_checkpoint);
+    /* Assist flags come back to their neutral defaults; the shell re-applies
+     * the player's choices right after. */
+    CHECK(!state.assist_slow_enemies);
+    CHECK(!state.assist_more_hearts);
+    CHECK(gameplay_player_max_hp(&state) == PLAYER_MAX_HP);
+    CHECK(gameplay_enemy_speed_scale(&state) == 1.0f);
     /* A sector loaded again is the sector as authored, walls included. */
     CHECK(!state.level.runtime.wall_broken[3][4]);
 }
@@ -1282,11 +1289,20 @@ static void test_campaign_continue_flow(void)
         CHECK(campaign_lose_life(&campaign));
         CHECK(campaign_begin_continue(&campaign));
         CHECK(campaign_accept_continue(&campaign));
+        CHECK(campaign.score == 1234);
     }
+
+    /* Out of reserve continues the retry is still on offer — it just stops
+     * insuring the score. Nobody is sent back to level one against their
+     * will. */
     campaign.lives = 1;
     CHECK(campaign_lose_life(&campaign));
-    CHECK(!campaign_begin_continue(&campaign));
-    CHECK(!campaign_accept_continue(&campaign));
+    CHECK(campaign_begin_continue(&campaign));
+    CHECK(campaign_accept_continue(&campaign));
+    CHECK(campaign.score == 0);
+    CHECK(campaign.next_extra_life_score == EXTRA_LIFE_SCORE_STEP);
+    CHECK(campaign.lives == PLAYER_LIVES);
+    CHECK(campaign.current_level == 2);
 }
 
 static void test_campaign_continue_countdown_expires(void)
@@ -1302,6 +1318,33 @@ static void test_campaign_continue_countdown_expires(void)
     CHECK(campaign.continue_timer == 0.0f);
     CHECK(!campaign_accept_continue(&campaign));
     CHECK(campaign.continues_remaining == PLAYER_CONTINUES);
+}
+
+static void test_score_pays_out_extra_lives(void)
+{
+    CampaignState campaign;
+    campaign_reset(&campaign);
+    CHECK(!campaign_check_extra_life(&campaign));
+
+    campaign.score = EXTRA_LIFE_SCORE_STEP;
+    CHECK(campaign_check_extra_life(&campaign));
+    CHECK(campaign.lives == PLAYER_LIVES + 1);
+    CHECK(campaign.next_extra_life_score == 2 * EXTRA_LIFE_SCORE_STEP);
+    CHECK(!campaign_check_extra_life(&campaign));
+
+    /* Two thresholds crossed in one burst pay out one at a time. */
+    campaign.score = 3 * EXTRA_LIFE_SCORE_STEP;
+    CHECK(campaign_check_extra_life(&campaign));
+    CHECK(campaign_check_extra_life(&campaign));
+    CHECK(!campaign_check_extra_life(&campaign));
+    CHECK(campaign.lives == PLAYER_LIVES + 3);
+
+    /* The payout respects the lives cap without stalling the threshold. */
+    campaign.lives = MAX_LIVES;
+    campaign.score = 4 * EXTRA_LIFE_SCORE_STEP;
+    CHECK(campaign_check_extra_life(&campaign));
+    CHECK(campaign.lives == MAX_LIVES);
+    CHECK(campaign.next_extra_life_score == 5 * EXTRA_LIFE_SCORE_STEP);
 }
 
 static void test_blocked_exit_uses_separate_window(void)
@@ -3204,7 +3247,7 @@ static void test_enemy_uses_ladder_while_avoiding_crate(void)
     enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
                  level.map.start_x + PLAYER_W * 0.5f,
                  1.0f * TILE_SIZE + PLAYER_H * 0.5f,
-                 false, &rng);
+                 false, 1.0f, &rng);
 
     CHECK(enemy.climbing);
     CHECK(enemy.climb_dir == -1);
@@ -3237,13 +3280,13 @@ static void test_patrol_enemy_does_not_immediately_leave_ladder(void)
        side exit on the next frame, while still on the starting floor. */
     rng_seed(&rng, 389);
     enemy_update(&enemy, &level, 1.0f / 60.0f, false, false,
-                 0.0f, 0.0f, false, &rng);
+                 0.0f, 0.0f, false, 1.0f, &rng);
     CHECK(enemy.climbing);
     CHECK(enemy.climb_dir == -1);
 
     float climb_start_y = enemy.y;
     enemy_update(&enemy, &level, 1.0f / 60.0f, false, false,
-                 0.0f, 0.0f, false, &rng);
+                 0.0f, 0.0f, false, 1.0f, &rng);
 
     CHECK(enemy.climbing);
     CHECK(enemy.y < climb_start_y);
@@ -3303,14 +3346,14 @@ static void test_enemy_aligns_before_vertical_climb(void)
 
     enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
                  level.map.start_x + PLAYER_W * 0.5f,
-                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, &rng);
+                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, 1.0f, &rng);
     CHECK(enemy.climbing);
 
     float climb_start_y = enemy.y;
     float off_ladder_x = enemy.x;
     enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
                  level.map.start_x + PLAYER_W * 0.5f,
-                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, &rng);
+                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, 1.0f, &rng);
 
     CHECK(enemy.x > off_ladder_x);
     CHECK(fabsf(enemy.y - climb_start_y) < 0.01f);
@@ -3318,7 +3361,7 @@ static void test_enemy_aligns_before_vertical_climb(void)
     for (int frame = 0; frame < 480 && enemy.climbing; ++frame)
         enemy_update(&enemy, &level, 1.0f / 120.0f, true, false,
                      level.map.start_x + PLAYER_W * 0.5f,
-                     2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, &rng);
+                     2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, 1.0f, &rng);
 
     CHECK(!enemy.climbing);
     CHECK(fabsf(enemy.x - ladder_x) < 0.01f);
@@ -3328,7 +3371,7 @@ static void test_enemy_aligns_before_vertical_climb(void)
     enemy.dir = 1;
     enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
                  ladder_x + ENEMY_W * 0.5f,
-                 5.0f * TILE_SIZE + ENEMY_H * 0.5f, false, &rng);
+                 5.0f * TILE_SIZE + ENEMY_H * 0.5f, false, 1.0f, &rng);
     CHECK(enemy.climbing);
     CHECK(enemy.climb_dir == 1);
 
@@ -3336,7 +3379,7 @@ static void test_enemy_aligns_before_vertical_climb(void)
         enemy_update(&enemy, &level, 1.0f / 120.0f, true, false,
                      ladder_x + ENEMY_W * 0.5f,
                      5.0f * TILE_SIZE + ENEMY_H * 0.5f,
-                     false, &rng);
+                     false, 1.0f, &rng);
 
     CHECK(!enemy.climbing);
     CHECK(fabsf(enemy.x - ladder_x) < 0.01f);
@@ -3806,6 +3849,9 @@ static void test_enemy_vision_cone_stealth_and_walls(void)
     guard->on_ground = true;
     guard->shoot_cooldown = 0.0f;
     guard->encounter_decided = true; /* isolate the aim decision from alarms */
+    /* The sighting has already been held through the notice beat; this test
+     * is about the vision cone, not the suspicion ramp. */
+    guard->sight_timer = ENEMY_NOTICE_TIME;
     state.player.y = guard->y;
     state.player.x = guard->x - 5.0f * TILE_SIZE;
 
@@ -3859,6 +3905,7 @@ static void test_enemy_fires_vertical_shot_up_a_shaft(void)
     guard->on_ground = true;
     guard->shoot_cooldown = 0.0f;
     guard->encounter_decided = true;
+    guard->sight_timer = ENEMY_NOTICE_TIME; /* past the suspicion ramp */
     /* Chuck is directly above the guard, three tiles up the shaft. */
     state.player.x = guard->x;
     state.player.y = guard->y - 3.0f * TILE_SIZE;
@@ -4075,7 +4122,7 @@ static void test_pursuing_guard_refuses_high_drop(void)
     {
         enemy_update(&guard, &level, 1.0f / 120.0f, true, false,
                      7.5f * TILE_SIZE, 5.5f * TILE_SIZE,
-                     false, &rng);
+                     false, 1.0f, &rng);
         if (guard.dir < 0)
             turned_back = true;
         CHECK(fabsf(guard.y - ledge_y) < 0.01f);
@@ -4118,7 +4165,7 @@ static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
     enemy_update(&guard, &level, 0.016f, true, false,
                  5.5f * TILE_SIZE,
                  elevator->top_limit - ENEMY_H * 0.5f,
-                 false, &rng);
+                 false, 1.0f, &rng);
     CHECK(guard.on_elevator == -1);
     CHECK(guard.on_ground);
     CHECK(fabsf(guard.x - waiting_x) < 0.01f);
@@ -4127,7 +4174,7 @@ static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
     enemy_update(&guard, &level, 0.016f, true, false,
                  5.5f * TILE_SIZE,
                  elevator->top_limit - ENEMY_H * 0.5f,
-                 false, &rng);
+                 false, 1.0f, &rng);
     CHECK(guard.on_elevator == 0);
     CHECK(guard.on_ground);
     CHECK(fabsf(guard.y - (elevator->y - ENEMY_H)) < 0.01f);
@@ -4139,7 +4186,7 @@ static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
         enemy_update(&guard, &level, 0.016f, true, false,
                      5.5f * TILE_SIZE,
                      elevator->top_limit - ENEMY_H * 0.5f,
-                     false, &rng);
+                     false, 1.0f, &rng);
         CHECK(guard.on_elevator == 0);
         CHECK(guard.on_ground);
         CHECK(fabsf(guard.y - (elevator->y - ENEMY_H)) < 0.01f);
@@ -4157,7 +4204,7 @@ static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
         enemy_update(&guard, &level, 1.0f / 120.0f, true, false,
                      5.5f * TILE_SIZE,
                      elevator->top_limit - ENEMY_H * 0.5f,
-                     false, &rng);
+                     false, 1.0f, &rng);
     }
     CHECK(guard.on_elevator == -1);
     CHECK(guard.on_ground);
@@ -4188,11 +4235,445 @@ static void test_pursuing_guard_walks_onto_falling_platform(void)
 
     enemy_update(&guard, &level, 0.016f, true, false,
                  6.5f * TILE_SIZE,
-                 guard.y + ENEMY_H * 0.5f, false, &rng);
+                 guard.y + ENEMY_H * 0.5f, false, 1.0f, &rng);
 
     CHECK(guard.on_ground);
     CHECK(fabsf(guard.vy) < 0.01f);
     CHECK(guard.x > previous_x); /* walked instead of jumping over it */
+}
+
+/* ---- Forgiveness and fairness ----------------------------------------- */
+
+/* A jump pressed a beat after the boots leave the ledge still happens; the
+ * same press once the window has closed does not. */
+static void test_coyote_time_allows_a_late_jump(void)
+{
+    /* The walk row keeps an open row overhead so the coyote jump can rise
+     * instead of being clipped flat by the ceiling. */
+    static const char data[] =
+        "######\n"
+        "#    #\n"
+        "#S  E#\n"
+        "##   #\n"
+        "#    #\n"
+        "######\n";
+
+    for (int late_frames = 2; late_frames <= 14; late_frames += 12)
+    {
+        GameplayState state = {0};
+        rng_seed(&state.rng, 11);
+        CHECK(level_load_data(&state.level, "ledge", data, strlen(data),
+                              &state.rng));
+        player_reset(&state.player, &state.level);
+
+        Input run = {.right = true};
+        int frame = 0;
+        while (frame < 200 &&
+               (state.player.on_ground || state.player.vy <= 0.0f))
+        {
+            player_update(&state.player, &state.level, &run, 1.0f / 60.0f);
+            frame++;
+        }
+        CHECK(frame < 200);
+
+        Input idle = {0};
+        for (int wait = 0; wait < late_frames; ++wait)
+            player_update(&state.player, &state.level, &idle, 1.0f / 60.0f);
+
+        Input jump = {.jump = true, .jump_held = true};
+        player_update(&state.player, &state.level, &jump, 1.0f / 60.0f);
+        if (late_frames * (1.0f / 60.0f) < PLAYER_COYOTE_TIME)
+        {
+            CHECK(state.player.jumped);
+            CHECK(state.player.vy < 0.0f);
+        }
+        else
+        {
+            CHECK(!state.player.jumped);
+            CHECK(state.player.vy > 0.0f);
+        }
+    }
+}
+
+/* A jump pressed just before touchdown is kept until the boots arrive. */
+static void test_jump_buffer_executes_on_landing(void)
+{
+    static const char data[] =
+        "#####\n"
+        "#S E#\n"
+        "#   #\n"
+        "#   #\n"
+        "#####\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 12);
+    CHECK(level_load_data(&state.level, "drop", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+
+    float floor_stand_y = 4.0f * TILE_SIZE - (float)PLAYER_H;
+    bool pressed = false;
+    bool jumped = false;
+    Input input = {0};
+    for (int frame = 0; frame < 300 && !jumped; ++frame)
+    {
+        input.jump = false;
+        if (!pressed && state.player.vy > 0.0f &&
+            floor_stand_y - state.player.y < 22.0f)
+        {
+            input.jump = true;
+            input.jump_held = true;
+            pressed = true;
+        }
+        player_update(&state.player, &state.level, &input, 1.0f / 60.0f);
+        jumped = state.player.jumped;
+    }
+    CHECK(pressed);
+    CHECK(jumped);
+    CHECK(state.player.vy < 0.0f);
+}
+
+/* Releasing the button mid-rise caps the jump; a stomp bounce is never cut. */
+static void test_releasing_jump_cuts_the_rise(void)
+{
+    static const char data[] =
+        "#####\n"
+        "#   #\n"
+        "#   #\n"
+        "#S E#\n"
+        "#####\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 13);
+    CHECK(level_load_data(&state.level, "flat", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+
+    Input idle = {0};
+    for (int frame = 0; frame < 30 && !state.player.on_ground; ++frame)
+        player_update(&state.player, &state.level, &idle, 1.0f / 60.0f);
+    CHECK(state.player.on_ground);
+
+    Input jump = {.jump = true, .jump_held = true};
+    player_update(&state.player, &state.level, &jump, 1.0f / 60.0f);
+    CHECK(state.player.jumped);
+    float full_rise = state.player.vy;
+    CHECK(full_rise < -PLAYER_JUMP_SPEED * 0.9f);
+
+    Input released = {0};
+    player_update(&state.player, &state.level, &released, 1.0f / 60.0f);
+    CHECK(state.player.vy >=
+          -PLAYER_JUMP_SPEED * PLAYER_JUMP_CUT_FACTOR - 0.001f);
+
+    /* The bounce off a stomped guard is not player-started: releasing the
+     * key must not shorten it back down into the guard. */
+    state.player.jump_cut_ok = false;
+    state.player.vy = -ENEMY_STOMP_BOUNCE_SPEED;
+    player_update(&state.player, &state.level, &released, 1.0f / 60.0f);
+    CHECK(state.player.vy < -PLAYER_JUMP_SPEED * PLAYER_JUMP_CUT_FACTOR - 40.0f);
+}
+
+/* Contact costs a heart and opens a mercy window; only the last heart kills. */
+static void test_contact_costs_a_heart_with_mercy_window(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.facing = 1;
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){.x = 10.0f, .y = 0.0f, .hp = ENEMY_HP};
+    state.player.x = 10.0f + ENEMY_W - 4.0f;
+    state.player.y = 0.0f;
+
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(state.player.hp == PLAYER_MAX_HP - 1);
+    CHECK(!state.player.dying);
+    CHECK(state.invuln_timer > 0.0f);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_PLAYER_HIT));
+
+    /* Inside the mercy window the same contact costs nothing further. */
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(state.player.hp == PLAYER_MAX_HP - 1);
+
+    state.invuln_timer = 0.0f;
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(state.player.hp == PLAYER_MAX_HP - 2);
+    CHECK(!state.player.dying);
+
+    state.invuln_timer = 0.0f;
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(state.player.dying);
+    CHECK(state.player.hp == 0);
+}
+
+/* Explosions are the heavy hit: two hearts, still survivable from full. */
+static void test_explosion_costs_two_hearts(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.facing = 1;
+    state.mines[0] = (Mine){.x = 0.0f, .y = 10.0f, .active = true};
+    state.mine_count = 1;
+
+    gameplay_combat_update_explosives(&state, &campaign, 0.01f);
+    CHECK(state.mines[0].triggered);
+    gameplay_combat_update_explosives(&state, &campaign,
+                                      MINE_TRIGGER_DELAY + 0.01f);
+    CHECK(!state.mines[0].active);
+    CHECK(!state.player.dying);
+    CHECK(state.player.hp == PLAYER_MAX_HP - EXPLOSION_DAMAGE);
+    CHECK(state.invuln_timer > 0.0f);
+}
+
+/* Real progress banks an interior checkpoint, and a respawn resumes there
+ * with nothing already in flight. */
+static void test_interior_checkpoint_resumes_progress(void)
+{
+    static const char data[] =
+        "########\n"
+        "#S C  E#\n"
+        "########\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 14);
+    CHECK(level_load_data(&state.level, "checkpoint", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+    CHECK(!state.interior_has_checkpoint);
+
+    const Item *card = &state.level.runtime.items[0];
+    state.player.x = card->x - PLAYER_W * 0.5f;
+    state.player.y = card->y - PLAYER_H * 0.5f;
+    gameplay_collect_items(&state, &campaign, 1.0f / 60.0f);
+    CHECK(state.level.runtime.items[0].collected);
+    CHECK(state.interior_has_checkpoint);
+    float banked_x = state.interior_checkpoint_x;
+
+    state.player.x = state.level.map.start_x;
+    state.player.vy = 120.0f;
+    state.enemy_bullets[0] = (Bullet){.x = 60.0f, .y = 40.0f,
+                                      .vx = 100.0f, .active = true};
+    gameplay_restore_checkpoint(&state);
+    CHECK(state.player.x == banked_x);
+    CHECK(state.player.vy == 0.0f);
+    CHECK(!state.enemy_bullets[0].active);
+}
+
+/* A guard downed in direct combat drops a magazine worth picking up — but
+ * only once the player can actually use it. */
+static void test_guard_downed_in_combat_drops_ammo(void)
+{
+    static const char data[] =
+        "#####\n"
+        "#S E#\n"
+        "#####\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 15);
+    CHECK(level_load_data(&state.level, "drops", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){.x = 2.0f * TILE_SIZE,
+                               .y = 2.0f * TILE_SIZE - ENEMY_H,
+                               .hp = 1, .dir = -1};
+    state.bullets[0] = (Bullet){.x = state.enemies[0].x - 6.0f,
+                                .y = state.enemies[0].y + 12.0f,
+                                .vx = BULLET_SPEED, .active = true};
+    gameplay_combat_update_player_bullets(&state, &campaign, 1.0f / 60.0f);
+    CHECK(state.enemies[0].dead);
+    CHECK(state.ammo_drops[0].active);
+
+    /* A full sidearm leaves the magazine lying where it fell. */
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.bullets = MAX_AMMO;
+    state.player.x = state.ammo_drops[0].x - 4.0f;
+    state.player.y = 2.0f * TILE_SIZE - PLAYER_H;
+    gameplay_update_ammo_drops(&state, 1.0f / 60.0f);
+    CHECK(state.ammo_drops[0].active);
+
+    state.player.bullets = 0;
+    gameplay_update_ammo_drops(&state, 1.0f / 60.0f);
+    CHECK(!state.ammo_drops[0].active);
+    CHECK(state.player.bullets == AMMO_DROP_BULLETS);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_PICKUP_AMMO));
+}
+
+/* A dog bite is announced: the first contact only starts the crouch, the
+ * teeth land a beat later if Chuck is still there, and stepping clear
+ * cancels the lunge entirely. */
+static void test_dog_bite_is_announced_and_survivable(void)
+{
+    static const char data[] =
+        "#####\n"
+        "#S E#\n"
+        "#####\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 16);
+    CHECK(level_load_data(&state.level, "kennel", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.y = 2.0f * TILE_SIZE - PLAYER_H;
+
+    state.dog_count = 1;
+    state.dogs[0] = (Dog){.x = state.player.x,
+                          .y = 2.0f * TILE_SIZE - DOG_H,
+                          .hp = DOG_HP, .owner = -1, .dir = 1,
+                          .state = DOG_GUARD, .state_timer = 100.0f,
+                          .guard_x = state.player.x,
+                          .guard_y = 2.0f * TILE_SIZE - DOG_H};
+
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(state.player.hp == PLAYER_MAX_HP);
+    CHECK(state.dogs[0].bite_windup > 0.0f);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_DOG_GROWL));
+
+    /* Stepping clear during the crouch cancels the lunge. */
+    float held_x = state.player.x;
+    state.player.x += 3.0f * TILE_SIZE;
+    gameplay_ai_update_movement(&state, 0.05f);
+    CHECK(state.dogs[0].bite_windup == 0.0f);
+    CHECK(!state.dogs[0].bite_ready);
+
+    /* Standing in it, the growl becomes a bite one windup later. */
+    state.player.x = held_x;
+    state.dogs[0].x = held_x;
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(state.dogs[0].bite_windup > 0.0f);
+    for (int i = 0; i < 10 && !state.dogs[0].bite_ready; ++i)
+    {
+        state.dogs[0].x = state.player.x;
+        gameplay_ai_update_movement(&state, 0.05f);
+    }
+    CHECK(state.dogs[0].bite_ready);
+    state.dogs[0].x = state.player.x;
+    state.dogs[0].y = state.player.y + PLAYER_H - DOG_H;
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(state.player.hp == PLAYER_MAX_HP - 1);
+    CHECK(!state.player.dying);
+    CHECK(state.invuln_timer > 0.0f);
+    CHECK(state.dogs[0].bite_cooldown > 0.0f);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_DOG_BITE));
+}
+
+/* A failed drive rewinds a stretch, not to zero. */
+static void test_chase_failure_rewinds_instead_of_restarting(void)
+{
+    Chase chase;
+    chase_init(&chase, 2222);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+
+    Input input = {0};
+    chase.pursuit_time = 20.0f;
+    chase.target.y = chase.player.y + CHASE_LOSE_GAP + 20.0f;
+    chase_step(&chase, &input);
+    CHECK(chase.phase == CHASE_PHASE_FAILED);
+
+    chase_run(&chase, &input, CHASE_FAILED_DURATION + 0.1f);
+    CHECK(chase.phase == CHASE_PHASE_PURSUIT);
+    CHECK(fabsf(chase.pursuit_time - (20.0f - CHASE_FAIL_REWIND)) < 0.5f);
+}
+
+/* After enough failed attempts, confirm skips the rest of the drive. */
+static void test_chase_skippable_after_repeated_failures(void)
+{
+    Chase chase;
+    chase_init(&chase, 3333);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+
+    Input confirm = {.confirm = true};
+    chase_step(&chase, &confirm);
+    CHECK(chase.phase == CHASE_PHASE_PURSUIT);
+
+    chase.attempts = CHASE_SKIP_AFTER_ATTEMPTS;
+    chase_step(&chase, &confirm);
+    CHECK(chase.phase == CHASE_PHASE_ARRIVAL);
+}
+
+/* A fresh sighting is noticed for a beat before the aim telegraph starts;
+ * provoked guards are past noticing. */
+static void test_fresh_sighting_waits_before_aiming(void)
+{
+    static const char data[] =
+        "############\n"
+        "#S     M  E#\n"
+        "############\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 17);
+    CHECK(level_load_data(&state.level, "notice", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    Enemy *guard = &state.enemies[0];
+    guard->dir = -1;
+    guard->on_ground = true;
+    guard->shoot_cooldown = 0.0f;
+    guard->encounter_decided = true;
+    state.player.y = guard->y;
+    state.player.x = guard->x - 5.0f * TILE_SIZE;
+
+    int steps = 0;
+    while (guard->aim_timer <= 0.0f && steps < 10)
+    {
+        gameplay_ai_update_combat(&state, 0.1f);
+        steps++;
+    }
+    CHECK(guard->aim_timer > 0.0f);
+    /* 0.35s of notice at 0.1s a step lands the first aim on the fourth. */
+    CHECK(steps == 4);
+
+    GameplayState provoked = {0};
+    rng_seed(&provoked.rng, 17);
+    CHECK(level_load_data(&provoked.level, "provoked", data, strlen(data),
+                          &provoked.rng));
+    gameplay_ai_spawn_level_entities(&provoked);
+    Enemy *pguard = &provoked.enemies[0];
+    pguard->dir = -1;
+    pguard->on_ground = true;
+    pguard->shoot_cooldown = 0.0f;
+    pguard->encounter_decided = true;
+    pguard->provoked = true;
+    provoked.player.y = pguard->y;
+    provoked.player.x = pguard->x - 5.0f * TILE_SIZE;
+    gameplay_ai_update_combat(&provoked, 0.016f);
+    CHECK(pguard->aim_timer > 0.0f);
+}
+
+/* A medkit refills the hearts first and only banks a spare life once they
+ * are already full. */
+static void test_medkit_heals_before_granting_life(void)
+{
+    static const char data[] =
+        "######\n"
+        "#S KE#\n"
+        "######\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 18);
+    CHECK(level_load_data(&state.level, "aid", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+
+    const Item *kit = &state.level.runtime.items[0];
+    state.player.hp = 1;
+    state.player.x = kit->x - PLAYER_W * 0.5f;
+    state.player.y = kit->y - PLAYER_H * 0.5f;
+    gameplay_collect_items(&state, &campaign, 1.0f / 60.0f);
+    CHECK(state.player.hp == PLAYER_MAX_HP);
+    CHECK(campaign.lives == 0);
+    CHECK(state.interior_has_checkpoint);
+
+    state.level.runtime.items[0].collected = false;
+    gameplay_collect_items(&state, &campaign, 1.0f / 60.0f);
+    CHECK(state.player.hp == PLAYER_MAX_HP);
+    CHECK(campaign.lives == 1);
 }
 
 int main(void)
@@ -4222,6 +4703,7 @@ int main(void)
     test_chase_generated_traffic_matches_its_lane();
     test_campaign_continue_flow();
     test_campaign_continue_countdown_expires();
+    test_score_pays_out_extra_lives();
     test_blocked_exit_uses_separate_window();
     test_facade_mode_and_hazards_are_seeded();
     test_facade_bird_hits_player();
@@ -4289,6 +4771,18 @@ int main(void)
     test_pursuing_guard_refuses_high_drop();
     test_guard_rides_elevator_and_leaves_at_target_floor();
     test_pursuing_guard_walks_onto_falling_platform();
+    test_coyote_time_allows_a_late_jump();
+    test_jump_buffer_executes_on_landing();
+    test_releasing_jump_cuts_the_rise();
+    test_contact_costs_a_heart_with_mercy_window();
+    test_explosion_costs_two_hearts();
+    test_interior_checkpoint_resumes_progress();
+    test_guard_downed_in_combat_drops_ammo();
+    test_dog_bite_is_announced_and_survivable();
+    test_chase_failure_rewinds_instead_of_restarting();
+    test_chase_skippable_after_repeated_failures();
+    test_fresh_sighting_waits_before_aiming();
+    test_medkit_heals_before_granting_life();
 
     if (failures != 0)
     {

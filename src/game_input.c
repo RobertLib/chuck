@@ -64,6 +64,7 @@ void game_read_input(Game *game)
   bool pad_up = false;
   bool pad_down = false;
   bool pad_interact = false;
+  bool pad_jump_held = false;
   if (game->platform.gamepad != NULL)
   {
     Sint16 x = SDL_GetGamepadAxis(game->platform.gamepad,
@@ -79,6 +80,7 @@ void game_read_input(Game *game)
     pad_down = y > GAMEPAD_AXIS_DEAD_ZONE ||
                gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
     pad_interact = gamepad_button(game, SDL_GAMEPAD_BUTTON_NORTH);
+    pad_jump_held = gamepad_button(game, SDL_GAMEPAD_BUTTON_SOUTH);
   }
 
   game->input.left = key_left || pad_left;
@@ -86,6 +88,8 @@ void game_read_input(Game *game)
   game->input.up = key_up || pad_up;
   game->input.down = key_down || pad_down;
   game->input.interact = key_interact || pad_interact;
+  /* Held state feeds the variable jump height: release mid-rise cuts it. */
+  game->input.jump_held = key_up || pad_jump_held;
 
   if (key_left || key_right || key_up || key_down || key_interact)
     game->platform.gamepad_active = false;
@@ -98,9 +102,22 @@ static bool state_accepts_confirm(GameState state)
   return state == STATE_INTRO ||
          state == STATE_CHASE ||
          state == STATE_OPENING_CUTSCENE ||
+         state == STATE_LEVEL_START ||
+         state == STATE_SHOW_KEYCARD ||
          state == STATE_LEVEL_TRANSITION ||
          state == STATE_OUTRO ||
-         state == STATE_CONTINUE;
+         state == STATE_CONTINUE ||
+         state == STATE_GAME_OVER ||
+         state == STATE_PAUSED;
+}
+
+/* The states ESC (or START) pauses rather than aborts. */
+static bool state_accepts_pause(GameState state)
+{
+  return state == STATE_PLAYING ||
+         state == STATE_LEVEL_START ||
+         state == STATE_SHOW_KEYCARD ||
+         state == STATE_CHASE;
 }
 
 static void toggle_fullscreen(Game *game)
@@ -176,6 +193,32 @@ static bool handle_manual_gamepad(Game *game, SDL_GamepadButton button)
   }
 }
 
+/* The assist sheet's pad bindings: up/down walk the rows, A flips the row,
+ * and everything that means "done" puts the sheet away. */
+static bool handle_assist_gamepad(Game *game, SDL_GamepadButton button)
+{
+  switch (button)
+  {
+  case SDL_GAMEPAD_BUTTON_DPAD_UP:
+    game_assist_move_cursor(game, -1);
+    return true;
+  case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
+    game_assist_move_cursor(game, 1);
+    return true;
+  case SDL_GAMEPAD_BUTTON_SOUTH:
+  case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
+  case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+    game_assist_toggle_selected(game);
+    return true;
+  case SDL_GAMEPAD_BUTTON_START:
+  case SDL_GAMEPAD_BUTTON_NORTH:
+    game_close_assist(game);
+    return true;
+  default:
+    return false;
+  }
+}
+
 static void confirm_with_gamepad(Game *game, bool allow_jump)
 {
   if (game->state == STATE_OUTRO &&
@@ -198,24 +241,44 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
   game->platform.gamepad_active = true;
   if (game->state == STATE_MANUAL && handle_manual_gamepad(game, button))
     return;
+  if (game->state == STATE_ASSIST && handle_assist_gamepad(game, button))
+    return;
   switch (button)
   {
   case SDL_GAMEPAD_BUTTON_SOUTH:
     confirm_with_gamepad(game, true);
     break;
   case SDL_GAMEPAD_BUTTON_START:
-    confirm_with_gamepad(game, false);
+    /* START is the pause button while anything is running; everywhere else
+     * it keeps meaning "confirm". */
+    if (state_accepts_pause(game->state) || game->state == STATE_PAUSED)
+      game_toggle_pause(game);
+    else
+      confirm_with_gamepad(game, false);
     break;
   case SDL_GAMEPAD_BUTTON_EAST:
   case SDL_GAMEPAD_BUTTON_BACK:
+    /* Backing out of a running game pauses it first; abandoning the run is
+     * only ever done from the pause screen, never by one stray press. */
     if (game->state == STATE_INTRO)
       game->platform.quit_requested = true;
+    else if (state_accepts_pause(game->state))
+      game_toggle_pause(game);
+    else if (game->state == STATE_PAUSED)
+    {
+      if (button == SDL_GAMEPAD_BUTTON_BACK)
+        game_return_to_intro(game);
+      else
+        game_toggle_pause(game);
+    }
     else
       game_return_to_intro(game);
     break;
   case SDL_GAMEPAD_BUTTON_WEST:
     if (game->state == STATE_PLAYING)
       game->input.shoot = true;
+    else if (game->state == STATE_INTRO)
+      game_open_assist(game);
     break;
   case SDL_GAMEPAD_BUTTON_NORTH:
     if (game->state == STATE_PLAYING)
@@ -304,6 +367,10 @@ void game_handle_event(Game *game, const SDL_Event *event)
     {
       game_open_manual(game);
     }
+    else if (intro_hit_assist_button(&game->presentation.intro, mx, my))
+    {
+      game_open_assist(game);
+    }
     return;
   }
 
@@ -346,6 +413,31 @@ void game_handle_event(Game *game, const SDL_Event *event)
       return;
     }
 
+    /* The assist sheet owns the keyboard while it is open, like the manual. */
+    if (game->state == STATE_ASSIST)
+    {
+      if (sc == SDL_SCANCODE_UP || sc == SDL_SCANCODE_W)
+        game_assist_move_cursor(game, -1);
+      else if (sc == SDL_SCANCODE_DOWN || sc == SDL_SCANCODE_S)
+        game_assist_move_cursor(game, 1);
+      else if (key == SDLK_SPACE || key == SDLK_RETURN ||
+               key == SDLK_KP_ENTER || sc == SDL_SCANCODE_LEFT ||
+               sc == SDL_SCANCODE_RIGHT)
+        game_assist_toggle_selected(game);
+      else if (sc == SDL_SCANCODE_1)
+        game_assist_toggle(game, 0);
+      else if (sc == SDL_SCANCODE_2)
+        game_assist_toggle(game, 1);
+      else if (sc == SDL_SCANCODE_3)
+        game_assist_toggle(game, 2);
+      else if (sc == SDL_SCANCODE_J || sc == SDL_SCANCODE_H ||
+               sc == SDL_SCANCODE_BACKSPACE)
+        game_close_assist(game);
+      else if (sc == SDL_SCANCODE_M)
+        audio_toggle_mute(&game->platform.audio);
+      return;
+    }
+
     if (game->state == STATE_INTRO &&
         (sc == SDL_SCANCODE_H || sc == SDL_SCANCODE_F1))
     {
@@ -353,12 +445,20 @@ void game_handle_event(Game *game, const SDL_Event *event)
       return;
     }
 
-    if ((game->state == STATE_INTRO ||
-         game->state == STATE_CHASE ||
-         game->state == STATE_OPENING_CUTSCENE ||
-         game->state == STATE_LEVEL_TRANSITION ||
-         game->state == STATE_OUTRO ||
-         game->state == STATE_CONTINUE) &&
+    if (sc == SDL_SCANCODE_J &&
+        (game->state == STATE_INTRO || game->state == STATE_PAUSED))
+    {
+      game_open_assist(game);
+      return;
+    }
+
+    if (game->state == STATE_PAUSED && sc == SDL_SCANCODE_Q)
+    {
+      game_return_to_intro(game);
+      return;
+    }
+
+    if (state_accepts_confirm(game->state) && game->state != STATE_PLAYING &&
         (key == SDLK_SPACE || key == SDLK_RETURN || key == SDLK_KP_ENTER))
     {
       game->input.confirm = true;
@@ -379,9 +479,10 @@ void game_handle_event(Game *game, const SDL_Event *event)
     {
       game->input.switch_weapon = true;
     }
-    /* Jump on Up arrow, but avoid interfering with ladders: only trigger
-     * jump edge when player is on the ground and not overlapping a ladder.
-     */
+    /* Jump on Up arrow. Over a ladder the same key means "climb", so the
+     * press is not reported as a jump there; everywhere else it always is —
+     * whether it lands now, in the coyote window, or from the jump buffer is
+     * player_update's decision, not the input layer's. */
     if (key == SDLK_UP || event->key.scancode == SDL_SCANCODE_W)
     {
       /* Determine whether player box overlaps a ladder near center/feet */
@@ -391,7 +492,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
       int row_feet = (int)floorf((game->gameplay.player.y + ph - 1.0f) / TILE_SIZE);
       bool over_ladder = level_is_ladder(&game->gameplay.level, col, row_center) ||
                          level_is_ladder(&game->gameplay.level, col, row_feet);
-      if (!over_ladder && !game->gameplay.player.on_ladder && game->gameplay.player.on_ground)
+      if (!over_ladder && !game->gameplay.player.on_ladder)
       {
         game->input.jump = true;
       }

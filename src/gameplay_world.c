@@ -1,5 +1,7 @@
 #include "gameplay_world.h"
 
+#include "gameplay_climb.h"
+
 #include <math.h>
 
 bool gameplay_boxes_overlap(float ax, float ay, float aw, float ah,
@@ -92,6 +94,7 @@ void gameplay_hit_player(GameplayState *state)
     if (state->player.dying)
         return;
 
+    state->player.hp = 0;
     state->terminal_hack_progress = 0.0f;
     state->terminal_hack_tick_timer = 0.0f;
     state->terminal_in_range = false;
@@ -111,6 +114,123 @@ void gameplay_hit_player(GameplayState *state)
     game_events_sound(&state->events, SFX_PLAYER_HIT);
     state->player.dying = true;
     state->player.death_timer = 0.75f;
+}
+
+void gameplay_damage_player(GameplayState *state, int amount,
+                            float source_x, float source_y)
+{
+    if (state->player.dying || state->invuln_timer > 0.0f)
+        return;
+
+    state->player.hp -= amount;
+    if (state->player.hp <= 0)
+    {
+        gameplay_hit_player(state);
+        return;
+    }
+
+    /* Survivable: open the mercy window and pop the player off the source.
+     * Horizontal knockback would be overwritten by the walk input on the very
+     * next frame, so only the vertical pop is real; on a ladder or on the
+     * facade even that would fight the climb, so those keep their footing. */
+    state->invuln_timer = PLAYER_HIT_INVULN;
+    float height = state->player.crawling
+                       ? (float)PLAYER_CRAWL_H
+                       : (float)PLAYER_H;
+    float x = state->player.x + PLAYER_W * 0.5f;
+    float y = state->player.y + height * 0.5f;
+    if (!state->player.on_ladder && !state->player.facade_climbing)
+    {
+        state->player.vy = y <= source_y
+                               ? -PLAYER_HIT_KNOCKBACK_Y
+                               : PLAYER_HIT_KNOCKBACK_Y * 0.35f;
+        state->player.jump_cut_ok = false;
+    }
+    int direction = x < source_x ? -1 : 1;
+    game_events_particles(&state->events, x, y, 12, direction);
+    game_events_sound(&state->events, SFX_PLAYER_HIT);
+}
+
+void gameplay_bank_checkpoint(GameplayState *state)
+{
+    if (state->level.map.mode == LEVEL_MODE_FACADE)
+        return;
+    state->interior_checkpoint_x = state->player.x;
+    state->interior_checkpoint_y = state->player.y;
+    state->interior_has_checkpoint = true;
+}
+
+void gameplay_restore_checkpoint(GameplayState *state)
+{
+    if (state->level.map.mode == LEVEL_MODE_FACADE)
+    {
+        gameplay_climb_restore_checkpoint(state);
+        return;
+    }
+    if (!state->interior_has_checkpoint)
+        return;
+
+    state->player.x = state->interior_checkpoint_x;
+    state->player.y = state->interior_checkpoint_y;
+    state->player.vx = 0.0f;
+    state->player.vy = 0.0f;
+    /* Nothing already in flight may greet the respawn. */
+    for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
+        state->enemy_bullets[i].active = false;
+}
+
+void gameplay_spawn_ammo_drop(GameplayState *state, float x, float y)
+{
+    for (int i = 0; i < MAX_AMMO_DROPS; ++i)
+    {
+        AmmoDrop *drop = &state->ammo_drops[i];
+        if (drop->active)
+            continue;
+        drop->x = x - AMMO_DROP_W * 0.5f;
+        drop->y = y;
+        drop->vy = 0.0f;
+        drop->active = true;
+        return;
+    }
+}
+
+void gameplay_update_ammo_drops(GameplayState *state, float dt)
+{
+    float player_h = state->player.crawling
+                         ? (float)PLAYER_CRAWL_H
+                         : (float)PLAYER_H;
+    for (int i = 0; i < MAX_AMMO_DROPS; ++i)
+    {
+        AmmoDrop *drop = &state->ammo_drops[i];
+        if (!drop->active)
+            continue;
+
+        drop->vy += GRAVITY * dt;
+        if (drop->vy > MAX_FALL_SPEED)
+            drop->vy = MAX_FALL_SPEED;
+        float vx = 0.0f;
+        bool on_ground = false;
+        level_move(&state->level, &drop->x, &drop->y, &vx, &drop->vy,
+                   AMMO_DROP_W, AMMO_DROP_H, dt, false, &on_ground, false);
+        if (on_ground)
+            drop->vy = 0.0f;
+
+        /* Left lying until it is actually useful, so a full magazine does not
+         * eat the pickup. */
+        if (state->player.bullets >= MAX_AMMO || state->player.dying)
+            continue;
+        if (gameplay_boxes_overlap(state->player.x, state->player.y,
+                                   PLAYER_W, player_h,
+                                   drop->x, drop->y,
+                                   AMMO_DROP_W, AMMO_DROP_H))
+        {
+            drop->active = false;
+            state->player.bullets += AMMO_DROP_BULLETS;
+            if (state->player.bullets > MAX_AMMO)
+                state->player.bullets = MAX_AMMO;
+            game_events_sound(&state->events, SFX_PICKUP_AMMO);
+        }
+    }
 }
 
 void gameplay_handle_player_landing(GameplayState *state, bool was_grounded,

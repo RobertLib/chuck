@@ -507,7 +507,8 @@ static bool enemy_can_mount_crate(const Level *level, const Enemy *enemy,
 
 static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                                  bool pursuing, bool alarmed, float target_x,
-                                 float target_y, bool hemmed_in, Rng *rng)
+                                 float target_y, bool hemmed_in,
+                                 float speed_scale, Rng *rng)
 {
     bool following_target =
         pursuing && enemy->obstacle_avoid_timer <= 0.0f;
@@ -537,6 +538,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         speed = ENEMY_WALK_SPEED * ENEMY_SPEED_HP1;
     if (alarmed)
         speed *= ENEMY_ALARM_SPEED_MULTIPLIER;
+    speed *= speed_scale;
 
     float enemy_center_x = enemy->x + ENEMY_W * 0.5f;
     float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
@@ -750,7 +752,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
 void enemy_update(Enemy *enemy, Level *level, float dt,
                   bool pursuing, bool alarmed,
                   float target_x, float target_y,
-                  bool hemmed_in, Rng *rng)
+                  bool hemmed_in, float speed_scale, Rng *rng)
 {
     enemy_begin_elevator_ride(enemy, level);
     float previous_y = enemy->y;
@@ -806,7 +808,7 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
     {
         enemy_update_walking(enemy, level, dt,
                              pursuing, alarmed, target_x, target_y,
-                             hemmed_in, rng);
+                             hemmed_in, speed_scale, rng);
     }
     enemy_finish_elevator_ride(enemy, level, previous_y);
 }

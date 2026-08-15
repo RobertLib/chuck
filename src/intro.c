@@ -79,6 +79,16 @@ static const SDL_Color COL_SODIUM = {182, 116, 62, 255}; /* what the road
 #define MANUAL_ROW_W (MANUAL_KEY_W + MANUAL_KEY_GAP + MANUAL_LABEL_W + \
                       MANUAL_HIT_PAD * 2.0f)
 
+/* The assist options share the manual's line and its hint weight: the pair is
+ * still one quiet line of things to know about, not a menu. */
+#define ASSIST_LABEL "ASSIST"
+#define ASSIST_LABEL_W ((float)(sizeof(ASSIST_LABEL) - 1) * \
+                        ((float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + MANUAL_TRACK) - \
+                        MANUAL_TRACK)
+#define ASSIST_ROW_W (MANUAL_KEY_W + MANUAL_KEY_GAP + ASSIST_LABEL_W + \
+                      MANUAL_HIT_PAD * 2.0f)
+#define PROMPT_ROW_GAP 18.0f
+
 typedef struct
 {
     float w, h;
@@ -255,8 +265,14 @@ static void place_buttons(Intro *intro, int w, int h)
 {
     intro->start_button.x = ((float)w - intro->start_button.w) * 0.5f;
     intro->start_button.y = (float)h - 78.0f;
-    intro->manual_button.x = ((float)w - intro->manual_button.w) * 0.5f;
+    /* The manual and assist chips are centred as one line. */
+    float line_w = intro->manual_button.w + PROMPT_ROW_GAP +
+                   intro->assist_button.w;
+    intro->manual_button.x = ((float)w - line_w) * 0.5f;
     intro->manual_button.y = (float)h - 30.0f;
+    intro->assist_button.x = intro->manual_button.x +
+                             intro->manual_button.w + PROMPT_ROW_GAP;
+    intro->assist_button.y = intro->manual_button.y;
 }
 
 void intro_init(Intro *intro, int win_w, int win_h)
@@ -280,6 +296,8 @@ void intro_init(Intro *intro, int win_w, int win_h)
     intro->start_button.h = 34.0f;
     intro->manual_button.w = MANUAL_ROW_W;
     intro->manual_button.h = MANUAL_ROW_H;
+    intro->assist_button.w = ASSIST_ROW_W;
+    intro->assist_button.h = MANUAL_ROW_H;
     place_buttons(intro, w, h);
 }
 
@@ -302,6 +320,7 @@ void intro_update(Intro *intro, float dt, int win_w, int win_h,
 
     intro->start_hovered = intro_hit_start_button(intro, mouse_x, mouse_y);
     intro->manual_hovered = intro_hit_manual_button(intro, mouse_x, mouse_y);
+    intro->assist_hovered = intro_hit_assist_button(intro, mouse_x, mouse_y);
 }
 
 static bool hit_plate(const SDL_FRect *button, float x, float y)
@@ -318,6 +337,11 @@ bool intro_hit_start_button(const Intro *intro, float x, float y)
 bool intro_hit_manual_button(const Intro *intro, float x, float y)
 {
     return hit_plate(&intro->manual_button, x, y);
+}
+
+bool intro_hit_assist_button(const Intro *intro, float x, float y)
+{
+    return hit_plate(&intro->assist_button, x, y);
 }
 
 /* ---- Sky ------------------------------------------------------------ */
@@ -1733,21 +1757,12 @@ static void render_start_prompt(SDL_Renderer *r, const Intro *intro,
  * thing anyone came here to press, and two plates on the centre line would
  * argue about which of them that was.
  */
-static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
-                                 const IntroScene *s, bool gamepad_active)
+static void render_prompt_chip(SDL_Renderer *r, const SDL_FRect *button,
+                               float appear, bool hot, const char *key,
+                               const char *label)
 {
-    const SDL_FRect *button = &intro->manual_button;
-    float appear = smoothstep01((intro->time - 1.45f) / 0.6f);
-    if (appear <= 0.0f)
-        return;
-
-    bool hot = intro->manual_hovered;
     float x = button->x + MANUAL_HIT_PAD;
     float y = button->y;
-
-    if (hot)
-        fx_glow(r, s->w * 0.5f, y + MANUAL_ROW_H * 0.5f, 116.0f,
-                (SDL_Color){226, 104, 78, 255}, 26);
 
     /* Keycap: dark bezel, lit top edge, sunken base. */
     fx_rect_a(r, COL_INK, (Uint8)(190.0f * appear), x, y, MANUAL_KEY_W,
@@ -1761,10 +1776,30 @@ static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
               x + 1.0f, y + MANUAL_ROW_H - 2.0f, MANUAL_KEY_W - 2.0f, 1.0f);
     draw_text(r, x + 6.0f, y + 5.0f, 1.0f,
               fx_dim(hot ? COL_CREAM : (SDL_Color){186, 196, 190, 255}, appear),
-              gamepad_active ? "Y" : "H");
+              key);
     draw_tracked(r, x + MANUAL_KEY_W + MANUAL_KEY_GAP, y + 5.0f, 1.0f,
                  MANUAL_TRACK, fx_dim(hot ? COL_AMBER : COL_MUTED, appear),
-                 MANUAL_LABEL);
+                 label);
+}
+
+static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
+                                 const IntroScene *s, bool gamepad_active)
+{
+    float appear = smoothstep01((intro->time - 1.45f) / 0.6f);
+    if (appear <= 0.0f)
+        return;
+
+    if (intro->manual_hovered || intro->assist_hovered)
+        fx_glow(r, s->w * 0.5f,
+                intro->manual_button.y + MANUAL_ROW_H * 0.5f, 116.0f,
+                (SDL_Color){226, 104, 78, 255}, 26);
+
+    render_prompt_chip(r, &intro->manual_button, appear,
+                       intro->manual_hovered,
+                       gamepad_active ? "Y" : "H", MANUAL_LABEL);
+    render_prompt_chip(r, &intro->assist_button, appear,
+                       intro->assist_hovered,
+                       gamepad_active ? "X" : "J", ASSIST_LABEL);
 }
 
 void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,

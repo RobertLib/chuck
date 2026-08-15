@@ -80,6 +80,8 @@ bool gameplay_advance_terminal(GameplayState *state,
     state->terminal_hack_progress = TERMINAL_HACK_TIME;
     state->level.runtime.terminal_hacked = true;
     campaign->score += 250;
+    /* A finished hack is real progress: a later death resumes here. */
+    gameplay_bank_checkpoint(state);
     bool was_unlocked = state->level.runtime.exit_unlocked;
     gameplay_unlock_exit(state);
     return !was_unlocked && state->level.runtime.exit_unlocked;
@@ -170,6 +172,9 @@ void gameplay_use_door(GameplayState *state, Input *input)
         state->player.vx = 0.0f;
         state->player.vy = 0.0f;
         state->teleport_cooldown = TELEPORT_COOLDOWN;
+        /* Passing a door banks the arrival side, so a death on the new
+         * storey does not replay the trip to the door. */
+        gameplay_bank_checkpoint(state);
         game_events_sound(&state->events, SFX_DOOR);
     }
     input->use_door = false;
@@ -199,6 +204,8 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
             {
             case ITEM_CARD:
                 campaign->score += 100;
+                /* Any card found is progress worth resuming at. */
+                gameplay_bank_checkpoint(state);
                 if (i == state->level.runtime.active_card_index)
                 {
                     state->level.runtime.items_remaining = 0;
@@ -218,8 +225,13 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                 game_events_sound(&state->events, SFX_PICKUP_GRENADE);
                 break;
             case ITEM_MEDKIT:
-                if (campaign->lives < MAX_LIVES)
+                /* Hearts first; a spare life only once the hearts are full,
+                 * so the kit is never wasted on either counter. */
+                if (state->player.hp < gameplay_player_max_hp(state))
+                    state->player.hp = gameplay_player_max_hp(state);
+                else if (campaign->lives < MAX_LIVES)
                     campaign->lives++;
+                gameplay_bank_checkpoint(state);
                 game_events_sound(&state->events, SFX_PICKUP_HEALTH);
                 break;
             case ITEM_BAZOOKA:

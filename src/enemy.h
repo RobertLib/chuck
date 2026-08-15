@@ -57,6 +57,10 @@ typedef struct
     /* Latched once a guard has reacted to a fallen comrade, so it does not keep
      * re-triggering while standing next to the same body. */
     bool alerted_by_body;
+    /* How long this guard has held an unbroken line of sight on Chuck. A
+     * fresh sighting is noticed for ENEMY_NOTICE_TIME before the aim starts,
+     * so detection around a corner never fires below reaction time. */
+    float sight_timer;
     /* Vertical firing direction for the pending shot: 0 = horizontal,
      * -1 = straight up, +1 = straight down. */
     int aim_vdir;
@@ -89,6 +93,10 @@ typedef struct
     float state_timer;
     float turn_cooldown; /* debounce before reversing at a ledge */
     float bite_cooldown;
+    /* The announced crouch before a bite. Windup counts down while contact
+     * holds; bite_ready marks the beat where the teeth actually land. */
+    float bite_windup;
+    bool bite_ready;
     float lost_timer;
     /* Dogs keep running to the last visible/alarm position, not to the
      * player's live position after line of sight has been lost. */
@@ -103,10 +111,12 @@ typedef struct
 } Dog;
 
 void enemy_init(Enemy *enemy, float x, float y, Rng *rng);
+/* speed_scale multiplies the guard's ground speed; 1.0 is the authored pace
+ * and the assist option is the only caller that passes anything else. */
 void enemy_update(Enemy *enemy, Level *level, float dt,
                   bool pursuing, bool alarmed,
                   float target_x, float target_y,
-                  bool hemmed_in, Rng *rng);
+                  bool hemmed_in, float speed_scale, Rng *rng);
 void dog_init(Dog *dog, float x, float y, int owner, Rng *rng);
 
 #endif /* CHUCK_ENEMY_H */

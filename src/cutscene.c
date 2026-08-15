@@ -811,7 +811,7 @@ void opening_cutscene_render(SDL_Renderer *r,
 void level_transition_init(LevelTransition *transition,
                            int completed_level, int next_level,
                            float elapsed_seconds, int level_score,
-                           int hostiles_neutralized)
+                           int hostiles_neutralized, int deaths)
 {
     SDL_zerop(transition);
     transition->completed_level = completed_level;
@@ -819,6 +819,7 @@ void level_transition_init(LevelTransition *transition,
     transition->elapsed_seconds = elapsed_seconds;
     transition->level_score = level_score;
     transition->hostiles_neutralized = hostiles_neutralized;
+    transition->deaths = deaths;
 }
 
 bool level_transition_update(LevelTransition *transition, float dt,
@@ -908,6 +909,17 @@ static void render_transition_report(SDL_Renderer *r,
     SDL_snprintf(buffer, sizeof(buffer), "%02d",
                  transition->hostiles_neutralized);
     draw_text(r, 307.0f, 106.0f, 1.25f, value, buffer);
+
+    /* Deaths are reported neutrally — a number to beat next run, never a
+     * grade. A clean sector earns the one word of praise. */
+    color_rect(r, (SDL_Color){31, 47, 52, 255},
+               412.0f, 85.0f, 1.0f, 43.0f);
+    draw_text(r, 434.0f, 88.0f, 0.75f, muted, "DEATHS");
+    if (transition->deaths == 0)
+        SDL_snprintf(buffer, sizeof(buffer), "CLEAN");
+    else
+        SDL_snprintf(buffer, sizeof(buffer), "%02d", transition->deaths);
+    draw_text(r, 434.0f, 106.0f, 1.25f, value, buffer);
 
     color_rect(r, (SDL_Color){31, 47, 52, 255},
                526.0f, 37.0f, 1.0f, 91.0f);

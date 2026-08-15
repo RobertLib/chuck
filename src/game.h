@@ -16,15 +16,28 @@ typedef enum
     STATE_OPENING_CUTSCENE,
     STATE_INTRO,
     STATE_MANUAL,
+    STATE_ASSIST,
     STATE_LEVEL_START,
     STATE_SHOW_KEYCARD,
     STATE_PLAYING,
+    STATE_PAUSED,
     STATE_LEVEL_TRANSITION,
     STATE_LEVEL_CLEARED,
     STATE_OUTRO,
     STATE_CONTINUE,
     STATE_GAME_OVER
 } GameState;
+
+/* Optional help, chosen by the player and free to leave off. The options are
+ * shell state: they survive campaign resets and are handed to the gameplay
+ * core as plain numbers at level load, so the simulation stays deterministic
+ * and knows nothing about menus. */
+typedef struct
+{
+    bool more_hearts;    /* 5 hearts per life instead of 3 */
+    bool slower_guards;  /* guards and dogs move at 80% speed */
+    bool infinite_lives; /* a death never costs a life */
+} AssistOptions;
 
 typedef struct
 {
@@ -89,6 +102,7 @@ typedef struct
     float card_anim_interval;  /* seconds between highlight steps */
     float card_anim_timer;     /* accumulator for highlight timing */
     float exit_unlocked_timer; /* seconds to show "EXIT UNLOCKED" overlay */
+    float extra_life_timer;    /* seconds to flash the score-earned 1UP */
 } PresentationState;
 
 typedef struct
@@ -110,6 +124,13 @@ typedef struct
     PresentationState presentation;
     Input input;
     GameState state;
+    /* Where the pause and the assist sheet return to. Pausing must resume the
+     * exact state it interrupted (re-entering STATE_LEVEL_START would replay
+     * the reveal), so the return path is a stored state, not a transition. */
+    GameState pause_return_state;
+    GameState assist_return_state;
+    AssistOptions assist;
+    int assist_cursor;
 #ifdef CHUCK_DEBUG
     int debug_selected_level;
 #endif
@@ -128,6 +149,15 @@ void game_return_to_intro(Game *game);
 /* Open the field manual. It is read from the title screen, and closed with the
  * same route back as anything else: game_return_to_intro. */
 void game_open_manual(Game *game);
+
+/* Pause toggling and the assist sheet. The assist sheet opens from the title
+ * screen or from pause and returns to whichever opened it. */
+void game_toggle_pause(Game *game);
+void game_open_assist(Game *game);
+void game_close_assist(Game *game);
+void game_assist_move_cursor(Game *game, int delta);
+void game_assist_toggle_selected(Game *game);
+void game_assist_toggle(Game *game, int option);
 
 /* Start a clean campaign directly in one embedded level, skipping the title
  * screen and the prologue. The debug level picker uses it, and so does the

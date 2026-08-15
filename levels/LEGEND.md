@@ -196,9 +196,10 @@ Two campaign-wide rules go with it, both pinned by the same test:
   `3·guards + 2·dogs + 2·mines + spikes + fans` — must exceed the previous
   interior's; a climb's budget (`3·throwers + 2·birds`) and its height must
   exceed the previous climb's. The campaign runs 6, 14, 20, 24, 30, 37, 48, 53,
-  57, 64, 67 inside and 20, 25, 30, 35 on the walls. Sector 1 spends its whole
+  55, 64, 67 inside and 20, 25, 30, 35 on the walls. Sector 1 spends its whole
   budget on two guards and carries no hazard at all: it is where the player
-  finds out what the controls do.
+  finds out what the controls do — including, since it gained a medkit on the
+  lobby stair, what a pickup looks like before anything is shooting.
 - **Every interior is finishable.** The test walks a conservative model of the
   player — walk, fall, step up one tile, jump a one-tile hole (two with a
   second open row overhead), hop one spike with that clearance, ladders, lift

@@ -13,6 +13,7 @@ typedef struct
     bool up;
     bool down;
     bool jump;          /* edge-triggered: set on input press, consumed each frame */
+    bool jump_held;     /* level-triggered: true while the jump key is down */
     bool shoot;         /* edge-triggered: set on input press, consumed each frame */
     bool use_door;      /* edge-triggered: enter a door while standing in it */
     bool interact;      /* held: operate the active terminal */
@@ -41,6 +42,15 @@ typedef struct
     float ladder_lockout_timer; /* > 0 briefly blocks re-grabbing a ladder */
     bool facade_climbing;       /* dedicated exterior mode; independent of ladders */
     int facing;                 /* -1 = left, +1 = right */
+    int hp;                     /* hearts within the current life */
+    /* Forgiving jump input. The coyote timer keeps a ledge jumpable for a
+     * beat after the boots leave it; the buffer keeps a press alive until the
+     * boots arrive. jump_cut_ok marks a rise the player started, so releasing
+     * the button can cut a jump without ever cutting a stomp bounce. */
+    float coyote_timer;
+    float jump_buffer_timer;
+    bool jump_cut_ok;
+    bool jumped; /* transient: a jump started this frame (shell plays it) */
     int bullets;                /* current ammo, 0..MAX_AMMO */
     int grenades;               /* current grenades carried (0 or 1) */
     int bazooka_rockets;        /* one-shot bazooka carried when non-zero */

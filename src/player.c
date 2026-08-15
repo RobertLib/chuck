@@ -63,6 +63,11 @@ void player_reset(Player *player, const Level *level)
     player->ladder_lockout_timer = 0.0f;
     player->facade_climbing = false;
     player->facing = 1;
+    player->hp = PLAYER_MAX_HP;
+    player->coyote_timer = 0.0f;
+    player->jump_buffer_timer = 0.0f;
+    player->jump_cut_ok = false;
+    player->jumped = false;
     player->bullets = MAX_AMMO;
     player->grenades = 0;
     player->bazooka_rockets = 0;
@@ -101,6 +106,12 @@ static bool player_has_ladder_below(const Player *player, const Level *level)
 
 float player_update(Player *player, Level *level, const Input *input, float dt)
 {
+    player->jumped = false;
+    /* Remember the press; whether it can be honoured is decided below, and
+     * possibly a few frames later than the press itself. */
+    if (input->jump)
+        player->jump_buffer_timer = PLAYER_JUMP_BUFFER;
+
     if (player->action_timer > 0.0f)
     {
         player->action_timer -= dt;
@@ -230,6 +241,10 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
             player->vy = -PLAYER_JUMP_SPEED;
             player->on_ladder = false;
             player->ladder_direction = 0;
+            player->jump_buffer_timer = 0.0f;
+            player->coyote_timer = 0.0f;
+            player->jump_cut_ok = true;
+            player->jumped = true;
         }
     }
     else
@@ -239,17 +254,38 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
         {
             player->vy = MAX_FALL_SPEED;
         }
-        if (input->jump && player->on_ground)
+        if (player->on_ground)
+            player->coyote_timer = PLAYER_COYOTE_TIME;
+        else if (player->coyote_timer > 0.0f)
+            player->coyote_timer -= dt;
+        if (player->jump_buffer_timer > 0.0f &&
+            (player->on_ground || player->coyote_timer > 0.0f))
         {
             player->vy = -PLAYER_JUMP_SPEED;
+            player->jump_buffer_timer = 0.0f;
+            player->coyote_timer = 0.0f;
+            player->jump_cut_ok = true;
+            player->jumped = true;
+        }
+        else if (!input->jump_held && player->jump_cut_ok &&
+                 player->vy < -PLAYER_JUMP_SPEED * PLAYER_JUMP_CUT_FACTOR)
+        {
+            /* Released mid-rise: cap the climb so a tap hops. Bounces are not
+             * cut — jump_cut_ok only marks rises the player started. */
+            player->vy = -PLAYER_JUMP_SPEED * PLAYER_JUMP_CUT_FACTOR;
         }
     }
+
+    if (player->jump_buffer_timer > 0.0f)
+        player->jump_buffer_timer -= dt;
 
     float fall_speed = player->vy > 0.0f ? player->vy : 0.0f;
     float ph = player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
     level_move(level, &player->x, &player->y, &player->vx, &player->vy,
                PLAYER_W, ph, dt, player->on_ladder, &player->on_ground,
                true);
+    if (player->on_ground)
+        player->jump_cut_ok = false;
 
     /* Advance a local clock from the actual locomotion state.  Rendering can
      * use this for unsynchronised, state-driven procedural animation. */

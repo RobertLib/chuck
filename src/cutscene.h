@@ -44,6 +44,7 @@ typedef struct
     int next_level;
     int level_score;
     int hostiles_neutralized;
+    int deaths;
 } LevelTransition;
 
 typedef enum
@@ -84,7 +85,7 @@ void opening_cutscene_render(SDL_Renderer *renderer,
 void level_transition_init(LevelTransition *transition,
                            int completed_level, int next_level,
                            float elapsed_seconds, int level_score,
-                           int hostiles_neutralized);
+                           int hostiles_neutralized, int deaths);
 bool level_transition_update(LevelTransition *transition, float dt,
                              Uint32 *out_cues);
 void level_transition_render(SDL_Renderer *renderer,
