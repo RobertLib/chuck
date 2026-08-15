@@ -62,6 +62,18 @@ static CarPaint player_paint(void)
 static const CarPaint TARGET_PAINT = {
     {38, 44, 46, 255}, {62, 68, 66, 255}, {24, 28, 30, 255}};
 
+/* Cordon livery: near-black with a white flank stripe implied by the light
+ * roof. Kept well away from TARGET_PAINT's charcoal — the one car in this
+ * scene the player must never mistake for another is the SUV. */
+static const CarPaint CORDON_PAINT = {
+    {30, 38, 56, 255}, {188, 194, 198, 255}, {22, 28, 42, 255}};
+
+/* Emergency-beacon blue. Named here for the same reason the facade names its
+ * own: FX_CYAN is the game's technology accent and FX_LAMP is a fluorescent
+ * tube, and a light bar is neither. The red half of the bar is FX_RED, which
+ * is precisely what the palette's danger red is for. */
+static const SDL_Color COL_BEACON_BLUE = {60, 116, 236, 255};
+
 static float clamp01(float value)
 {
     if (value < 0.0f)
@@ -590,6 +602,65 @@ static void draw_traffic_signal(SDL_Renderer *r, float x, float y,
             cross_green ? FX_RED : FX_GREEN, 96);
 }
 
+/*
+ * A squad car holding the side street at a junction.
+ *
+ * This is the cover story made visible. The demand went out at 00:20 and put
+ * the whole city's night shift on a ring around one building; the drive in
+ * runs through that ring from the outside, so the junctions fill up with cars
+ * facing the wrong way while Chuck goes past them in the one direction nobody
+ * is watching. He cannot stop and he cannot be helped by them, which is the
+ * point of drawing them at all.
+ *
+ * It stands in the cross street beyond the pavement, never in a lane: nothing
+ * here is part of the simulation, and a car in a lane that the player's own
+ * car drives straight through would be a bug rather than a detail. Parked
+ * nose-in to the main road, because that is how a road gets closed.
+ */
+static void draw_cordon_car(SDL_Renderer *r, float cx, float cy, int facing,
+                            float time, unsigned seed)
+{
+    CarFrame frame;
+    frame.cx = cx;
+    frame.cy = cy;
+    frame.ax = (float)facing;
+    frame.ay = 0.0f;
+    frame.length = CHASE_CAR_LENGTH;
+    frame.width = CHASE_CAR_WIDTH;
+
+    draw_car_body(r, &frame, &CORDON_PAINT, false, false, 0.0f);
+
+    /* The bar itself: two halves alternating on their own beat, salted per car
+     * so a street of them never flashes in unison. The bar sits across the
+     * roof, so it runs along the car's width — which from above is the axis
+     * the body is not pointing down. */
+    float rx = -frame.ay;
+    float ry = frame.ax;
+    float phase = fmodf(time * CHASE_CORDON_STROBE_HZ +
+                            (float)(seed % 100u) * 0.01f,
+                        1.0f);
+    bool blue_half = phase < 0.5f;
+    float flash = blue_half ? 1.0f - phase * 2.0f : 1.0f - (phase - 0.5f) * 2.0f;
+    flash = 0.35f + 0.65f * flash;
+
+    for (int half = 0; half < 2; ++half)
+    {
+        bool lit = (half == 0) == blue_half;
+        SDL_Color c = half == 0 ? COL_BEACON_BLUE : FX_RED;
+        float offset = (half == 0 ? -0.19f : 0.19f);
+        float bx = cx + rx * offset * frame.width;
+        float by = cy + ry * offset * frame.width;
+        car_part(r, &frame, -0.10f, 0.02f, offset - 0.15f, offset + 0.15f,
+                 lit ? fx_mix(c, FX_CREAM, 0.35f) : fx_dim(c, 0.32f));
+        if (lit)
+            fx_glow(r, bx, by, 46.0f, c, (Uint8)(150.0f * flash));
+    }
+    /* And what the bar throws on the road it is standing on. A beacon that
+     * lights nothing is a sticker on a roof. */
+    fx_glow(r, cx, cy, 96.0f, blue_half ? COL_BEACON_BLUE : FX_RED,
+            (Uint8)(46.0f * flash));
+}
+
 static void render_junctions(SDL_Renderer *r, const ChaseView *view,
                              const Chase *chase, int win_w)
 {
@@ -661,6 +732,19 @@ static void render_junctions(SDL_Renderer *r, const ChaseView *view,
                             cross_green);
         draw_traffic_signal(r, road_right + 8.0f, top + height + 12.0f,
                             cross_green);
+
+        if (junction->cordon_side != 0)
+        {
+            float edge = junction->cordon_side < 0
+                             ? view->road_left - CHASE_PAVEMENT_WIDTH
+                             : road_right + CHASE_PAVEMENT_WIDTH;
+            float cx = edge + (float)junction->cordon_side *
+                                  (CHASE_CORDON_KERB_INSET +
+                                   CHASE_CAR_LENGTH * 0.5f);
+            draw_cordon_car(r, cx, middle, -junction->cordon_side, chase->time,
+                            fx_hash((unsigned)i * 2654435761u +
+                                    (unsigned)(junction->y * 0.5f)));
+        }
     }
 }
 

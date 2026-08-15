@@ -68,6 +68,11 @@ typedef struct
     float talk_timer;    /* seconds remaining while talking */
     float talk_cooldown; /* seconds remaining before eligible to talk again */
     int talk_partner;    /* index of partner enemy, -1 if none */
+    /* Counts down to this guard's next call in on the crew's own net. Only a
+     * clock is needed: whether the call happens is decided by the same
+     * conditions the chat uses, and the pose and the sound follow from
+     * talking with no partner. */
+    float radio_timer;
     float anim_time;     /* local procedural animation clock */
     float recoil_timer;  /* brief muzzle flash / firing follow-through */
 } Enemy;
@@ -109,6 +114,17 @@ typedef struct
     float anim_time;    /* local procedural animation clock */
     float attack_timer; /* bite/lunge follow-through */
 } Dog;
+
+/*
+ * A guard standing still and speaking with nobody beside him is speaking into
+ * a handset. Deriving it rather than storing it means the pose can never
+ * disagree with the state that stops him walking: every path that ends a chat
+ * ends the radio check with it, and there is no second flag to forget.
+ */
+static inline bool enemy_on_radio(const Enemy *enemy)
+{
+    return enemy->talking && enemy->talk_partner < 0;
+}
 
 void enemy_init(Enemy *enemy, float x, float y, Rng *rng);
 /* speed_scale multiplies the guard's ground speed; 1.0 is the authored pace

@@ -308,19 +308,39 @@ static void check_doors(const EditorDoc *doc, EdReport *report)
 static void check_decorations(const EditorDoc *doc, EdReport *report)
 {
     int floating = 0;
+    int unhung = 0;
     int first_col = -1;
     int first_row = -1;
+    int hung_col = -1;
+    int hung_row = -1;
     for (int row = 0; row < doc->grid.height; ++row)
     {
         for (int col = 0; col < doc->grid.width; ++col)
         {
-            const EdSymbol *symbol = editor_symbol(doc_at(doc, col, row));
+            char c = doc_at(doc, col, row);
+            const EdSymbol *symbol = editor_symbol(c);
             if (symbol == NULL)
                 continue;
             if (symbol->group != ED_GROUP_OFFICE &&
                 symbol->group != ED_GROUP_LOBBY &&
-                symbol->group != ED_GROUP_RESTROOM)
+                symbol->group != ED_GROUP_RESTROOM &&
+                symbol->group != ED_GROUP_NIGHT)
             {
+                continue;
+            }
+            /* A hanging prop asks the tile above; everything else asks the
+             * tile below. Both are the same rule the loader applies, and both
+             * end the same way — the prop is silently dropped. */
+            if (editor_symbol_hangs(c))
+            {
+                if (doc_solid(doc, col, row - 1))
+                    continue;
+                unhung++;
+                if (hung_col < 0)
+                {
+                    hung_col = col;
+                    hung_row = row;
+                }
                 continue;
             }
             if (doc_solid(doc, col, row + 1))
@@ -343,6 +363,17 @@ static void check_decorations(const EditorDoc *doc, EdReport *report)
         report_add(report, ED_SEV_WARN, first_col, first_row,
                    "%d props have no wall under them; the loader drops every one",
                    floating);
+    }
+    if (unhung == 1)
+    {
+        report_add(report, ED_SEV_WARN, hung_col, hung_row,
+                   "This prop hangs from the slab above it, and there is none");
+    }
+    else if (unhung > 1)
+    {
+        report_add(report, ED_SEV_WARN, hung_col, hung_row,
+                   "%d hanging props have no slab above them; the loader drops every one",
+                   unhung);
     }
 }
 

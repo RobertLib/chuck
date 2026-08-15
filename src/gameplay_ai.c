@@ -149,8 +149,13 @@ static bool enemy_has_los(const GameplayState *state, const Enemy *enemy)
         range *= ENEMY_CRAWL_VIEW_FACTOR;
         peripheral *= ENEMY_CRAWL_VIEW_FACTOR;
     }
-    /* A guard mid-conversation is distracted and only notices Chuck up close. */
-    if (enemy->talking && range > ENEMY_TALK_NOTICE_RADIUS)
+    /* A guard mid-conversation is distracted and only notices Chuck up close.
+     * A radio check is not that: he is standing on his own post facing his own
+     * corridor with a handset at his shoulder, and the whole point of the beat
+     * is that it costs the player nothing either way. Blinding him for it
+     * would quietly turn a piece of colour into a stealth window. */
+    if (enemy->talking && !enemy_on_radio(enemy) &&
+        range > ENEMY_TALK_NOTICE_RADIUS)
         range = ENEMY_TALK_NOTICE_RADIUS;
     if (enemy_sees_point(state, enemy, player_x, player_y, range, peripheral))
         return true;
@@ -1323,7 +1328,57 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
         dog->state = DOG_RETURN;
 }
 
-static void update_conversations(GameplayState *state)
+/*
+ * The solo half of a conversation.
+ *
+ * A pair of guards standing together get the chat above; one on his own gets
+ * the handset, because twelve men badged into a building under one contractor
+ * name are a crew running a schedule, not twelve strangers. It reuses the chat
+ * wholesale — the same standing beat, the same cooldown, the same cancellation
+ * the moment anything happens — and is a solo talk purely by having no
+ * partner, so every path that ends a chat already ends this too.
+ */
+static void update_radio_checks(GameplayState *state, float dt)
+{
+    for (int i = 0; i < state->enemy_count; ++i)
+    {
+        Enemy *enemy = &state->enemies[i];
+        if (enemy->dead)
+            continue;
+        if (enemy->radio_timer > 0.0f)
+        {
+            enemy->radio_timer -= dt;
+            continue;
+        }
+        /* Due, but the building has to be quiet and the man has to be free:
+         * a guard hunting Chuck is not filing a routine report. */
+        if (gameplay_alarm_active(state) || enemy->provoked ||
+            enemy->raising_alarm || enemy->talking || enemy->climbing ||
+            !enemy->on_ground || enemy->talk_partner != -1 ||
+            enemy->talk_cooldown > 0.0f || enemy->investigate_timer > 0.0f ||
+            enemy->aim_timer > 0.0f)
+        {
+            /* Try again shortly rather than firing the instant the guard is
+             * free, which would put the call right on the heels of whatever
+             * interrupted it. */
+            enemy->radio_timer = 2.5f + (float)rng_range(&state->rng, 300) *
+                                            0.01f;
+            continue;
+        }
+
+        enemy->talking = true;
+        enemy->talk_timer = ENEMY_RADIO_DURATION;
+        enemy->vx = 0.0f;
+        enemy->radio_timer =
+            ENEMY_RADIO_GAP_MIN +
+            (ENEMY_RADIO_GAP_MAX - ENEMY_RADIO_GAP_MIN) * rng_unit(&state->rng);
+        gameplay_world_sound(state, SFX_GUARD_RADIO,
+                             enemy->x + ENEMY_W * 0.5f,
+                             enemy->y + ENEMY_H * 0.5f);
+    }
+}
+
+static void update_conversations(GameplayState *state, float dt)
 {
     if (!gameplay_alarm_active(state))
     {
@@ -1409,6 +1464,9 @@ static void update_conversations(GameplayState *state)
         enemy->talk_timer = 0.0f;
         enemy->talk_cooldown = ENEMY_TALK_COOLDOWN;
     }
+
+    /* After the pairing pass, so whoever is left over is genuinely alone. */
+    update_radio_checks(state, dt);
 }
 
 void gameplay_ai_update_movement(GameplayState *state, float dt)
@@ -1637,7 +1695,7 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
             dog->vocal_timer = 1.7f + rng_range(&state->rng, 180) * 0.01f;
         }
     }
-    update_conversations(state);
+    update_conversations(state, dt);
 }
 
 static void update_enemy_reactions(GameplayState *state)

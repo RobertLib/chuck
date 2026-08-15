@@ -2599,6 +2599,114 @@ static void facade_skyline(const LevelArtScene *s, const LevelThemeArt *art,
     }
 }
 
+/*
+ * The cordon, seen from the wall.
+ *
+ * The demand broadcast at 00:20 was theatre, and this is what it bought: every
+ * unit in the city ringing the block and not one of them inside the building.
+ * Chuck is the only part of that plan nobody accounted for, and out on the
+ * masonry he is the only person in the city who can see both sides of it at
+ * once — which is a thing worth being able to look down at.
+ *
+ * It is drawn as light rather than as vehicles because there is no street in
+ * frame: the climb starts several storeys up, and a row of little cars would
+ * have to be invented somewhere below the bottom edge. What a cordon actually
+ * does to a tower is wash the lower face in blue from underneath, out of step
+ * with itself because a dozen light bars are never in phase. The strength
+ * falls away with the hour: the third sector is the lowest wall and still in
+ * the thick of it, the storm climb is higher and wetter, and by the dawn
+ * climb it is a suggestion. Above the weather there is nothing to see at all.
+ */
+static void facade_cordon(const LevelArtScene *s, float top, float height,
+                          float strength)
+{
+    if (strength <= 0.0f)
+        return;
+    SDL_Renderer *r = s->renderer;
+    /* Emergency-beacon blue. The palette has no such colour and should not:
+     * FX_CYAN is the game's technology accent and FX_LAMP is a fluorescent
+     * tube, and a police bar is neither — it is a saturated signal blue that
+     * exists nowhere else in the building. Named once, here, so it cannot
+     * spread. The red half of a light bar is FX_RED, which is exactly what
+     * the palette's danger red is for. */
+    static const SDL_Color CORDON_BLUE = {60, 116, 236, 255};
+
+    float floor_y = top + height;
+    /* Six bars, each on its own beat and its own patch of street. Two rates
+     * that do not divide into one another is the whole trick: in phase they
+     * would read as one lamp behind the camera. */
+    for (int bar = 0; bar < 6; ++bar)
+    {
+        unsigned h = art_hash(bar * 23, 401);
+        float x = (float)s->win_w * (0.08f + (float)(h % 88u) * 0.01f);
+        bool red_half = (bar & 1) != 0;
+        float rate = red_half ? 2.6f : 3.3f;
+        float beat = fmodf(s->time * rate + (float)(h % 100u) * 0.01f, 1.0f);
+        if (beat > 0.34f)
+            continue;
+        float flash = 1.0f - beat / 0.34f;
+        SDL_Color c = red_half ? FX_RED : CORDON_BLUE;
+        fx_glow(r, x, floor_y + 30.0f, 150.0f + (float)(h % 60u), c,
+                (Uint8)(52.0f * flash * strength));
+    }
+    /* And the light that actually lands on the wall: a cold rise off the
+     * bottom edge, steady, because the sum of a dozen bars is steady even
+     * where each one of them is not. */
+    fx_vgrad(r, 0.0f, floor_y - 130.0f, (float)s->win_w, 130.0f,
+             CORDON_BLUE, 0, CORDON_BLUE, (Uint8)(30.0f * strength));
+}
+
+/*
+ * The one aircraft the cordon lets near the tower.
+ *
+ * A demand goes out on the wire at 00:20 and a news ship is over the block
+ * within the hour; a police one would be a problem, because the helicopter on
+ * this roof at the end of the night is the crew's ride out and nothing in the
+ * sky can be allowed to contradict that. So it holds station well off the
+ * building with its beacon going, drifts slowly, and passes behind the face
+ * Chuck is climbing rather than over it — which is why it is drawn before the
+ * shell and not after.
+ */
+static void facade_news_helicopter(const LevelArtScene *s, float top)
+{
+    SDL_Renderer *r = s->renderer;
+    /* A long, slow traverse: it is holding a shot, not going anywhere. The
+     * wrap happens well off the side of the frame, so it is never seen. */
+    float cycle = fmodf(s->time * 0.045f, 1.0f);
+    float x = -90.0f + cycle * ((float)s->win_w + 180.0f);
+    /* It holds one altitude over the city rather than scrolling with the sky,
+     * so the climb goes past it: high in the frame from the bottom of the
+     * wall, level with Chuck somewhere in the middle, and below him by the
+     * top. Wrapping the height the way the stars wrap would put a single
+     * recognisable object through a visible jump every few hundred pixels. */
+    float y = top + 240.0f - (s->cam_y - 500.0f) * 0.45f +
+              sinf(s->time * 0.5f) * 7.0f;
+    if (y < top - 20.0f || y > top + 470.0f)
+        return;
+
+    /* Body, boom and skids, all in the depth haze's own dark so it sits at the
+     * same distance as the towers behind it. */
+    SDL_Color hull = fx_mix(FX_SHADOW, FX_STEEL_DK, 0.45f);
+    fx_rect(r, hull, x - 7.0f, y - 3.0f, 15.0f, 6.0f);
+    fx_rect(r, hull, x + 7.0f, y - 1.0f, 13.0f, 2.0f);
+    fx_rect(r, fx_mix(hull, FX_STEEL_LT, 0.3f), x + 18.0f, y - 5.0f, 2.0f, 6.0f);
+    fx_rect(r, hull, x - 6.0f, y + 3.0f, 12.0f, 1.0f);
+    /* The rotor is a blur, not blades: two blades at this size would strobe. */
+    fx_rect_a(r, fx_mix(hull, FX_PALE, 0.4f), 90, x - 17.0f, y - 6.0f,
+              32.0f, 1.0f);
+    /* Anti-collision beacon underneath, and the cabin light in the door where
+     * somebody is leaning out of it with a camera. */
+    float beacon = fmodf(s->time * 1.35f, 1.0f);
+    if (beacon < 0.16f)
+    {
+        Uint8 a = (Uint8)((1.0f - beacon / 0.16f) * 190.0f);
+        fx_rect_a(r, FX_RED, a, x - 1.0f, y + 4.0f, 2.0f, 2.0f);
+        fx_glow(r, x, y + 5.0f, 13.0f, FX_RED, (Uint8)(a / 2u));
+    }
+    fx_rect_a(r, FX_WARM, 130, x - 4.0f, y - 2.0f, 3.0f, 3.0f);
+    fx_glow(r, x - 3.0f, y - 1.0f, 16.0f, FX_WARM, 34);
+}
+
 static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
                             float top, float height)
 {
@@ -2633,6 +2741,7 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
             fx_rect_a(r, fx_mix(FX_SHADOW, FX_STEEL_DK, 0.8f), 90, x, y,
                       (float)s->win_w + 260.0f, 26.0f + (float)band * 7.0f);
         }
+        facade_news_helicopter(s, top);
         facade_shell(s, art, top, height);
         /* Rain in two sheets: a fast near one and a slow far one. */
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
@@ -2765,6 +2874,7 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
                       (h & 3u) == 0u ? 2.0f : 1.0f, 1.0f);
         }
         facade_skyline(s, art, 255.0f);
+        facade_news_helicopter(s, top);
         facade_shell(s, art, top, height);
         break;
     }
@@ -2775,6 +2885,25 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
     float beacon = 0.45f + 0.55f * sinf(s->time * 2.2f);
     fx_glow(r, (float)s->win_w - 42.0f, top + 25.0f, 20.0f, art->accent,
             (Uint8)(35.0f + beacon * 55.0f));
+
+    /* The street the cordon is standing in, last of all, because it is light
+     * falling on the wall rather than something behind it. */
+    float cordon = 0.0f;
+    switch (art->backdrop)
+    {
+    case BACKDROP_FACADE_NIGHT:
+        cordon = 1.0f; /* the first climb, and the lowest */
+        break;
+    case BACKDROP_FACADE_STORM:
+        cordon = 0.60f;
+        break;
+    case BACKDROP_FACADE_DAWN:
+        cordon = 0.26f;
+        break;
+    default:
+        break; /* above the cloud deck there is nothing down there to see */
+    }
+    facade_cordon(s, top, height, cordon);
 }
 
 /* ---- Entry point ----------------------------------------------------- */

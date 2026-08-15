@@ -44,6 +44,11 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->talk_timer = 0.0f;
     enemy->talk_partner = -1;
     enemy->talk_cooldown = 0.0f;
+    /* Spread across the whole gap rather than starting at the top of it, so a
+     * shift that came on together does not report in chorus. */
+    enemy->radio_timer =
+        ENEMY_RADIO_GAP_MIN +
+        (ENEMY_RADIO_GAP_MAX - ENEMY_RADIO_GAP_MIN) * rng_unit(rng);
     enemy->anim_time = (float)rng_range(rng, 628) * 0.01f;
     enemy->recoil_timer = 0.0f;
 }

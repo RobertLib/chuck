@@ -193,6 +193,24 @@ static void generate_block(Chase *chase)
         junction->signal_offset = rng_between(&chase->rng, 0.0f, CHASE_SIGNAL_PERIOD);
         junction->cross_spawn_timer = rng_between(&chase->rng, CHASE_CROSS_GAP_MIN,
                                                   CHASE_CROSS_GAP_MAX);
+        /* The cordon closing in. The first couple of blocks are an ordinary
+         * night out on the ring road; from there the odds of a junction being
+         * held climb toward near-certainty, so by the time the tower is in
+         * frame the player has driven past most of a city's night shift and
+         * every one of them is facing the wrong way. */
+        int block = (int)(start / CHASE_BLOCK_LENGTH);
+        junction->cordon_side = 0;
+        if (block >= CHASE_CORDON_FIRST_BLOCK)
+        {
+            int ramp = block - CHASE_CORDON_FIRST_BLOCK;
+            if (ramp > CHASE_CORDON_RAMP_BLOCKS)
+                ramp = CHASE_CORDON_RAMP_BLOCKS;
+            int chance = CHASE_CORDON_CHANCE_START +
+                         (CHASE_CORDON_CHANCE_END - CHASE_CORDON_CHANCE_START) *
+                             ramp / CHASE_CORDON_RAMP_BLOCKS;
+            if (rng_range(&chase->rng, 100) < chance)
+                junction->cordon_side = rng_range(&chase->rng, 2) == 0 ? -1 : 1;
+        }
         break;
     }
 

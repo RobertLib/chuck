@@ -88,8 +88,22 @@ typedef enum
     DECOR_LOBBY_COUNTER,
     DECOR_LOBBY_SOFA,
     DECOR_LOBBY_PLANTER,
-    DECOR_LOBBY_TURNSTILE
+    DECOR_LOBBY_TURNSTILE,
+    /* The two props that belong to this night rather than to the building.
+     * The case is what the crew wheeled in through the goods entrance; the
+     * clock is the deadline they are working to, and it is the only one of
+     * the two that hangs rather than stands. */
+    DECOR_FLIGHT_CASE,
+    DECOR_WALL_CLOCK
 } DecorationType;
+
+/* A clock is fixed to the slab above it, every other prop stands on the one
+ * below. The loader drops whichever is unsupported, so this is the one thing
+ * about a decoration the parser has to ask before keeping it. */
+static inline bool decoration_hangs(DecorationType type)
+{
+    return type == DECOR_WALL_CLOCK;
+}
 
 typedef struct
 {

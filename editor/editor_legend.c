@@ -5,7 +5,7 @@
 const char *const ED_GROUP_NAMES[ED_GROUP_COUNT] = {
     "Terrain", "Route", "Items", "Enemies", "People",
     "Hazards", "Fittings", "Office props", "Front of house",
-    "Restroom", "Facade"};
+    "Restroom", "The night", "Facade"};
 
 /* Colours follow fx.h's vocabulary: cyan is security and technology, amber is
  * light and warning, red is danger, green is granted access. */
@@ -109,6 +109,13 @@ const EdSymbol ED_SYMBOLS[] = {
     {'z', "Closed stall", "Stall with the door shut", ED_GROUP_RESTROOM,
      140, 150, 160, false, true, false},
 
+    {'m', "Flight case",
+     "What Meridian wheeled in through the goods entrance; some of them stand shut and some lie open and empty",
+     ED_GROUP_NIGHT, 146, 118, 100, false, true, false},
+    {'w', "Wall clock",
+     "Reads the sector's hour on the way to 01:00. Hangs from the slab above it, not the floor below",
+     ED_GROUP_NIGHT, 198, 62, 50, false, true, false},
+
     {'r', "Thrower window", "Leans out and throws; telegraphed before release",
      ED_GROUP_FACADE, 232, 74, 62, false, false, true},
     {'v', "Bird entry", "Birds cross toward the climber from here",
@@ -125,4 +132,9 @@ const EdSymbol *editor_symbol(char symbol)
             return &ED_SYMBOLS[i];
     }
     return NULL;
+}
+
+bool editor_symbol_hangs(char symbol)
+{
+    return symbol == 'w';
 }

@@ -4676,6 +4676,218 @@ static void test_medkit_heals_before_granting_life(void)
     CHECK(campaign.lives == 1);
 }
 
+/* ---- The night's own dressing ---------------------------------------- */
+
+/*
+ * The flight case stands on the floor and the clock hangs off the slab, and
+ * the loader has to ask each of them the right question. A prop kept with no
+ * support would float; one dropped that had support would be an author's work
+ * silently thrown away, which is the worse of the two because nothing says so.
+ */
+static void test_night_props_ask_for_the_right_wall(void)
+{
+    static const char data[] =
+        "########\n"
+        "#w  w E#\n"
+        "#### ###\n"
+        "#S m m #\n"
+        "###  ###\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 5150);
+    CHECK(level_load_data(&level, "night", data, strlen(data), &rng));
+
+    /* Row 1 col 1 has the slab of row 0 over it and is kept; row 1 col 4 sits
+     * under the gap in that row's own... it does not — row 0 is solid all the
+     * way across, so both clocks hang. The case at row 3 col 3 has floor and
+     * is kept; the one at col 5 is over the gap in row 4 and is dropped. */
+    int clocks = 0;
+    int cases = 0;
+    for (int i = 0; i < level.map.decoration_count; ++i)
+    {
+        if (level.map.decorations[i].type == DECOR_WALL_CLOCK)
+            clocks++;
+        if (level.map.decorations[i].type == DECOR_FLIGHT_CASE)
+            cases++;
+    }
+    CHECK(clocks == 2);
+    CHECK(cases == 1);
+
+    /* And the mirror image of each: a case with air under it and a clock with
+     * air over it are both unsupported, whatever is on the far side of them. */
+    static const char swapped[] =
+        "########\n"
+        "#     E#\n"
+        "#  w   #\n"
+        "#Sm m  #\n"
+        "## ## ##\n"
+        "#      #\n"
+        "########\n";
+    CHECK(level_load_data(&level, "swapped", swapped, strlen(swapped), &rng));
+    /* The clock has open air above it and goes; of the two cases only the one
+     * standing on a solid tile of the row below survives. */
+    CHECK(level.map.decoration_count == 1);
+    CHECK(level.map.decorations[0].type == DECOR_FLIGHT_CASE);
+    CHECK(level.map.decorations[0].col == 4);
+}
+
+/*
+ * A guard on his own calls in, and the beat is colour and nothing else: he
+ * stops for it exactly the way he stops for a chat, and he is no easier to
+ * walk past while it lasts. The second half of that is the part worth pinning
+ * — an ambient detail that quietly hands the player a stealth window is a
+ * balance change wearing a costume.
+ */
+static void test_lone_guard_calls_in_without_going_blind(void)
+{
+    static const char data[] =
+        "##############################\n"
+        "#S           M              E#\n"
+        "##############################\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 7731);
+    CHECK(level_load_data(&state.level, "radio", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    Enemy *guard = &state.enemies[0];
+    guard->on_ground = true;
+    /* Well outside the guard's cone, so nothing else can interrupt the beat. */
+    state.player.x = 32.0f;
+    state.player.y = 32.0f;
+
+    bool called = false;
+    for (int step = 0; step < 60 * 60 && !called; ++step)
+    {
+        game_events_clear(&state.events);
+        gameplay_ai_update_movement(&state, 1.0f / 60.0f);
+        if (events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                              SFX_GUARD_RADIO))
+            called = true;
+    }
+    CHECK(called);
+    CHECK(guard->talking);
+    CHECK(guard->talk_partner < 0);
+    CHECK(enemy_on_radio(guard));
+    /* It is a standing beat, like the chat it borrows from. */
+    CHECK(fabsf(guard->vx) < 0.001f);
+
+    /* And it ends on its own, back into the patrol. */
+    for (int step = 0; step < 60 * 6 && guard->talking; ++step)
+    {
+        game_events_clear(&state.events);
+        gameplay_ai_update_movement(&state, 1.0f / 60.0f);
+    }
+    CHECK(!guard->talking);
+    CHECK(!enemy_on_radio(guard));
+}
+
+/* The other half of the same rule: the building has to be quiet for it. A
+ * guard hunting Chuck is not filing a routine report. */
+static void test_no_radio_checks_while_the_alarm_is_up(void)
+{
+    static const char data[] =
+        "##############################\n"
+        "#S           M              E#\n"
+        "##############################\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 24601);
+    CHECK(level_load_data(&state.level, "radio", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    state.enemies[0].on_ground = true;
+    state.player.x = 32.0f;
+    state.player.y = 32.0f;
+    gameplay_trigger_alarm(&state, 32.0f, 32.0f, -1);
+
+    for (int step = 0; step < 60 * 30; ++step)
+    {
+        game_events_clear(&state.events);
+        /* Hold the alarm up for the whole window. */
+        state.terminal_alarm_timer = ALARM_CALM_TIME;
+        gameplay_ai_update_movement(&state, 1.0f / 60.0f);
+        CHECK(!events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                                 SFX_GUARD_RADIO));
+    }
+}
+
+/*
+ * The cordon closing around the tower. It is scenery — nothing about it is
+ * simulated and nothing can be hit — but it has to arrive in the right order,
+ * because the point of it is that the city gets tighter the nearer the drive
+ * gets to the building. The first blocks are an ordinary night; after that the
+ * junctions start being held.
+ */
+static void test_chase_cordon_thickens_toward_the_building(void)
+{
+    int early_held = 0;
+    int early_total = 0;
+    int late_held = 0;
+    int late_total = 0;
+
+    /* One drive is a handful of junctions, and a handful of coin flips proves
+     * nothing about a ramp. A dozen seeds is still deterministic and is enough
+     * of the route to read the shape off. */
+    for (unsigned seed = 0; seed < 12u; ++seed)
+    {
+        Chase chase;
+        chase_init(&chase, 90210u + seed * 7919u);
+        chase_skip_departure(&chase);
+
+        Input input = {0};
+        input.up = true;
+        bool seen[CHASE_MAX_INTERSECTIONS] = {false};
+        float last_y[CHASE_MAX_INTERSECTIONS] = {0.0f};
+
+        for (int step = 0; step < 60 * 40; ++step)
+        {
+            chase_step(&chase, &input);
+            for (int i = 0; i < CHASE_MAX_INTERSECTIONS; ++i)
+            {
+                const ChaseIntersection *junction = &chase.intersections[i];
+                if (!junction->active)
+                {
+                    seen[i] = false;
+                    continue;
+                }
+                /* A recycled slot is a new junction: its y jumps forward. */
+                if (seen[i] && fabsf(junction->y - last_y[i]) < 1.0f)
+                    continue;
+                seen[i] = true;
+                last_y[i] = junction->y;
+                /* Whatever it is, it is one of three states and nothing else:
+                 * absent, on the near pavement, or on the far one. */
+                CHECK(junction->cordon_side >= -1 &&
+                      junction->cordon_side <= 1);
+
+                int block = (int)(junction->y / CHASE_BLOCK_LENGTH);
+                bool held = junction->cordon_side != 0;
+                if (block < CHASE_CORDON_FIRST_BLOCK)
+                {
+                    /* The first blocks are an ordinary night out on the ring
+                     * road, and this half of the rule is exact. */
+                    CHECK(!held);
+                }
+                else if (block < CHASE_CORDON_FIRST_BLOCK + 3)
+                {
+                    early_total++;
+                    early_held += held ? 1 : 0;
+                }
+                else
+                {
+                    late_total++;
+                    late_held += held ? 1 : 0;
+                }
+            }
+        }
+    }
+
+    CHECK(early_total > 0);
+    CHECK(late_total > 0);
+    /* The city gets tighter the closer the drive gets to the tower. */
+    CHECK(late_held * early_total > early_held * late_total);
+}
+
 int main(void)
 {
     test_camera_axis_target();
@@ -4783,6 +4995,10 @@ int main(void)
     test_chase_skippable_after_repeated_failures();
     test_fresh_sighting_waits_before_aiming();
     test_medkit_heals_before_granting_life();
+    test_night_props_ask_for_the_right_wall();
+    test_lone_guard_calls_in_without_going_blind();
+    test_no_radio_checks_while_the_alarm_is_up();
+    test_chase_cordon_thickens_toward_the_building();
 
     if (failures != 0)
     {

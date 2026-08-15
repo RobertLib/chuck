@@ -547,6 +547,76 @@ of empty with someone standing in the next room —
 on the same layer as the janitor, so the `n` counter renders over the post and
 the staff side of the desk stays legible.
 
+### Things that are only true tonight
+
+The building's dressing — desks, counters, planting, restroom fittings — was
+here yesterday and will be here tomorrow. A second, much smaller set says what
+is happening *this* night, and it exists because the plot is otherwise told
+only in places where the player is not playing: a cutscene, a report between
+sectors, a sheet of the manual. Everything in this set is presentation, none of
+it is collectable, solid or simulated, and none of it tells the player anything
+they need in order to finish a sector. The rule for adding to it is that it has
+to say something the story page says, in the place the player is standing.
+
+- **The clock, `w`.** At 01:00 the sub-vault opens; that is the only reason any
+  of this is happening tonight. The dial reads the campaign sector it hangs in
+  (`NIGHT_CLOCK_*` in [game_config.h](src/game_config.h)), so the minute hand
+  climbs the face across the fifteen sectors and is nearly back at the top on
+  the roof. It is the **one prop that hangs**, so it asks the tile above it for
+  support where every other prop asks the tile below (`decoration_hangs` in
+  [level.h](src/level.h), and `editor_symbol_hangs` on the editor's side of the
+  same rule); `test_night_props_ask_for_the_right_wall` pins both directions.
+  The second hand is not decoration on the decoration — a dial with two static
+  hands is a painted clock, and a painted clock says nothing is happening.
+- **The flight case, `m`.** The manual's `THE NIGHT` sheet is illustrated with
+  the case Meridian wheeled in through the goods entrance, and this is that
+  case at a fourteenth of the size, in the sectors themselves. Half of them
+  stand shut; half lie open with a rifle-shaped hole in the foam, which is
+  where the rifles, the frags and the rocket the player keeps picking up came
+  from. Placing one two tiles from a `Z` is the cheapest sentence of plot in
+  the game.
+- **The radio check.** A pair of guards standing together already chat
+  (`ENEMY_TALK_*`); one on his own calls in on the crew's own net
+  (`ENEMY_RADIO_*`, `update_radio_checks` in
+  [gameplay_ai.c](src/gameplay_ai.c)), because twelve men badged into one
+  building under one contractor name are a crew running a schedule. It reuses
+  the chat wholesale and **is** a chat with no partner — `enemy_on_radio` in
+  [enemy.h](src/enemy.h) derives the pose and the sound from that rather than
+  storing a second flag, so every path that ends a chat ends this too. One
+  thing about it is deliberate and tested: a chat blinds a guard past
+  `ENEMY_TALK_NOTICE_RADIUS` and **a radio check does not**. An ambient beat
+  that quietly hands the player a stealth window is a balance change wearing a
+  costume.
+- **The alarm reddens the room.** While the alarm is up, every ceiling fixture
+  in the sector and the pool it throws on the floor swing between the theme's
+  own lamp colour and the emergency circuit (`alarm_wash` in `render_world`).
+  The ambient bounce is deliberately left alone: repainting that as well floods
+  the frame and takes the level's material with it.
+- **The cordon.** The demand broadcast at 00:20 put every unit in the city on a
+  ring around this tower and nobody at all inside it, and the player crosses
+  that ring twice. On the drive in, junctions fill up with squad cars standing
+  on the pavement with their bars lit, more of them the nearer the route gets
+  to the building (`cordon_side` in [chase.h](src/chase.h), drawn by
+  `draw_cordon_car`); they stand in the cross street beyond the pavement and
+  never in a lane, because a car the player's own car drives straight through
+  is a bug rather than a detail, and
+  `test_chase_cordon_thickens_toward_the_building` pins both the ramp and the
+  quiet first blocks. Out on the wall it is the same cordon from above:
+  `facade_cordon` in [level_art.c](src/level_art.c) washes the lower face in
+  out-of-phase blue and red, strongest on the first and lowest climb and gone
+  entirely above the cloud deck, so the climb is also a climb away from it.
+  `facade_news_helicopter` is the one aircraft allowed near the tower — a
+  **news** ship, drawn behind the shell so it passes *behind* the face Chuck is
+  on, because the helicopter waiting on the roof at the end of the night is the
+  crew's ride out and nothing in the sky may contradict it.
+
+Two colours are owned outside the palette for this, both named once with the
+reason: `CORDON_BLUE` in [level_art.c](src/level_art.c) and `COL_BEACON_BLUE`
+in [chase_render.c](src/chase_render.c) are the same emergency-beacon blue,
+which `FX_CYAN` (technology) and `FX_LAMP` (a fluorescent tube) cannot supply.
+The red half of a light bar is `FX_RED`, which is exactly what the palette's
+danger red is for.
+
 ### Tuning, art, audio
 
 - **All tuning constants live in [game_config.h](src/game_config.h)** — speeds,

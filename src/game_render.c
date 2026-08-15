@@ -1260,6 +1260,158 @@ static void draw_lobby_turnstile(SDL_Renderer *r, float x, float y,
   color_rect(r, signal, x + 13.0f, y + 30.0f, 7.0f, 1.0f);
 }
 
+/*
+ * The two props that belong to tonight rather than to the building.
+ *
+ * Everything else in the level dressing was here yesterday and will be here
+ * tomorrow. These two are the night itself left lying about: the case the
+ * crew signed in on a maintenance docket in March, and the clock the whole
+ * job is running against. Neither is collectable, neither is solid, and
+ * neither tells the player anything they need in order to finish the sector —
+ * they are there so that the story the manual states outright is also
+ * something the player walks past.
+ */
+
+static void draw_flight_case(SDL_Renderer *r, float x, float y,
+                             unsigned variant)
+{
+  /* The same shell, latches and rust-red docket as the manual's illustration,
+     at a fourteenth of the size: the player is meant to recognise it, so the
+     case they find on a carpet tile has to be the case they were shown. */
+  SDL_Color shell = {49, 55, 58, 255};
+  SDL_Color shell_lt = {96, 106, 112, 255};
+  SDL_Color foam = {33, 38, 37, 255};
+  SDL_Color cut = {12, 15, 16, 255};
+
+  color_rect(r, (SDL_Color){3, 5, 9, 120}, x + 2.0f, y + 30.0f, 28.0f, 2.0f);
+
+  if ((variant & 1u) == 0u)
+  {
+    /* Standing closed against the wall, handle up. This is the one that has
+       not been opened yet, and there is no reading it beyond that. */
+    color_rect(r, FX_INK, x + 6.0f, y + 9.0f, 21.0f, 23.0f);
+    fx_vgrad(r, x + 7.0f, y + 10.0f, 19.0f, 21.0f, shell_lt, 255,
+             fx_mix(shell, FX_INK, 0.5f), 255);
+    color_rect(r, (SDL_Color){124, 136, 142, 255}, x + 7.0f, y + 10.0f,
+               19.0f, 1.0f);
+    /* Corner protectors down the outer edges, and the two latches. */
+    color_rect(r, fx_mix(shell, FX_STEEL_LT, 0.4f), x + 6.0f, y + 9.0f,
+               3.0f, 6.0f);
+    color_rect(r, fx_mix(shell, FX_STEEL_LT, 0.4f), x + 24.0f, y + 9.0f,
+               3.0f, 6.0f);
+    color_rect(r, fx_mix(shell, FX_STEEL_LT, 0.4f), x + 6.0f, y + 26.0f,
+               3.0f, 6.0f);
+    color_rect(r, fx_mix(shell, FX_STEEL_LT, 0.4f), x + 24.0f, y + 26.0f,
+               3.0f, 6.0f);
+    color_rect(r, FX_STEEL_DK, x + 6.0f, y + 18.0f, 21.0f, 4.0f);
+    color_rect(r, FX_STEEL_LT, x + 6.0f, y + 18.0f, 21.0f, 1.0f);
+    /* Sprung handle folded flat on the lid. */
+    color_rect(r, FX_INK, x + 12.0f, y + 6.0f, 9.0f, 4.0f);
+    color_rect(r, (SDL_Color){88, 96, 100, 255}, x + 13.0f, y + 7.0f,
+               7.0f, 2.0f);
+    /* The docket, still on it. */
+    color_rect(r, fx_dim(FX_RUST, 0.85f), x + 10.0f, y + 12.0f, 13.0f, 3.0f);
+    color_rect(r, (SDL_Color){150, 154, 148, 255}, x + 10.0f, y + 23.0f,
+               13.0f, 5.0f);
+    for (int bar = 0; bar < 6; ++bar)
+      color_rect(r, (SDL_Color){24, 28, 30, 255},
+                 x + 11.0f + (float)bar * 2.0f, y + 24.0f,
+                 (bar & 1) ? 1.0f : 2.0f, 3.0f);
+  }
+  else
+  {
+    /* Open on the floor with the lid propped back, and the long cutout in the
+       foam empty. What was in it is what the player has been picking up. */
+    color_rect(r, FX_INK, x + 3.0f, y + 8.0f, 8.0f, 24.0f);
+    fx_vgrad(r, x + 4.0f, y + 9.0f, 6.0f, 22.0f, shell_lt, 255,
+             fx_mix(shell, FX_INK, 0.5f), 255);
+    color_rect(r, (SDL_Color){31, 36, 39, 255}, x + 5.0f, y + 11.0f,
+               4.0f, 18.0f);
+    color_rect(r, fx_dim(FX_RUST, 0.85f), x + 5.0f, y + 13.0f, 4.0f, 2.0f);
+    color_rect(r, (SDL_Color){140, 144, 138, 255}, x + 5.0f, y + 18.0f,
+               4.0f, 6.0f);
+
+    color_rect(r, FX_INK, x + 10.0f, y + 20.0f, 20.0f, 12.0f);
+    color_rect(r, shell, x + 11.0f, y + 21.0f, 18.0f, 10.0f);
+    color_rect(r, shell_lt, x + 11.0f, y + 21.0f, 18.0f, 1.0f);
+    color_rect(r, foam, x + 12.0f, y + 22.0f, 16.0f, 8.0f);
+    /* The empty bed: a barrel channel, a receiver box and a pistol-grip
+       notch, so the hole in the foam is unmistakably the shape of a rifle. */
+    color_rect(r, cut, x + 13.0f, y + 24.0f, 14.0f, 2.0f);
+    color_rect(r, cut, x + 17.0f, y + 23.0f, 6.0f, 4.0f);
+    color_rect(r, cut, x + 19.0f, y + 27.0f, 3.0f, 2.0f);
+    color_rect(r, (SDL_Color){44, 50, 49, 255}, x + 12.0f, y + 22.0f,
+               16.0f, 1.0f);
+  }
+}
+
+/*
+ * The clock the whole night is running against.
+ *
+ * At 01:00 the sub-vault opens for the overnight settlement, and everything
+ * in the building is timed off that. The dial reads the sector Chuck is
+ * standing in, so the minute hand climbs the right-hand side of the face
+ * across the campaign and is nearly back at the top by the roof — the player
+ * is never told the time and never has to know it, but anyone who looks up in
+ * two different sectors has been told how little of the night is left.
+ *
+ * The second hand is the part that matters: a dial with two static hands is a
+ * painted clock, and a painted clock says nothing is happening.
+ */
+static void draw_wall_clock(SDL_Renderer *r, float x, float y,
+                            int level_index, float world_t)
+{
+  float minute = NIGHT_CLOCK_FIRST_MINUTE +
+                 (float)level_index * NIGHT_CLOCK_MINUTES_PER_SECTOR;
+  if (minute > 58.0f)
+    minute = 58.0f;
+
+  float cx = x + 16.0f;
+  float cy = y + 14.0f;
+  SDL_Color rim = {58, 66, 72, 255};
+  SDL_Color face = {198, 202, 190, 255};
+
+  /* Screwed to the underside of the slab, not floating in front of it. */
+  color_rect(r, FX_INK, cx - 3.0f, y, 6.0f, 5.0f);
+  color_rect(r, (SDL_Color){86, 95, 100, 255}, cx - 2.0f, y, 4.0f, 4.0f);
+
+  fx_mass(r, FX_INK, cx - 11.0f, cy - 11.0f, 22.0f, 22.0f, 7, 7);
+  fx_mass(r, rim, cx - 10.0f, cy - 10.0f, 20.0f, 20.0f, 6, 6);
+  fx_mass(r, fx_mix(rim, FX_STEEL_LT, 0.5f), cx - 10.0f, cy - 10.0f,
+          20.0f, 3.0f, 6, 0);
+  fx_mass(r, face, cx - 8.0f, cy - 8.0f, 16.0f, 16.0f, 5, 5);
+  /* The face is glass, and glass takes the ceiling light across its top. */
+  fx_vgrad(r, cx - 6.0f, cy - 7.0f, 12.0f, 7.0f, FX_CREAM, 70, FX_CREAM, 0);
+
+  /* Quarter marks only: twelve of them at this size is a grey ring. */
+  SDL_Color tick = {66, 72, 70, 255};
+  color_rect(r, tick, cx - 1.0f, cy - 7.0f, 2.0f, 2.0f);
+  color_rect(r, tick, cx - 1.0f, cy + 5.0f, 2.0f, 2.0f);
+  color_rect(r, tick, cx - 7.0f, cy - 1.0f, 2.0f, 2.0f);
+  color_rect(r, tick, cx + 5.0f, cy - 1.0f, 2.0f, 2.0f);
+
+  /* Hands. Midnight has just gone, so the hour hand barely leaves the top;
+     the minute hand is the one carrying the reading. */
+  float minute_angle = minute * (6.2831853f / 60.0f);
+  float hour_angle = minute * (6.2831853f / 720.0f);
+  float second_angle = fmodf(world_t, 60.0f) * (6.2831853f / 60.0f);
+
+  fx_set(r, (SDL_Color){38, 44, 44, 255});
+  SDL_RenderLine(r, cx, cy, cx + sinf(hour_angle) * 4.0f,
+                 cy - cosf(hour_angle) * 4.0f);
+  SDL_RenderLine(r, cx, cy + 1.0f, cx + sinf(hour_angle) * 4.0f,
+                 cy - cosf(hour_angle) * 4.0f + 1.0f);
+  fx_set(r, (SDL_Color){26, 31, 32, 255});
+  SDL_RenderLine(r, cx, cy, cx + sinf(minute_angle) * 7.0f,
+                 cy - cosf(minute_angle) * 7.0f);
+  /* The one red on the dial, and it is a moving one: FX_RUST rather than
+     FX_RED, because a clock hand is not a danger signal. */
+  fx_set(r, FX_RUST);
+  SDL_RenderLine(r, cx, cy, cx + sinf(second_angle) * 6.0f,
+                 cy - cosf(second_angle) * 6.0f);
+  color_rect(r, (SDL_Color){26, 31, 32, 255}, cx - 1.0f, cy - 1.0f, 2.0f, 2.0f);
+}
+
 static void draw_restroom_toilet(SDL_Renderer *r, float x, float y)
 {
   /* Side profile: cistern at the wall, projecting seat and a curved pedestal.
@@ -1442,11 +1594,16 @@ static void draw_restroom_stall_closed(SDL_Renderer *r, float x, float y)
 }
 
 static void draw_decoration(SDL_Renderer *r, const Decoration *decoration,
-                            float cam_x, float oy, float world_t)
+                            float cam_x, float oy, float world_t,
+                            int level_index)
 {
   float x = decoration->col * (float)TILE_SIZE - cam_x;
   float y = decoration->row * (float)TILE_SIZE + oy;
-  if (decoration->type == DECOR_OFFICE_CHAIR)
+  if (decoration->type == DECOR_FLIGHT_CASE)
+    draw_flight_case(r, x, y, tile_hash(decoration->col, decoration->row));
+  else if (decoration->type == DECOR_WALL_CLOCK)
+    draw_wall_clock(r, x, y, level_index, world_t);
+  else if (decoration->type == DECOR_OFFICE_CHAIR)
     draw_office_chair(r, x, y);
   else if (decoration->type == DECOR_OFFICE_DESK)
     draw_office_desk(r, x, y);
@@ -3509,6 +3666,10 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
     dir = 1;
   bool aiming = e->aim_timer > 0.0f || e->recoil_timer > 0.0f;
   bool using_alarm = e->raising_alarm && e->alarm_use_timer > 0.0f;
+  /* Standing still and speaking to nobody: a call in on the crew's own net.
+     It has to read differently from a chat, because the chat is two men who
+     have stopped watching the corridor and this is one man who has not. */
+  bool on_radio = enemy_on_radio(e) && !e->climbing;
   bool moving = fabsf(e->vx) > 2.0f && !aiming && !e->talking;
   float phase = e->anim_time * 3.0f;
   float cycle = phase * (1.0f / 6.28318531f);
@@ -3568,8 +3729,10 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
     }
   }
 
-  /* Arm behind torso while patrolling / gesturing. */
-  float gesture_swing = e->talking ? sinf(e->anim_time * 5.0f) * 0.65f : 0.0f;
+  /* Arm behind torso while patrolling / gesturing. A man on a handset does
+     not gesture with it, so the chat's arm swing is the chat's alone. */
+  float gesture_swing =
+      (e->talking && !on_radio) ? sinf(e->anim_time * 5.0f) * 0.65f : 0.0f;
   if (!aiming && !e->climbing)
   {
     float rear_swing = moving ? step : -gesture_swing;
@@ -3686,6 +3849,32 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
                 22.0f, 7.0f + bob, 3.0f, 3.0f,
                 fx_dim(FX_SKIN, 0.93f));
   }
+  else if (on_radio)
+  {
+    /* The forearm comes up across the chest to the shoulder, which is where a
+       shoulder-mounted handset is worked from — an arm raised to the side of
+       the head would be a telephone call. The set itself is a stub of dark
+       body with a short whip, and the whip is what has to clear the helmet or
+       the whole thing disappears into the silhouette. */
+    sprite_limb_segment(r, x, y, ENEMY_W, dir,
+                        14.0f, 13.0f + bob, 17.0f, 12.0f + bob, uniform);
+    sprite_limb_segment(r, x, y, ENEMY_W, dir,
+                        17.0f, 12.0f + bob, 19.0f, 10.0f + bob,
+                        fx_dim(FX_SKIN, 0.85f));
+    /* The set is held just clear of the helmet, not against it: at this size a
+       handset drawn over the head is a dark patch on a green shape. */
+    sprite_rect(r, x, y, ENEMY_W, dir, 19.0f, 8.0f + bob, 4.0f, 6.0f,
+                COL_OUTLINE);
+    sprite_rect(r, x, y, ENEMY_W, dir, 20.0f, 9.0f + bob, 2.0f, 4.0f,
+                (SDL_Color){44, 50, 46, 255});
+    sprite_rect(r, x, y, ENEMY_W, dir, 21.0f, 2.0f + bob, 1.0f, 7.0f,
+                (SDL_Color){30, 35, 31, 255});
+    /* One transmit lamp, and it is the technology cyan rather than a second
+       red: a red pip on a guard already means the visor. */
+    bool keyed = fmodf(e->anim_time * 3.0f, 1.0f) < 0.62f;
+    sprite_rect(r, x, y, ENEMY_W, dir, 20.0f, 8.0f + bob, 1.0f, 1.0f,
+                keyed ? FX_CYAN : FX_CYAN_DK);
+  }
   else if (!e->climbing)
   {
     float front_swing = moving ? -step : gesture_swing;
@@ -3705,7 +3894,22 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
     color_rect(r, hc, x + 4.0f + hp * 7.0f, y - 5.0f, 4.0f, 2.0f);
   }
 
-  if (e->talking)
+  if (on_radio)
+  {
+    /* Not a speech bubble: nobody is being spoken to in the room. Two arcs
+       coming off the whip say the words are leaving the building instead. */
+    float ax = dir >= 0 ? x + 21.0f : x + 5.0f;
+    float ay = fmaxf(oy + 2.0f, y + 1.0f + bob);
+    for (int arc = 0; arc < 2; ++arc)
+    {
+      float phase_out = fmodf(e->anim_time * 1.6f + (float)arc * 0.5f, 1.0f);
+      Uint8 alpha = (Uint8)((1.0f - phase_out) * 150.0f);
+      float spread = 2.0f + phase_out * 5.0f;
+      fx_rect_a(r, FX_CYAN, alpha, ax + (dir >= 0 ? spread : -spread),
+                ay - spread * 0.6f, 1.0f, 1.0f + spread * 0.8f);
+    }
+  }
+  else if (e->talking)
   {
     float bubble_y = fmaxf(oy + 2.0f, y - 25.0f);
     color_rect(r, FX_NIGHT, x + 2.0f, bubble_y, 22.0f, 11.0f);
@@ -4181,6 +4385,16 @@ static void render_world(Game *game)
     const LevelThemeArt *art = level_art(lvl->map.theme);
     unsigned fixture_spacing =
         art->lamp_alpha >= 90u ? 4u : (art->lamp_alpha >= 60u ? 7u : 13u);
+    /* An alarm the player can only read off a HUD strip is an alarm happening
+     * to the interface. This is a building with its own wiring: while the
+     * alarm is up every fixture in the sector swings between its own colour
+     * and the emergency circuit, so the corridor Chuck is standing in tells
+     * him before the guards arriving in it do. It is the fixtures and their
+     * pools only — repainting the ambient bounce as well would flood the
+     * whole frame red and take the level's material with it. */
+    float alarm_wash = gameplay_alarm_active(&game->gameplay)
+                           ? 0.30f + 0.45f * (0.5f + 0.5f * sinf(world_t * 5.4f))
+                           : 0.0f;
     int first_col = (int)(cam_x / (float)TILE_SIZE) - 1;
     if (first_col < 0)
       first_col = 0;
@@ -4243,12 +4457,15 @@ static void render_world(Game *game)
                                   fmodf(world_t * 1.9f + (float)col, 5.0f) < 0.08f
                               ? 0.35f
                               : 1.0f;
-          SDL_Color lit = fx_dim(art->lamp, flicker);
+          SDL_Color fitting = alarm_wash > 0.0f
+                                  ? fx_mix(art->lamp, FX_RED, alarm_wash)
+                                  : art->lamp;
+          SDL_Color lit = fx_dim(fitting, flicker);
           color_rect(r, (SDL_Color){15, 20, 30, 255}, cx - 7.0f, y - 1.0f, 14.0f, 4.0f);
           color_rect(r, lit, cx - 5.0f, y + 1.0f, 10.0f, 2.0f);
           fx_glow(r, cx, y + 3.0f, 12.0f, lit,
                   (Uint8)((float)art->lamp_alpha * flicker));
-          fx_light_cone(r, cx, y + 2.0f, 7.0f, 30.0f, 86.0f, art->lamp,
+          fx_light_cone(r, cx, y + 2.0f, 7.0f, 30.0f, 86.0f, fitting,
                         (Uint8)((float)art->lamp_alpha * 0.42f * flicker));
 
           /* The pool the fixture puts on the floor under it. A cone that fades
@@ -4268,7 +4485,7 @@ static void render_world(Game *game)
                 (Uint8)((float)art->lamp_alpha * 0.36f * flicker * fade);
             for (int lobe = -1; lobe <= 1; ++lobe)
               fx_glow(r, cx + (float)lobe * 19.0f, fy + 2.0f, 30.0f,
-                      art->lamp, pool);
+                      fitting, pool);
           }
         }
       }
@@ -4308,7 +4525,8 @@ static void render_world(Game *game)
     float x = decoration->col * (float)TILE_SIZE - cam_x;
     if (x + TILE_SIZE < 0.0f || x > (float)win_w)
       continue;
-    draw_decoration(r, decoration, cam_x, oy, world_t);
+    draw_decoration(r, decoration, cam_x, oy, world_t,
+                    game->campaign.current_level);
   }
 
   /* Doors and other wall-mounted fixtures belong behind anyone walking along

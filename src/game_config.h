@@ -312,6 +312,14 @@
 #define ENEMY_TALK_CHANCE 30
 #define ENEMY_TALK_COOLDOWN 5.0f
 
+/* A guard with nobody beside him still has somebody to talk to: twelve of
+ * them badged into this building as one contractor, and they are working to
+ * a clock. The radio check is the solo half of the chat — the same standing
+ * beat, half as long, and only while the building is still quiet. */
+#define ENEMY_RADIO_DURATION 2.2f
+#define ENEMY_RADIO_GAP_MIN 16.0f
+#define ENEMY_RADIO_GAP_MAX 38.0f
+
 /* Ammunition dropped by guards downed in direct combat (bullet, knife or
  * stomp). Explosions destroy the magazine along with its owner. */
 #define MAX_AMMO_DROPS 16
@@ -530,5 +538,30 @@
 /* Both cars are on their marks before the beat ends. */
 #define CHASE_ARRIVAL_BRAKE_TIME 4.2f
 #define CHASE_ARRIVAL_DISTANCE 1500.0f
+
+/* The cordon the broadcast bought them. A political demand at 00:20 puts every
+ * unit in the city on the streets around this tower and nobody at all inside
+ * it, so the drive in passes more and more of it: a squad car standing on the
+ * kerb at a junction with its bar lit, sealing the street. They are scenery on
+ * the pavement — never in a lane, never something that can be hit. */
+#define CHASE_CORDON_FIRST_BLOCK 2
+#define CHASE_CORDON_CHANCE_START 20
+#define CHASE_CORDON_CHANCE_END 85
+#define CHASE_CORDON_RAMP_BLOCKS 9
+#define CHASE_CORDON_KERB_INSET 13.0f
+#define CHASE_CORDON_STROBE_HZ 3.4f
+
+/* ---- The clock on the wall -------------------------------------------- */
+
+/*
+ * The night has a deadline and the building states it out loud: at 01:00 the
+ * sub-vault opens for the overnight settlement, which is the only reason any
+ * of this is happening tonight. A `w` clock reads the campaign sector it is
+ * standing in, so the minute hand climbs toward the top of the dial across the
+ * fifteen sectors and the player can watch the job close in without a line of
+ * text anywhere. Presentation only: nothing in the simulation reads the time.
+ */
+#define NIGHT_CLOCK_FIRST_MINUTE 22.0f
+#define NIGHT_CLOCK_MINUTES_PER_SECTOR 2.5f
 
 #endif /* CHUCK_GAME_CONFIG_H */

@@ -358,6 +358,14 @@ bool level_load_data(Level *level, const char *name,
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_LOBBY_TURNSTILE);
             break;
+        case 'm':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_FLIGHT_CASE);
+            break;
+        case 'w':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_WALL_CLOCK);
+            break;
         case 'q':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_RESTROOM_TOILET);
@@ -538,14 +546,17 @@ bool level_load_data(Level *level, const char *name,
 
     /* Office props are floor-standing and visual only. Keep them off ladders,
      * shafts, falling/moving platforms and open air so they can never be left
-     * hovering after level geometry moves. */
+     * hovering after level geometry moves. A hanging prop asks the same
+     * question of the tile above it instead: a clock screwed to nothing would
+     * be exactly as wrong as a desk standing on nothing. */
     int supported_decoration_count = 0;
     for (int i = 0; i < level->map.decoration_count; ++i)
     {
         Decoration *decoration = &level->map.decorations[i];
-        int floor_row = decoration->row + 1;
-        if (floor_row >= level->map.height ||
-            level->map.tiles[floor_row][decoration->col] != TILE_WALL)
+        bool hangs = decoration_hangs(decoration->type);
+        int support_row = hangs ? decoration->row - 1 : decoration->row + 1;
+        if (support_row < 0 || support_row >= level->map.height ||
+            level->map.tiles[support_row][decoration->col] != TILE_WALL)
         {
             continue;
         }

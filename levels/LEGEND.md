@@ -58,6 +58,20 @@ has to be added there as well, or it is a character the editor cannot paint.
 - `t` : Decorative palm in a stone planter (non-solid).
 - `g` : Decorative optical security gate; the fitting that explains why the
   stair door upstairs wants a card (non-solid).
+- `m` : Decorative flight case, stencilled *Meridian Facility Services* — one of
+  the ones the crew wheeled in through the goods entrance in March and nobody
+  inspected (non-solid). Half of them stand shut and half lie open with a
+  rifle-shaped hole in the foam, chosen from the tile position, so a run of
+  them is not a run of the same box. Interiors only, and worth putting near an
+  explosive: the case the bazooka came out of, two tiles from the bazooka, is
+  the whole plot said without a line of text.
+- `w` : Decorative wall clock (non-solid). **The one prop that hangs rather
+  than stands**: it needs a solid tile directly *above* it, and the loader
+  drops it if there is none, exactly as it drops a desk with no floor. The
+  dial reads the campaign sector it is standing in — the night runs from the
+  broadcast to the sub-vault opening at 01:00, so the minute hand climbs
+  toward the top of the face across the fifteen sectors. Presentation only:
+  nothing in the simulation reads the time.
 - `S` : Player start position.
 - `E` : Normal security-door exit. When the map also contains `Y`, this door
   is physically blocked and cannot be unlocked by a card or terminal.
@@ -82,7 +96,9 @@ has to be added there as well, or it is a character the editor cannot paint.
 Notes:
 
 - Decorations are loaded only when placed directly above a static `#` wall tile;
-  unsupported ones are ignored so they cannot float in air.
+  unsupported ones are ignored so they cannot float in air. The one exception is
+  the wall clock `w`, which hangs and therefore asks the tile *above* it the
+  same question; the editor reports either mistake.
 - The office set (`c` `d` `i`) and the front-of-house set (`n` `s` `t` `g`) are
   not interchangeable dressing. A public floor furnished out of the office set
   reads as an office floor whatever its walls are made of, so keep desks and

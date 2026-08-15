@@ -25,6 +25,12 @@ typedef enum
     ED_GROUP_OFFICE,
     ED_GROUP_LOBBY,
     ED_GROUP_RESTROOM,
+    /* Props that belong to this night rather than to the building: the crew's
+     * flight case and the clock the job is running to. They are dressing like
+     * any other prop, but they are the dressing that carries the story, so
+     * they are painted from their own bin rather than buried in the office
+     * set where an author would place them for the wrong reason. */
+    ED_GROUP_NIGHT,
     ED_GROUP_FACADE,
     ED_GROUP_COUNT
 } EdGroup;
@@ -48,5 +54,14 @@ extern const char *const ED_GROUP_NAMES[ED_GROUP_COUNT];
 
 /* NULL when the character is not in the legend at all. */
 const EdSymbol *editor_symbol(char symbol);
+
+/*
+ * True for a prop the loader hangs from the tile above rather than stands on
+ * the tile below (`decoration_hangs` in level.h is the same rule on the
+ * parsed side). One character has it, and it is named in one place here so
+ * the report and the loader cannot end up disagreeing about which way up a
+ * prop needs its wall.
+ */
+bool editor_symbol_hangs(char symbol);
 
 #endif /* CHUCK_EDITOR_LEGEND_H */

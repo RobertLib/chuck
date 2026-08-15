@@ -1537,6 +1537,26 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_tone(s, 0.25f, 0.14f, 165.0f, 205.0f, 0.42f, WAVE_TRIANGLE, 0.008f, 0.08f);
         add_noise(s, 0.00f, 0.44f, 0.09f, 0.35f, 0.012f, 0.09f, 0x5aa5u);
         break;
+    case SFX_GUARD_RADIO:
+        /* The same voice as SFX_GUARD_TALK put through a handset: opened and
+         * closed by a squelch burst, and pitched a fifth higher into a much
+         * narrower band, because a radio is thin where a man in the room is
+         * chesty. The two have to be told apart across a corridor — one is a
+         * guard who is distracted, the other is a guard who is reporting. */
+        if (!begin_sound(audio, effect, 0.52f, 0.17f, 2100))
+            return false;
+        add_noise(s, 0.00f, 0.045f, 0.30f, 0.75f, 0.002f, 0.030f, 0x91c7u);
+        add_tone(s, 0.05f, 0.11f, 285.0f, 246.0f, 0.34f, WAVE_SQUARE, 0.004f,
+                 0.05f);
+        add_tone(s, 0.18f, 0.09f, 340.0f, 302.0f, 0.30f, WAVE_SQUARE, 0.004f,
+                 0.05f);
+        add_tone(s, 0.29f, 0.13f, 262.0f, 322.0f, 0.32f, WAVE_SQUARE, 0.004f,
+                 0.07f);
+        /* The carrier hiss under the whole transmission, then the tail the
+         * handset makes when the key is released. */
+        add_noise(s, 0.04f, 0.40f, 0.11f, 0.50f, 0.008f, 0.08f, 0x3e42u);
+        add_noise(s, 0.45f, 0.06f, 0.26f, 0.70f, 0.002f, 0.045f, 0x91c7u);
+        break;
     case SFX_CIVILIAN_SCREAM:
         if (!begin_sound(audio, effect, 0.68f, 0.22f, 220))
             return false;

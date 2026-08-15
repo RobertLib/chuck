@@ -68,6 +68,13 @@ typedef struct
     float y;                 /* centre of the cross street */
     float signal_offset;     /* phase offset of this junction's signal cycle */
     float cross_spawn_timer; /* countdown to the next car entering the junction */
+    /* Which pavement, if either, has a squad car standing on it with its bar
+     * lit: 0 for none, -1 for the near kerb, +1 for the far one. Chosen once
+     * when the block is laid down and never touched again — it is scenery on
+     * the pavement, never in a lane and never something that can be hit. The
+     * odds of one rise the closer the route gets to the tower, so the drive in
+     * runs through a city that is visibly closing around it. */
+    int cordon_side;
     bool active;
 } ChaseIntersection;
 
