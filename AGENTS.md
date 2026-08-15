@@ -26,15 +26,34 @@ player has to agree with it.
   Facility Services*, its night maintenance contractor. The flight cases they
   wheeled through the goods entrance were never inspected, which is where every
   rifle, grenade and rocket the player picks up came from.
-- **The cover** — a political demand broadcast at 00:20. It puts every unit in
-  the city on a cordon and nobody at all inside the building. It is theatre.
-- **The job** — at 01:00 the sub-vault opens for the overnight settlement, six
-  hundred million in bearer bonds, and its last door runs on a two-key rule:
-  the bank's key, and the duty controller alive and present. That is why they
-  needed Ellen at all, and it is the only reason she is still breathing.
+- **The cover** — a political demand broadcast at **00:04**. It puts every unit
+  in the city on a cordon around this tower and nobody at all inside it. It is
+  theatre, and it is also what buys the abduction its impunity: the pavement
+  three blocks out is clean at 00:12 because the whole city is looking here.
+  **The broadcast has to precede the drive**, because the cordon the player
+  drives through is drawn thickening toward the building — a spatial ramp, not
+  a temporal one, so all of it is already standing when the drive begins.
+- **The job** — the sub-vault opens on the overnight settlement, six hundred
+  million in bearer bonds, and its last door runs on a two-key rule: the bank's
+  key, and the duty controller alive and present. That is why they needed Ellen
+  at all, and it is the only reason she is still breathing. **01:00 is when the
+  bonds leave the roof**, not when the vault opens — the vault is emptied
+  during the climb, which is why Voss is on the roof with them at 00:57.
 - **Why Chuck is inside** — he was twenty metres behind her on the pavement
-  when they took her, and he was through the front door before the cordon went
-  up.
+  when they took her, and he was through the front door forty seconds behind
+  the men who carried her through it.
+
+**The clock, in one place.** Every time the game states is on this line, and
+none of them may be moved alone: **00:04** the demand goes out and the cordon
+forms; **00:12** Ellen is taken three blocks out; **00:12-00:22** the drive, in
+through the cordon; **00:22** the SUV reaches the tower, Ellen is walked in and
+Chuck follows — which is also what sector one's wall clock reads, so the
+cutscene and the first dial agree to the minute; **00:22-00:57** the fifteen
+sectors, `NIGHT_CLOCK_*` in [game_config.h](src/game_config.h) climbing the
+dial at two and a half minutes a sector; **01:00** the helicopter, the outro's
+own caption. A change to any one of them is a change to the two cutscene
+captions, the `TRANSITION_INTEL` table, the manual's `THE NIGHT` sheet, the
+drive's cordon caption, `NIGHT_CLOCK_FIRST_MINUTE` and both prose pages.
 - **The ending** — the helicopter on the roof is the getaway, not a rescue.
 
 Where the player actually reads it, in the order they meet it: the title
@@ -58,12 +77,18 @@ layout that reaches all the way into the script.
 ```sh
 make          # build ./chuck
 make run      # build and launch
+make debug    # build build/debug/chuck-debug (-O0 -g3 -DCHUCK_DEBUG)
+make run-debug  # build and launch it; its title screen has the level picker
 make editor   # build ./chuck-editor, the level editor
 make run-editor # build and launch the editor
 make test     # build and run the core test suite (build/core_tests)
 make sanitize # rebuild game + tests with ASan/UBSan into build/sanitize
 make clean    # remove build/, ./chuck and ./chuck-editor
 ```
+
+The debug build is the only one with the level picker on its title screen
+(`</>` or `[`/`]` to choose, `F5` to start there); the release build has no
+`CHUCK_DEBUG` in it at all.
 
 `./chuck --level N` boots straight into campaign sector N, skipping the title
 screen and the prologue; it is what the editor's playtest button launches.
@@ -122,11 +147,38 @@ through the single `load_level`.
 
 ### Frame flow
 
-`SDL_AppIterate` clamps `dt` to 0.05s → `game_update` clears the event buffer,
-reads input, then `update_scene`. If `update_scene` returns true the frame was
-consumed by a non-playing state (intro, the prologue drive, cutscenes,
+`SDL_AppIterate` clamps `dt` to `MAX_FRAME_DT` → `game_update` clears the event
+buffer, reads input, then `update_scene`. If `update_scene` returns true the
+frame was consumed by a non-playing state (intro, the prologue drive, cutscenes,
 transitions, game over); otherwise `update_playing` runs the simulation. Events
 are dispatched last.
+
+**That clamp is a collision invariant, not a stutter guard.** Every projectile
+tests the tile under its leading edge *after* it has moved rather than sweeping
+the path it crossed, so it is only correct while one step is shorter than one
+tile. (Against *entities* a round is swept: a shot fired up a ladder is four
+pixels by eight and a dog is sixteen tall, so at the clamp the two together are
+shorter than one step and a destination-only test walks the round straight
+through the animal. The tile test stays a point test because the asserts below
+prove it; nothing proves an entity is a tile wide.)
+`MAX_FRAME_DT` is therefore written as `1 / MIN_FRAME_RATE` — a whole
+number of steps per second, so the `_Static_assert`s beside the projectile
+speeds in [game_config.h](src/game_config.h) can be integer constant
+expressions under `-Wpedantic`. Raising `BULLET_SPEED` past a tile per frame is
+now a build failure rather than shots quietly passing through one-tile walls.
+
+**`MAX_FALL_SPEED` is on that line too, and it is the tightest number on it.**
+`level_move` resolves the vertical axis exactly the way a projectile resolves a
+tile — one row tested under the leading edge *after* the step — so a body
+falling further than a tile in one frame drops through a one-tile floor. Every
+falling thing in the game is clamped to this one speed (the player, guards,
+dogs, crates, grenades, magazines, settling bodies, and the bricks thrown off
+the facade), so one assertion covers all of them; the facade brick is clamped
+to it explicitly in [gameplay_climb.c](src/gameplay_climb.c), because uncapped
+it passed a tile per step after about a second of fall and sailed through the
+cornices it is supposed to burst on. At 620 against a 32px tile the margin is
+one pixel, which is exactly why the assertion is worth having: the number reads
+like a free tuning knob and it is not one.
 
 The scene order the player walks through is `STATE_INTRO` → `STATE_ABDUCTION`
 → `STATE_CHASE` → `STATE_OPENING_CUTSCENE` → level one, with `STATE_MANUAL`
@@ -169,6 +221,35 @@ A guard downed in direct combat — bullet, knife or stomp — drops a magazine
 its owner. The drop is only collected while the sidearm is short, so it waits
 on the floor instead of vanishing into a full clip.
 
+**A body stays, and it has to, because the AI already reads it.**
+`update_body_discovery` sends a calm guard who sees a fallen comrade over to
+look and often on to the nearest alarm switch. Nothing drew the bodies, so the
+player watched a man cross the room to an empty patch of carpet and wake the
+building: a rule that is simulated, documented and punishing, whose whole
+trigger was invisible. `draw_downed_enemy` / `draw_downed_dog` in
+[game_render.c](src/game_render.c) lay the same figure along the floor — dead
+visor, no health pips, no speech bubble — and three consequences follow.
+`settle_body` in [gameplay_ai.c](src/gameplay_ai.c) drops a body that died in
+mid-air, because one hanging in the air is also a guard investigating thin air.
+`find_enemy_slot` takes a **fresh** slot before a dead one, so a reinforcement
+no longer deletes the corpse standing in front of the player — and only when the
+array is full does it take the body furthest from Chuck. And the kill tally
+moved off the `dead` flags onto `GameplayState.hostiles_neutralized`, counted as
+each one goes down: the flags are the population still standing, so reading them
+lost one kill per reused slot and the report between sectors under-credited the
+floor the player had actually cleared.
+
+**Only the magazine comes back.** `ITEM_GUN` is the one pickup on
+`ITEM_RESPAWN_TIME` (`gameplay_collect_items` in
+[gameplay_interaction.c](src/gameplay_interaction.c)), because the sidearm is
+what a sector is played with and a player who has spent it must not be left
+walking the rest of the floor with a knife. The grenade used to regrow with it,
+which made a single `N` an unlimited supply at ten seconds apiece — enough to
+clear a floor a blast at a time, and enough to open every `%` in the campaign
+without the bazooka those patches were placed for. A one-shot explosive that
+regrows is not a decision about when to spend it;
+`test_only_the_magazine_comes_back` pins both halves.
+
 ### Stomping a guard
 
 Walking into a guard costs a heart, but `gameplay_combat_check_contacts`
@@ -192,6 +273,36 @@ also clears `on_ladder` and arms `ladder_lockout_timer`
 (`ENEMY_STOMP_LADDER_LOCKOUT`) so the ladder cannot be re-grabbed until the
 bounce has had time to actually clear the guard.
 
+### One blast, one rule
+
+Four things explode — a mine, a grenade, a rocket and a gas canister — and they
+differ in exactly three ways: where they go off, how far they reach, and how
+hard they shake the frame. What a blast *does* is one function,
+`apply_blast` in [gameplay_combat.c](src/gameplay_combat.c), and each
+explosive's own code is now the event, the sound, the shake and a call to it
+with its radius.
+
+They used to be four hand-written copies, and every one of them had drifted
+somewhere different: a rocket set off a gas canister but a grenade landing
+against the same canister did nothing, and a mine brought a wall down without
+troubling the guard standing in the hole it had just made. A blast that picks
+which of the things beside it are real is a blast the player cannot reason
+about, and none of those gaps were anything a player could have predicted from
+the ones that worked. `test_every_blast_reaches_the_same_things` pins the two
+that were missing.
+
+Three properties of the shared rule are worth knowing. A guard taken by a blast
+leaves no magazine — the drop belongs to direct combat
+(`gameplay_spawn_ammo_drop`), and an explosion destroys it with its owner.
+Canisters chain, and the chain always terminates because a canister is
+deactivated *before* its own blast is applied. And the player can only be hurt
+once however many blasts a chain sets off, because the first one opens the
+mercy window that `gameplay_damage_player` checks on entry.
+
+Only the player's weight arms a mine, but the delay between the step and the
+blast is long enough to run out of — and long enough for whoever is chasing him
+to run into.
+
 ### Forgiving input, checkpoints, continues
 
 The jump is deliberately forgiving, and all of it lives in `player_update`:
@@ -199,18 +310,30 @@ a `PLAYER_COYOTE_TIME` window keeps a ledge jumpable for a beat after the
 boots leave it, a `PLAYER_JUMP_BUFFER` keeps a press alive until the boots
 arrive, and releasing the key mid-rise caps the climb at
 `PLAYER_JUMP_CUT_FACTOR` of the jump speed (only for rises the player
-started — `jump_cut_ok` — so stomp bounces are never cut). The input layer
-reports every jump press except over a ladder, where the same key means
-climb; whether the press is honoured, now or a few frames later, is the
-player module's decision, and `Player.jumped` reports the frame a jump
-actually started so the shell can play the sound. Tests pin all three.
+started — `jump_cut_ok` — so stomp bounces are never cut). Whether a press is
+honoured, now or a few frames later, is the player module's decision rather
+than the input layer's, and `Player.jumped` reports the frame a jump actually
+started so the shell can play the sound. Tests pin all three.
+
+**A ladder needs a jump key that is not the climb key.** `UP` is the
+keyboard's jump everywhere except over a ladder, where the same key has to
+mean climb — which left the keyboard as the one input that could not take
+`player_update`'s jump-off-the-ladder branch at all, while the pad had it all
+along under A. `LSHIFT` is that key: it reports the press unconditionally, the
+way the pad's A does, and it is read into `jump_held` as well or every jump
+started on it would be cut back to a hop on the very next frame. The rule it
+restates is the one above — the input layer names presses, the player module
+decides what they mean.
 
 Progress is banked and a death resumes at it. Facade climbs bank height every
 `FACADE_CHECKPOINT_STEP`; interiors bank at real progress — any key card, a
 finished hack, a teleport door, a medkit (`gameplay_bank_checkpoint`, called
 from [gameplay_interaction.c](src/gameplay_interaction.c)) — and
-`gameplay_restore_checkpoint` handles both modes, deactivating anything
-already in flight. A death keeps the carried grenade and rocket
+`gameplay_restore_checkpoint` handles both modes, clearing whatever is in the
+air that could land on the man who has just been put back — enemy bullets
+inside, thrown bricks and birds on the wall. What Chuck himself threw is left
+alone deliberately: it is part of the world he changed, and the respawn's own
+`INVULN_TIME` already covers him. A death keeps the carried grenade and rocket
 (`finish_player_death` transfers the loadout across `player_reset`), refills
 the sidearm, and never reloads the level, so the world keeps its dead guards
 and opened walls.
@@ -276,18 +399,32 @@ departure from that is a bug the player blames on themselves:
   open the game the way they opened a sheet, and a first press of B on the
   first screen ending the session is the worst version of that mistake;
   quitting is `ESC` or the window's close box. During a sector, a cutscene,
-  the report between sectors or the drive it does nothing at all:
-  dropping a run on one press of the button players use to say "not that" is
-  the same bug wearing a hat. The way out of a run is deliberate and from the
-  pause screen only (SELECT, `abandons_run`), and `ESC` follows the same rule
-  on the keyboard.
+  the report between sectors, the continue prompt or the drive it does nothing
+  at all: dropping a run on one press of the button players use to say "not
+  that" is the same bug wearing a hat. The way out of a run is deliberate and
+  from the pause screen only (SELECT, `abandons_run`).
+
+  **`ESC` keeps the same promise, and the list of states it keeps it in is
+  written out in [main.c](src/main.c) rather than implied.** It pauses whatever
+  is running, and it is deliberately inert at `STATE_LEVEL_TRANSITION`,
+  `STATE_CONTINUE` and `STATE_LEVEL_CLEARED` — the three places a run is still
+  on the table and nothing is open to close. The continue prompt is a live
+  decision, and the countdown already reaches the title on its own if nobody
+  answers. `STATE_LEVEL_CLEARED` is the second between finishing the last
+  sector and the outro starting: it is the one moment in the game where the
+  player has just won, and `ESC` landing in it used to replace the ending with
+  the title screen. What is left — the prologue's two cutscenes, the manual,
+  the outro and the game-over hold — has no run at stake, so there `ESC` is the
+  way out rather than an accident.
 - **The bumpers cycle.** RB takes the next weapon and LB the one before it
   (`player_select_prev_weapon`, one ring walked in both directions so the two
   can never disagree), and in the manual they turn the sheet, which is the one
   job Microsoft's own gamepad guidance gives a bumper. What they must not carry
   is a setting: mute used to sit on LB, where nothing would look for it and
   where a thumb reaching for a weapon found it. It is on the pause screen now,
-  with the rest of the settings.
+  with the rest of the settings. The keyboard walks the same ring in both
+  directions — `TAB`/`Q` forward, `Z` back — because a keyboard that could only
+  ever go forward is three presses from the weapon a bumper reaches in one.
 - **The triggers drive.** The drive answers RT and LT as throttle and brake as
   well as the letters it prompts for, because that is where a driver's fingers
   go.
@@ -309,6 +446,27 @@ ternary at each prompt:
   hands, or as the keyboard line when that is the keyboard. The manual's control
   table is written in the same tokens, and its chip columns are measured
   **after** spelling, because `$START` is six characters and OPTIONS is seven.
+  **A drawing of a pad owes the same rule, and owes it twice.** The manual's
+  gamepad illustration (`illus_controls` in [manual.c](src/manual.c)) is the one
+  place that renders the four faces as objects rather than as text, so it takes
+  both the letter *and the corner* off `PadHints` — `pad_hints_button` gives the
+  position SDL filed each letter under, and `face_offset` turns that into where
+  the cap is drawn. Nailing A to the bottom corner was the same bug the token
+  system exists to prevent, only in paint: it told a Switch player the wrong
+  thing about every button on the pad, and showed a PlayStation player four
+  letters their pad does not carry, on the same sheet whose table beside it
+  correctly said `X`, `O`, `[]` and `/\`. What stays fixed is the **tint**,
+  which is filed by action rather than by letter, so the diagram keeps the
+  colours it was drawn with whatever is plugged in.
+  **And the shoulders are hardware too**, which is the part that survived the
+  first fix: the faces were taught to read `PadHints` while the two bumpers
+  above them went on saying `LB` and `RB` in paint, on the same sheet whose
+  table three lines away spelled `$LB $RB` as `L`/`R` for a Switch pad and
+  `L1`/`R1` for a PlayStation. A page that contradicts itself is worse than a
+  page that is uniformly wrong, because the reader cannot tell which half to
+  believe. They come off `shoulder_l`/`shoulder_r` now, centred on the bumper
+  the way the face caps are centred on their own, because those names are one,
+  two or three cells wide.
 - **One answer per frame.** `game_pad_hints` returns the pad the frame is drawn
   for or NULL, and every renderer takes that pointer where it used to take a
   `bool gamepad_active`, so no two screens can disagree about which pad the
@@ -318,6 +476,16 @@ The rule for a new prompt is therefore: name the letter, never the position, and
 route it through `pad_hint`. A prompt that names a button the state does not
 actually accept is the same bug in a smaller way — the drive advertised START as
 its skip while START was pausing it.
+
+**And the mirror of that is a bug as well: a state that accepts a button nothing
+names.** Every edge input the sector owns is reported only from the sector,
+which is why `E` and the `UP`/`W` jump are gated on `STATE_PLAYING` in
+[game_input.c](src/game_input.c) alongside `LSHIFT`. Ungated, `E` reached the
+drive — which reads `use_door` as the skip the pad puts on Y — and so handed
+the keyboard a second way past the prologue that the drive's own prompt, which
+asks for `ENTER`/`SPACE`, never mentions. The `UP` branch has a second reason:
+it tests for a ladder by reading the live player out of `game->gameplay`, and
+outside a sector that is whatever the last one left behind.
 
 ### The prologue: three beats, one shot
 
@@ -355,9 +523,21 @@ shell's cue to play the opening cutscene. Crashing out or letting the gap exceed
 `CHASE_LOSE_GAP` only fails the attempt — and only costs a beat of it:
 `CHASE_PHASE_FAILED` resumes the drive `CHASE_FAIL_REWIND` seconds back from
 where it went wrong, not from zero, and after `CHASE_SKIP_AFTER_ATTEMPTS`
-failures a skip press goes straight to the arrival. The prologue is a
-curtain-raiser and must never be the wall someone quits the game on; both
-rules are tested.
+failures a skip press goes straight to the arrival.
+
+**And at that same attempt the rewind stops, which is what makes the drive
+finite.** Handing road back is only forgiveness while the player makes more of
+it than they lose; someone who crashes more often than every
+`CHASE_FAIL_REWIND` seconds never reaches `CHASE_PURSUIT_DURATION` at all.
+Measured before this rule, a pad held on the throttle with no steering — the
+most naive thing a first-time player can do with a car — never arrived in three
+minutes of driving across five seeds, while a pad touching nothing at all
+always did, which is a difficulty curve pointing the wrong way. So the rewind
+and the skip prompt now appear together: from that attempt on, the pursuit
+clock only ever grows and the prologue ends whether or not anybody takes the
+skip it is offering. The prologue is a curtain-raiser and must never be the
+wall someone quits the game on; all three rules are tested, the last of them by
+driving the naive input end to end.
 
 **The car has two pedals, and it says so.** `Input.gas` and `Input.brake` are
 the only things `drive_player_car` reads, and the shell fills them from the
@@ -417,7 +597,19 @@ list of typed lines and one illustration — and the line kinds (`LINE_HEAD`,
 language. A rule that changes in [game_config.h](src/game_config.h) is a string
 edited in one place rather than a paragraph hunted through a draw function, and
 the control rows are `key|pad|action` so the two chip columns can be sized from
-the widest label on the sheet instead of per row.
+the widest label on the sheet instead of per row. **Prose that names a button
+takes the same bar**, as `pad wording|keyboard wording` — the paragraphs used to
+spell `E` at everybody, which is exactly what the `$` tokens exist to prevent,
+said to the one reader with no E to press. A line with no bar in it is printed
+as written, which is every line naming no button.
+
+**An illustration of the game's own interface is a cutting of it, not a
+sketch.** `illus_console` draws the strip, so it draws what the strip draws:
+three hearts and the lives counter beside them, and an interior sector number —
+it spent a while showing the five-heart assist row and labelling itself
+`SECTOR 07`, which is a climb, and a climb has an entirely different strip with
+no ACCESS chip on it at all. A diagram of a console the player will never find
+is worse than no diagram.
 
 **The sheet is a thing in the frame.** A wall of type on a flat fill would be
 the one screen in the game that is not lit, so it is a steel-clipped sheet on a
@@ -462,12 +654,27 @@ player start).
 Maps live as text in `levels/level*.txt` (campaign, natural-sorted) and
 `levels/sublevels/*.txt`. [tools/embed_levels.py](tools/embed_levels.py) turns
 them into `build/embedded_levels.c` on every build. **Adding
-`levels/level16.txt` is all that is needed for a new campaign level** — the
+`levels/level16.txt` is all the *build* needs for a new campaign level** — the
 Makefile wildcards it in and progression is driven by `EMBEDDED_LEVEL_COUNT`.
 A level is scored by its theme, not by its index, so the new sector's music
 comes with the `THEME` line. Maps are text and can be edited as text, but
 `make editor` is the tool that knows the rules — see
 [The level editor](#the-level-editor).
+
+What the *campaign* needs of it is a longer list, and `make test` is where it
+is written down: a size no other sector already has, a storey rhythm no other
+sector already has, a hazard budget above the sector before it, a theme
+different from its neighbour's, and a route the conservative model can walk. A
+sixteenth sector is therefore an interior — sector 15 has no `Y`, so the
+alternation puts an interior next, and `test_all_embedded_levels_parse` pins
+`facade_levels == 4` outright.
+
+**A fifth climb is not a map away, it is a constant away.** The test also
+requires each climb to be taller than the last, and the four run 40, 44, 46 and
+48 rows — level 13 is standing on `MAX_LEVEL_HEIGHT` itself. Another facade
+sector means raising that cap first (it sizes `LevelMap`, so it is a memory
+decision as much as an authoring one) and then relaxing the two rules above.
+The editor already says so, as a note on level 13.
 
 ### Walls that open
 
@@ -494,8 +701,9 @@ restores the wall, which is the same bargain `F` panels make.
 
 **Only a blast opens one**, and gameplay code never plays the sound itself:
 `gameplay_break_walls_in_radius` ([gameplay_world.c](src/gameplay_world.c)) is
-called from the four explosions in [gameplay_combat.c](src/gameplay_combat.c)
-and reports one `SFX_WALL_BREAK` per blast plus `GAME_EVENT_DUST` per tile.
+called from `apply_blast` in [gameplay_combat.c](src/gameplay_combat.c) — see
+[One blast, one rule](#one-blast-one-rule) — and reports one `SFX_WALL_BREAK`
+per blast plus `GAME_EVENT_DUST` per tile.
 Dust is a new event rather than the existing spark burst because masonry is not
 blood: sparks arcing away from a broken wall read as the wrong material however
 many of them there are.
@@ -564,8 +772,12 @@ The campaign is fifteen levels that alternate interior sectors with exterior
 climbs: levels 3, 7, 11 and 13 are `MODE FACADE`, and each is entered through
 the `Y` window of the sector below it, whose `E` stair door is welded shut.
 Every other level ends at a normal `E`. Four sectors (1, 5, 9 and 14) have a
-`U` into the restroom, and every odd-numbered index carries exactly one
-bazooka. `test_all_embedded_levels_parse` pins that shape, so a new level has
+`U` into the restroom, and every **even-numbered sector** — 2, 4, 6, 8, 10, 12
+and 14, which is the odd-numbered *index* the test counts from zero — carries
+exactly one bazooka. Say it as the sector number wherever a player will read
+it: the manual spent a while telling them to look in the odd ones, which is the
+half of the campaign that has no `Z` in it at all.
+`test_all_embedded_levels_parse` pins that shape, so a new level has
 to keep it: the alternation, the campaign ending inside the building, and no
 rocket left out on a wall where nothing can be fired.
 
@@ -608,9 +820,39 @@ frozen intact rather than reloaded, and only the player's loadout crosses over
 (`transfer_player_loadout`). Sublevel doors (`U`/`R`) are a separate mechanism
 from the paired teleport doors (`D`), which are matched by index 0↔1, 2↔3, ….
 
+**The strip reports the sector, never the room.** The restroom is a room of the
+building, so every field in `render_hud` that names the building's state — the
+ACCESS chip and the SECURITY/ALERT readout both — reads through the `sector`
+pointer (`game->in_sublevel ? &game->inactive_gameplay : &game->gameplay`) and
+not through the active simulation, which while Chuck is inside is the WC's own.
+Read from the active one, ACCESS fell back to a blinking LOCKED for the length
+of a detour a card had already ended, and a ringing alarm went quiet on the way
+in and started again on the way out — a countdown that pauses when the player
+hides is the HUD offering a safe room the sector never granted. SECTOR beside
+them already names the sector rather than the room, and all of them have to
+agree.
+
 The restroom is a full small level rather than a free item cache: a guard, an
 ambient janitor, a shovable crate, a gas canister and a service catwalk reached
-by ladder, with the medkit past a gap that has to be jumped. Its interior art
+by ladder. What is up there is worth naming, because it is the whole reason to
+take the detour and it is easy to under-report: a **medkit and a grenade**,
+both past a one-tile gap that has to be jumped, with a magazine down on the
+room floor. **One tile, and the width is load-bearing.** The catwalk band is
+two rows, so the ceiling caps the jump at about 48px of ground
+([levels/LEGEND.md](levels/LEGEND.md) writes the arithmetic out) — the medkit
+spent a while sitting across a two-tile gap, which the route model calls
+unreachable and which a player could in fact only cross inside a 25px window of
+where they started the jump. A pickup the whole detour is sold on must not be a
+timing trick, and `test_embedded_restroom_sublevel` walks the route model to
+the medkit and the grenade now rather than only checking that they are high up.
+So a run that visits all four restrooms comes away with four grenades on top of
+the fourteen the campaign lays out itself — every sector but the lobby and the
+plant hall holds at least one `N`, and sector 12 holds two. Only one is carried
+at a time, so what those counts buy is how often the player may spend one; it
+is the amount of explosive the campaign is balanced around, and a line to check
+against before either half of it moves. It is one visit each:
+`sublevel_initialized` is cleared by `load_level`, so the room is fresh per
+sector and spent within it. Its interior art
 is derived from the map's own wall bounding box, so the room can be reshaped
 without touching the renderer; a slab with open air above and below is drawn as
 a railed catwalk rather than as the room's floor.
@@ -656,8 +898,8 @@ it is collectable, solid or simulated, and none of it tells the player anything
 they need in order to finish a sector. The rule for adding to it is that it has
 to say something the story page says, in the place the player is standing.
 
-- **The clock, `w`.** At 01:00 the sub-vault opens; that is the only reason any
-  of this is happening tonight. The dial reads the campaign sector it hangs in
+- **The clock, `w`.** At 01:00 the bonds leave the roof; that is the only
+  reason any of this is happening tonight. The dial reads the campaign sector it hangs in
   (`NIGHT_CLOCK_*` in [game_config.h](src/game_config.h)), so the minute hand
   climbs the face across the fifteen sectors and is nearly back at the top on
   the roof. It is the **one prop that hangs**, so it asks the tile above it for
@@ -672,7 +914,11 @@ to say something the story page says, in the place the player is standing.
   stand shut; half lie open with a rifle-shaped hole in the foam, which is
   where the rifles, the frags and the rocket the player keeps picking up came
   from. Placing one two tiles from a `Z` is the cheapest sentence of plot in
-  the game.
+  the game — and every interior sector has one now, because the prop used to
+  stop at sector 8 and the sectors it skipped are the ones where the plot is
+  actually escalating. A sector that hands the player a weapon and shows them
+  nothing it came out of is a sector telling them the armoury is the level
+  designer's rather than Meridian's.
 - **The radio check.** A pair of guards standing together already chat
   (`ENEMY_TALK_*`); one on his own calls in on the crew's own net
   (`ENEMY_RADIO_*`, `update_radio_checks` in
@@ -690,7 +936,7 @@ to say something the story page says, in the place the player is standing.
   own lamp colour and the emergency circuit (`alarm_wash` in `render_world`).
   The ambient bounce is deliberately left alone: repainting that as well floods
   the frame and takes the level's material with it.
-- **The cordon.** The demand broadcast at 00:20 put every unit in the city on a
+- **The cordon.** The demand broadcast at 00:04 put every unit in the city on a
   ring around this tower and nobody at all inside it, and the player crosses
   that ring twice. On the drive in, junctions fill up with squad cars standing
   on the pavement with their bars lit, more of them the nearer the route gets
@@ -699,7 +945,12 @@ to say something the story page says, in the place the player is standing.
   never in a lane, because a car the player's own car drives straight through
   is a bug rather than a detail, and
   `test_chase_cordon_thickens_toward_the_building` pins both the ramp and the
-  quiet first blocks. Out on the wall it is the same cordon from above:
+  quiet first blocks. **That ramp is distance from the tower, not time**, so
+  the whole ring is already standing when the drive starts — which is why the
+  broadcast is timed eight minutes ahead of the abduction rather than after it.
+  `render_cordon_caption` in [chase_render.c](src/chase_render.c) names it once
+  on the road, because otherwise the most legible object out there is scenery
+  the drive never explains and the player reads as traffic to dodge. Out on the wall it is the same cordon from above:
   `facade_cordon` in [level_art.c](src/level_art.c) washes the lower face in
   out-of-phase blue and red, strongest on the first and lowest climb and gone
   entirely above the cloud deck, so the climb is also a climb away from it.
@@ -916,6 +1167,19 @@ danger red is for.
   the world* — the WC plate on a door, a stencilled door number, the tower's
   nameplate — is signage, part of the art, and sits at whatever size the prop
   it is painted on demands.
+
+  **But "signage" is not a licence to shrink, and it was being used as one.**
+  Every painted string in the game is now on the 8px grid, because in each case
+  the plate could be sized to the letters instead of the letters to the plate:
+  the exit reader spelled `LOCK` at 0.65 of a scale in five-pixel glyphs that
+  ran off their own screen and past the edge of the door, and the terminal
+  spelled `LIVE`/`OPEN`/`FAIL`/`OFF` at 0.55, which at four pixels a glyph is
+  not four words but four smears that happen to differ. Both carry state the
+  player is meant to read, and both are two cells now — `GO`/`NO`/`--` on the
+  door, `ON`/`OK`/`NO`/`--` on the terminal — which is what a card reader has
+  ever shown anybody and what fits at the only size the font is sharp at. The
+  terminal gave up three decorative keys to make room, and that is the trade
+  the rule asks for: the readout was the only thing down there saying anything.
 - Sound effects are synthesized once during `audio_init` and cached as PCM,
   replayed through a 16-voice pool. A new effect means: an entry in the
   `SoundEffect` enum in [sound_id.h](src/sound_id.h) (before `SFX_COUNT`) plus

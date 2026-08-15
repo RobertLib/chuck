@@ -570,12 +570,12 @@ bool level_load_data(Level *level, const char *name,
     for (int i = 0; i < level->map.ceiling_fan_count; ++i)
     {
         CeilingFan *fan = &level->map.ceiling_fans[i];
-        int col = (int)(fan->x / TILE_SIZE);
-        int row = (int)((fan->y - CEILING_FAN_CENTER_Y) / TILE_SIZE);
+        int fan_col = (int)(fan->x / TILE_SIZE);
+        int fan_row = (int)((fan->y - CEILING_FAN_CENTER_Y) / TILE_SIZE);
         int ceiling = 0;
-        for (int r = row - 1; r >= 0; --r)
+        for (int r = fan_row - 1; r >= 0; --r)
         {
-            if (level->map.tiles[r][col] == TILE_WALL)
+            if (level->map.tiles[r][fan_col] == TILE_WALL)
             {
                 ceiling = r + 1;
                 break;
@@ -703,9 +703,9 @@ bool level_load_data(Level *level, const char *name,
     for (int i = 0; i < level->runtime.moving_platform_count; ++i)
     {
         MovingPlatform *mp = &level->runtime.moving_platforms[i];
-        int col = (int)floorf(mp->x / TILE_SIZE);
+        int col_mp = (int)floorf(mp->x / TILE_SIZE);
         int row_mp = mp->row;
-        int lc = col;
+        int lc = col_mp;
         while (lc - 1 >= 0)
         {
             TileType t = level->map.tiles[row_mp][lc - 1];
@@ -714,7 +714,7 @@ bool level_load_data(Level *level, const char *name,
                 break;
             lc--;
         }
-        int rc = col;
+        int rc = col_mp;
         while (rc + 1 < level->map.width)
         {
             TileType t = level->map.tiles[row_mp][rc + 1];

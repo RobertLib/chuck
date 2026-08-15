@@ -68,7 +68,7 @@ const EdSymbol ED_SYMBOLS[] = {
      232, 74, 62, false, true, false},
     {'^', "Spike", "Area denial; a single one can be hopped with headroom",
      ED_GROUP_HAZARDS, 232, 74, 62, false, true, false},
-    {'O', "Ceiling fan", "Lethal blades; hangs on a rod from the slab above",
+    {'O', "Ceiling fan", "Blades cost a heart; hangs on a rod from the slab above",
      ED_GROUP_HAZARDS, 232, 74, 62, false, true, false},
     {'L', "Gas canister", "Crawl and shoot it to set off an explosion",
      ED_GROUP_HAZARDS, 96, 230, 140, false, true, false},

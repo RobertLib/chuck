@@ -1128,18 +1128,22 @@ void editor_validate(const EditorDoc *doc, const Level *level, bool parsed,
         check_moving_platforms(doc, report);
     }
 
-    if (!doc->grid.has_theme)
-    {
-        report_add(report, ED_SEV_NOTE, -1, -1,
-                   "No THEME line, so the map keeps the %s default",
-                   doc->grid.facade ? "FACADE_NIGHT" : "PLANT");
-    }
-
     if (!parsed)
     {
         report_add(report, ED_SEV_ERROR, -1, -1,
                    "The loader rejects this map, so the game cannot start it");
         return;
+    }
+
+    /* Asked of the parsed level rather than guessed from the mode, because the
+     * grid names a theme too: restroom fittings set RESTROOM on a map that
+     * carries no THEME line at all, so a note that only ever printed the mode's
+     * default told the author the WC was a plant room. */
+    if (!doc->grid.has_theme)
+    {
+        report_add(report, ED_SEV_NOTE, -1, -1,
+                   "No THEME line, so the map loads as %s",
+                   level_theme_name(level->map.theme));
     }
 
     report->budget = level_hazard_budget(level);

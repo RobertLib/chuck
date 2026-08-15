@@ -475,6 +475,33 @@ static void test_embedded_restroom_sublevel(void)
             restroom.map.sublevel_return_row * (float)TILE_SIZE)
             high_items++;
     CHECK(high_items == 2);
+
+    /*
+     * And high up is not the same as gettable.
+     *
+     * Every campaign sector is walked by the route model; this room is the one
+     * place that model never ran, because it is not a campaign sector — so the
+     * medkit sat across a two-tile gap under a two-row ceiling for a while.
+     * That is a jump the legend says is not on and the model agrees is not on,
+     * and a player could in fact only land it inside a 25px window of where
+     * they started the run-up. The whole reason to spend the detour must not
+     * be a timing trick, so the room answers the same question the sectors do.
+     */
+    static RouteMap route;
+    route_map_init(&route, &restroom);
+    route_flood(&route, route_player_start(&route));
+    for (int i = 0; i < restroom.runtime.item_count; ++i)
+    {
+        CHECK(route_reaches(&route,
+                            (int)(restroom.runtime.items[i].x / TILE_SIZE),
+                            (int)(restroom.runtime.items[i].y / TILE_SIZE)));
+    }
+    /* And the way back out, from wherever the detour ended. */
+    CHECK(route_reaches(&route, restroom.map.sublevel_return_col,
+                        restroom.map.sublevel_return_row));
+    CHECK(route_never_strands(&route,
+                              (RouteCell){restroom.map.sublevel_return_col,
+                                          restroom.map.sublevel_return_row}));
 }
 
 /* ---- Level editor ------------------------------------------------------ */
@@ -1137,6 +1164,75 @@ static void test_chase_wreck_restarts_the_pursuit(void)
     CHECK(chase.player.integrity == CHASE_INTEGRITY);
 }
 
+/*
+ * The rewind gives road back, and giving road back forever is a drive that
+ * never ends.
+ *
+ * A player who crashes more often than every `CHASE_FAIL_REWIND` seconds hands
+ * back more of the pursuit than they make, so the clock never reaches
+ * `CHASE_PURSUIT_DURATION`: measured before this, a pad held on the throttle
+ * with no steering never arrived in three minutes of driving, while one that
+ * did nothing at all always did. The rewind therefore stops at the same
+ * attempt the skip prompt appears on — from there progress is monotonic, and
+ * the prologue ends whether or not anybody takes the skip it is offering.
+ */
+static void test_chase_stops_giving_road_back_once_it_offers_the_skip(void)
+{
+    Chase chase;
+    chase_init(&chase, 606);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+
+    Input input = {0};
+
+    /* Early on the failure still costs a stretch of the drive. */
+    chase.attempts = CHASE_SKIP_AFTER_ATTEMPTS - 2;
+    chase.pursuit_time = CHASE_FAIL_REWIND + 8.0f;
+    chase.target.y = chase.player.y + CHASE_LOSE_GAP + 20.0f;
+    chase_step(&chase, &input);
+    CHECK(chase.phase == CHASE_PHASE_FAILED);
+    chase_run(&chase, &input, CHASE_FAILED_DURATION + 0.1f);
+    CHECK(chase.attempts == CHASE_SKIP_AFTER_ATTEMPTS - 1);
+    CHECK(chase.pursuit_time < 8.5f);
+
+    /* On the attempt that earns the skip prompt it stops costing anything. */
+    chase_clear_traffic(&chase);
+    chase.pursuit_time = CHASE_FAIL_REWIND + 8.0f;
+    chase.target.y = chase.player.y + CHASE_LOSE_GAP + 20.0f;
+    chase_step(&chase, &input);
+    CHECK(chase.phase == CHASE_PHASE_FAILED);
+    chase_run(&chase, &input, CHASE_FAILED_DURATION + 0.1f);
+    CHECK(chase.attempts == CHASE_SKIP_AFTER_ATTEMPTS);
+    CHECK(chase.pursuit_time >= CHASE_FAIL_REWIND + 8.0f);
+}
+
+/*
+ * And the property that follows from it: the worst player in the world still
+ * gets out of the prologue. Holding the accelerator into whatever is in front
+ * of you is the most naive thing a first-time player can do with a car, and it
+ * used to be the input that never finished the drive.
+ */
+static void test_chase_always_ends_even_for_a_player_who_only_accelerates(void)
+{
+    const unsigned seeds[] = {606u, 4242u, 8181u};
+    for (size_t s = 0; s < sizeof(seeds) / sizeof(seeds[0]); ++s)
+    {
+        Chase chase;
+        chase_init(&chase, seeds[s]);
+        chase_skip_departure(&chase);
+
+        Input input = {0};
+        input.gas = true; /* no steering, and never the skip */
+        ChaseOutcome outcome = CHASE_RUNNING;
+        int frames = (int)(240.0f / CHASE_STEP);
+        for (int i = 0; i < frames && outcome != CHASE_REACHED_BUILDING; ++i)
+            outcome = chase_step(&chase, &input);
+
+        CHECK(outcome == CHASE_REACHED_BUILDING);
+        CHECK(chase.phase == CHASE_PHASE_DONE);
+    }
+}
+
 static void test_chase_surviving_the_drive_parks_at_the_building(void)
 {
     Chase chase;
@@ -1406,12 +1502,22 @@ static void test_score_pays_out_extra_lives(void)
     CHECK(!campaign_check_extra_life(&campaign));
     CHECK(campaign.lives == PLAYER_LIVES + 3);
 
-    /* The payout respects the lives cap without stalling the threshold. */
+    /* At the cap the threshold still moves on, so a run parked on MAX_LIVES
+     * does not bank every milestone it passes. What it must not do is report a
+     * payout: the return value is what flashes 1UP on the strip, and a counter
+     * that cannot go up announcing that it did is the HUD miscounting aloud. */
     campaign.lives = MAX_LIVES;
     campaign.score = 4 * EXTRA_LIFE_SCORE_STEP;
-    CHECK(campaign_check_extra_life(&campaign));
+    CHECK(!campaign_check_extra_life(&campaign));
     CHECK(campaign.lives == MAX_LIVES);
     CHECK(campaign.next_extra_life_score == 5 * EXTRA_LIFE_SCORE_STEP);
+
+    /* And one below the cap it still pays, so the guard is a cap and not an
+     * off-by-one that swallows the last life the score ever buys. */
+    campaign.lives = MAX_LIVES - 1;
+    campaign.score = 5 * EXTRA_LIFE_SCORE_STEP;
+    CHECK(campaign_check_extra_life(&campaign));
+    CHECK(campaign.lives == MAX_LIVES);
 }
 
 static void test_blocked_exit_uses_separate_window(void)
@@ -2187,6 +2293,45 @@ static void test_ladder_side_step_advances_the_animation_clock(void)
     CHECK(player.anim_time == blocked);
 }
 
+/*
+ * A trigger pulled on a weapon that is loaded but busy has to say something.
+ *
+ * MAX_ROCKETS is one, and a rocket carried in from the sector below can still
+ * be in the air when this sector's own `Z` is picked up — so the tube reads
+ * loaded, the HUD shows the rocket, and the press does nothing whatever. The
+ * click is the whole difference between "the weapon is busy" and "the pad
+ * missed that".
+ */
+static void test_a_busy_launcher_answers_the_trigger(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    state.player.x = 100.0f;
+    state.player.y = 96.0f;
+    state.player.facing = 1;
+    state.player.bazooka_rockets = 1;
+    state.player.active_weapon = PLAYER_WEAPON_BAZOOKA;
+
+    Input input = {.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+    CHECK(state.rockets[0].active);
+    CHECK(state.player.bazooka_rockets == 0);
+
+    /* The rocket is still flying when the next one is picked up. */
+    state.player.bazooka_rockets = 1;
+    state.player.active_weapon = PLAYER_WEAPON_BAZOOKA;
+    game_events_clear(&state.events);
+    input.shoot = true;
+    gameplay_combat_handle_player_action(&state, &campaign, &input);
+
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_EMPTY_CLICK));
+    /* And the round is still in hand: a dead press must not eat it. */
+    CHECK(state.player.bazooka_rockets == 1);
+    CHECK(!events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
+                             SFX_ROCKET_LAUNCH));
+}
+
 static void test_ladder_explosives_follow_aim_direction(void)
 {
     for (int direction = -1; direction <= 1; direction += 2)
@@ -2655,6 +2800,60 @@ static void test_grenade_fuse_and_explosion_emit_sounds(void)
                             SFX_EXPLOSION));
 }
 
+/*
+ * Only the magazine comes back.
+ *
+ * The sidearm is what a sector is played with, so its box respawns and a
+ * player who has spent it is never left with only the knife. Nothing else is
+ * in that position: the grenade used to regrow with it, which made a single
+ * `N` an unlimited supply at ITEM_RESPAWN_TIME apiece — enough to clear a
+ * floor a blast at a time, and enough to open every blocked-up patch in the
+ * campaign without the bazooka the patches were placed for.
+ */
+static void test_only_the_magazine_comes_back(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S G N  E#\n"
+        "##########\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 71);
+    CHECK(level_load_data(&state.level, "pickups", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+
+    Item *ammo = NULL;
+    Item *grenade = NULL;
+    for (int i = 0; i < state.level.runtime.item_count; ++i)
+    {
+        if (state.level.runtime.items[i].type == ITEM_GUN)
+            ammo = &state.level.runtime.items[i];
+        if (state.level.runtime.items[i].type == ITEM_GRENADE)
+            grenade = &state.level.runtime.items[i];
+    }
+    CHECK(ammo != NULL);
+    CHECK(grenade != NULL);
+
+    state.player.x = grenade->x - PLAYER_W * 0.5f;
+    state.player.y = grenade->y - PLAYER_H * 0.5f;
+    gameplay_collect_items(&state, &campaign, 0.0f);
+    CHECK(grenade->collected);
+    CHECK(state.player.grenades == 1);
+
+    state.player.x = ammo->x - PLAYER_W * 0.5f;
+    state.player.y = ammo->y - PLAYER_H * 0.5f;
+    gameplay_collect_items(&state, &campaign, 0.0f);
+    CHECK(ammo->collected);
+
+    /* Stand well clear, then wait out anything that is coming back. */
+    state.player.x = 0.0f;
+    state.player.y = 0.0f;
+    gameplay_collect_items(&state, &campaign, ITEM_RESPAWN_TIME * 2.0f);
+    CHECK(!ammo->collected);
+    CHECK(grenade->collected);
+}
+
 static void test_bazooka_pickup_and_rocket_explosion(void)
 {
     static const char data[] =
@@ -2852,6 +3051,207 @@ static void test_gas_canister_requires_crawling_shot(void)
     CHECK(found_explosion);
     CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
                             SFX_EXPLOSION));
+}
+
+/*
+ * A blast is one rule, whichever explosive delivered it.
+ *
+ * A player who has been taught to shoot a gas canister will throw a grenade at
+ * the next one, and a rocket already set them off — so a grenade that left the
+ * canister standing was the game disagreeing with what it had just taught. The
+ * two halves below pin the pair that used to be missing: a grenade chains into
+ * a canister, and a mine is lethal to whoever is standing in it rather than
+ * only to the walls and the player.
+ */
+static void test_every_blast_reaches_the_same_things(void)
+{
+    static const char grenade_map[] =
+        "############\n"
+        "#S   N  L E#\n"
+        "############\n";
+    GameplayState grenade_state = {0};
+    CampaignState grenade_campaign = {0};
+    rng_seed(&grenade_state.rng, 91);
+    CHECK(level_load_data(&grenade_state.level, "grenade-chain", grenade_map,
+                          strlen(grenade_map), &grenade_state.rng));
+    CHECK(grenade_state.level.runtime.gas_canister_count == 1);
+    player_reset(&grenade_state.player, &grenade_state.level);
+
+    GasCanister *canister = &grenade_state.level.runtime.gas_canisters[0];
+    /* Put the grenade on the canister rather than throwing it across the room:
+     * this is about what the blast reaches, not about the arc. */
+    grenade_state.grenades[0] = (Grenade){
+        .x = canister->x, .y = canister->y, .active = true, .timer = 0.01f};
+    grenade_state.grenade_count = 1;
+    gameplay_combat_update_explosives(&grenade_state, &grenade_campaign, 0.02f);
+    CHECK(!grenade_state.grenades[0].active);
+    CHECK(!canister->active);
+
+    /* A mine goes off under a guard who followed Chuck onto it. */
+    GameplayState mine_state = {0};
+    CampaignState mine_campaign = {0};
+    rng_seed(&mine_state.rng, 23);
+    mine_state.player.facing = 1;
+    mine_state.player.hp = PLAYER_MAX_HP;
+    mine_state.mines[0] = (Mine){.x = 0.0f, .y = 10.0f, .active = true};
+    mine_state.mine_count = 1;
+    enemy_init(&mine_state.enemies[0], MINE_W * 0.5f, 10.0f, &mine_state.rng);
+    mine_state.enemy_count = 1;
+
+    gameplay_combat_update_explosives(&mine_state, &mine_campaign, 0.01f);
+    CHECK(mine_state.mines[0].triggered);
+    gameplay_combat_update_explosives(&mine_state, &mine_campaign,
+                                      MINE_TRIGGER_DELAY + 0.01f);
+    CHECK(!mine_state.mines[0].active);
+    CHECK(mine_state.enemies[0].dead);
+    CHECK(mine_campaign.score == 150);
+    CHECK(events_have_sound(&mine_state.events, GAME_EVENT_WORLD_SOUND,
+                            SFX_ENEMY_DOWN));
+}
+
+/*
+ * The tally is what the player did, not who is left standing.
+ *
+ * A reinforcement takes over the slot of a guard already down, so counting the
+ * `dead` flags at the end of a sector quietly credited one kill fewer for every
+ * guard the doors sent after the first — the report between sectors reads out
+ * of this, and it was reading the surviving population.
+ */
+static void test_the_kill_tally_survives_a_reused_slot(void)
+{
+    static const char map[] =
+        "############\n"
+        "#S  M     E#\n"
+        "############\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 31);
+    CHECK(level_load_data(&state.level, "tally", map, strlen(map), &state.rng));
+    player_reset(&state.player, &state.level);
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    CHECK(gameplay_neutralized_hostiles(&state) == 0);
+
+    state.enemies[0].hp = 1;
+    Bullet *bullet = &state.bullets[0];
+    bullet->active = true;
+    bullet->x = state.enemies[0].x + ENEMY_W * 0.5f;
+    bullet->y = state.enemies[0].y + ENEMY_H * 0.5f;
+    bullet->vx = BULLET_SPEED;
+    bullet->vy = 0.0f;
+    gameplay_combat_update_player_bullets(&state, &campaign, 0.01f);
+    CHECK(state.enemies[0].dead);
+    CHECK(gameplay_neutralized_hostiles(&state) == 1);
+
+    /* Fill the array so the next arrival has to take the body's slot back. */
+    for (int i = state.enemy_count; i < MAX_ENEMIES; ++i)
+    {
+        enemy_init(&state.enemies[i], 64.0f, 32.0f, &state.rng);
+        state.enemy_count++;
+    }
+    CHECK(state.enemy_count == MAX_ENEMIES);
+    enemy_init(&state.enemies[0], 64.0f, 32.0f, &state.rng);
+    CHECK(!state.enemies[0].dead);
+    /* Nobody on the floor is dead any more, and the kill still counts. */
+    CHECK(gameplay_neutralized_hostiles(&state) == 1);
+}
+
+/* A fresh slot before a body's, so a reinforcement never deletes a corpse the
+ * player is looking at — and the corpse is what sends the next guard to the
+ * alarm, so it has to outlive the door that answered it. */
+static void test_reinforcements_take_a_fresh_slot_before_a_body(void)
+{
+    static const char map[] =
+        "##########\n"
+        "#S  D  DE#\n"
+        "##########\n"
+        "\n"
+        "SPAWNS 1 0\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 12);
+    CHECK(level_load_data(&state.level, "reinforce", map, strlen(map),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+    CHECK(state.level.map.door_count == 2);
+
+    /* One guard, already down, in the only slot there is. */
+    enemy_init(&state.enemies[0], 2.0f * TILE_SIZE, 1.0f * TILE_SIZE,
+               &state.rng);
+    state.enemies[0].dead = true;
+    state.enemy_count = 1;
+
+    state.door_spawns[0] = 1;
+    state.door_timers[0] = 0.0f;
+    gameplay_ai_update_spawns(&state, 0.1f);
+
+    CHECK(state.enemy_count == 2);
+    CHECK(state.enemies[0].dead);
+    CHECK(!state.enemies[1].dead);
+}
+
+/* A body is on the floor of the frame now, and it is also the place a guard is
+ * sent to investigate. One shot off a ladder must not leave it in the air. */
+static void test_a_body_falls_to_the_floor(void)
+{
+    static const char map[] =
+        "############\n"
+        "#S       #E#\n"
+        "#         #\n"
+        "############\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 44);
+    CHECK(level_load_data(&state.level, "body-fall", map, strlen(map),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+
+    enemy_init(&state.enemies[0], 4.0f * TILE_SIZE, 1.0f * TILE_SIZE,
+               &state.rng);
+    state.enemies[0].dead = true;
+    state.enemy_count = 1;
+    float dropped_from = state.enemies[0].y;
+
+    for (int step = 0; step < 60; ++step)
+        gameplay_ai_update_movement(&state, 1.0f / 60.0f);
+
+    CHECK(state.enemies[0].y > dropped_from);
+    /* Standing on the floor slab of the two-row band, not through it. */
+    CHECK(fabsf(state.enemies[0].y - (3.0f * TILE_SIZE - ENEMY_H)) < 1.0f);
+}
+
+/* A round is tested against the ground it crossed, not against where it landed.
+ * Fired up a ladder it is 8px long and a dog is 16 tall, so one step at the
+ * frame clamp carries it clean past the animal. */
+static void test_a_fast_round_cannot_step_over_a_dog(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 55);
+    static const char map[] =
+        "######\n"
+        "#    #\n"
+        "#    #\n"
+        "#S  E#\n"
+        "######\n";
+    CHECK(level_load_data(&state.level, "swept", map, strlen(map), &state.rng));
+
+    dog_init(&state.dogs[0], 2.0f * TILE_SIZE, 1.5f * TILE_SIZE, -1,
+             &state.rng);
+    state.dog_count = 1;
+
+    /* Sitting entirely below the animal and fired straight up. One step at the
+     * frame clamp is 30px; the dog plus the round is 24, so the destination is
+     * entirely above it and the two boxes never overlap at either end. */
+    Bullet *bullet = &state.bullets[0];
+    bullet->active = true;
+    bullet->x = state.dogs[0].x + DOG_W * 0.5f - BULLET_H * 0.5f;
+    bullet->y = state.dogs[0].y + DOG_H;
+    bullet->vx = 0.0f;
+    bullet->vy = -BULLET_SPEED;
+    CHECK(BULLET_SPEED * MAX_FRAME_DT > DOG_H + BULLET_W);
+
+    gameplay_combat_update_player_bullets(&state, &campaign, MAX_FRAME_DT);
+    CHECK(!bullet->active);
+    CHECK(state.dogs[0].dead);
 }
 
 static void test_weak_wall_only_opens_to_a_blast(void)
@@ -3574,6 +3974,44 @@ static void test_hazards_emit_specific_impact_sounds(void)
     gameplay_combat_update_hazards(&state);
     CHECK(events_have_sound(&state.events, GAME_EVENT_WORLD_SOUND,
                             SFX_SPIKE_HIT));
+}
+
+/* The mercy window after a hit stops the guard hurting Chuck. It must not stop
+ * Chuck landing on the guard: a stomp that silently does nothing reads as the
+ * move failing at random, because the player cannot see the timer. */
+static void test_stomp_still_lands_during_the_mercy_window(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){.x = 100.0f, .y = 200.0f, .hp = ENEMY_HP};
+    state.invuln_timer = PLAYER_HIT_INVULN;
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.x = 100.0f;
+    state.player.y = 200.0f - (float)PLAYER_H + 5.0f;
+    state.player.vy = 50.0f;
+
+    gameplay_combat_check_contacts(&state, &campaign);
+
+    CHECK(state.player.vy == -ENEMY_STOMP_BOUNCE_SPEED);
+    CHECK(state.enemies[0].hp == ENEMY_HP - 1);
+
+    /* The other half of the same window: a side contact still costs nothing. */
+    state = (GameplayState){0};
+    campaign = (CampaignState){0};
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){.x = 100.0f, .y = 200.0f, .hp = ENEMY_HP};
+    state.invuln_timer = PLAYER_HIT_INVULN;
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.x = 100.0f + ENEMY_W - 3.0f;
+    state.player.y = 200.0f;
+    state.player.vy = 50.0f;
+
+    gameplay_combat_check_contacts(&state, &campaign);
+
+    CHECK(state.player.hp == PLAYER_MAX_HP);
+    CHECK(!state.player.dying);
+    CHECK(state.enemies[0].hp == ENEMY_HP);
 }
 
 static void test_stomp_on_enemy_bounces_player_and_damages_it(void)
@@ -5021,6 +5459,8 @@ int main(void)
     test_chase_holding_the_throttle_never_catches_the_suv();
     test_chase_lost_trail_restarts_the_pursuit();
     test_chase_wreck_restarts_the_pursuit();
+    test_chase_stops_giving_road_back_once_it_offers_the_skip();
+    test_chase_always_ends_even_for_a_player_who_only_accelerates();
     test_chase_surviving_the_drive_parks_at_the_building();
     test_chase_cross_traffic_obeys_the_signal();
     test_chase_generated_traffic_matches_its_lane();
@@ -5044,6 +5484,7 @@ int main(void)
     test_player_descends_from_top_of_ladder();
     test_ladder_remembers_climb_direction_for_shooting();
     test_ladder_side_step_advances_the_animation_clock();
+    test_a_busy_launcher_answers_the_trigger();
     test_ladder_explosives_follow_aim_direction();
     test_vertical_rocket_hits_targets();
     test_level_reveal_finishes();
@@ -5057,10 +5498,16 @@ int main(void)
     test_key_cards_keep_scoring_and_unlock_rules();
     test_mine_damage_emits_feedback();
     test_grenade_fuse_and_explosion_emit_sounds();
+    test_only_the_magazine_comes_back();
     test_bazooka_pickup_and_rocket_explosion();
     test_player_can_switch_between_carried_weapons();
     test_weapon_cycle_runs_both_ways();
     test_gas_canister_requires_crawling_shot();
+    test_every_blast_reaches_the_same_things();
+    test_the_kill_tally_survives_a_reused_slot();
+    test_reinforcements_take_a_fresh_slot_before_a_body();
+    test_a_body_falls_to_the_floor();
+    test_a_fast_round_cannot_step_over_a_dog();
     test_weak_wall_only_opens_to_a_blast();
     test_weak_wall_is_masonry_to_the_route_model();
     test_empty_pistol_uses_close_range_knife();
@@ -5077,6 +5524,7 @@ int main(void)
     test_dog_escapes_ladder_perch_without_spinning();
     test_hazards_emit_specific_impact_sounds();
     test_stomp_on_enemy_bounces_player_and_damages_it();
+    test_stomp_still_lands_during_the_mercy_window();
     test_ladder_descent_onto_enemy_bounces_instead_of_killing();
     test_enemy_spawn_uses_seeded_rng();
     test_janitor_ai_is_seeded_and_visual_only();

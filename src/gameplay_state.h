@@ -205,6 +205,13 @@ typedef struct
     int enemy_count;
     Dog dogs[MAX_DOGS];
     int dog_count;
+    /* Kills counted as they happen rather than by scanning the `dead` flags at
+     * the end of the sector. A reinforcement takes over the slot of a guard
+     * already down (see `find_enemy_slot`), so the flags are the population
+     * still on the floor and not the tally of what the player put there — read
+     * that way, the report between sectors quietly lost one kill per door
+     * spawn. */
+    int hostiles_neutralized;
     Janitor janitors[MAX_JANITORS];
     int janitor_count;
     Civilian civilians[MAX_CIVILIANS];

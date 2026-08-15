@@ -71,9 +71,17 @@ bool campaign_check_extra_life(CampaignState *campaign)
         campaign->score < campaign->next_extra_life_score)
         return false;
 
+    /* The threshold moves whether or not there was a life to give, so a run
+     * sitting on the cap does not bank every milestone it passes and cash them
+     * all in on the first death. */
     campaign->next_extra_life_score += EXTRA_LIFE_SCORE_STEP;
-    if (campaign->lives < MAX_LIVES)
-        campaign->lives++;
+    /* But the caller is told only about a life it actually got: the return
+     * value is what flashes 1UP on the strip and plays the jingle, and a
+     * counter already at MAX_LIVES announcing a life it did not gain is the
+     * HUD miscounting out loud. */
+    if (campaign->lives >= MAX_LIVES)
+        return false;
+    campaign->lives++;
     return true;
 }
 

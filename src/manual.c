@@ -598,8 +598,10 @@ static void draw_access_chip(SDL_Renderer *r, float x, float y, float w,
  * left, foam bed on the right — because a case lying open would have to be
  * drawn from above, and this game has exactly one camera.
  */
-static void illus_night(SDL_Renderer *r, SDL_FRect p, float time)
+static void illus_night(SDL_Renderer *r, SDL_FRect p, float time,
+                        const PadHints *pad)
 {
+    (void)pad;
     (void)time;
     float cx = p.x + p.w * 0.5f;
     float floor_y = p.y + p.h - 40.0f;
@@ -745,8 +747,10 @@ static void illus_night(SDL_Renderer *r, SDL_FRect p, float time)
 }
 
 /* Sector one to the roof, and where the four climbs fall in it. */
-static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time)
+static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time,
+                          const PadHints *pad)
 {
+    (void)pad;
     float street = p.y + p.h - 22.0f;
     float roof = p.y + 26.0f;
     float cx = p.x + p.w * 0.60f;
@@ -864,14 +868,50 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time)
     draw_figure(r, p.x + 46.0f, street, 1, POSE_LOOK_UP, look_chuck(), time);
 }
 
+/* Where a face button physically sits, from the position `pad_hint` filed its
+ * letter under. It is the drawing's half of the module's rule: the sheet spells
+ * no letter itself, and it draws none in a place the pad does not put it. */
+static void face_offset(SDL_GamepadButton at, float *ox, float *oy)
+{
+    *ox = 0.0f;
+    *oy = 0.0f;
+    switch (at)
+    {
+    case SDL_GAMEPAD_BUTTON_SOUTH:
+        *oy = 17.0f;
+        break;
+    case SDL_GAMEPAD_BUTTON_EAST:
+        *ox = 17.0f;
+        break;
+    case SDL_GAMEPAD_BUTTON_WEST:
+        *ox = -17.0f;
+        break;
+    case SDL_GAMEPAD_BUTTON_NORTH:
+        *oy = -17.0f;
+        break;
+    default:
+        break;
+    }
+}
+
 /*
  * Every control, on the two things you might be holding.
  *
  * Both halves are laid out from one centre line with the labels given their
  * own rows, because a label tucked beside a keycap is a label that collides
  * with the next one the moment either string changes length.
+ *
+ * The pad is drawn for the pad in the player's hands rather than for an Xbox
+ * one. A Nintendo pad prints A where an Xbox pad prints B, so a diagram with
+ * the letters nailed to fixed corners tells a Switch player the wrong thing
+ * about every button on it — and a PlayStation player four letters their pad
+ * does not carry at all. Both the position and the spelling therefore come off
+ * `PadHints`, which is the same place the control table beside it reads from;
+ * the tints stay with the *action*, so the sheet still looks exactly as it did
+ * on the pad it was drawn for.
  */
-static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time)
+static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time,
+                           const PadHints *pad)
 {
     (void)time;
     fx_vgrad(r, p.x, p.y, p.w, p.h, FX_SHADOW, 255,
@@ -890,14 +930,17 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time)
     draw_keycap(r, cx - cap * 0.5f, wy + pitch, cap, CHIP_H, "S", FX_CREAM);
     draw_keycap(r, cx - cap * 0.5f + pitch, wy + pitch, cap, CHIP_H, "D", FX_CREAM);
     draw_text(r, cx + 20.0f, wy + 5.0f, 1.0f, FX_AMBER, "JUMP");
-    draw_text(r, cx + 44.0f, wy + pitch + 5.0f, 1.0f, FX_AMBER, "CRAWL");
     draw_text(r, cx - 116.0f, wy + pitch + 5.0f, 1.0f, FX_AMBER, "MOVE");
     dash_h(r, fx_dim(FX_STEEL, 0.8f), cx - 74.0f, wy + pitch + 9.0f, 24.0f,
            3.0f, 3.0f);
+    /* Under S, not out past D. Set to the right of the row it read as the
+     * label of the last key in it, which is the one key in the cluster that
+     * does not crawl. */
+    draw_text(r, cx - 20.0f, wy + pitch + 25.0f, 1.0f, FX_AMBER, "CRAWL");
 
     /* Everything the hands do that is not walking, on its own row so the
      * labels underneath never meet. */
-    float row = wy + pitch * 2.0f + 8.0f;
+    float row = wy + pitch * 2.0f + 14.0f;
     draw_keycap(r, cx - 96.0f, row, 62.0f, CHIP_H, "SPACE", FX_CREAM);
     draw_keycap(r, cx - 22.0f, row, 34.0f, CHIP_H, "TAB", FX_CREAM);
     draw_keycap(r, cx + 34.0f, row, cap, CHIP_H, "E", FX_CREAM);
@@ -911,10 +954,21 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time)
     float gy = p.y + p.h - 108.0f;
     draw_text(r, p.x + 10.0f, gy - 30.0f, 1.0f, FX_LABEL, "GAMEPAD");
 
+    const PadHints *hints = pad != NULL ? pad : &PAD_HINTS_XBOX;
+
     color_rect(r, FX_STEEL_DK, gx + 22.0f, gy - 6.0f, 30.0f, 6.0f);
     color_rect(r, FX_STEEL_DK, gx + gw - 52.0f, gy - 6.0f, 30.0f, 6.0f);
-    draw_text(r, gx + 30.0f, gy - 18.0f, 1.0f, FX_LABEL, "LB");
-    draw_text(r, gx + gw - 44.0f, gy - 18.0f, 1.0f, FX_LABEL, "RB");
+    /* A shoulder is hardware exactly as much as a face button is: L and R on a
+     * Switch pad, L1 and R1 on a PlayStation. The control table beside this
+     * drawing already spells them out of `$LB $RB`, so a drawing that says LB
+     * whatever is plugged in contradicts its own page — the same bug the face
+     * caps below were fixed for, left standing one row higher. Centred on the
+     * bumper rather than set at a fixed inset, because the names are one, two
+     * or three cells wide. */
+    draw_text(r, gx + 37.0f - text_width(hints->shoulder_l) * 0.5f,
+              gy - 18.0f, 1.0f, FX_LABEL, hints->shoulder_l);
+    draw_text(r, gx + gw - 37.0f - text_width(hints->shoulder_r) * 0.5f,
+              gy - 18.0f, 1.0f, FX_LABEL, hints->shoulder_r);
     fx_mass(r, FX_INK, gx - 1.0f, gy - 1.0f, gw + 2.0f, 72.0f, 7, 10);
     fx_mass(r, (SDL_Color){40, 50, 64, 255}, gx, gy, gw, 70.0f, 7, 10);
     fx_mass(r, (SDL_Color){62, 76, 94, 255}, gx, gy, gw, 3.0f, 7, 0);
@@ -929,34 +983,49 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time)
 
     float bx = gx + gw - 44.0f;
     float by = gy + 32.0f;
-    struct
+    /* Filed by what the button does, so the colours stay with the action while
+     * the letter and the corner follow the hardware. */
+    static const SDL_Color FACE_TINT[PAD_FACE_COUNT] = {
+        {110, 214, 130, 255}, /* confirm */
+        {228, 96, 86, 255},   /* cancel  */
+        {104, 158, 226, 255}, /* attack  */
+        {236, 200, 96, 255}}; /* door    */
+    for (int i = 0; i < PAD_FACE_COUNT; ++i)
     {
-        float ox, oy;
-        const char *label;
-        SDL_Color tint;
-    } face[4] = {
-        {0.0f, 17.0f, "A", {110, 214, 130, 255}},
-        {17.0f, 0.0f, "B", {228, 96, 86, 255}},
-        {-17.0f, 0.0f, "X", {104, 158, 226, 255}},
-        {0.0f, -17.0f, "Y", {236, 200, 96, 255}}};
-    for (int i = 0; i < 4; ++i)
-    {
-        float px = bx + face[i].ox - 7.0f;
-        float py = by + face[i].oy - 7.0f;
+        float ox = 0.0f;
+        float oy = 0.0f;
+        face_offset(pad_hints_button(hints, (PadFace)i), &ox, &oy);
+        float px = bx + ox - 7.0f;
+        float py = by + oy - 7.0f;
         fx_mass(r, FX_INK, px - 1.0f, py - 1.0f, 16.0f, 16.0f, 4, 4);
-        fx_mass(r, fx_dim(face[i].tint, 0.50f), px, py, 14.0f, 14.0f, 4, 4);
-        draw_text(r, px + 3.0f, py + 3.0f, 1.0f, FX_CREAM, face[i].label);
+        fx_mass(r, fx_dim(FACE_TINT[i], 0.50f), px, py, 14.0f, 14.0f, 4, 4);
+        /* Centred rather than set at a fixed inset: a PlayStation pad spells
+         * two of its faces with two characters, and a cap the label hangs out
+         * of is worse than no cap at all. */
+        const char *label = hints->face[i];
+        float label_w = (float)SDL_strlen(label) * CH;
+        draw_text(r, px + (14.0f - label_w) * 0.5f, py + 3.0f, 1.0f,
+                  FX_CREAM, label);
     }
 
+    /* B attacks beside X inside a sector, and the legend says so: a live
+     * button left off the sheet is a button nobody finds. */
+    char legend[24];
     float legend_y = gy + 80.0f;
-    draw_text(r, p.x + 14.0f, legend_y, 1.0f, FX_AMBER, "A JUMP");
-    draw_text(r, p.x + 110.0f, legend_y, 1.0f, FX_AMBER, "X ATTACK");
-    draw_text(r, p.x + 216.0f, legend_y, 1.0f, FX_AMBER, "Y USE");
+    draw_text(r, p.x + 14.0f, legend_y, 1.0f, FX_AMBER,
+              pad_hint(hints, legend, sizeof(legend), "$A JUMP", "$A JUMP"));
+    draw_text(r, p.x + 104.0f, legend_y, 1.0f, FX_AMBER,
+              pad_hint(hints, legend, sizeof(legend), "$X $B ATTACK",
+                       "$X $B ATTACK"));
+    draw_text(r, p.x + 232.0f, legend_y, 1.0f, FX_AMBER,
+              pad_hint(hints, legend, sizeof(legend), "$Y USE", "$Y USE"));
 }
 
 /* What the floor plan will and will not let a pair of boots do. */
-static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time)
+static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time,
+                           const PadHints *pad)
 {
+    (void)pad;
     (void)time;
     fx_vgrad(r, p.x, p.y, p.w, p.h, (SDL_Color){20, 26, 38, 255}, 255,
              (SDL_Color){12, 16, 25, 255}, 255);
@@ -1003,8 +1072,10 @@ static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time)
 
 /* The two things worth knowing about a guard: where he is looking, and what
  * happens if you arrive from above. */
-static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time)
+static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time,
+                         const PadHints *pad)
 {
+    (void)pad;
     fx_vgrad(r, p.x, p.y, p.w, p.h, (SDL_Color){20, 26, 38, 255}, 255,
              (SDL_Color){12, 16, 25, 255}, 255);
 
@@ -1053,8 +1124,10 @@ static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time)
 }
 
 /* The wall: no gravity, no ladders, and everything trying to take you off it. */
-static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time)
+static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time,
+                        const PadHints *pad)
 {
+    (void)pad;
     draw_brickwork(r, p);
 
     float lower = p.y + p.h - 76.0f;
@@ -1126,8 +1199,10 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time)
 }
 
 /* The strip along the top of the screen, and what is worth picking up. */
-static void illus_console(SDL_Renderer *r, SDL_FRect p, float time)
+static void illus_console(SDL_Renderer *r, SDL_FRect p, float time,
+                          const PadHints *pad)
 {
+    (void)pad;
     fx_vgrad(r, p.x, p.y, p.w, p.h, FX_SHADOW, 255,
              (SDL_Color){11, 15, 24, 255}, 255);
 
@@ -1140,12 +1215,26 @@ static void illus_console(SDL_Renderer *r, SDL_FRect p, float time)
                p.w - 12.0f, 1.0f);
     color_rect(r, FX_RUST, p.x + 6.0f, strip_y, 3.0f, 40.0f);
 
+    /*
+     * A cutting of the strip has to be the strip. Three hearts, because three
+     * is what a life is and what the sheet before this one says it is — the
+     * five sockets this used to draw are the assist option, and a player
+     * meeting the diagram before the game read them as two hearts already
+     * spent. The lives counter beside them is here for the same reason: the
+     * first bullet on the page points at it, so leaving it out made the
+     * sentence describe a console the player would not find.
+     */
     draw_text(r, p.x + 16.0f, strip_y + 6.0f, 1.0f, FX_LABEL, "VITAL");
-    for (int i = 0; i < 5; ++i)
-        draw_heart(r, p.x + 16.0f + (float)i * 12.0f, strip_y + 20.0f, i < 3);
+    for (int i = 0; i < 3; ++i)
+        draw_heart(r, p.x + 16.0f + (float)i * 12.0f, strip_y + 20.0f, i < 2);
+    draw_text(r, p.x + 54.0f, strip_y + 21.0f, 1.0f,
+              (SDL_Color){246, 110, 96, 255}, "x3");
     color_rect(r, (SDL_Color){34, 44, 58, 255}, p.x + 86.0f, strip_y + 6.0f,
                1.0f, 28.0f);
-    draw_text(r, p.x + 96.0f, strip_y + 6.0f, 1.0f, FX_LABEL, "WPN GUN");
+    /* The strip labels this field with the weapon's own name rather than with
+     * a heading, so the cutting has to as well: a diagram captioned WPN is a
+     * diagram of a console the player will never find. */
+    draw_text(r, p.x + 96.0f, strip_y + 6.0f, 1.0f, FX_LABEL, "PISTOL");
     for (int i = 0; i < 6; ++i)
         draw_ammo_pip(r, p.x + 97.0f + (float)i * 7.0f, strip_y + 19.0f, i < 4);
     color_rect(r, (SDL_Color){34, 44, 58, 255}, p.x + 148.0f, strip_y + 6.0f,
@@ -1157,8 +1246,12 @@ static void illus_console(SDL_Renderer *r, SDL_FRect p, float time)
                      (SDL_Color){54, 24, 24, 255}, (SDL_Color){124, 52, 46, 255},
                      FX_RED, "LOCKED");
     draw_text(r, p.x + 234.0f, strip_y + 6.0f, 1.0f, FX_LABEL, "SECTOR");
+    /* An interior. Seven is a climb, and a climb draws a different strip
+     * altogether — no ACCESS chip on it at all — so a cutting labelled 07 was a
+     * console of a sector that never shows one, on the sheet that explains what
+     * the chip means. */
     draw_text(r, p.x + 236.0f, strip_y + 19.0f, 2.0f, (SDL_Color){226, 232, 220, 255},
-              "07");
+              "09");
 
     /* The other two things the chip can say. */
     float alt_y = strip_y + 54.0f;
@@ -1229,6 +1322,16 @@ typedef enum
     LINE_GAP
 } ManualLineKind;
 
+/*
+ * A prose line may be written as `pad wording|keyboard wording`, the same
+ * bar-separated idiom the control rows already use, and that is how the sheet
+ * says "hold $Y" to a pad and "hold E" to a keyboard out of one entry. The
+ * control table has two columns and never needed it; the paragraphs around it
+ * had no second column at all, so they spelled `E` at everybody — the rule the
+ * `$` tokens exist to prevent, told to the one reader with no E to press. A
+ * line with no bar in it is printed exactly as written, which is every line
+ * that names no button.
+ */
 typedef struct
 {
     ManualLineKind kind;
@@ -1242,7 +1345,8 @@ typedef struct
     const char *caption;
     const ManualLine *lines;
     int line_count;
-    void (*illustration)(SDL_Renderer *r, SDL_FRect panel, float time);
+    void (*illustration)(SDL_Renderer *r, SDL_FRect panel, float time,
+                         const PadHints *pad);
 } ManualPage;
 
 static const ManualLine PAGE_NIGHT[] = {
@@ -1258,16 +1362,16 @@ static const ManualLine PAGE_NIGHT[] = {
     {LINE_BODY, "its access system."},
     {LINE_BULLET, "They took her off the pavement three"},
     {LINE_BODY, "blocks out and walked her in the front"},
-    {LINE_BODY, "door at midnight, so the log read normal."},
+    {LINE_BODY, "door at 00:22, so the log read normal."},
     {LINE_GAP, NULL},
     {LINE_HEAD, "WHAT THIS ACTUALLY IS"},
     {LINE_BULLET, "Anton Voss and twelve men, badged in as"},
     {LINE_BODY, "the night maintenance contractor."},
-    {LINE_BULLET, "The demand they broadcast at 00:20 is"},
+    {LINE_BULLET, "The demand they broadcast at 00:04 is"},
     {LINE_BODY, "theatre. It puts every unit in the city"},
     {LINE_BODY, "on the cordon and nobody in the building."},
-    {LINE_BULLET, "At 01:00 the sub-vault opens on six"},
-    {LINE_BODY, "hundred million in bearer bonds."},
+    {LINE_BULLET, "Six hundred million in bearer bonds,"},
+    {LINE_BODY, "and at 01:00 it leaves by helicopter."},
     {LINE_BULLET, "The last door needs the bank's key and"},
     {LINE_BODY, "the duty controller, alive and present."},
     {LINE_BODY, "That is the only reason she still is."},
@@ -1282,10 +1386,11 @@ static const ManualLine PAGE_MISSION[] = {
     {LINE_BULLET, "One security door leads up, and it"},
     {LINE_BODY, "starts LOCKED."},
     {LINE_BULLET, "Two ways to open it: pick up the one"},
-    {LINE_BODY, "real KEY CARD, or hold E at the live"},
+    {LINE_BODY, "real KEY CARD, or hold $Y at the live"
+                "|real KEY CARD, or hold E at the live"},
     {LINE_BODY, "TERMINAL for four seconds."},
-    {LINE_BULLET, "Cards lie. A wrong one buzzes and"},
-    {LINE_BODY, "changes nothing. Keep looking."},
+    {LINE_BULLET, "Cards lie. A wrong one still scores and"},
+    {LINE_BODY, "banks progress, but opens nothing."},
     {LINE_BULLET, "Hacking wakes the building: guards are"},
     {LINE_BODY, "sent to the terminal you used."},
     {LINE_BULLET, "Four sectors have no door at all. The"},
@@ -1315,24 +1420,35 @@ static const ManualLine PAGE_MISSION[] = {
 static const ManualLine PAGE_CONTROLS[] = {
     {LINE_HEAD, "IN THE SECTORS"},
     {LINE_KEY, "WASD/ARROWS|LS/DPAD|MOVE - CLIMB - AIM"},
-    {LINE_KEY, "W or UP|$A|JUMP"},
+    {LINE_KEY, "W/UP/LSHIFT|$A|JUMP, LSHIFT ON LADDERS"},
     {LINE_KEY, "S or DOWN|DPAD|CRAWL"},
     {LINE_KEY, "SPACE|$B $X|ATTACK"},
-    {LINE_KEY, "TAB or Q|$LB $RB|CYCLE WEAPON"},
+    {LINE_KEY, "TAB / Q / Z|$LB $RB|CYCLE WEAPON, Z BACK"},
     {LINE_KEY, "E|$Y|USE DOOR / HOLD TO HACK"},
     {LINE_GAP, NULL},
     {LINE_HEAD, "ANYWHERE"},
     {LINE_KEY, "ENTER|$A|CONFIRM - SKIP"},
     {LINE_KEY, "ESC|$START|PAUSE - RESUME"},
     {LINE_KEY, "BACKSPACE|$B|BACK OUT OF WHAT IS OPEN"},
-    {LINE_KEY, "Q|$SELECT|QUIT TO TITLE, FROM PAUSE"},
-    {LINE_KEY, "J|$X|ASSIST, FROM TITLE OR PAUSE"},
-    {LINE_KEY, "M|$Y|MUTE, FROM PAUSE"},
+    /* The action column starts 230px in and the sheet's text column ends at
+     * TEXT_RIGHT, which leaves 24 cells of the 8x8 font. This row was the one
+     * that spent 25 of them and hung out past the rules under every heading. */
+    {LINE_KEY, "Q|$SELECT|QUIT TO TITLE FROM PAUSE"},
+    {LINE_KEY, "J|$X|ASSIST, TITLE OR PAUSE"},
+    {LINE_KEY, "M|$Y|MUTE (PAD: FROM PAUSE)"},
     {LINE_KEY, "F|-|FULLSCREEN"},
-    {LINE_GAP, NULL},
-    {LINE_HEAD, "TWO THINGS WORTH KNOWING"},
+    /* No gap before the last heading on this one sheet: it is the tightest of
+     * the seven, the heading's own lead already separates it, and the third
+     * bullet below is worth more than the seven pixels. */
+    {LINE_HEAD, "THREE THINGS WORTH KNOWING"},
     {LINE_BULLET, "SPACE attacks and UP jumps. Not one key."},
     {LINE_BULLET, "On a ladder, UP and DOWN aim the shot."},
+    /* The one control that ends the session. It is on the pause row above as
+     * "PAUSE - RESUME", which is what ESC does everywhere something is
+     * running — but on the title screen there is nothing to pause and it quits,
+     * and a key that closes the game unannounced is the wrong kind of
+     * surprise. */
+    {LINE_BULLET, "On the title screen, ESC quits the game."},
 };
 
 static const ManualLine PAGE_MOVEMENT[] = {
@@ -1355,9 +1471,11 @@ static const ManualLine PAGE_MOVEMENT[] = {
     {LINE_HEAD, "THINGS IN THE WAY"},
     {LINE_BULLET, "CRATES shove along the floor and make a"},
     {LINE_BODY, "step. Shots and blasts break them."},
-    {LINE_BULLET, "SPIKES and CEILING FANS kill on touch."},
+    {LINE_BULLET, "SPIKES and CEILING FANS cost a heart"},
+    {LINE_BODY, "and shove you back off them."},
     {LINE_BULLET, "PAIRED DOORS link up: stand in one and"},
-    {LINE_BODY, "press E to come out of the other."},
+    {LINE_BODY, "press $Y to come out of the other."
+                "|press E to come out of the other."},
     {LINE_BULLET, "A restroom door is a room of its own,"},
     {LINE_BODY, "with a medkit in it. What you carry in"},
     {LINE_BODY, "comes back out with you."},
@@ -1366,21 +1484,25 @@ static const ManualLine PAGE_MOVEMENT[] = {
 static const ManualLine PAGE_COMBAT[] = {
     {LINE_HEAD, "WHAT YOU CARRY"},
     {LINE_BODY, "Past the pistol, it is all theirs."},
-    {LINE_BULLET, "KNIFE: always with you, one tile of"},
-    {LINE_BODY, "reach, and it makes no noise."},
-    {LINE_BULLET, "PISTOL: six rounds. Ammo lies around"},
-    {LINE_BODY, "and comes back seconds after it is"},
-    {LINE_BODY, "taken. A shot carries seven tiles."},
+    /* PLAYER_KNIFE_RANGE is 18px past the body, which is a good half tile
+     * short of the tile the sheet used to promise. Named rather than measured,
+     * because the number is the wrong unit for the thing being described. */
+    {LINE_BULLET, "KNIFE: always with you, arm's length,"},
+    {LINE_BODY, "and it makes no noise."},
+    {LINE_BULLET, "PISTOL: six rounds, and a shot carries"},
+    {LINE_BODY, "until it hits something. Ammo lies"},
+    {LINE_BODY, "around, comes back seconds after it is"},
+    {LINE_BODY, "taken, and downed guards drop more."},
     {LINE_BULLET, "GRENADE: one at a time. Short fuse, it"},
     {LINE_BODY, "bounces, and it does not pick sides."},
-    {LINE_BULLET, "BAZOOKA: one rocket, odd sectors only."},
+    {LINE_BULLET, "BAZOOKA: one rocket, even sectors only."},
     {LINE_GAP, NULL},
     {LINE_HEAD, "WHAT THEY DO"},
     {LINE_BULLET, "A GUARD sees a cone seven tiles long in"},
     {LINE_BODY, "front of him, and nothing behind it."},
     {LINE_BULLET, "Land on a guard's head to knock him"},
     {LINE_BODY, "down and bounce clear. Touch him any"},
-    {LINE_BODY, "other way and it is over."},
+    {LINE_BODY, "other way and it costs a heart."},
     {LINE_BULLET, "DOGS are faster, lower, and cannot be"},
     {LINE_BODY, "stomped."},
     {LINE_BULLET, "A guard who has seen you may run for a"},
@@ -1421,14 +1543,16 @@ static const ManualLine PAGE_CLIMB[] = {
 
 static const ManualLine PAGE_CONSOLE[] = {
     {LINE_HEAD, "THE STRIP"},
-    {LINE_BULLET, "VITAL: lives in hand. Five slots show;"},
-    {LINE_BODY, "anything over that counts up beside."},
-    {LINE_BULLET, "WPN: the weapon the next attack will"},
-    {LINE_BODY, "use, with the rounds left beside it."},
+    {LINE_BULLET, "VITAL: the hearts left in this life, and"},
+    {LINE_BODY, "the lives left in the run beside them."},
+    {LINE_BULLET, "The weapon named is the one the next"},
+    {LINE_BODY, "attack uses; the rounds sit beside it."},
     {LINE_BULLET, "ACCESS: LOCKED until a card or a"},
     {LINE_BODY, "terminal says otherwise. BLOCKED means"},
     {LINE_BODY, "this sector has no door -- the way on"},
     {LINE_BODY, "is the window."},
+    {LINE_BULLET, "SCORE counts up beside the sector, and"},
+    {LINE_BODY, "every 10000 points is a spare life."},
     {LINE_BULLET, "TRAIL is idle chatter. It becomes a red"},
     {LINE_BODY, "ALERT countdown while the building is"},
     {LINE_BODY, "actively looking for you."},
@@ -1437,18 +1561,20 @@ static const ManualLine PAGE_CONSOLE[] = {
     {LINE_BULLET, "KEY CARD: one per sector is real."},
     {LINE_BULLET, "AMMO: fills the pistol back to six."},
     {LINE_BULLET, "GRENADE: one, and it selects itself."},
-    {LINE_BULLET, "MEDKIT: one more life."},
+    {LINE_BULLET, "MEDKIT: refills the hearts, or adds a"},
+    {LINE_BODY, "life if they are already full."},
     {LINE_BULLET, "ROCKET: the bazooka, one shot."},
     {LINE_GAP, NULL},
     {LINE_HEAD, "ON THE WALL"},
-    {LINE_BULLET, "The climb has a strip of its own:"},
-    {LINE_BODY, "height made, the wind, and the bank."},
+    {LINE_BULLET, "The climb has a strip of its own: height"},
+    {LINE_BODY, "made, the wind, and what you carry. The"},
+    {LINE_BODY, "amber mark on the bar is the last bank."},
 };
 
 #define PAGE(lines) lines, (int)(sizeof(lines) / sizeof((lines)[0]))
 
 static const ManualPage PAGES[] = {
-    {"THE NIGHT", "KESSLER TOWER, 23:31, AND A CONTRACTOR NOBODY CHECKED",
+    {"THE NIGHT", "KESSLER TOWER, 00:22, AND A CONTRACTOR NOBODY CHECKED",
      "WHAT THEY WHEELED IN AS TOOLS", PAGE(PAGE_NIGHT), illus_night},
     {"THE MISSION", "FIFTEEN SECTORS BETWEEN THE LOBBY AND THE ROOF",
      "FOUR OF THEM ARE ON THE OUTSIDE", PAGE(PAGE_MISSION), illus_mission},
@@ -1555,8 +1681,9 @@ static void layout_chips(Manual *manual, float w, float h,
     /* The way out is named for the thing in the player's hands, and the chip
      * is sized from that name — a label decided at draw time and a width
      * decided at layout time is how a chip ends up with its text hanging out
-     * of it. Kept rather than used in place, so it is copied: with no pad in
-     * hand pad_hint hands back its own constant and writes no buffer. */
+     * of it. Kept rather than used in place, so it is copied into the manual's
+     * own storage: `label` is a frame of this function and does not outlive
+     * it. */
     char label[sizeof(manual->back_label)];
     SDL_strlcpy(manual->back_label,
                 pad_hint(pad, label, sizeof(label), "$B BACK", "ESC BACK"),
@@ -1692,10 +1819,22 @@ static void render_text_column(SDL_Renderer *r, const ManualPage *page,
     char pad[32];
     char spelled[32];
     char action[48];
+    char prose[64];
+    char pad_form[64];
+    char key_form[64];
 
     for (int i = 0; i < page->line_count && y < BODY_BOTTOM; ++i)
     {
         const ManualLine *line = &page->lines[i];
+        /* A prose line that names a button carries both wordings and is spelled
+         * for what is in the player's hands, exactly as the control rows are. */
+        const char *body = line->text;
+        if (line->text != NULL && SDL_strchr(line->text, '|') != NULL)
+        {
+            key_field(line->text, 0, pad_form, sizeof(pad_form));
+            key_field(line->text, 1, key_form, sizeof(key_form));
+            body = pad_hint(hints, prose, sizeof(prose), pad_form, key_form);
+        }
         switch (line->kind)
         {
         case LINE_HEAD:
@@ -1710,12 +1849,12 @@ static void render_text_column(SDL_Renderer *r, const ManualPage *page,
         case LINE_BULLET:
             color_rect(r, fx_dim(FX_CYAN, appear), x + 1.0f, y + 3.0f, 3.0f, 3.0f);
             draw_text(r, x + BULLET_INDENT, y, 1.0f, fx_dim(COL_TEXT, appear),
-                      line->text);
+                      body);
             y += LINE_PITCH;
             break;
         case LINE_BODY:
             draw_text(r, x + BULLET_INDENT, y, 1.0f, fx_dim(COL_TEXT, appear),
-                      line->text);
+                      body);
             y += LINE_PITCH;
             break;
         case LINE_KEY:
@@ -1739,7 +1878,8 @@ static void render_text_column(SDL_Renderer *r, const ManualPage *page,
 }
 
 static void render_panel(SDL_Renderer *r, const ManualPage *page,
-                         float time, float slide, float appear)
+                         float time, float slide, float appear,
+                         const PadHints *pad)
 {
     SDL_FRect frame = {PANEL_X + slide, PANEL_Y, PANEL_W, PANEL_H};
     SDL_FRect inner = {frame.x + PANEL_FRAME, frame.y + PANEL_FRAME,
@@ -1751,7 +1891,7 @@ static void render_panel(SDL_Renderer *r, const ManualPage *page,
     color_rect(r, fx_dim(FX_INK, appear), inner.x - 1.0f, inner.y - 1.0f,
                inner.w + 2.0f, inner.h + 2.0f);
 
-    page->illustration(r, inner, time);
+    page->illustration(r, inner, time, pad);
 
     /* The wash a turning sheet passes under. The illustrations do not know
      * about the page turn, so the veil is what carries them through it. */
@@ -1831,7 +1971,7 @@ void manual_render(SDL_Renderer *r, const Manual *manual, int win_w, int win_h,
     render_sheet(r, sheet_rect(w, h), appear);
     render_header(r, page, w, content);
     render_text_column(r, page, pad, slide, content);
-    render_panel(r, page, manual->time, slide, content);
+    render_panel(r, page, manual->time, slide, content, pad);
     render_footer(r, manual, appear);
 
     /* The frame is finished (vignette, scanlines) by game_render's one

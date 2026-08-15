@@ -76,11 +76,26 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         }
         /* The report between sectors is mid-campaign and has nothing to close,
          * so ESC does nothing there rather than dropping a run in progress on
-         * the title screen — the same rule the pad's B follows. */
-        if (game->state == STATE_LEVEL_TRANSITION)
+         * the title screen — the same rule the pad's B follows. The continue
+         * prompt is on the list for the same reason: it is a live decision with
+         * a run still on the table, and one stray ESC answering it "no" is the
+         * accident this whole branch exists to prevent. Letting the countdown
+         * expire already reaches the title, and does it in the player's time.
+         *
+         * STATE_LEVEL_CLEARED is the beat between finishing the last sector and
+         * the outro starting. It is barely a second long, it is the one moment
+         * in the game where the player has just won, and ESC landing in it
+         * replaced the ending with the title screen — the single most expensive
+         * thing a stray keypress could take, at the single worst moment. */
+        if (game->state == STATE_LEVEL_TRANSITION ||
+            game->state == STATE_LEVEL_CLEARED ||
+            game->state == STATE_CONTINUE)
         {
             return SDL_APP_CONTINUE;
         }
+        /* What is left is the prologue's two cutscenes, the manual, the outro
+         * and the game-over hold: nothing with a run still on the table, so
+         * here ESC is the way out rather than an accident. */
         game_return_to_intro(game);
         return SDL_APP_CONTINUE;
     }
@@ -96,9 +111,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     Uint64 now = SDL_GetTicksNS();
     float dt = (float)(now - game->platform.last_tick) / 1.0e9f;
     game->platform.last_tick = now;
-    if (dt > 0.05f)
+    /* Nothing downstream ever sees a longer step: MAX_FRAME_DT is what the
+     * projectile collision is proved against, not just a stutter guard. */
+    if (dt > MAX_FRAME_DT)
     {
-        dt = 0.05f;
+        dt = MAX_FRAME_DT;
     }
 
     game_update(game, dt);

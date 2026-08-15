@@ -69,10 +69,11 @@ SDL_GamepadButton pad_hints_button(const PadHints *hints, PadFace face);
  *
  * `pad_form` is a template written in the letters the tables already use —
  * `$A`, `$B`, `$X`, `$Y` for the faces and `$START`, `$SELECT`, `$LB`, `$RB`
- * for the rest — expanded into `buf`. With no pad in hand `key_form` comes
- * back untouched and `buf` is not written. It is one call rather than a
- * ternary at each prompt because the two halves of that ternary drifted apart
- * the moment either one was edited.
+ * for the rest — expanded into `buf`. With no pad in hand `key_form` is copied
+ * into `buf` instead, so **the answer is always in `buf`** and a caller that
+ * ignores the return value still draws the right line rather than the stack.
+ * It is one call rather than a ternary at each prompt because the two halves
+ * of that ternary drifted apart the moment either one was edited.
  */
 const char *pad_hint(const PadHints *hints, char *buf, size_t size,
                      const char *pad_form, const char *key_form);

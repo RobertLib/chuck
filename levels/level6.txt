@@ -7,14 +7,14 @@
 #                              #  H M       V    #
 #                              ##########H##V#####
 #                              #         H  V    #
-#                              # M    A  H  V  Z #
+#                              # M    A  H  Vm Z #
 #                              ######H######V#####
 #                              %     H      V    #
 #  t ss K          ##########  %     H  ^   V BN #
 #H#########                    ###H#########V#####
 #H                    O  O     #  H   O  O  V    #
 #H                                H         V    #
-#HS tJ ss M  BG ssM nnnnnnnnWA   AHB   LM L V ^^E#
+#HS tJ ss M  BG ssM nnnnnnnnWA   AHB   LM L V ^ E#
 ##################################################
 
 THEME CANTEEN

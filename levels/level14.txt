@@ -10,14 +10,14 @@
 #         #        H #            # H        #         #
 #     O   #        H #            # H        #   O     #
 #                  H                H                  #
-# i  TM A    ^ T  MHi  X        X  iH T  M     dcM i   #
+# i  TM A    ^ T  MHi  X        X  iH T  M  C  dcM i   #
 ###H#####################      #####################H###
 #  H        #        #            #        #        H  #
 #  H        #        #            #        #        H  #
 #  H        #        #            #        #        H  #
 #  H  O     #        #            #        #O       H  #
 #  H                                                H  #
-# UH  W  ^    S  i  X tknnn  WAD M X t  M       ^   HN #
+# UH  W  ^    S  i  X tknnn  WAD M X t  M m G   ^   HN #
 ########################################################
 
 SPAWNS 0 3

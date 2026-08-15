@@ -132,6 +132,8 @@ static void reset_level_presentation(Game *game)
 static void reset_sublevel_visit(Game *game)
 {
     memset(&game->inactive_gameplay, 0, sizeof(game->inactive_gameplay));
+    memset(game->inactive_fall_platform_sounded, 0,
+           sizeof(game->inactive_fall_platform_sounded));
     game->sublevel_initialized = false;
     game->in_sublevel = false;
     game->main_level_cam_x = 0.0f;
@@ -219,6 +221,19 @@ static void swap_gameplay_areas(Game *game)
     GameplayState temporary = game->gameplay;
     game->gameplay = game->inactive_gameplay;
     game->inactive_gameplay = temporary;
+    /* Which cracked panels have already been heard is presentation, but it is
+     * indexed by a panel of *this* level, so it has to change hands with the
+     * level the way the camera does. Left behind, the room's panel n would
+     * inherit the sector's and swallow its crack; cleared instead, every panel
+     * already gone from the sector would crack a second time on the way back,
+     * because `triggered` stays set for the rest of the run. */
+    for (int i = 0; i < MAX_FALL_PLATFORMS; ++i)
+    {
+        bool held = game->presentation.fall_platform_sounded[i];
+        game->presentation.fall_platform_sounded[i] =
+            game->inactive_fall_platform_sounded[i];
+        game->inactive_fall_platform_sounded[i] = held;
+    }
     /* The restroom is a room of its own, not a corner of the sector, so it is
      * scored as one. Both directions of the door come through here, which is
      * why this is the only place that has to know. */
@@ -1274,6 +1289,13 @@ static void update_playing(Game *game, float dt)
     if ((sublevel_action == SUBLEVEL_DOOR_ENTER && enter_restroom(game)) ||
         (sublevel_action == SUBLEVEL_DOOR_RETURN && leave_restroom(game)))
     {
+        /* The door consumes the rest of the frame, and the presses this frame
+         * belong to the room being left. Left standing, an attack pressed on
+         * the same frame as the door is answered on the other side of it —
+         * a round spent walking through a doorway. */
+        game->input.shoot = false;
+        game->input.switch_weapon = false;
+        game->input.switch_weapon_back = false;
         return;
     }
     gameplay_use_door(&game->gameplay, &game->input);

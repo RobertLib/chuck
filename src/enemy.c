@@ -711,14 +711,18 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         {
             bool up_ok = level_is_ladder(level, center_col, center_row - 1);
             bool down_ok = level_is_ladder(level, center_col, center_row + 1);
-            float enemy_center_y = enemy->y + ENEMY_H * 0.5f;
+            /* Read again rather than reusing the value from the top of the
+             * function: an elevator may have snapped the guard onto its
+             * platform since, and which way a ladder leads is decided from
+             * where he is standing now. */
+            float ladder_center_y = enemy->y + ENEMY_H * 0.5f;
             int desired_climb_dir =
-                target_y < enemy_center_y ? -1 : 1;
+                target_y < ladder_center_y ? -1 : 1;
             bool ladder_toward_target =
                 desired_climb_dir < 0 ? up_ok : down_ok;
             bool start_climbing =
                 routing_to_target
-                    ? (fabsf(target_y - enemy_center_y) >
+                    ? (fabsf(target_y - ladder_center_y) >
                            TILE_SIZE * 0.75f &&
                        ladder_toward_target)
                     : ((up_ok || down_ok) &&

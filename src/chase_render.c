@@ -605,7 +605,7 @@ static void draw_traffic_signal(SDL_Renderer *r, float x, float y,
 /*
  * A squad car holding the side street at a junction.
  *
- * This is the cover story made visible. The demand went out at 00:20 and put
+ * This is the cover story made visible. The demand went out at 00:04 and put
  * the whole city's night shift on a ring around one building; the drive in
  * runs through that ring from the outside, so the junctions fill up with cars
  * facing the wrong way while Chuck goes past them in the one direction nobody
@@ -980,9 +980,10 @@ static void render_control_hint(SDL_Renderer *r, const Chase *chase, int win_w,
     if (fade <= 0.0f)
         return;
 
-    char pedals[64];
-    pad_hint(pad, pedals, sizeof(pedals), "$A ACCELERATE    $B BRAKE",
-             "UP ACCELERATE    DOWN BRAKE");
+    char buf[64];
+    const char *pedals =
+        pad_hint(pad, buf, sizeof(buf), "$A ACCELERATE    $B BRAKE",
+                 "UP ACCELERATE    DOWN BRAKE");
     const char *steer = pad != NULL ? "STICK OR DPAD STEERS"
                                     : "LEFT AND RIGHT STEER";
 
@@ -1003,6 +1004,35 @@ static void render_control_hint(SDL_Renderer *r, const Chase *chase, int win_w,
                        steer);
 }
 
+/*
+ * One line naming the thing the player is driving through.
+ *
+ * The squad cars sealing every junction are the most legible object on the
+ * road and the only one the drive never explains: without a caption they read
+ * as traffic the player is being asked to dodge, which is the opposite of what
+ * they are. They are the cordon the 00:04 broadcast bought, standing since
+ * before Ellen was taken, and it is the reason nobody answered when she was.
+ *
+ * It waits for the pedal prompt to clear rather than sharing the frame with
+ * it — the controls are what the first seconds are for — and it is set where
+ * the cutscenes set theirs, so the drive is captioned in the same hand as the
+ * beats either side of it.
+ */
+static void render_cordon_caption(SDL_Renderer *r, const Chase *chase)
+{
+    if (chase->phase != CHASE_PHASE_PURSUIT)
+        return;
+    float since = chase->pursuit_time - (CHASE_CONTROL_HINT_TIME + 1.5f);
+    float fade = fminf(clamp01(since / 0.45f), clamp01(4.5f - since));
+    if (fade <= 0.0f)
+        return;
+
+    draw_text(r, 35.0f, 48.0f, 1.0f, fx_dim(FX_CYAN, fade),
+              "00:12 // THEIR CORDON, NOT YOURS");
+    fx_rect_a(r, FX_RUST, (Uint8)(fade * 255.0f), 35.0f, 63.0f,
+              52.0f * fade, 2.0f);
+}
+
 static void render_overlays(SDL_Renderer *r, const ChaseView *view,
                             const Chase *chase, int win_w, int win_h,
                             const PadHints *pad)
@@ -1010,11 +1040,20 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
     float center_x = (float)win_w * 0.5f;
     render_junction_warning(r, view, chase, win_w);
     render_control_hint(r, chase, win_w, win_h, pad);
+    render_cordon_caption(r, chase);
 
-    /* Off-screen target: the player still needs to know where the SUV went. */
+    /* Off-screen target: the player still needs to know where the SUV went.
+     *
+     * Only while the drive is actually being driven. The departure sets its own
+     * caption in the same band — the SUV is off the top of the screen for most
+     * of it, so both were drawn, and the caption's plate cut the marker in half
+     * rather than replacing it. Neither beat needs it: nobody is steering
+     * during the departure, and a failed attempt is already telling the player
+     * what went wrong. */
     float target_screen_y = screen_y(view, chase->target.y);
     if (target_screen_y < view->view_top - CHASE_SUV_LENGTH * 0.5f &&
-        chase->phase != CHASE_PHASE_FAILED)
+        chase->phase != CHASE_PHASE_FAILED &&
+        chase->phase != CHASE_PHASE_DEPARTURE)
     {
         float pulse = 0.5f + 0.5f * sinf(chase->time * 6.0f);
         SDL_Color mark = fx_dim(FX_AMBER, 0.5f + pulse * 0.5f);

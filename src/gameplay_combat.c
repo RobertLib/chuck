@@ -73,6 +73,7 @@ static void damage_dog(GameplayState *state, CampaignState *campaign,
     if (dog->hp <= 0)
     {
         dog->dead = true;
+        gameplay_record_neutralized(state);
         campaign->score += 75;
         game_events_particles(&state->events,
                               dog->x + DOG_W * 0.5f,
@@ -92,6 +93,7 @@ static void damage_enemy(GameplayState *state, CampaignState *campaign,
     if (enemy->hp <= 0)
     {
         enemy->dead = true;
+        gameplay_record_neutralized(state);
         campaign->score += 150;
         game_events_particles(&state->events,
                               enemy->x + ENEMY_W * 0.5f,
@@ -185,17 +187,28 @@ static void damage_crates_in_radius(GameplayState *state,
 
 static void explode_gas_canister(GameplayState *state,
                                  CampaignState *campaign,
-                                 GasCanister *canister)
-{
-    if (!canister->active)
-        return;
+                                 GasCanister *canister);
 
-    canister->active = false;
-    float x = canister->x + GAS_CANISTER_W * 0.5f;
-    float y = canister->y + GAS_CANISTER_H * 0.5f;
-    game_events_explosion(&state->events, x, y, 72);
-    gameplay_world_sound(state, SFX_EXPLOSION, x, y);
-    game_events_camera_shake(&state->events, 8.0f, 0.32f);
+/*
+ * Everything a blast does to the world, in one place.
+ *
+ * The four explosives differ only in where they go off, how far they reach and
+ * how hard they shake the frame; what a blast *does* is one rule, and it is
+ * this one. Four hand-written copies of it is what let a rocket set off a gas
+ * canister while a grenade landing against the same canister did nothing, and
+ * what let a mine bring a wall down without troubling the guard standing in
+ * the hole it made — a blast that picks which of the things beside it are real
+ * is a blast the player cannot reason about.
+ *
+ * A guard taken by a blast leaves no magazine: the drop belongs to direct
+ * combat, and an explosion destroys it with its owner. Canisters chain, and the
+ * chain always terminates because a canister is deactivated before its own
+ * blast is applied. The player can only be hurt once however many blasts a
+ * chain sets off, because the first one opens the mercy window.
+ */
+static void apply_blast(GameplayState *state, CampaignState *campaign,
+                        float x, float y, float radius)
+{
     gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
 
     for (int i = 0; i < state->enemy_count; ++i)
@@ -204,16 +217,19 @@ static void explode_gas_canister(GameplayState *state,
         if (enemy->dead ||
             !within_radius(enemy->x + ENEMY_W * 0.5f,
                            enemy->y + ENEMY_H * 0.5f,
-                           x, y, GAS_CANISTER_RADIUS))
+                           x, y, radius))
         {
             continue;
         }
         enemy->hp = 0;
         enemy->dead = true;
+        gameplay_record_neutralized(state);
         game_events_particles(&state->events,
                               enemy->x + ENEMY_W * 0.5f,
                               enemy->y + ENEMY_H * 0.5f,
                               24, enemy->dir);
+        /* A man going down sounds the same whatever took him: a grenade that
+         * killed three guards in silence read as having killed nobody. */
         gameplay_world_sound(state, SFX_ENEMY_DOWN,
                              enemy->x + ENEMY_W * 0.5f,
                              enemy->y + ENEMY_H * 0.5f);
@@ -225,12 +241,13 @@ static void explode_gas_canister(GameplayState *state,
         if (dog->dead ||
             !within_radius(dog->x + DOG_W * 0.5f,
                            dog->y + DOG_H * 0.5f,
-                           x, y, GAS_CANISTER_RADIUS))
+                           x, y, radius))
         {
             continue;
         }
         dog->hp = 0;
         dog->dead = true;
+        gameplay_record_neutralized(state);
         game_events_particles(&state->events,
                               dog->x + DOG_W * 0.5f,
                               dog->y + DOG_H * 0.5f,
@@ -241,15 +258,43 @@ static void explode_gas_canister(GameplayState *state,
         campaign->score += 75;
     }
 
-    damage_crates_in_radius(state, campaign, x, y, GAS_CANISTER_RADIUS);
-    gameplay_break_walls_in_radius(state, campaign, x, y,
-                                   GAS_CANISTER_RADIUS);
+    damage_crates_in_radius(state, campaign, x, y, radius);
+    gameplay_break_walls_in_radius(state, campaign, x, y, radius);
+
+    for (int i = 0; i < state->level.runtime.gas_canister_count; ++i)
+    {
+        GasCanister *canister = &state->level.runtime.gas_canisters[i];
+        if (canister->active &&
+            within_radius(canister->x + GAS_CANISTER_W * 0.5f,
+                          canister->y + GAS_CANISTER_H * 0.5f,
+                          x, y, radius))
+        {
+            explode_gas_canister(state, campaign, canister);
+        }
+    }
+
     if (within_radius(state->player.x + PLAYER_W * 0.5f,
                       state->player.y + player_height(state) * 0.5f,
-                      x, y, GAS_CANISTER_RADIUS))
+                      x, y, radius))
     {
         gameplay_damage_player(state, EXPLOSION_DAMAGE, x, y);
     }
+}
+
+static void explode_gas_canister(GameplayState *state,
+                                 CampaignState *campaign,
+                                 GasCanister *canister)
+{
+    if (!canister->active)
+        return;
+
+    canister->active = false;
+    float x = canister->x + GAS_CANISTER_W * 0.5f;
+    float y = canister->y + GAS_CANISTER_H * 0.5f;
+    game_events_explosion(&state->events, x, y, 72);
+    gameplay_world_sound(state, SFX_EXPLOSION, x, y);
+    game_events_camera_shake(&state->events, 8.0f, 0.32f);
+    apply_blast(state, campaign, x, y, GAS_CANISTER_RADIUS);
 }
 
 static void explode_grenade(GameplayState *state, CampaignState *campaign,
@@ -261,51 +306,7 @@ static void explode_grenade(GameplayState *state, CampaignState *campaign,
     game_events_explosion(&state->events, x, y, 64);
     gameplay_world_sound(state, SFX_EXPLOSION, x, y);
     game_events_camera_shake(&state->events, 7.0f, 0.30f);
-    gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
-
-    for (int i = 0; i < state->enemy_count; ++i)
-    {
-        Enemy *enemy = &state->enemies[i];
-        if (!enemy->dead &&
-            within_radius(enemy->x + ENEMY_W * 0.5f,
-                          enemy->y + ENEMY_H * 0.5f,
-                          x, y, GRENADE_RADIUS))
-        {
-            enemy->hp = 0;
-            enemy->dead = true;
-            game_events_particles(&state->events,
-                                  enemy->x + ENEMY_W * 0.5f,
-                                  enemy->y + ENEMY_H * 0.5f,
-                                  24, enemy->dir);
-            campaign->score += 150;
-        }
-    }
-    for (int i = 0; i < state->dog_count; ++i)
-    {
-        Dog *dog = &state->dogs[i];
-        if (!dog->dead &&
-            within_radius(dog->x + DOG_W * 0.5f,
-                          dog->y + DOG_H * 0.5f,
-                          x, y, GRENADE_RADIUS))
-        {
-            dog->hp = 0;
-            dog->dead = true;
-            game_events_particles(&state->events,
-                                  dog->x + DOG_W * 0.5f,
-                                  dog->y + DOG_H * 0.5f,
-                                  14, dog->dir);
-            gameplay_world_sound(state, SFX_DOG_YELP,
-                                 dog->x + DOG_W * 0.5f,
-                                 dog->y + DOG_H * 0.5f);
-            campaign->score += 75;
-        }
-    }
-    damage_crates_in_radius(state, campaign, x, y, GRENADE_RADIUS);
-    gameplay_break_walls_in_radius(state, campaign, x, y, GRENADE_RADIUS);
-    if (within_radius(state->player.x + PLAYER_W * 0.5f,
-                      state->player.y + player_height(state) * 0.5f,
-                      x, y, GRENADE_RADIUS))
-        gameplay_damage_player(state, EXPLOSION_DAMAGE, x, y);
+    apply_blast(state, campaign, x, y, GRENADE_RADIUS);
 }
 
 static void explode_rocket(GameplayState *state, CampaignState *campaign,
@@ -319,70 +320,7 @@ static void explode_rocket(GameplayState *state, CampaignState *campaign,
     game_events_explosion(&state->events, x, y, 88);
     gameplay_world_sound(state, SFX_EXPLOSION, x, y);
     game_events_camera_shake(&state->events, 10.0f, 0.38f);
-    gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
-
-    for (int i = 0; i < state->enemy_count; ++i)
-    {
-        Enemy *enemy = &state->enemies[i];
-        if (enemy->dead ||
-            !within_radius(enemy->x + ENEMY_W * 0.5f,
-                           enemy->y + ENEMY_H * 0.5f,
-                           x, y, ROCKET_RADIUS))
-        {
-            continue;
-        }
-        enemy->hp = 0;
-        enemy->dead = true;
-        game_events_particles(&state->events,
-                              enemy->x + ENEMY_W * 0.5f,
-                              enemy->y + ENEMY_H * 0.5f,
-                              24, enemy->dir);
-        gameplay_world_sound(state, SFX_ENEMY_DOWN,
-                             enemy->x + ENEMY_W * 0.5f,
-                             enemy->y + ENEMY_H * 0.5f);
-        campaign->score += 150;
-    }
-    for (int i = 0; i < state->dog_count; ++i)
-    {
-        Dog *dog = &state->dogs[i];
-        if (dog->dead ||
-            !within_radius(dog->x + DOG_W * 0.5f,
-                           dog->y + DOG_H * 0.5f,
-                           x, y, ROCKET_RADIUS))
-        {
-            continue;
-        }
-        dog->hp = 0;
-        dog->dead = true;
-        game_events_particles(&state->events,
-                              dog->x + DOG_W * 0.5f,
-                              dog->y + DOG_H * 0.5f,
-                              14, dog->dir);
-        gameplay_world_sound(state, SFX_DOG_YELP,
-                             dog->x + DOG_W * 0.5f,
-                             dog->y + DOG_H * 0.5f);
-        campaign->score += 75;
-    }
-
-    damage_crates_in_radius(state, campaign, x, y, ROCKET_RADIUS);
-    gameplay_break_walls_in_radius(state, campaign, x, y, ROCKET_RADIUS);
-    for (int i = 0; i < state->level.runtime.gas_canister_count; ++i)
-    {
-        GasCanister *canister = &state->level.runtime.gas_canisters[i];
-        if (canister->active &&
-            within_radius(canister->x + GAS_CANISTER_W * 0.5f,
-                          canister->y + GAS_CANISTER_H * 0.5f,
-                          x, y, ROCKET_RADIUS))
-        {
-            explode_gas_canister(state, campaign, canister);
-        }
-    }
-    if (within_radius(state->player.x + PLAYER_W * 0.5f,
-                      state->player.y + player_height(state) * 0.5f,
-                      x, y, ROCKET_RADIUS))
-    {
-        gameplay_damage_player(state, EXPLOSION_DAMAGE, x, y);
-    }
+    apply_blast(state, campaign, x, y, ROCKET_RADIUS);
 }
 
 void gameplay_combat_update_explosives(GameplayState *state,
@@ -417,13 +355,11 @@ void gameplay_combat_update_explosives(GameplayState *state,
         game_events_explosion(&state->events, x, y, 48);
         gameplay_world_sound(state, SFX_EXPLOSION, x, y);
         game_events_camera_shake(&state->events, 5.0f, 0.24f);
-        gameplay_alert_enemies_to_noise(state, x, y, ENEMY_HEAR_RADIUS_BLAST);
-        damage_crates_in_radius(state, campaign, x, y, MINE_RADIUS);
-        gameplay_break_walls_in_radius(state, campaign, x, y, MINE_RADIUS);
-        if (within_radius(state->player.x + PLAYER_W * 0.5f,
-                          state->player.y + player_height(state) * 0.5f,
-                          x, y, MINE_RADIUS))
-            gameplay_damage_player(state, EXPLOSION_DAMAGE, x, y);
+        /* Only the player's own weight arms a mine, but the delay between the
+         * step and the blast is long enough to run out of and long enough for
+         * whoever is chasing him to run into: the charge does not check who is
+         * standing over it when it finally goes off. */
+        apply_blast(state, campaign, x, y, MINE_RADIUS);
     }
 
     for (int i = 0; i < state->grenade_count; ++i)
@@ -528,6 +464,16 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             if (state->player.bazooka_rockets == 0)
                 player_select_next_weapon(&state->player);
         }
+        else
+        {
+            /* The tube is loaded but the last rocket is still in the air, and
+             * MAX_ROCKETS is one. Reachable the moment a rocket carried in from
+             * the sector below is fired and this sector's own `Z` is picked up
+             * before it lands: the trigger is pulled and nothing whatever
+             * happens, which reads as the pad having missed the press rather
+             * than as the weapon being busy. */
+            game_events_sound(&state->events, SFX_EMPTY_CLICK);
+        }
     }
     else if (state->player.active_weapon == PLAYER_WEAPON_GRENADE &&
              state->player.grenades > 0)
@@ -579,16 +525,24 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             game_events_sound(&state->events, SFX_GRENADE_THROW);
             player_select_next_weapon(&state->player);
         }
+        else
+        {
+            /* Same rule as the rocket: a pin pulled with nowhere to put the
+             * grenade is a dead press, and a dead press has to be audible. */
+            game_events_sound(&state->events, SFX_EMPTY_CLICK);
+        }
     }
     else if (state->player.active_weapon == PLAYER_WEAPON_PISTOL &&
              state->player.bullets > 0)
     {
+        bool fired = false;
         for (int i = 0; i < MAX_BULLETS; ++i)
         {
             Bullet *bullet = &state->bullets[i];
             if (bullet->active)
                 continue;
             bullet->active = true;
+            fired = true;
             int vertical =
                 player_ladder_attack_direction(&state->player, input);
             if (vertical != 0)
@@ -624,6 +578,16 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             if (state->player.bullets == 0)
                 player_select_next_weapon(&state->player);
             break;
+        }
+        if (!fired)
+        {
+            /* The same rule the rocket and the grenade keep: a loaded weapon
+             * whose trigger does nothing has to say so. Every round of a full
+             * clip is only rarely in the air at once — MAX_BULLETS is larger
+             * than MAX_AMMO — but a magazine picked up while the last six are
+             * still crossing a wide sector reaches it, and a silent press
+             * reads as the pad having missed it. */
+            game_events_sound(&state->events, SFX_EMPTY_CLICK);
         }
     }
     else
@@ -802,6 +766,17 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
         bool vertical = fabsf(bullet->vy) > fabsf(bullet->vx);
         float width = vertical ? (float)BULLET_H : (float)BULLET_W;
         float height = vertical ? (float)BULLET_W : (float)BULLET_H;
+        /* Everything the round can hit is tested against the ground it crossed
+         * this frame, not against where it ended up. A shot fired up a ladder
+         * is 4px wide by 8 tall and a dog is 16 tall, so at the frame clamp the
+         * two together are shorter than one step: tested at the destination
+         * alone, the round arrives past the animal having never overlapped it.
+         * The tile test above stays a point test — that one is proved by the
+         * `_Static_assert`s beside the projectile speeds. */
+        float swept_x = fminf(previous_x, bullet->x);
+        float swept_y = fminf(previous_y, bullet->y);
+        float swept_w = width + fabsf(bullet->x - previous_x);
+        float swept_h = height + fabsf(bullet->y - previous_y);
         if (bullet->x + width < 0.0f ||
             bullet->x > state->level.map.width * (float)TILE_SIZE ||
             bullet->y + height < 0.0f ||
@@ -836,7 +811,7 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
         {
             Crate *crate = &state->level.runtime.crates[j];
             if (crate->active &&
-                gameplay_boxes_overlap(bullet->x, bullet->y, width, height,
+                gameplay_boxes_overlap(swept_x, swept_y, swept_w, swept_h,
                                        crate->x, crate->y, CRATE_W, CRATE_H))
             {
                 bullet->active = false;
@@ -851,10 +826,6 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
         {
             GasCanister *canister =
                 &state->level.runtime.gas_canisters[j];
-            float swept_x = fminf(previous_x, bullet->x);
-            float swept_y = fminf(previous_y, bullet->y);
-            float swept_w = width + fabsf(bullet->x - previous_x);
-            float swept_h = height + fabsf(bullet->y - previous_y);
             if (canister->active &&
                 gameplay_boxes_overlap(swept_x, swept_y, swept_w, swept_h,
                                        canister->x, canister->y,
@@ -872,7 +843,7 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
         {
             Dog *dog = &state->dogs[j];
             if (!dog->dead &&
-                gameplay_boxes_overlap(bullet->x, bullet->y, width, height,
+                gameplay_boxes_overlap(swept_x, swept_y, swept_w, swept_h,
                                        dog->x, dog->y, DOG_W, DOG_H))
             {
                 bullet->active = false;
@@ -887,7 +858,7 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
         {
             Enemy *enemy = &state->enemies[j];
             if (!enemy->dead &&
-                gameplay_boxes_overlap(bullet->x, bullet->y, width, height,
+                gameplay_boxes_overlap(swept_x, swept_y, swept_w, swept_h,
                                        enemy->x, enemy->y,
                                        ENEMY_W, ENEMY_H))
             {
@@ -971,8 +942,15 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt)
 void gameplay_combat_check_contacts(GameplayState *state,
                                     CampaignState *campaign)
 {
-    if (state->invuln_timer > 0.0f)
+    if (state->player.dying)
         return;
+    /* The mercy window is a shield, not a stun: it owes the player immunity
+     * from what a guard does to him, and nothing at all about what he does to
+     * the guard. Gating the whole check on it meant a stomp aimed during the
+     * beat after any hit passed straight through the head it landed on —
+     * neither a bounce nor a wound — which reads as the answer to a guard
+     * failing at random. Only the damage paths below watch it. */
+    bool mercy = state->invuln_timer > 0.0f;
     float height = player_height(state);
     for (int i = 0; i < state->enemy_count; ++i)
     {
@@ -1008,11 +986,18 @@ void gameplay_combat_check_contacts(GameplayState *state,
             return;
         }
 
+        /* Walking into a second guard costs nothing during the window, but the
+         * scan carries on: one of the others may still be under his boots. */
+        if (mercy)
+            continue;
+
         gameplay_damage_player(state, 1,
                                enemy->x + ENEMY_W * 0.5f,
                                enemy->y + ENEMY_H * 0.5f);
         return;
     }
+    if (mercy)
+        return;
     for (int i = 0; i < state->dog_count; ++i)
     {
         Dog *dog = &state->dogs[i];

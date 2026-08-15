@@ -365,6 +365,14 @@ static void update_thrown_objects(GameplayState *state, float dt)
             continue;
 
         object->vy += THROWN_OBJECT_GRAVITY * dt;
+        /* The brick is tested against the tile under its own centre once per
+         * step, so it has to obey the same speed limit every other falling
+         * thing does — see the assertion beside MAX_FALL_SPEED. Uncapped it
+         * passed a tile per frame after about a second of free fall, and a
+         * brick that misses sails through the cornices below instead of
+         * bursting on the first one, which is the whole reason they are cover. */
+        if (object->vy > MAX_FALL_SPEED)
+            object->vy = MAX_FALL_SPEED;
         object->x += object->vx * dt;
         object->y += object->vy * dt;
         object->angle += (object->vx < 0.0f ? -7.0f : 7.0f) * dt;

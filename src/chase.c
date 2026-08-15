@@ -778,9 +778,24 @@ static void update_failed(Chase *chase, float dt)
     if (chase->phase_time >= CHASE_FAILED_DURATION)
     {
         chase->attempts++;
-        /* A failure costs a beat of the drive, not the whole drive: the
-         * pursuit resumes a stretch back from where it went wrong. */
-        float resume_time = chase->pursuit_time - CHASE_FAIL_REWIND;
+        /*
+         * A failure costs a beat of the drive, not the whole drive: the
+         * pursuit resumes a stretch back from where it went wrong.
+         *
+         * But only while the drive is still asking to be driven. A player who
+         * crashes more often than every `CHASE_FAIL_REWIND` seconds hands back
+         * more road than they make, and the pursuit clock then never reaches
+         * `CHASE_PURSUIT_DURATION` at all — measured, a pad held on the
+         * throttle without steering never arrived in three minutes across five
+         * seeds while an idle one always did. So the rewind stops at exactly
+         * the attempt where the skip prompt appears: from there the drive
+         * stops insisting on itself, and it stops taking itself back too, so
+         * the pursuit clock only ever grows and the prologue always ends —
+         * whether or not anybody presses the skip it is now offering.
+         */
+        float resume_time = chase->pursuit_time;
+        if (chase->attempts < CHASE_SKIP_AFTER_ATTEMPTS)
+            resume_time -= CHASE_FAIL_REWIND;
         if (resume_time < 0.0f)
             resume_time = 0.0f;
         reset_pursuit_layout(chase);

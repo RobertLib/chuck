@@ -21,10 +21,24 @@ has to be added there as well, or it is a character the editor cannot paint.
 - `H` : Ladder (can climb up/down).
 - (space) : Empty space / air.
 - `.` : Empty padding / air (useful before a compact sublevel room).
-- `C` : Card item (`ITEM_CARD`).
-- `G` : Gun item (`ITEM_GUN`).
-- `N` : Grenade item (`ITEM_GRENADE`).
-- `K` : Medkit item (`ITEM_MEDKIT`).
+- `C` : Card item (`ITEM_CARD`). The seed picks one of a sector's cards as the
+  live one and the rest buzz and change nothing, so **a sector with a single
+  `C` has no decoys at all** — the wrong-card sound, the sweep the sector opens
+  on and the manual's "cards lie" are all spent on a card that cannot be wrong.
+  Two or three is the shape that means anything; sector 1 keeps one on purpose,
+  because it is the sector that teaches what a card is for. Every card has to
+  be reachable, live or not, and the editor calls an unreachable one an error
+  rather than a note for exactly that reason.
+- `G` : Gun item (`ITEM_GUN`). Fills the sidearm, and **the only pickup that
+  comes back** — `ITEM_RESPAWN_TIME` after it is taken it is there again,
+  because the sidearm is what a sector is played with and a player who has
+  spent it must not be left playing the rest of the floor with a knife.
+- `N` : Grenade item (`ITEM_GRENADE`). One grenade, and it does not respawn:
+  a one-shot explosive that regrows is not a decision about when to spend it,
+  and a single `N` on a respawn timer opened every `%` in the campaign without
+  the bazooka the patches were placed for.
+- `K` : Medkit item (`ITEM_MEDKIT`). Refills the hearts, or adds a life if they
+  are already full. Does not respawn.
 - `Z` : Bazooka item (`ITEM_BAZOOKA`). Contains one explosive rocket and does not respawn.
 - `M` : Enemy spawn (enemy is placed here).
 - `W` : Enemy spawn with a guard dog.
@@ -40,13 +54,21 @@ has to be added there as well, or it is a character the editor cannot paint.
   with whatever it was, and walk back to the same tile. Place it on the staff
   side of an `n` run — the counter renders over the staff, which is what makes
   the post read as being behind it.
-- `X` : Mine (places an explosive mine).
-- `^` : Spike / hazard (instant damage when stepped on).
-- `O` : Rotating ceiling fan (lethal on contact with the blades). It is drawn
+- `X` : Mine (places an explosive mine). Only the player's weight arms it, but
+  the blast that follows a beat later is an ordinary blast: it is lethal to a
+  guard or a dog caught in it, breaks crates and opens a `%` patch. Counted in
+  the hazard budget below as a threat to the player, because that is who
+  triggers it.
+- `^` : Spike / hazard. Costs one heart on contact and pops the boots back out
+  of the bed, so one misstep is one heart rather than a loop.
+- `O` : Rotating ceiling fan (one heart on contact with the blades). It is drawn
   hanging on a drop rod from the first solid tile above it, so it never floats
   however far below the ceiling it is placed.
 - `B` : Pushable crate (can be shoved or destroyed by shots/explosions).
-- `L` : Small gas canister. A standing shot passes over it; crawl and shoot it to cause an explosion that can kill nearby enemies.
+- `L` : Small gas canister. A standing shot passes over it; crawl and shoot it
+  to cause an explosion that can kill nearby enemies. Any other blast in range
+  sets it off too — a grenade, a rocket, a mine or another canister — so a pair
+  placed within `GAS_CANISTER_RADIUS` of each other will chain.
 - `T` : Access terminal. One randomly selected terminal is active; the rest are decorative.
 - `A` : Wall-mounted alarm switch. A guard may run to it after spotting the player.
 - `c` : Decorative office chair (non-solid).
@@ -69,7 +91,7 @@ has to be added there as well, or it is a character the editor cannot paint.
   than stands**: it needs a solid tile directly *above* it, and the loader
   drops it if there is none, exactly as it drops a desk with no floor. The
   dial reads the campaign sector it is standing in — the night runs from the
-  broadcast to the sub-vault opening at 01:00, so the minute hand climbs
+  broadcast to the bonds leaving the roof at 01:00, so the minute hand climbs
   toward the top of the face across the fifteen sectors. Presentation only:
   nothing in the simulation reads the time.
 - `S` : Player start position.
@@ -127,6 +149,11 @@ Notes:
   climbing mode. It uses direct four-way wall movement: no gravity, ladders,
   doors, guards, or ordinary platform simulation. Pickups do work, so items
   placed on a facade are optional detours that carry into the next sector.
+  Nothing can be *fired* out there — `update_facade_playing` never runs the
+  attack — so a climb's pickups are entirely a bet on the sector above it, and
+  every climb carries the same three: a `G`, an `N` and a `K`. Sector 7 spent a
+  while without the `G`, which made the one climb that hands straight into the
+  LAB the one you arrived at with whatever ammunition was left.
 - `THEME <name>` on a metadata line picks the level's art direction — see
   [Themes](#themes) below.
 - Facade masonry authoring: the climber box is exactly one tile tall, so a
@@ -211,7 +238,7 @@ Two campaign-wide rules go with it, both pinned by the same test:
 - **Pressure only rises.** A sector's hazard budget —
   `3·guards + 2·dogs + 2·mines + spikes + fans` — must exceed the previous
   interior's; a climb's budget (`3·throwers + 2·birds`) and its height must
-  exceed the previous climb's. The campaign runs 6, 14, 20, 24, 30, 37, 48, 53,
+  exceed the previous climb's. The campaign runs 6, 14, 20, 24, 29, 37, 48, 53,
   55, 64, 67 inside and 20, 25, 30, 35 on the walls. Sector 1 spends its whole
   budget on two guards and carries no hazard at all: it is where the player
   finds out what the controls do — including, since it gained a medkit on the
@@ -221,7 +248,11 @@ Two campaign-wide rules go with it, both pinned by the same test:
   second open row overhead), hop one spike with that clearance, ladders, lift
   shafts, moving platforms, paired doors — and requires that it reaches the way
   out, every key card, every terminal and the restroom door, and that no tile
-  it can reach strands it away from the exit.
+  it can reach strands it away from the exit. **The restroom behind that door
+  is held to the same model**, on both its pickups and the way back out: it is
+  not a campaign sector, so it was for a while the one room the model never
+  ran, and its medkit sat across a two-tile gap under a two-row ceiling — the
+  exact jump the reach rule below says is not on.
 
 Three things that model deliberately will not do, so do not require them:
 
@@ -256,18 +287,25 @@ a hall. These rules come from the tuning in
   put one directly above a `B` the player can stand on. A fan belongs in the
   top row of its band, hard under the slab: the drop rod is then a rod rather
   than a mast, and the band's own ceiling is what the fan hangs from. One in
-  the standing row kills anyone who walks into it, crawling included.
-- **Never hang a fan over a gap that has to be jumped.** The blades make the
-  jump lethal while the route model, which knows nothing about fans, still
-  reports the gap as crossed — the one way to build a sector the test calls
-  finishable and the player cannot finish. Keep `O` at least two columns clear
-  of any hole in the floor below it.
+  the standing row catches anyone who walks into it, crawling included.
+- **Never hang a fan over a gap that has to be jumped.** The blades take a
+  heart off every attempt while the route model, which knows nothing about
+  fans, still reports the gap as crossed — three tries and the life is gone,
+  which is the one way to build a sector the test calls finishable and the
+  player cannot finish. Keep `O` at least two columns clear of any hole in the
+  floor below it.
 - **Ladders need not run the full height.** A run from the destination floor's
   headroom down to the source floor's standing row can be mounted and left at
   both ends; staggering short runs is what turns a floor plan into a route.
 - **`F` panels are a shortcut, never a lifeline.** They fall away for the rest
   of the run, so the level must still be finishable once every one of them has
   gone, and no ledge they serve may become a place the player cannot leave.
+  The parser makes the *map* tile air and hangs the panel off the runtime, so
+  the route model already judges the sector in its fallen state — which makes
+  **laying `F` into a hole a sector already has the safest placement there
+  is**: the model's answer cannot change, and the player gets one crossing of a
+  gap that was never crossable. That is where the campaign's panels are, in
+  sectors 2, 4, 9, 12 and 15.
 - **`%` patches are the same bargain from the other side.** The route model
   counts one as wall, so a sector is judged in the state it is authored in and a
   blocked-up opening can never be the way out, a key card's only approach or a

@@ -284,7 +284,10 @@ static void render_tower(SDL_Renderer *r, float time, int win_w)
     fx_light_cone(r, x + 261.0f, ground - 73.0f, 42.0f, 58.0f, 74.0f,
                   (SDL_Color){248, 205, 130, 255}, 26);
 
-    draw_text(r, x + 226.0f, ground - 91.0f, 0.75f,
+    /* The building's own name, at the font's own size and centred on the
+     * entrance block it is fixed to — 104 pixels of lettering across 112 of
+     * stone, which is what a parapet nameplate looks like. */
+    draw_text(r, x + 209.0f, ground - 91.0f, 1.0f,
               (SDL_Color){159, 158, 140, 255}, "KESSLER TOWER");
 
     for (int i = 0; i < 3; ++i)
@@ -860,7 +863,7 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
                   (SDL_Color){(Uint8)(FX_CYAN.r * reveal),
                               (Uint8)(FX_CYAN.g * reveal),
                               (Uint8)(FX_CYAN.b * reveal), 255},
-                  "23:47 // FINANCIAL DISTRICT");
+                  "00:22 // FINANCIAL DISTRICT");
         color_rect(r, FX_RUST, 35.0f, 53.0f, 52.0f * reveal, 2.0f);
     }
 
@@ -1183,7 +1186,7 @@ static void render_kerb_ui(SDL_Renderer *r, float time, int win_w, int win_h,
     {
         float reveal = smoothstep01((time - 0.45f) / 0.5f);
         draw_text(r, 35.0f, 38.0f, 1.0f, fx_dim(FX_CYAN, reveal),
-                  "23:31 // THREE BLOCKS FROM KESSLER TOWER");
+                  "00:12 // THREE BLOCKS FROM KESSLER TOWER");
         color_rect(r, FX_RUST, 35.0f, 53.0f, 52.0f * reveal, 2.0f);
     }
 
@@ -1191,7 +1194,7 @@ static void render_kerb_ui(SDL_Renderer *r, float time, int win_w, int win_h,
     {
         float reveal = smoothstep01((time - 5.40f) / 0.28f);
         draw_text(r, 35.0f, 38.0f, 1.0f, fx_dim(FX_RUST, reveal),
-                  "NO DEMAND // NO CAR // THEY CAME FOR HER");
+                  "NO WORD // NO RANSOM // THEY CAME FOR HER");
         color_rect(r, FX_RUST, 35.0f, 53.0f, 142.0f * reveal, 2.0f);
     }
 
@@ -1507,21 +1510,30 @@ bool level_transition_update(LevelTransition *transition, float dt,
  * lines are written anyway, because the table is indexed by sector and a
  * sector that later gains a stair door must not gain a blank line with it.
  */
+/*
+ * Indexed by finished sector, but only a sector that leaves by a stair door
+ * shows a report at all — a window is a continuous physical route onto the
+ * facade and cuts straight to the next sector. So the six rows marked SHOWN
+ * are the whole of the plot the player meets while actually playing, and they
+ * have to carry the arc between them; the rest are written for the sectors
+ * they belong to and are only read if the campaign's layout changes. Put a
+ * beat the ending depends on in an unmarked row and nobody will ever see it.
+ */
 static const char *const TRANSITION_INTEL[] = {
-    /* 1 LOBBY     */ "FRONT DESK LOG: SHE BADGED IN AT MIDNIGHT. CALMLY.",
-    /* 2 OFFICE    */ "EVERY STAIR CORE IS WELDED. SEALED FROM THE INSIDE.",
-    /* 3 CLIMB     */ "NO SIRENS UP HERE. THE CORDON IS FOUR BLOCKS WIDE.",
-    /* 4 SERVER    */ "MERIDIAN. NIGHT MAINTENANCE CONTRACTOR SINCE MARCH.",
-    /* 5 PLANT     */ "POLICE BAND: A CORDON, A NEGOTIATOR, NOBODY COMING UP.",
-    /* 6 CANTEEN   */ "TWELVE PLACES LAID IN THE GALLEY. TWELVE MEN.",
-    /* 7 CLIMB     */ "THEIR DEMAND WENT OUT AT 00:20. IT ASKED FOR NO MONEY.",
-    /* 8 LAB       */ "FLIGHT CASES IN EVERY BAY. NONE OF IT WAS INSPECTED.",
-    /* 9 ARCHIVE   */ "01:00: SIX HUNDRED MILLION LEAVES THE SUB-VAULT.",
-    /* 10 SECURITY */ "MONITOR WALL: VOSS. HE HAS HER AT THE VAULT DOOR.",
-    /* 11 CLIMB    */ "THE SETTLEMENT CLOCK IS RUNNING. FIFTY MINUTES.",
-    /* 12 DUCTS    */ "NOT FOR RANSOM. THEY TOOK HER TO OPEN A DOOR.",
-    /* 13 CLIMB    */ "THE VAULT IS OPEN AND EMPTY. THEY ARE GOING UP.",
-    /* 14 PENTHOUSE*/ "TWO-KEY DOOR. SHE IS THE SECOND. VOSS IS ON THE ROOF.",
+    /*  1 LOBBY    SHOWN */ "FRONT DESK LOG: SHE BADGED IN AT 00:22. CALMLY.",
+    /*  2 OFFICE         */ "EVERY STAIR CORE IS WELDED. SEALED FROM THE INSIDE.",
+    /*  3 CLIMB          */ "NO SIRENS UP HERE. THE CORDON IS FOUR BLOCKS WIDE.",
+    /*  4 SERVER   SHOWN */ "MERIDIAN. NIGHT MAINTENANCE CONTRACTOR SINCE MARCH.",
+    /*  5 PLANT    SHOWN */ "THEIR DEMAND AT 00:04 BOUGHT THE CORDON. NOBODY IS COMING.",
+    /*  6 CANTEEN        */ "TWELVE PLACES LAID IN THE GALLEY. TWELVE MEN.",
+    /*  7 CLIMB          */ "THEIR DEMAND WENT OUT AT 00:04. IT ASKED FOR NO MONEY.",
+    /*  8 LAB      SHOWN */ "FLIGHT CASES IN EVERY BAY. NONE OF IT WAS INSPECTED.",
+    /*  9 ARCHIVE  SHOWN */ "01:00: SIX HUNDRED MILLION LEAVES THE BUILDING.",
+    /* 10 SECURITY       */ "MONITOR WALL: VOSS. HE HAS HER AT THE VAULT DOOR.",
+    /* 11 CLIMB          */ "THE SETTLEMENT CLOCK IS RUNNING. TEN MINUTES.",
+    /* 12 DUCTS          */ "NOT FOR RANSOM. THEY TOOK HER TO OPEN A DOOR.",
+    /* 13 CLIMB          */ "THE VAULT IS OPEN AND EMPTY. THEY ARE GOING UP.",
+    /* 14 PENTHSE  SHOWN */ "TWO-KEY DOOR. SHE IS THE SECOND. VOSS IS ON THE ROOF.",
 };
 
 static const char *transition_intel(int completed_level)
@@ -1731,7 +1743,7 @@ static void render_transition_corridor(SDL_Renderer *r, float time,
                door_x - 7.0f, TRANSITION_DOOR_INNER_TOP,
                3.0f, ground_y - TRANSITION_DOOR_INNER_TOP);
 
-    draw_text(r, door_x + 36.0f, TRANSITION_DOOR_TOP - 17.0f, 0.75f,
+    draw_text(r, door_x + 37.0f, TRANSITION_DOOR_TOP - 17.0f, 1.0f,
               (SDL_Color){143, 151, 137, 255}, "02");
 }
 
@@ -2034,7 +2046,7 @@ static void render_rooftop(SDL_Renderer *r, float time, int win_w, int win_h)
                656.0f, ground - 69.0f, 72.0f, 69.0f);
     color_rect(r, (SDL_Color){100, 103, 93, 255},
                649.0f, ground - 76.0f, 86.0f, 5.0f);
-    draw_text(r, 669.0f, ground - 91.0f, 0.75f,
+    draw_text(r, 676.0f, ground - 91.0f, 1.0f,
               (SDL_Color){169, 168, 145, 255}, "ROOF");
 
     float beacon = 0.38f + 0.62f * (sinf(time * 5.5f) > 0.25f);

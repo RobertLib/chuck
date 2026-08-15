@@ -196,10 +196,19 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                                    16.0f, 16.0f))
         {
             item->collected = true;
+            /* The magazine is the only thing that comes back.
+             *
+             * It has to: the sidearm is what the sector is played with, and a
+             * player who has spent it and cannot find another box is playing
+             * the rest of the floor with a knife. Nothing else is in that
+             * position. The grenade used to come back with it, which made one
+             * `N` an unlimited supply at ten seconds apiece — enough to clear
+             * a floor a blast at a time, and enough to open every blocked-up
+             * patch in the campaign without ever needing the bazooka the
+             * patches were placed for. A one-shot explosive that regrows is
+             * not a decision about when to spend it. */
             item->respawn_timer =
-                item->type == ITEM_GUN || item->type == ITEM_GRENADE
-                    ? ITEM_RESPAWN_TIME
-                    : 0.0f;
+                item->type == ITEM_GUN ? ITEM_RESPAWN_TIME : 0.0f;
             switch (item->type)
             {
             case ITEM_CARD:
@@ -242,8 +251,7 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
             }
         }
 
-        if (item->collected &&
-            (item->type == ITEM_GUN || item->type == ITEM_GRENADE))
+        if (item->collected && item->type == ITEM_GUN)
         {
             item->respawn_timer -= dt;
             if (item->respawn_timer <= 0.0f)
@@ -279,12 +287,10 @@ bool gameplay_player_reached_exit(const GameplayState *state)
 
 int gameplay_neutralized_hostiles(const GameplayState *state)
 {
-    int count = 0;
-    for (int i = 0; i < state->enemy_count; ++i)
-        if (state->enemies[i].dead)
-            count++;
-    for (int i = 0; i < state->dog_count; ++i)
-        if (state->dogs[i].dead)
-            count++;
-    return count;
+    /* The running tally, not a sweep of the `dead` flags. Those flags say who
+     * is still standing: a reinforcement takes over a downed guard's slot, so
+     * counting them reported one kill fewer for every guard the doors sent
+     * after the first — the report between sectors credited the player with
+     * less than the floor they had actually cleared. */
+    return state->hostiles_neutralized;
 }

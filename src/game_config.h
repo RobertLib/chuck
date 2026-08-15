@@ -5,6 +5,25 @@
 #define TILE_SIZE 32
 #define HUD_HEIGHT 40
 
+/*
+ * The longest step the simulation is ever asked to take. `SDL_AppIterate`
+ * clamps the frame to this before anything sees it, which is what keeps a
+ * dropped frame or a dragged window from teleporting the world.
+ *
+ * It is also load-bearing for collision. A projectile tests the tile under its
+ * leading edge *after* it has moved rather than sweeping the path it crossed,
+ * so it can only be trusted while one step is shorter than one tile — the
+ * static assertions beside the projectile speeds below are what enforce that,
+ * and they turn "raise BULLET_SPEED and shots quietly start passing through
+ * one-tile walls" into a build failure.
+ *
+ * Written as a whole number of steps per second rather than as a decimal, so
+ * those assertions can be integer constant expressions: a float comparison in
+ * a _Static_assert is a GNU extension and this tree is built -Wpedantic.
+ */
+#define MIN_FRAME_RATE 20
+#define MAX_FRAME_DT (1.0f / (float)MIN_FRAME_RATE)
+
 /* Ignore the loose center of an analogue stick so a resting gamepad cannot
  * make Chuck or his car creep. D-pad input bypasses this threshold. */
 #define GAMEPAD_AXIS_DEAD_ZONE 8000
@@ -345,6 +364,18 @@
 #define ENEMY_MUZZLE_MIN_Y_FACTOR 0.30f
 #define ENEMY_MUZZLE_MAX_Y_FACTOR 0.70f
 
+/* No projectile may cross a whole tile in one frame: each of them samples the
+ * tile under its leading edge once per step, so a step longer than a tile can
+ * step straight over a one-tile wall without ever being inside it. See
+ * MAX_FRAME_DT. Raising a speed here is allowed; raising it past this line
+ * means the sampling has to become a sweep first. */
+_Static_assert((int)BULLET_SPEED < TILE_SIZE * MIN_FRAME_RATE,
+               "a pistol round would cross a whole tile in one frame");
+_Static_assert((int)ENEMY_BULLET_SPEED < TILE_SIZE * MIN_FRAME_RATE,
+               "a guard's round would cross a whole tile in one frame");
+_Static_assert((int)ROCKET_SPEED < TILE_SIZE * MIN_FRAME_RATE,
+               "a rocket would cross a whole tile in one frame");
+
 #define ENEMY_SPEED_HP2 0.60f
 #define ENEMY_SPEED_HP1 0.30f
 
@@ -352,6 +383,24 @@
 #define GRAVITY 980.0f
 #define MAX_FALL_SPEED 620.0f
 #define INVULN_TIME 1.5f
+
+/*
+ * And the same rule for everything that falls.
+ *
+ * `level_move` resolves the vertical axis by testing the single tile row under
+ * the leading edge *after* the step, exactly as a projectile does, so a body
+ * falling further than a tile in one frame drops straight through a one-tile
+ * floor without ever having been inside it. Every falling thing in the game is
+ * clamped to this one speed — the player, guards, dogs, crates, grenades,
+ * magazines, settling bodies and the bricks thrown off the facade — so one
+ * assertion covers all of them.
+ *
+ * It has a pixel of margin at the moment (620/20 is 31 against a 32px tile),
+ * which is exactly why it is worth pinning: the number reads like a free
+ * tuning knob and it is not one.
+ */
+_Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
+               "a falling body would cross a whole tile in one frame");
 
 /* Doors */
 #define MAX_DOORS 8
@@ -544,11 +593,20 @@
 #define CHASE_ARRIVAL_BRAKE_TIME 4.2f
 #define CHASE_ARRIVAL_DISTANCE 1500.0f
 
-/* The cordon the broadcast bought them. A political demand at 00:20 puts every
- * unit in the city on the streets around this tower and nobody at all inside
- * it, so the drive in passes more and more of it: a squad car standing on the
- * kerb at a junction with its bar lit, sealing the street. They are scenery on
- * the pavement — never in a lane, never something that can be hit. */
+/* The cordon the broadcast bought them, and the reason the drive is threaded
+ * through it rather than raced down an empty street. A squad car stands on the
+ * kerb at a junction with its bar lit, sealing the street: scenery on the
+ * pavement, never in a lane, never something that can be hit.
+ *
+ * The ramp is spatial, not temporal — thin at the edge of the ring and thick
+ * at the tower, because that is where the units converged. That is exactly why
+ * the demand goes out at 00:04 and the pavement outside the coffee window is
+ * taken at 00:12: the whole cordon has to already be standing when the drive
+ * starts, or the player passes the consequence of a broadcast that has not
+ * happened. It also buys the abduction its impunity — every unit in the city
+ * is looking at this building, and nobody at all is looking three blocks out.
+ *
+ * Moving either clock means moving the other with it. */
 #define CHASE_CORDON_FIRST_BLOCK 2
 #define CHASE_CORDON_CHANCE_START 20
 #define CHASE_CORDON_CHANCE_END 85
@@ -560,11 +618,17 @@
 
 /*
  * The night has a deadline and the building states it out loud: at 01:00 the
- * sub-vault opens for the overnight settlement, which is the only reason any
- * of this is happening tonight. A `w` clock reads the campaign sector it is
- * standing in, so the minute hand climbs toward the top of the dial across the
- * fifteen sectors and the player can watch the job close in without a line of
- * text anywhere. Presentation only: nothing in the simulation reads the time.
+ * overnight settlement — six hundred million in bearer bonds — leaves the roof
+ * on their helicopter, which is the only reason any of this is happening
+ * tonight. A `w` clock reads the campaign sector it is standing in, so the
+ * minute hand climbs toward the top of the dial across the fifteen sectors and
+ * the player can watch the job close in without a line of text anywhere.
+ * Presentation only: nothing in the simulation reads the time.
+ *
+ * The first sector opens at 00:22, which is when the prologue hands over: the
+ * SUV reaches the tower at 00:22 and Chuck is through the door behind it, so
+ * the lobby's dial reads the minute the cutscene before it was captioned. The
+ * last is 00:57, three minutes short of the deadline.
  */
 #define NIGHT_CLOCK_FIRST_MINUTE 22.0f
 #define NIGHT_CLOCK_MINUTES_PER_SECTOR 2.5f

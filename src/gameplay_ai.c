@@ -7,18 +7,41 @@
 
 #define ENEMY_SIDE_PROBE 4.0f
 
+/*
+ * Somewhere to put a guard the doors have just sent.
+ *
+ * A fresh slot first, and a downed guard's only if the array is full. The
+ * bodies are drawn now, so taking a slot back deletes one off the floor in
+ * front of the player — and that body is the whole reason the guard beside it
+ * is walking over to look. When the cap does force it, take the one furthest
+ * from Chuck: it is the body he is least likely to be looking at.
+ */
 static int find_enemy_slot(GameplayState *state)
 {
+    if (state->enemy_count < MAX_ENEMIES)
+        return state->enemy_count++;
+
+    int furthest = -1;
+    float best_distance = -1.0f;
+    float player_x = state->player.x + PLAYER_W * 0.5f;
     for (int i = 0; i < state->enemy_count; ++i)
     {
         if (!state->enemies[i].dead)
             continue;
-        for (int dog = 0; dog < state->dog_count; ++dog)
-            if (!state->dogs[dog].dead && state->dogs[dog].owner == i)
-                state->dogs[dog].owner = -1;
-        return i;
+        float distance = fabsf(state->enemies[i].x + ENEMY_W * 0.5f - player_x);
+        if (distance > best_distance)
+        {
+            best_distance = distance;
+            furthest = i;
+        }
     }
-    return state->enemy_count < MAX_ENEMIES ? state->enemy_count++ : -1;
+    if (furthest < 0)
+        return -1;
+
+    for (int dog = 0; dog < state->dog_count; ++dog)
+        if (!state->dogs[dog].dead && state->dogs[dog].owner == furthest)
+            state->dogs[dog].owner = -1;
+    return furthest;
 }
 
 static int find_dog_slot(GameplayState *state)
@@ -27,6 +50,31 @@ static int find_dog_slot(GameplayState *state)
         if (state->dogs[i].dead)
             return i;
     return state->dog_count < MAX_DOGS ? state->dog_count++ : -1;
+}
+
+/*
+ * A body falls.
+ *
+ * It used to be able to hang wherever it was shot, and that cost nothing while
+ * nothing drew it. It is on the floor of the frame now, and it is also a place
+ * on the map: `update_body_discovery` sends the next guard who sees it over to
+ * look. A guard shot off a ladder or at the top of a jump would otherwise leave
+ * a corpse floating in the air with a comrade walking to the empty tile beneath
+ * it. Nothing else about a body is simulated — it does not collide with anyone
+ * and does not trigger a cracked panel on the way down.
+ */
+static void settle_body(GameplayState *state, float *x, float *y, float *vy,
+                        float w, float h, float dt)
+{
+    bool on_ground = false;
+    float vx = 0.0f;
+    *vy += GRAVITY * dt;
+    if (*vy > MAX_FALL_SPEED)
+        *vy = MAX_FALL_SPEED;
+    level_move(&state->level, x, y, &vx, vy, w, h, dt, false, &on_ground,
+               false);
+    if (on_ground)
+        *vy = 0.0f;
 }
 
 static bool actor_or_tile_blocks_side(const GameplayState *state,
@@ -1482,7 +1530,11 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
     {
         Enemy *enemy = &state->enemies[i];
         if (enemy->dead)
+        {
+            settle_body(state, &enemy->x, &enemy->y, &enemy->vy,
+                        ENEMY_W, ENEMY_H, dt);
             continue;
+        }
         float previous_y = enemy->y;
         bool alarm_pursuit = gameplay_alarm_active(state);
         if (alarm_pursuit && enemy->raising_alarm)
@@ -1663,7 +1715,10 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
     {
         Dog *dog = &state->dogs[i];
         if (dog->dead)
+        {
+            settle_body(state, &dog->x, &dog->y, &dog->vy, DOG_W, DOG_H, dt);
             continue;
+        }
         float previous_x = dog->x;
         float previous_y = dog->y;
         DogState previous_state = dog->state;
@@ -1710,7 +1765,14 @@ static void update_enemy_reactions(GameplayState *state)
             continue;
         float enemy_x = enemy->x + ENEMY_W * 0.5f;
         float dx = player_x - enemy_x;
-        if (enemy->talking)
+        /* A chat is a distraction: the pair only notice Chuck up close, and
+         * they stop talking when he gets there whether or not either of them
+         * then turns. A radio check is not a distraction — the man is on his
+         * own post facing his own corridor with a handset up — so it is read
+         * here exactly as an empty-handed guard is, the same rule perception
+         * already follows. Blinding him for it would quietly turn a piece of
+         * colour into a stealth window. */
+        if (enemy->talking && !enemy_on_radio(enemy))
         {
             if (fabsf(dx) > ENEMY_TALK_NOTICE_RADIUS)
                 continue;
@@ -1729,6 +1791,16 @@ static void update_enemy_reactions(GameplayState *state)
             continue;
         if (rng_range(&state->rng, 100) < ENEMY_RETALIATE_CHANCE)
         {
+            /* The handset comes down before he turns: a guard shooting while
+             * still posed mid-call is the one way the beat could contradict
+             * itself. */
+            if (enemy->talking)
+            {
+                enemy->talking = false;
+                enemy->talk_timer = 0.0f;
+                if (enemy->talk_cooldown <= 0.0f)
+                    enemy->talk_cooldown = ENEMY_TALK_COOLDOWN;
+            }
             enemy->dir = dx > 0.0f ? 1 : -1;
             enemy->aim_vdir = 0;
             enemy->aim_target_x = player_x;

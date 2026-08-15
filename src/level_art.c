@@ -2602,7 +2602,7 @@ static void facade_skyline(const LevelArtScene *s, const LevelThemeArt *art,
 /*
  * The cordon, seen from the wall.
  *
- * The demand broadcast at 00:20 was theatre, and this is what it bought: every
+ * The demand broadcast at 00:04 was theatre, and this is what it bought: every
  * unit in the city ringing the block and not one of them inside the building.
  * Chuck is the only part of that plan nobody accounted for, and out on the
  * masonry he is the only person in the city who can see both sides of it at
@@ -2659,7 +2659,7 @@ static void facade_cordon(const LevelArtScene *s, float top, float height,
 /*
  * The one aircraft the cordon lets near the tower.
  *
- * A demand goes out on the wire at 00:20 and a news ship is over the block
+ * A demand goes out on the wire at 00:04 and a news ship is over the block
  * within the hour; a police one would be a problem, because the helicopter on
  * this roof at the end of the night is the crew's ride out and nothing in the
  * sky can be allowed to contradict that. So it holds station well off the

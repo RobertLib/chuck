@@ -77,6 +77,11 @@ void game_read_input(Game *game)
   bool key_up = ks[SDL_SCANCODE_UP] || ks[SDL_SCANCODE_W];
   bool key_down = ks[SDL_SCANCODE_DOWN] || ks[SDL_SCANCODE_S];
   bool key_interact = ks[SDL_SCANCODE_E];
+  /* The dedicated jump key. UP is the keyboard's jump everywhere except over a
+   * ladder, where the same key has to mean climb — which left the keyboard as
+   * the one input that could not jump off a ladder at all, a move the pad has
+   * had all along under A. */
+  bool key_jump = ks[SDL_SCANCODE_LSHIFT];
 
   bool pad_left = false;
   bool pad_right = false;
@@ -121,8 +126,10 @@ void game_read_input(Game *game)
   game->input.up = key_up || pad_up;
   game->input.down = key_down || pad_down;
   game->input.interact = key_interact || pad_interact;
-  /* Held state feeds the variable jump height: release mid-rise cuts it. */
-  game->input.jump_held = key_up || pad_jump_held;
+  /* Held state feeds the variable jump height: release mid-rise cuts it. Both
+   * keyboard jump keys are read, or a jump started on one of them would be cut
+   * back to a hop on the very next frame. */
+  game->input.jump_held = key_up || key_jump || pad_jump_held;
   /* The pedals of the prologue drive: A goes, B stops, the triggers do the
    * same for the fingers that expect a car to be driven with them, and the
    * stick, the d-pad and the arrows keep working for anyone who reaches for
@@ -131,7 +138,7 @@ void game_read_input(Game *game)
   game->input.gas = game->input.up || pad_jump_held || pad_gas_trigger;
   game->input.brake = game->input.down || pad_brake || pad_brake_trigger;
 
-  if (key_left || key_right || key_up || key_down || key_interact)
+  if (key_left || key_right || key_up || key_down || key_interact || key_jump)
     game->platform.gamepad_active = false;
   else if (pad_left || pad_right || pad_up || pad_down || pad_interact ||
            pad_jump_held || pad_brake || pad_gas_trigger || pad_brake_trigger)
@@ -303,9 +310,9 @@ static void confirm_with_gamepad(Game *game, bool allow_jump)
  * Backing out of whatever is on screen.
  *
  * B is the back button on every pad ever made, and back is all it does here:
- * it closes what was opened, and on the title screen — where there is nothing
- * left to close — it leaves the game. Two things it used to do and must never
- * do again, because both cost a player something they did not ask to spend:
+ * it closes what was opened, and where there is nothing open it does nothing
+ * at all. Three things it used to do and must never do again, because every
+ * one of them cost a player something they did not ask to spend:
  *
  * - **It does not pause.** Pause is START's job. B carrying it as well meant a
  *   stray thumb froze a sector, and once the drive put the brake pedal on B it
@@ -315,6 +322,10 @@ static void confirm_with_gamepad(Game *game, bool allow_jump)
  *   button players use to say "not that" is the same bug wearing a hat; the
  *   way out of a run is deliberate, from the pause screen, and `abandons_run`
  *   (SELECT) is only honoured there.
+ * - **It does not close the game.** Quitting is not "backing out" of anything
+ *   the player opened — they opened the game — and a first press of B on the
+ *   first screen ending the session is the worst version of that mistake.
+ *   ESC and the window's own close box are both asked for on purpose.
  */
 static void back_out_with_gamepad(Game *game, bool abandons_run)
 {
@@ -326,11 +337,8 @@ static void back_out_with_gamepad(Game *game, bool abandons_run)
       game_toggle_pause(game);
     return;
   }
-  /* And on the title screen it does nothing either. Closing the game is not
-   * "backing out" of anything the player opened — they opened the game — and
-   * a first press of B on the first screen ending the session is the worst
-   * version of that mistake. Quitting is ESC or the window's own close box,
-   * both of which are asked for on purpose. */
+  /* Everywhere else — the title screen included — there is nothing open to
+   * close, so B is deliberately inert here. See the third rule above. */
 }
 
 static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
@@ -578,6 +586,17 @@ void game_handle_event(Game *game, const SDL_Event *event)
       return;
     }
 
+    /* BACKSPACE backs out of whatever is open, and the pause sheet is one of
+     * the three things that can be. The manual and the assist sheet already
+     * answered it and the control table promises all three, so the pause sheet
+     * ignoring it was the keyboard disagreeing with its own manual — and with
+     * the pad, where B closes all three. */
+    if (game->state == STATE_PAUSED && sc == SDL_SCANCODE_BACKSPACE)
+    {
+      game_toggle_pause(game);
+      return;
+    }
+
     if (state_accepts_confirm(game->state) && game->state != STATE_PLAYING &&
         (key == SDLK_SPACE || key == SDLK_RETURN || key == SDLK_KP_ENTER))
     {
@@ -599,11 +618,30 @@ void game_handle_event(Game *game, const SDL_Event *event)
     {
       game->input.switch_weapon = true;
     }
+    /* The ring is walked both ways on the pad, so it is walked both ways here
+     * too: a keyboard that could only ever go forward is a keyboard three
+     * presses from the weapon a bumper reaches in one. */
+    if (sc == SDL_SCANCODE_Z && game->state == STATE_PLAYING)
+    {
+      game->input.switch_weapon_back = true;
+    }
+    /* A jump key that is not also the climb key, so it needs no ladder test:
+     * it reports the press and player_update decides whether to honour it,
+     * now or from the buffer — exactly as the pad's A does. */
+    if (sc == SDL_SCANCODE_LSHIFT && game->state == STATE_PLAYING)
+    {
+      game->input.jump = true;
+    }
     /* Jump on Up arrow. Over a ladder the same key means "climb", so the
      * press is not reported as a jump there; everywhere else it always is —
      * whether it lands now, in the coyote window, or from the jump buffer is
-     * player_update's decision, not the input layer's. */
-    if (key == SDLK_UP || event->key.scancode == SDL_SCANCODE_W)
+     * player_update's decision, not the input layer's.
+     *
+     * Only in a sector, like LSHIFT above: the ladder test below reads the
+     * player out of the live simulation, and outside a sector that simulation
+     * is whatever the last one left behind. */
+    if ((key == SDLK_UP || event->key.scancode == SDL_SCANCODE_W) &&
+        game->state == STATE_PLAYING)
     {
       /* Determine whether player box overlaps a ladder near center/feet */
       int col = (int)floorf((game->gameplay.player.x + PLAYER_W * 0.5f) / TILE_SIZE);
@@ -617,7 +655,13 @@ void game_handle_event(Game *game, const SDL_Event *event)
         game->input.jump = true;
       }
     }
-    if (sc == SDL_SCANCODE_E)
+    /* The door key belongs to the sector and is only reported there. The drive
+     * also reads `use_door`, as the skip the pad puts on Y — so an ungated E
+     * was a second, unadvertised way past the prologue, on the one input that
+     * is never told about it: the drive prompts the keyboard for ENTER/SPACE,
+     * and a button that works without ever being named is the mirror image of
+     * a prompt naming a button that does not. */
+    if (sc == SDL_SCANCODE_E && game->state == STATE_PLAYING)
     {
       game->input.use_door = true;
     }

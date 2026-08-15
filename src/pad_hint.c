@@ -160,8 +160,8 @@ static const char *token_value(const PadHints *hints, const char *src,
         const char *name;
         const char *value;
     } tokens[] = {
-        {"START", hints->start},
         {"SELECT", hints->select},
+        {"START", hints->start},
         {"LB", hints->shoulder_l},
         {"RB", hints->shoulder_r},
         {"A", hints->face[PAD_FACE_CONFIRM]},
@@ -186,8 +186,21 @@ static const char *token_value(const PadHints *hints, const char *src,
 const char *pad_hint(const PadHints *hints, char *buf, size_t size,
                      const char *pad_form, const char *key_form)
 {
-    if (hints == NULL || buf == NULL || size == 0)
+    if (buf == NULL || size == 0)
         return key_form;
+
+    /* The keyboard line is copied into the same buffer the spelled one goes
+     * into, so the answer is always *in* `buf` whatever is in the player's
+     * hands. Handing `key_form` straight back and leaving `buf` untouched put
+     * the burden on every caller to use the returned pointer rather than the
+     * buffer it had just passed in, and the one caller that forgot drew a line
+     * of uninitialised stack across the drive's control prompt — which is the
+     * prompt that teaches the only part of the game nobody guesses. */
+    if (hints == NULL)
+    {
+        SDL_strlcpy(buf, key_form, size);
+        return buf;
+    }
 
     size_t out = 0;
     const char *src = pad_form;

@@ -330,7 +330,7 @@ static void render_background(Game *game, int win_w, int win_h)
                  28.0f, 16.0f);
       color_rect(r, (SDL_Color){36, 92, 74, 255}, sign_x + 1.0f,
                  sign_y + 1.0f, 26.0f, 14.0f);
-      draw_text(r, sign_x + 6.0f, sign_y + 5.0f, 0.85f, 156, 240, 196, "WC");
+      draw_text(r, sign_x + 6.0f, sign_y + 4.0f, 1.0f, 156, 240, 196, "WC");
     }
     return;
   }
@@ -561,20 +561,25 @@ static void draw_door(SDL_Renderer *r, float x, float y, int index)
   color_rect(r, (SDL_Color){34, 43, 56, 255}, x + 5.0f, y + 4.0f, 22.0f, 28.0f);
   color_rect(r, (SDL_Color){44, 55, 70, 255}, x + 6.0f, y + 5.0f, 20.0f, 26.0f);
 
-  /* Recessed viewing slit and brushed panel lines. */
+  /* Recessed viewing slit and brushed panel lines. The lines sit below the
+   * number plate rather than through it. */
   color_rect(r, (SDL_Color){12, 18, 26, 255}, x + 9.0f, y + 7.0f, 14.0f, 5.0f);
   color_rect(r, (SDL_Color){30, 66, 76, 255}, x + 10.0f, y + 8.0f, 12.0f, 3.0f);
-  for (int line = 0; line < 3; ++line)
+  for (int line = 0; line < 2; ++line)
     color_rect(r, (SDL_Color){33, 42, 54, 255},
-               x + 8.0f, y + 18.0f + line * 4.0f, 16.0f, 1.0f);
+               x + 8.0f, y + 25.0f + line * 4.0f, 16.0f, 1.0f);
 
   /* Access reader with a live status LED. */
   color_rect(r, (SDL_Color){14, 20, 28, 255}, x + 22.0f, y + 16.0f, 5.0f, 9.0f);
   color_rect(r, (SDL_Color){86, 226, 186, 255}, x + 23.0f, y + 17.0f, 3.0f, 2.0f);
 
+  /* Which of the pair this is, on a plate big enough to hold the digit at the
+   * font's own size — the whole point of numbering the doors is that the player
+   * can read the number and know where the other one comes out. */
+  color_rect(r, (SDL_Color){14, 20, 28, 255}, x + 11.0f, y + 13.0f, 10.0f, 10.0f);
   char label[3];
   SDL_snprintf(label, sizeof(label), "%d", index / 2 + 1);
-  draw_text(r, x + 13.0f, y + 14.0f, 0.65f, 148, 176, 188, label);
+  draw_text(r, x + 12.0f, y + 14.0f, 1.0f, 148, 176, 188, label);
 }
 
 static void draw_restroom_door(SDL_Renderer *r, float x, float y)
@@ -588,9 +593,11 @@ static void draw_restroom_door(SDL_Renderer *r, float x, float y)
              x + 4.0f, y + 3.0f, 24.0f, 27.0f);
   color_rect(r, (SDL_Color){25, 43, 50, 255},
              x + 6.0f, y + 5.0f, 20.0f, 23.0f);
+  /* The plate is sized to the two letters at the font's own scale rather than
+   * the letters being shrunk onto the plate. */
   color_rect(r, (SDL_Color){185, 226, 218, 255},
-             x + 8.0f, y + 7.0f, 16.0f, 9.0f);
-  draw_text(r, x + 10.0f, y + 8.0f, 0.75f, 31, 72, 73, "WC");
+             x + 7.0f, y + 6.0f, 18.0f, 10.0f);
+  draw_text(r, x + 8.0f, y + 7.0f, 1.0f, 31, 72, 73, "WC");
   color_rect(r, (SDL_Color){116, 226, 209, 255},
              x + 22.0f, y + 21.0f, 3.0f, 5.0f);
 }
@@ -608,12 +615,22 @@ static void draw_exit(SDL_Renderer *r, const Game *game, float x, float y)
   color_rect(r, FX_INK, x + 1.0f, y, 30.0f, 32.0f);
   color_rect(r, (SDL_Color){41, 54, 62, 255}, x + 3.0f, y + 2.0f, 26.0f, 30.0f);
   color_rect(r, (SDL_Color){66, 82, 88, 255}, x + 5.0f, y + 4.0f, 22.0f, 26.0f);
-  color_rect(r, (SDL_Color){19, 29, 34, 255}, x + 8.0f, y + 12.0f, 16.0f, 16.0f);
+  color_rect(r, (SDL_Color){19, 29, 34, 255}, x + 7.0f, y + 12.0f, 18.0f, 10.0f);
   color_rect(r, signal, x + 6.0f, y + 6.0f, 20.0f, 3.0f);
-  color_rect(r, (SDL_Color){11, 18, 22, 255}, x + 20.0f, y + 18.0f, 5.0f, 7.0f);
-  color_rect(r, signal, x + 21.0f, y + 19.0f, 3.0f, 2.0f);
-  draw_text(r, x + 9.0f, y + 12.0f, 0.65f, signal.r, signal.g, signal.b,
-            blocked ? "JAM" : (unlocked ? "GO" : "LOCK"));
+  /*
+   * The reader says one thing, in two cells, at the only size the 8x8 font has.
+   *
+   * It used to spell LOCK across a sixteen-pixel screen at 0.65 of a scale —
+   * five-pixel glyphs, resampled, running off the plate and past the right edge
+   * of the door itself. The rule the rest of the game follows is that a row
+   * that does not fit at scale 1.0 loses words rather than scale, and this is a
+   * card reader: two characters is what a card reader has ever shown anybody.
+   */
+  draw_text(r, x + 8.0f, y + 13.0f, 1.0f, signal.r, signal.g, signal.b,
+            blocked ? "--" : (unlocked ? "GO" : "NO"));
+  /* The status LED moved out from under the screen it was overlapping. */
+  color_rect(r, (SDL_Color){11, 18, 22, 255}, x + 20.0f, y + 24.0f, 5.0f, 4.0f);
+  color_rect(r, signal, x + 21.0f, y + 25.0f, 3.0f, 2.0f);
   if (blocked)
   {
     color_rect(r, (SDL_Color){91, 71, 55, 255}, x + 3.0f, y + 7.0f,
@@ -929,18 +946,23 @@ static void draw_terminal(SDL_Renderer *r, float x, float y,
                x + 15.0f, y + 12.0f, 2.0f, 2.0f);
   }
 
+  /*
+   * The status strip under the screen, in two cells at scale 1.0.
+   *
+   * Four-letter words at 0.55 of a scale are four-pixel glyphs: at that size
+   * LIVE, OPEN, FAIL and OFF were not words the player could read, they were a
+   * smear of lit pixels that happened to differ. Two cells is what fits at the
+   * only size the font is sharp at, and the strip lost its three decorative
+   * keys to make room — the readout is the thing worth the space, and the state
+   * it names was never anywhere else on the prop.
+   */
   color_rect(r, (SDL_Color){20, 27, 30, 255},
-             x + 7.0f, y + 20.0f, 18.0f, 8.0f);
-  color_rect(r, active ? screen : (SDL_Color){73, 78, 77, 255},
-             x + 9.0f, y + 22.0f, 3.0f, 2.0f);
-  color_rect(r, active ? screen : (SDL_Color){73, 78, 77, 255},
-             x + 14.0f, y + 22.0f, 3.0f, 2.0f);
-  color_rect(r, active ? screen : (SDL_Color){73, 78, 77, 255},
-             x + 19.0f, y + 22.0f, 3.0f, 2.0f);
-  draw_text(r, x + (active ? 7.0f : 9.0f), y + 25.0f, 0.55f,
-            screen.r, screen.g, screen.b,
-            active ? (hacked ? (route_blocked ? "FAIL" : "OPEN") : "LIVE")
-                   : "OFF");
+             x + 6.0f, y + 20.0f, 20.0f, 10.0f);
+  color_rect(r, active ? (SDL_Color){38, 72, 69, 255}
+                       : (SDL_Color){42, 48, 51, 255},
+             x + 6.0f, y + 20.0f, 20.0f, 1.0f);
+  draw_text(r, x + 8.0f, y + 21.0f, 1.0f, screen.r, screen.g, screen.b,
+            active ? (hacked ? (route_blocked ? "NO" : "OK") : "ON") : "--");
 }
 
 static void draw_alarm_switch(SDL_Renderer *r, float x, float y,
@@ -1348,8 +1370,10 @@ static void draw_flight_case(SDL_Renderer *r, float x, float y,
 /*
  * The clock the whole night is running against.
  *
- * At 01:00 the sub-vault opens for the overnight settlement, and everything
- * in the building is timed off that. The dial reads the sector Chuck is
+ * At 01:00 the overnight settlement leaves the roof by helicopter — the
+ * sub-vault is emptied during the climb, and 01:00 is the last minute any of
+ * it is still in the building. Everything tonight is timed off that deadline
+ * rather than off the vault door. The dial reads the sector Chuck is
  * standing in, so the minute hand climbs the right-hand side of the face
  * across the campaign and is nearly back at the top by the roof — the player
  * is never told the time and never has to know it, but anyone who looks up in
@@ -1813,8 +1837,8 @@ static void draw_crate(SDL_Renderer *r, const Crate *crate, float cam_x, float o
   SDL_RenderLine(r, x + CRATE_W - 7.0f, y + 6.0f, x + 6.0f, y + CRATE_H - 7.0f);
   set_rgba(r, 188, 125, 67, 255);
   SDL_RenderLine(r, x + 7.0f, y + 6.0f, x + CRATE_W - 7.0f, y + CRATE_H - 8.0f);
-  color_rect(r, (SDL_Color){178, 171, 133, 255}, x + 11.0f, y + 10.0f, 8.0f, 7.0f);
-  draw_text(r, x + 12.0f, y + 11.0f, 0.55f, 74, 62, 45, "X");
+  color_rect(r, (SDL_Color){178, 171, 133, 255}, x + 10.0f, y + 9.0f, 10.0f, 10.0f);
+  draw_text(r, x + 11.0f, y + 10.0f, 1.0f, 74, 62, 45, "X");
 }
 
 static void draw_mine(SDL_Renderer *r, const Mine *mine, float cam_x, float oy)
@@ -3924,6 +3948,83 @@ static void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
   }
 }
 
+/*
+ * A guard who is down, lying where he fell.
+ *
+ * He has to be drawn, and the reason is a rule rather than a flourish: a calm
+ * guard who sees a fallen comrade walks over to look and often sprints for the
+ * nearest alarm (`update_body_discovery`). With nothing on the floor the player
+ * watched a man cross the room to an empty patch of carpet and wake the
+ * building, which reads as guards raising the alarm at random — a punishment
+ * whose cause was simulated and never shown.
+ *
+ * So: the same figure, laid along the floor. Head toward the way he was facing,
+ * the uniform a step darker than a standing guard's because nothing is lighting
+ * him from the front any more, the visor dead rather than red — that pixel is
+ * what says "enemy" across a room and a body must not say it — and no health
+ * pips, because there is no fight left to report.
+ */
+static void draw_downed_enemy(SDL_Renderer *r, const Enemy *e,
+                              const Level *level, float cam_x, float oy)
+{
+  float x = e->x - cam_x;
+  float y = e->y + oy;
+  int dir = e->dir;
+  SDL_Color uniform = fx_dim(FX_GUARD, 0.82f);
+  SDL_Color trouser = (SDL_Color){34, 39, 31, 255};
+  SDL_Color boot = (SDL_Color){28, 32, 26, 255};
+  SDL_Color skin = fx_dim(FX_SKIN, 0.72f);
+
+  /* Wider and fainter than the standing pool: the mass is spread along the
+     floor rather than balanced on two boots. */
+  npc_contact_shadow(r, level, e->x + ENEMY_W * 0.5f, e->y + 31.0f,
+                     14.0f, 165, cam_x, oy);
+
+  /*
+   * The silhouette is the whole job. Lying down he has a tenth of the height
+   * he had standing, so the parts have to be spread along the floor and read
+   * separately or the figure collapses into one dark lump the eye files as
+   * scenery: boots at one end, helmet at the other, and a knee drawn up
+   * between them so the legs are two things rather than one.
+   */
+  sprite_limb_segment(r, x, y, ENEMY_W, dir, 11.0f, 26.0f, 5.0f, 24.0f,
+                      trouser);
+  sprite_shoe(r, x, y, ENEMY_W, dir, 4.0f, 24.0f, boot);
+
+  sprite_body(r, x, y, ENEMY_W, dir, 8.0f, 23.0f, 11.0f, 8.0f, uniform,
+              COL_OUTLINE, 1, 1);
+  /* The plate carrier is what separates a guard from a man in a green shirt,
+     lying down as much as standing up. */
+  sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 25.0f, 7.0f, 4.0f,
+              (SDL_Color){36, 43, 37, 255});
+  sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 25.0f, 7.0f, 1.0f,
+              (SDL_Color){58, 68, 52, 255});
+  sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 29.0f, 11.0f, 1.0f,
+              (SDL_Color){26, 31, 27, 255});
+
+  /* Near leg along the floor, and the arm thrown out past the head. */
+  sprite_limb_segment(r, x, y, ENEMY_W, dir, 11.0f, 29.0f, 4.0f, 30.0f,
+                      trouser);
+  sprite_shoe(r, x, y, ENEMY_W, dir, 3.0f, 30.0f, boot);
+  sprite_limb_segment(r, x, y, ENEMY_W, dir, 16.0f, 27.0f, 22.0f, 30.0f,
+                      uniform);
+  sprite_rect(r, x, y, ENEMY_W, dir, 21.0f, 29.0f, 3.0f, 2.0f, skin);
+
+  /* The head, and the helmet still on it but tipped back off the brow. */
+  sprite_body(r, x, y, ENEMY_W, dir, 17.0f, 24.0f, 7.0f, 6.0f, skin,
+              COL_OUTLINE, 1, 2);
+  sprite_mass(r, x, y, ENEMY_W, dir, 15.0f, 21.0f, 10.0f, 5.0f, COL_OUTLINE,
+              3, 1);
+  sprite_mass(r, x, y, ENEMY_W, dir, 16.0f, 22.0f, 8.0f, 3.0f,
+              (SDL_Color){44, 53, 40, 255}, 2, 0);
+  sprite_mass(r, x, y, ENEMY_W, dir, 17.0f, 22.0f, 6.0f, 1.0f,
+              (SDL_Color){86, 97, 66, 255}, 1, 0);
+  /* The visor is dead. Lit, it is the pixel that says "enemy" across a room,
+     and a body must not say it. */
+  sprite_rect(r, x, y, ENEMY_W, dir, 20.0f, 26.0f, 3.0f, 1.0f,
+              fx_dim(FX_RED_DK, 0.55f));
+}
+
 static void draw_dog(SDL_Renderer *r, const Dog *dog, const Level *level,
                      float cam_x, float oy)
 {
@@ -4005,6 +4106,39 @@ static void draw_dog(SDL_Renderer *r, const Dog *dog, const Level *level,
     sprite_rect(r, x, y, DOG_W, dir, leg_x + 1.0f + lunge, 12.0f - leg_lift,
                 2.0f, 3.0f + leg_lift * 0.5f, fur);
   }
+}
+
+/* The dog, down, on its side. Same reason as the guard: a handler who finds it
+   investigates and may raise the alarm, and the animal has to be on the floor
+   for that to be a thing the player saw happen. */
+static void draw_downed_dog(SDL_Renderer *r, const Dog *dog, const Level *level,
+                            float cam_x, float oy)
+{
+  float x = dog->x - cam_x;
+  float y = dog->y + oy;
+  int dir = dog->dir;
+  SDL_Color fur = (SDL_Color){56, 43, 34, 255};
+  SDL_Color fur_hi = (SDL_Color){84, 60, 41, 255};
+
+  npc_contact_shadow(r, level, dog->x + DOG_W * 0.5f, dog->y + 15.0f,
+                     12.0f, 150, cam_x, oy);
+
+  /* Legs out sideways off the lying body: the one line that says this animal
+     is not standing. */
+  sprite_rect(r, x, y, DOG_W, dir, 6.0f, 7.0f, 2.0f, 4.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, DOG_W, dir, 11.0f, 7.0f, 2.0f, 4.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, DOG_W, dir, 6.0f, 8.0f, 1.0f, 3.0f, fur);
+  sprite_rect(r, x, y, DOG_W, dir, 11.0f, 8.0f, 1.0f, 3.0f, fur);
+
+  sprite_rect(r, x, y, DOG_W, dir, 0.0f, 11.0f, 4.0f, 2.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, DOG_W, dir, 0.0f, 11.0f, 3.0f, 1.0f, fur);
+  sprite_body(r, x, y, DOG_W, dir, 3.0f, 10.0f, 13.0f, 5.0f, fur,
+              COL_OUTLINE, 1, 1);
+  sprite_body(r, x, y, DOG_W, dir, 15.0f, 11.0f, 7.0f, 4.0f, fur_hi,
+              COL_OUTLINE, 1, 1);
+  sprite_rect(r, x, y, DOG_W, dir, 15.0f, 9.0f, 3.0f, 2.0f, COL_OUTLINE);
+  /* The eye is shut. An open one on a body is the animal watching the room. */
+  sprite_rect(r, x, y, DOG_W, dir, 18.0f, 12.0f, 2.0f, 1.0f, FX_INK);
 }
 
 static void draw_thrown_object(SDL_Renderer *r, const ThrownObject *object,
@@ -4696,6 +4830,16 @@ static void render_world(Game *game)
     if (game->gameplay.mines[i].active)
       draw_mine(r, &game->gameplay.mines[i], cam_x, oy);
 
+  /* The fallen go down first, so anyone still on their feet passes in front of
+     them rather than behind. */
+  for (int i = 0; i < game->gameplay.dog_count; ++i)
+    if (game->gameplay.dogs[i].dead)
+      draw_downed_dog(r, &game->gameplay.dogs[i], lvl, cam_x, oy);
+
+  for (int i = 0; i < game->gameplay.enemy_count; ++i)
+    if (game->gameplay.enemies[i].dead)
+      draw_downed_enemy(r, &game->gameplay.enemies[i], lvl, cam_x, oy);
+
   for (int i = 0; i < game->gameplay.dog_count; ++i)
     if (!game->gameplay.dogs[i].dead)
       draw_dog(r, &game->gameplay.dogs[i], lvl, cam_x, oy);
@@ -4881,8 +5025,16 @@ static void render_facade_hud(Game *game, int win_w)
                    i < game->gameplay.player.hp);
   char life_buf[8];
   SDL_snprintf(life_buf, sizeof(life_buf), "x%d", game->campaign.lives);
-  draw_text(r, 124.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
-            246, 110, 96, life_buf);
+  /* The wall earns extra lives exactly as the sectors do, so it announces them
+   * the same way: a score that pays out silently out here reads as the counter
+   * having miscounted. */
+  if (game->presentation.extra_life_timer > 0.0f &&
+      fmodf(game->presentation.extra_life_timer, 0.3f) > 0.15f)
+    draw_text(r, 124.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
+              120, 255, 190, "1UP");
+  else
+    draw_text(r, 124.0f + max_hp * 14.0f + 4.0f, 20.0f, 1.0f,
+              246, 110, 96, life_buf);
   draw_hud_separator(r, 218.0f);
 
   /* Wind gauge. During the warning it shows which way the gust will push;
@@ -4931,6 +5083,19 @@ static void render_facade_hud(Game *game, int win_w)
              344.0f, 22.0f, 260.0f * progress, 7.0f);
   color_rect(r, FX_CYAN,
              344.0f, 22.0f, 260.0f * progress, 2.0f);
+  /* Where a lost life puts him back on the wall. The bar is the only thing
+   * that can say it, and a climber deciding whether to take the next gust
+   * head-on is asking exactly this question. */
+  if (game->gameplay.facade_has_checkpoint && distance > 0.0f)
+  {
+    float banked = (start_y - game->gameplay.facade_checkpoint_y) / distance;
+    if (banked < 0.0f)
+      banked = 0.0f;
+    if (banked > 1.0f)
+      banked = 1.0f;
+    color_rect(r, (SDL_Color){225, 198, 112, 255},
+               343.0f + 260.0f * banked, 19.0f, 2.0f, 13.0f);
+  }
 
   int tiles_remaining = (int)ceilf(fabsf(game->gameplay.player.y - target_y) /
                                    TILE_SIZE);
@@ -4938,15 +5103,22 @@ static void render_facade_hud(Game *game, int win_w)
   SDL_snprintf(remaining, sizeof(remaining), "WINDOW %02dM", tiles_remaining);
   draw_text(r, 618.0f, 8.0f, 1.0f, 225, 198, 112, remaining);
 
-  /* What Chuck is carrying up the wall is what he will have inside. */
-  char loadout[48];
-  SDL_snprintf(loadout, sizeof(loadout), "WPN %s  A%d G%d R%d",
-               player_weapon_label(game->gameplay.player.active_weapon),
-               game->gameplay.player.bullets,
-               game->gameplay.player.grenades,
-               game->gameplay.player.bazooka_rockets);
-  draw_text(r, 618.0f, 24.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
-            loadout);
+  /* What Chuck is carrying up the wall is what he will have inside — drawn in
+   * the same glyphs the sector draws it in, because the player is asked to
+   * recognise a cartridge and a grenade everywhere else in the game and a
+   * climb spelling them `A6 G0 R0` is the one screen teaching a private
+   * shorthand. Nothing here is usable on the wall, so it is set at label
+   * weight rather than as a live readout: it is a note about the next sector,
+   * not a thing to reach for. */
+  draw_text(r, 618.0f, 20.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+            player_weapon_label(game->gameplay.player.active_weapon));
+  for (int i = 0; i < MAX_AMMO; ++i)
+    fx_ammo_pip(r, 677.0f + i * 7.0f, 19.0f,
+                i < game->gameplay.player.bullets);
+  if (game->gameplay.player.grenades > 0)
+    draw_grenade(r, 724.0f, 19.0f, 0.0f);
+  if (game->gameplay.player.bazooka_rockets > 0)
+    draw_rocket_sprite(r, 742.0f, 22.0f, 1, false);
 }
 
 static void render_hud(Game *game)
@@ -5020,10 +5192,20 @@ static void render_hud(Game *game)
     draw_rocket_sprite(r, 276.0f, 22.0f, 1, false);
   draw_hud_separator(r, 292.0f);
 
-  /* Access status chip with a live LED. */
+  /* Access status chip with a live LED.
+   *
+   * It reports the *sector*, not the room the boots are standing in. Entering
+   * the restroom swaps the whole simulation, so reading the active one put the
+   * WC's own (permanently locked, because it has none) door on the strip: a
+   * player who had already found the card watched ACCESS fall back to a
+   * blinking red LOCKED for the length of a detour, and go green again on the
+   * way out. SECTOR beside it already names the sector rather than the room,
+   * and the two have to agree. */
+  const GameplayState *sector =
+      game->in_sublevel ? &game->inactive_gameplay : &game->gameplay;
   draw_text(r, 303.0f, 8.0f, 1.0f, label_r, label_g, label_b, "ACCESS");
-  bool blocked = game->gameplay.level.map.has_window;
-  bool unlocked = game->gameplay.level.runtime.exit_unlocked;
+  bool blocked = sector->level.map.has_window;
+  bool unlocked = sector->level.runtime.exit_unlocked;
   float blink = 0.5f + 0.5f * sinf((float)SDL_GetTicksNS() * 1.0e-9f * 4.0f);
   if (blocked)
   {
@@ -5070,16 +5252,25 @@ static void render_hud(Game *game)
             FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, score_buf + first_digit);
 
   /* The passive trail meter becomes an unmistakable security readout while
-   * the building alarm is active. */
+   * the building alarm is active.
+   *
+   * Off the *sector*, for the reason ACCESS is: the restroom is a room of the
+   * building, not a different building, and its own simulation has no alarm in
+   * it. Reading the active one meant a sector left ringing went quiet the
+   * moment Chuck stepped through the WC door and started ringing again when he
+   * came back out — a countdown that pauses when the player hides is the HUD
+   * offering a safe room the sector never granted. The timer itself is frozen
+   * with the rest of the sector while he is away, so the number he returns to
+   * is the number he left. */
   float t = (float)SDL_GetTicksNS() * 1.0e-9f;
-  if (gameplay_alarm_active(&game->gameplay))
+  if (gameplay_alarm_active(sector))
   {
     float pulse = 0.5f + 0.5f * sinf(t * 7.0f);
     SDL_Color alert = fx_dim(fx_ramp(FX_RED).lit,
                              0.55f + pulse * 0.45f);
     char alarm_buf[24];
     SDL_snprintf(alarm_buf, sizeof(alarm_buf), "ALERT %02d",
-                 (int)ceilf(game->gameplay.terminal_alarm_timer));
+                 (int)ceilf(sector->terminal_alarm_timer));
     draw_text(r, 650.0f, 8.0f, 1.0f,
               alert.r, alert.g, alert.b, "SECURITY");
     color_rect(r, (SDL_Color){58, 16, 18, 255},
@@ -5434,12 +5625,23 @@ void game_render(Game *game)
   else if (game->state == STATE_ASSIST)
   {
     /* Over the title the sheet floats on the night; over the pause screen it
-     * floats on the held frame. Either way it owns the input. */
+     * floats on the held frame — and "the held frame" has to mean whatever was
+     * actually running, which during the prologue is the drive. Asking only
+     * whether the sheet came from the title screen put the frozen first sector
+     * behind a sheet opened from a paused drive, which is a road the player
+     * has not reached yet. */
     if (game->assist_return_state == STATE_INTRO)
     {
       intro_render(r, &game->presentation.intro, win_w, win_h,
                    game_pad_hints(game));
       vignette = FX_VIGNETTE_SCENE;
+    }
+    else if (game->pause_return_state == STATE_CHASE)
+    {
+      chase_render(r, &game->chase, win_w, win_h,
+                   game->presentation.camera_shake_x,
+                   game->presentation.camera_shake_y,
+                   game_pad_hints(game));
     }
     else
     {

@@ -129,6 +129,10 @@ typedef struct
     bool in_sublevel;
     float main_level_cam_x;
     float main_level_cam_y;
+    /* The parked half of PresentationState.fall_platform_sounded. It is keyed
+     * by a panel of one particular level, so it changes hands with that level
+     * rather than staying behind with the shell. */
+    bool inactive_fall_platform_sounded[MAX_FALL_PLATFORMS];
     PresentationState presentation;
     Input input;
     GameState state;

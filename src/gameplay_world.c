@@ -426,6 +426,11 @@ int gameplay_break_walls_in_radius(GameplayState *state,
     return broken;
 }
 
+void gameplay_record_neutralized(GameplayState *state)
+{
+    state->hostiles_neutralized++;
+}
+
 void gameplay_kill_enemy_with_crate(GameplayState *state,
                                     CampaignState *campaign, Enemy *enemy)
 {
@@ -433,6 +438,7 @@ void gameplay_kill_enemy_with_crate(GameplayState *state,
         return;
     enemy->hp = 0;
     enemy->dead = true;
+    gameplay_record_neutralized(state);
     float x = enemy->x + ENEMY_W * 0.5f;
     float y = enemy->y + ENEMY_H * 0.5f;
     game_events_particles(&state->events, x, y, 24, enemy->dir);
@@ -447,6 +453,7 @@ void gameplay_kill_dog_with_crate(GameplayState *state,
         return;
     dog->hp = 0;
     dog->dead = true;
+    gameplay_record_neutralized(state);
     float x = dog->x + DOG_W * 0.5f;
     float y = dog->y + DOG_H * 0.5f;
     game_events_particles(&state->events, x, y, 14, dog->dir);

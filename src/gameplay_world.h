@@ -51,5 +51,10 @@ void gameplay_kill_enemy_with_crate(GameplayState *state,
                                     CampaignState *campaign, Enemy *enemy);
 void gameplay_kill_dog_with_crate(GameplayState *state,
                                   CampaignState *campaign, Dog *dog);
+/* One more hostile off the floor, however it went down. Every path that sets a
+ * `dead` flag calls this, because the flags themselves are the living
+ * population and a reinforcement reusing a downed guard's slot would otherwise
+ * un-count the kill that emptied it. */
+void gameplay_record_neutralized(GameplayState *state);
 
 #endif /* CHUCK_GAMEPLAY_WORLD_H */
