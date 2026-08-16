@@ -5049,6 +5049,38 @@ static void test_guard_downed_in_combat_drops_ammo(void)
                             SFX_PICKUP_AMMO));
 }
 
+/* A body is not a climber. Shot halfway up a shaft it falls past the rungs to
+ * the floor of it, rather than being caught by the next rung and left lying
+ * across the ladder in mid-air — which is both a body resting on nothing the
+ * player can stand on and a body no comrade sent to look at it could reach. */
+static void test_body_falls_past_the_rungs(void)
+{
+    static const char data[] =
+        "#####\n"
+        "#S H#\n"
+        "#  H#\n"
+        "#E H#\n"
+        "#####\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 21);
+    CHECK(level_load_data(&state.level, "shaft", data, strlen(data),
+                          &state.rng));
+    player_reset(&state.player, &state.level);
+
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){.x = 3.0f * TILE_SIZE,
+                               .y = 1.0f * TILE_SIZE + 8.0f,
+                               .dir = -1,
+                               .dead = true,
+                               .climbing = true};
+    for (int i = 0; i < 120; ++i)
+        gameplay_ai_update_movement(&state, 1.0f / 60.0f);
+
+    /* The floor of the shaft, not the rung below where he was hit. */
+    CHECK(fabsf(state.enemies[0].y - (4.0f * TILE_SIZE - ENEMY_H)) < 0.5f);
+    CHECK(state.enemies[0].vy == 0.0f);
+}
+
 /* A dog bite is announced: the first contact only starts the crouch, the
  * teeth land a beat later if Chuck is still there, and stepping clear
  * cancels the lunge entirely. */
@@ -5780,6 +5812,7 @@ int main(void)
     test_explosion_costs_two_hearts();
     test_interior_checkpoint_resumes_progress();
     test_guard_downed_in_combat_drops_ammo();
+    test_body_falls_past_the_rungs();
     test_dog_bite_is_announced_and_survivable();
     test_chase_failure_rewinds_instead_of_restarting();
     test_chase_skippable_after_repeated_failures();

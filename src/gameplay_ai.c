@@ -62,6 +62,15 @@ static int find_dog_slot(GameplayState *state)
  * a corpse floating in the air with a comrade walking to the empty tile beneath
  * it. Nothing else about a body is simulated — it does not collide with anyone
  * and does not trigger a cracked panel on the way down.
+ *
+ * It falls as a climber does, which is the one thing about it that is not
+ * obvious: `level_move` treats every rung as a one-way platform for anyone not
+ * climbing, so a guard shot halfway up a shaft was caught by the very next rung
+ * and left lying across the ladder in mid-air — a body resting on a surface the
+ * player can see straight through, and at a spot no comrade sent to look at it
+ * could ever stand. Passing `climbing` makes the rungs transparent to a body
+ * and nothing else: solid tiles, falling panels and moving platforms all still
+ * catch it, so it comes to rest on the floor of the shaft.
  */
 static void settle_body(GameplayState *state, float *x, float *y, float *vy,
                         float w, float h, float dt)
@@ -71,7 +80,7 @@ static void settle_body(GameplayState *state, float *x, float *y, float *vy,
     *vy += GRAVITY * dt;
     if (*vy > MAX_FALL_SPEED)
         *vy = MAX_FALL_SPEED;
-    level_move(&state->level, x, y, &vx, vy, w, h, dt, false, &on_ground,
+    level_move(&state->level, x, y, &vx, vy, w, h, dt, true, &on_ground,
                false);
     if (on_ground)
         *vy = 0.0f;

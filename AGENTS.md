@@ -253,7 +253,12 @@ trigger was invisible. `draw_downed_enemy` / `draw_downed_dog` in
 [game_render.c](src/game_render.c) lay the same figure along the floor — dead
 visor, no health pips, no speech bubble — and three consequences follow.
 `settle_body` in [gameplay_ai.c](src/gameplay_ai.c) drops a body that died in
-mid-air, because one hanging in the air is also a guard investigating thin air.
+mid-air, because one hanging in the air is also a guard investigating thin air —
+and it falls the way a *climber* falls, since `level_move` makes every rung a
+one-way platform for anyone who is not climbing and a guard shot halfway up a
+shaft was therefore caught by the next rung down and left lying across the
+ladder in the open air. Only the rungs are transparent to a body; solid tiles,
+falling panels and moving platforms all still catch it.
 `find_enemy_slot` takes a **fresh** slot before a dead one, so a reinforcement
 no longer deletes the corpse standing in front of the player — and only when the
 array is full does it take the body furthest from Chuck. And the kill tally
