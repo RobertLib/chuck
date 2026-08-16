@@ -1,7 +1,7 @@
 # Chuck
 
 Chuck is a 2D action platformer about one man going up the inside of a
-forty-two storey tower that twelve armed men have sealed from within, because
+forty-storey tower that twelve armed men have sealed from within, because
 his wife is somewhere above him and nobody else is coming.
 
 The prologue plays in three beats — the kerb where she is taken, a top-down
@@ -44,9 +44,9 @@ contractor, and the flight cases they wheeled through the goods entrance were
 never inspected. The demand they broadcast at 00:04 is theatre: it puts every
 unit in the city on a cordon around this building and nobody at all inside it,
 and it is what bought them a clean pavement three blocks out. The sub-vault
-opens on the overnight settlement — six hundred million in bearer bonds — and
-its last door runs on a two-key rule: the bank's key, and the building's duty
-controller, alive and present. That is why they needed Ellen, and it is the
+opens on the overnight settlement — six hundred and forty million in bearer
+bonds — and its seventh and last lock runs on a two-key rule: the bank's key,
+and the building's duty controller, alive and present. That is why they needed Ellen, and it is the
 only reason she still is. At 01:00 the bonds leave the roof.
 
 So the campaign is a climb with a deadline. Fifteen sectors between the lobby
@@ -160,8 +160,21 @@ level is paused rather than reloaded while Chuck is inside, both areas retain
 their state when he leaves or returns, and only his loadout and hearts cross
 over; this WC entrance is independent of the paired shortcut-door system.
 
+The crew talk to each other, and you can read it. Twelve men were badged into
+this tower on one contractor's docket, and they run the night like a shift: a
+guard on his own calls in on their own frequency, two standing together chat
+instead, whoever reaches a wall switch shouts, and the men leaning out of the
+facade windows shout down at Chuck. Stand close enough and the line prints
+under the HUD strip with the speaker's callsign on it. The first person out of
+the lobby in sector one shouts too, and gets no callsign — they do not work for
+Meridian. It is worth listening
+to — the locks on the sub-vault, the cordon outside, the clock and how many of
+them are still answering all get said out loud by the people doing it, and none
+of it is repeated anywhere the player has to stop playing to read.
+
 Two screens hang off the title screen. The **field manual** (`H`, or `Y` on a
-pad) is seven illustrated sheets covering who is in the building and why, what
+pad) is eight illustrated sheets covering who is in the building and why, who
+the twelve of them are, what
 the floor plan allows, what the guards do, how the wall is climbed and how to
 read the HUD. **Assist options** (`J`, or `X` on a pad, and also reachable from
 the pause screen) offer five hearts a life, guards and dogs at 80% speed, and

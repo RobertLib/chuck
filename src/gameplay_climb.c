@@ -526,6 +526,10 @@ void gameplay_climb_update(GameplayState *state, float dt)
         /* Throwers announce themselves, then let go a beat later. */
         state->facade_hazard_windup_timers[i] = THROWN_OBJECT_WINDUP;
         gameplay_world_sound(state, SFX_GUARD_TALK, spawn->x, spawn->y);
+        /* The shout that already announced the throw, with the words in it.
+         * The window index stands in for an enemy slot: the facade has no
+         * enemy array, and the men leaning out of it are the same crew. */
+        gameplay_crew_chatter(state, CHATTER_WALL, i, spawn->x, spawn->y);
     }
 
     update_thrown_objects(state, dt);

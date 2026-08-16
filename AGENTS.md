@@ -25,7 +25,12 @@ player has to agree with it.
 - **Anton Voss** — twelve men badged into the tower since March as *Meridian
   Facility Services*, its night maintenance contractor. The flight cases they
   wheeled through the goods entrance were never inspected, which is where every
-  rifle, grenade and rocket the player picks up came from.
+  rifle, grenade and rocket the player picks up came from. **The twelve have
+  names**, and they are written down once, in [crew.c](src/crew.c) — see
+  [The net](#the-net) below. Nothing in the simulation depends on which name a
+  guard wears, but the manual's `THE CREW` sheet and every line the player
+  overhears in a sector come off that one list, so a thirteenth name anywhere
+  is a thirteenth man the docket does not have.
 - **The cover** — a political demand broadcast at **00:04**. It puts every unit
   in the city on a cordon around this tower and nobody at all inside it. It is
   theatre, and it is also what buys the abduction its impunity: the pavement
@@ -34,7 +39,8 @@ player has to agree with it.
   drives through is drawn thickening toward the building — a spatial ramp, not
   a temporal one, so all of it is already standing when the drive begins.
 - **The job** — the sub-vault opens on the overnight settlement, six hundred
-  million in bearer bonds, and its last door runs on a two-key rule: the bank's
+  and forty million in bearer bonds, and it is shut behind seven locks. The
+  seventh runs on a two-key rule: the bank's
   key, and the duty controller alive and present. That is why they needed Ellen
   at all, and it is the only reason she is still breathing. **01:00 is when the
   bonds leave the roof**, not when the vault opens — the vault is emptied
@@ -59,10 +65,22 @@ drive's cordon caption, `NIGHT_CLOCK_FIRST_MINUTE` and both prose pages.
 Where the player actually reads it, in the order they meet it: the title
 screen's one line; the abduction cutscene's captions; the drive's captions; the
 opening cutscene outside the tower; **the `TRANSITION_INTEL` table in
-[cutscene.c](src/cutscene.c)**, one line on the report between sectors, which
-is the main carrier because it is the only part of the plot the player meets
-while actually playing; the manual's `THE NIGHT` sheet; and the outro. A
+[cutscene.c](src/cutscene.c)**, one line on the report between sectors;
+**the crew's own net** ([crew.c](src/crew.c)), overheard while a sector is
+being played; the manual's `THE NIGHT` and `THE CREW` sheets; and the outro. A
 change to any of those is a change to all of them.
+
+The last two of those are the ones that reach the player *while they are
+playing* rather than between beats, and they carry the plot differently. The
+intel table is Chuck working it out — one considered line, after the fact. The
+net is the other side saying it themselves, in the room, with no idea he is in
+it. Neither is a substitute for the other and neither may contradict the other.
+
+**The building's height is forty floors**, and it is stated in three places
+that have to agree: the title screen's tagline, the men shouting down off the
+facade (`CHATTER_WALL`) and the prose in [README.md](README.md). Fifteen
+sectors is the *route*, not the storey count — a sector is a stretch of the
+climb, not a floor.
 
 The table is indexed by finished sector, but only sectors that leave by a
 **stair door** show a report at all — a window is a continuous physical route
@@ -114,7 +132,9 @@ Two layers, and the split is the most important invariant in the codebase:
   [chase_render.c](src/chase_render.c), [audio.c](src/audio.c),
   [intro.c](src/intro.c), [manual.c](src/manual.c),
   [cutscene.c](src/cutscene.c), [pad_hint.c](src/pad_hint.c),
-  [particle.c](src/particle.c).
+  [particle.c](src/particle.c). [crew.c](src/crew.c) sits on this side too and
+  links no SDL, because it is a table of strings — but it is presentation, and
+  no gameplay module may include it. See [The net](#the-net).
 - **Gameplay core** (no SDL, no knowledge of `Game`): `src/gameplay_*.c`,
   [level.c](src/level.c), [level_route.c](src/level_route.c),
   [player.c](src/player.c), [enemy.c](src/enemy.c),
@@ -129,7 +149,8 @@ Gameplay code never plays a sound, spawns a particle, or shakes the camera
 itself. It appends to `GameplayState.events` (a `GameEventBuffer`, see
 [game_event.h](src/game_event.h)) via `game_events_sound`,
 `gameplay_world_sound`, `game_events_particles`, `game_events_explosion`,
-`game_events_camera_shake`. The shell drains that buffer once per frame in
+`game_events_camera_shake`, `gameplay_crew_chatter`. The shell drains that
+buffer once per frame in
 `dispatch_events` ([game.c:50](src/game.c#L50)) and turns events into audio and
 presentation; the prologue pursuit reports its feedback through the same
 function with its own buffer. Keep new gameplay feedback on this path — calling
@@ -563,15 +584,22 @@ the car his wife is in.
 ### The field manual
 
 `H` on the title screen (`Y` on a pad, or a click on the line naming it) opens
-`STATE_MANUAL`: seven sheets in [manual.c](src/manual.c) that say who is in
-the building and why, what the building is, what the buttons do, what the
-floor plan allows, what the guards do, how the wall is climbed and how to read
-the console. The first sheet, `THE NIGHT`, is the only place the plot is
-stated outright, and it is illustrated with the crew's own flight case — open,
+`STATE_MANUAL`: eight sheets in [manual.c](src/manual.c) that say who is in
+the building and why, who the twelve of them are, what the building is, what
+the buttons do, what the floor plan allows, what the guards do, how the wall is
+climbed and how to read the console. The first two sheets are the only place
+the plot is stated outright, and they are the same night from either side.
+`THE NIGHT` is illustrated with the crew's own flight case — open,
 stencilled *Meridian Facility Services*, signed in on 14 March and never
 inspected. Three heads at twelve pixels across would have said nothing the
 text does not; the case says the part the text cannot, which is where every
-rifle and rocket in the campaign came from. Arrow keys or the
+rifle and rocket in the campaign came from. `THE CREW` is the docket that case
+came in on: the night access log, twelve ruled lines, twelve names drawn
+straight out of `crew_callsign` rather than out of a list of its own, so the
+man the strip quotes in a sector is line one of the log. Being *told* there
+are twelve of them and *counting* twelve of them are different sentences, and
+the second one is why the sheet is a document and not a paragraph. Arrow keys
+or the
 footer chips turn a sheet; anything that means "done" hands back to
 `game_return_to_intro`, which is also where `ESC` already went. It is a branch
 off the title screen and nothing else — there is no simulation to pause, so the
@@ -930,7 +958,7 @@ to say something the story page says, in the place the player is standing.
   thing about it is deliberate and tested: a chat blinds a guard past
   `ENEMY_TALK_NOTICE_RADIUS` and **a radio check does not**. An ambient beat
   that quietly hands the player a stealth window is a balance change wearing a
-  costume.
+  costume. What the call actually *says* is [The net](#the-net) below.
 - **The alarm reddens the room.** While the alarm is up, every ceiling fixture
   in the sector and the pool it throws on the floor swing between the theme's
   own lamp colour and the emergency circuit (`alarm_wash` in `render_world`).
@@ -965,6 +993,74 @@ in [chase_render.c](src/chase_render.c) are the same emergency-beacon blue,
 which `FX_CYAN` (technology) and `FX_LAMP` (a fluorescent tube) cannot supply.
 The red half of a light bar is `FX_RED`, which is exactly what the palette's
 danger red is for.
+
+### The net
+
+The crew talk, and now the player can read it. A guard alone calls in, a pair
+standing together chat, whoever reaches a wall switch shouts, a thrower four
+hundred feet up leans out of a window and shouts down, and the first person out
+of the lobby shouts on the way — five beats the game already had as poses and
+sounds, and none of which had ever said a word.
+The words are in [crew.c](src/crew.c), one file, and the reason it is one file
+is that a strip printing `KARL` while a manual sheet lists a different twelve
+would be two answers to the same question.
+
+`CHATTER_PANIC` is the odd one out and deliberately so: the people leaving the
+lobby are not on anybody's docket, so it is the one kind that prints **without
+a callsign** — a name on them would file them as staff the player is meant to
+keep track of. Only the *first* of the five gets a line
+(`civilian_begin_run` in [gameplay_ai.c](src/gameplay_ai.c)). They break over
+`CIVILIAN_STARTLE_SPREAD`, which is shorter than `CHATTER_HOLD_TIME`, so five
+speaking would replace the caption four times before anybody could read the
+first — five half-second flashes read as a bug, not as a room emptying.
+
+**The boundary is the whole design, and it is the same one a sound effect
+crosses.** The simulation reports that somebody spoke — `GAME_EVENT_CHATTER`,
+carrying a `ChatterKind`, an enemy slot and one opaque number drawn off the
+level RNG in `gameplay_crew_chatter` ([gameplay_world.c](src/gameplay_world.c))
+— and holds no string at all. The shell folds the number into a table and
+spells it. That is what keeps a hundred lines of flavour text from being a
+hundred edits to deterministic gameplay modules: writing a new one changes no
+gameplay file, costs the RNG stream nothing, and cannot alter a single seeded
+choice. `test_the_net_carries_words` pins it from the simulation's side.
+
+Three rules follow, each of which cost something to learn:
+
+- **A callsign is filed, never drawn.** `crew_callsign` maps an enemy slot to
+  one of `CREW_SIZE` names and wraps. Drawing one would both spend a number out
+  of the seeded stream — shifting every choice downstream of it — and make the
+  same guard answer to a different name on a retry of the same sector, which
+  is the one thing a name is for. On the facade there is no enemy array at all
+  and the *window index* stands in: the men out there are the same crew.
+- **Earshot is shorter than hearing.** `CHATTER_EARSHOT` is eleven tiles
+  against the sixteen a routine sound carries (`audio_play_at`), and it is
+  measured off the same listener, so the words and the voice can never
+  disagree. A sound from off screen is a cue about somewhere else; a *sentence*
+  from a man the player cannot see is the game subtitling thin air. Eleven
+  tiles is 352px, inside the 400px half of the viewport, so the speaker is on
+  screen whenever the camera has caught up.
+- **It is a strip, not a speech bubble.** A guard is twenty-six pixels across
+  and about to walk out of frame; the plate stays under the HUD and names him
+  instead. Its accent is the palette's own semantics rather than four decorative
+  colours — cyan is the handset, red is the alarm, amber is a voice on the wall,
+  and two men talking in a room get no accent at all, because nothing is
+  happening. It stands down for the unlocked-exit banner, which lands in the
+  same band and owns the frame.
+
+`CREW_LINE_MAX` is the one hard constraint on the writing: a callsign, a colon
+and the line have to fit inside 800px of 8x8 cells, and
+`test_crew_traffic_fits_the_plate` fails the build rather than letting a line
+run off the edge of a frame where nobody would ever see it.
+
+**What the lines are for.** The building is a homage — one man, one tower, one
+night, a crew of twelve on a contractor's docket — and the net is where that is
+allowed to be funny. Every line is written to survive twice: as something a
+tired armed man would actually say at half past midnight, and as a nod for
+whoever has seen the films this building came out of. A line that only works as
+the second is a joke told over the game rather than in it, and does not belong
+in the table. The plot lines and the jokes share the same tables on purpose —
+`RADIO_LINES` is where the locks, the cordon and the tally get said out loud,
+so a player who never opens the manual still hears the story.
 
 ### Tuning, art, audio
 

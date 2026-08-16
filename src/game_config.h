@@ -339,6 +339,20 @@
 #define ENEMY_RADIO_GAP_MIN 16.0f
 #define ENEMY_RADIO_GAP_MAX 38.0f
 
+/*
+ * How near Chuck has to be to make out the words, and how long the line he
+ * made out stays on the strip.
+ *
+ * The reach is deliberately shorter than the 16 tiles a routine sound carries
+ * (`audio_play_at`): a sound heard from off screen is a cue about somewhere
+ * else, and a *sentence* printed from a man the player cannot see is the game
+ * subtitling thin air. Eleven tiles is 352px, which is inside the 400px half
+ * of the viewport, so whoever is speaking is on screen whenever the camera has
+ * caught up.
+ */
+#define CHATTER_EARSHOT (TILE_SIZE * 11.0f)
+#define CHATTER_HOLD_TIME 3.8f
+
 /* Ammunition dropped by guards downed in direct combat (bullet, knife or
  * stomp). Explosions destroy the magazine along with its owner. */
 #define MAX_AMMO_DROPS 16

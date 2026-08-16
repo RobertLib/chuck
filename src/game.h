@@ -111,6 +111,18 @@ typedef struct
     float card_anim_timer;     /* accumulator for highlight timing */
     float exit_unlocked_timer; /* seconds to show "EXIT UNLOCKED" overlay */
     float extra_life_timer;    /* seconds to flash the score-earned 1UP */
+
+    /* The last thing anybody on the crew said within earshot, and how long is
+     * left to read it. Only the shell holds it: the simulation reported that
+     * somebody spoke and drew a number, and the words are looked up out of
+     * [crew.c](crew.c) at draw time. A second line inside the window replaces
+     * the first outright rather than queueing — the plate is one line high,
+     * and a backlog of overheard traffic would still be printing the lobby's
+     * jokes two rooms later. */
+    ChatterKind chatter_kind;
+    int chatter_speaker;
+    int chatter_roll;
+    float chatter_timer;
 } PresentationState;
 
 typedef struct

@@ -1528,8 +1528,8 @@ static const char *const TRANSITION_INTEL[] = {
     /*  6 CANTEEN        */ "TWELVE PLACES LAID IN THE GALLEY. TWELVE MEN.",
     /*  7 CLIMB          */ "THEIR DEMAND WENT OUT AT 00:04. IT ASKED FOR NO MONEY.",
     /*  8 LAB      SHOWN */ "FLIGHT CASES IN EVERY BAY. NONE OF IT WAS INSPECTED.",
-    /*  9 ARCHIVE  SHOWN */ "01:00: SIX HUNDRED MILLION LEAVES THE BUILDING.",
-    /* 10 SECURITY       */ "MONITOR WALL: VOSS. HE HAS HER AT THE VAULT DOOR.",
+    /*  9 ARCHIVE  SHOWN */ "01:00: SIX HUNDRED AND FORTY MILLION LEAVES.",
+    /* 10 SECURITY       */ "MONITOR WALL: VOSS. HER HAND ON THE SEVENTH LOCK.",
     /* 11 CLIMB          */ "THE SETTLEMENT CLOCK IS RUNNING. TEN MINUTES.",
     /* 12 DUCTS          */ "NOT FOR RANSOM. THEY TOOK HER TO OPEN A DOOR.",
     /* 13 CLIMB          */ "THE VAULT IS OPEN AND EMPTY. THEY ARE GOING UP.",
@@ -2416,6 +2416,26 @@ static void render_outro_ui(SDL_Renderer *r, float time,
                               (Uint8)(FX_RUST.g * reveal),
                               (Uint8)(FX_RUST.b * reveal), 255},
                   "NO RIDE // VOSS HAS NOWHERE LEFT TO GO");
+    }
+
+    /*
+     * The last caption, and the only one that is not a readout.
+     *
+     * Voss's men spent fifteen sectors calling him a cowboy — off the net, and
+     * shouted down at him off the wall — because a man alone in a building
+     * doing this is the only thing they could file him as. It is the wrong
+     * word, and this is the line that says so: he came up forty floors for one
+     * person and not for the building, and the whole night pays off on that
+     * being the difference between them. It works without the joke; it lands
+     * twice with it.
+     */
+    if (time >= 16.60f && time < OUTRO_FINAL_REVEAL_TIME)
+    {
+        float reveal = smoothstep01((time - 16.60f) / 0.3f);
+        draw_text(r, 34.0f, 39.0f, 1.0f, fx_dim(FX_CREAM, reveal),
+                  "NO COWBOY // JUST THE HUSBAND");
+        color_rect(r, fx_dim(FX_RUST, reveal), 34.0f, 54.0f,
+                   88.0f * reveal, 2.0f);
     }
 
     if (time > 0.85f && time < OUTRO_FINAL_REVEAL_TIME)

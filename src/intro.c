@@ -1683,7 +1683,11 @@ static void render_logo(SDL_Renderer *r, const Intro *intro,
     float tag = smoothstep01((intro->time - 0.72f) / 0.5f);
     if (tag <= 0.0f)
         return;
-    const char *line = "FORTY-TWO FLOORS. ONE WAY UP.";
+    /* Forty, because that is the number the rest of the game says: the men on
+     * the wall shout it down at Chuck and the manual counts the same floors.
+     * A tagline that disagrees with the building it is standing in front of is
+     * the one line on this screen nobody can check and everybody reads. */
+    const char *line = "FORTY FLOORS. ONE WAY UP.";
     const float track = 3.0f;
     float width = tracked_width(line, 1.0f, track);
     float ty = y + (float)MARK_H + 24.0f;

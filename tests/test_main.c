@@ -1,5 +1,6 @@
 #include "camera.h"
 #include "chase.h"
+#include "crew.h"
 #include "editor_doc.h"
 #include "editor_validate.h"
 #include "embedded_levels.h"
@@ -5329,6 +5330,102 @@ static void test_lone_guard_calls_in_without_going_blind(void)
     CHECK(!enemy_on_radio(guard));
 }
 
+/*
+ * The same beat, now with words in it. What is pinned here is the boundary
+ * rather than the joke: the simulation reports that somebody spoke, where, and
+ * one opaque number, and knows nothing else. If a gameplay module ever grows
+ * an opinion about *which* line was said, every new piece of flavour text
+ * becomes a change to a deterministic module and this test is what says so.
+ */
+static void test_the_net_carries_words(void)
+{
+    static const char data[] =
+        "##############################\n"
+        "#S           M              E#\n"
+        "##############################\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 7731);
+    CHECK(level_load_data(&state.level, "radio", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.enemy_count == 1);
+    state.enemies[0].on_ground = true;
+    state.player.x = 32.0f;
+    state.player.y = 32.0f;
+
+    const GameEvent *spoke = NULL;
+    for (int step = 0; step < 60 * 60 && spoke == NULL; ++step)
+    {
+        game_events_clear(&state.events);
+        gameplay_ai_update_movement(&state, 1.0f / 60.0f);
+        for (int i = 0; i < state.events.count; ++i)
+        {
+            if (state.events.items[i].type == GAME_EVENT_CHATTER)
+                spoke = &state.events.items[i];
+        }
+    }
+    CHECK(spoke != NULL);
+    if (spoke == NULL)
+        return;
+
+    /* A man on his own is on the handset, and the line is credited to the slot
+     * he stands in — never drawn — so the archive's guard answers to the same
+     * name every time that sector loads. */
+    CHECK(spoke->data.chatter.kind == CHATTER_RADIO);
+    CHECK(spoke->data.chatter.speaker == 0);
+    /* Spoken where he is standing, because earshot is measured off it. */
+    CHECK(fabsf(spoke->data.chatter.x -
+                (state.enemies[0].x + ENEMY_W * 0.5f)) < 0.001f);
+    /* And the shell can spell it from the roll alone. */
+    CHECK(crew_line(spoke->data.chatter.kind, spoke->data.chatter.roll) !=
+          NULL);
+}
+
+/*
+ * The plate along the top of the screen is one line high and starts 14px in,
+ * so a callsign, a colon and the longest line in the tables have to fit inside
+ * 800px of 8x8 cells. A line that outgrows it does not wrap — it runs off the
+ * edge of the frame, which is the one failure nobody would see in a
+ * screenshot.
+ */
+static void test_crew_traffic_fits_the_plate(void)
+{
+    size_t widest_name = 0;
+    for (int i = 0; i < CREW_SIZE; ++i)
+    {
+        const char *name = crew_callsign(i);
+        CHECK(name != NULL && name[0] != '\0');
+        if (strlen(name) > widest_name)
+            widest_name = strlen(name);
+    }
+    /* The roster wraps rather than running off the end: a sector may hold more
+     * bodies than the crew has men, and the facade hands in a window index
+     * instead of an enemy slot. */
+    CHECK(strcmp(crew_callsign(CREW_SIZE), crew_callsign(0)) == 0);
+    CHECK(crew_callsign(-3) != NULL);
+
+    for (int kind = 0; kind < CHATTER_KIND_COUNT; ++kind)
+    {
+        int count = crew_line_count((ChatterKind)kind);
+        CHECK(count > 0);
+        for (int i = 0; i < count; ++i)
+        {
+            const char *line = crew_line((ChatterKind)kind, i);
+            CHECK(line != NULL && line[0] != '\0');
+            if (line != NULL)
+                CHECK(strlen(line) <= CREW_LINE_MAX);
+        }
+        /* Any roll at all lands on a line: the fold is the table's own job, so
+         * no caller can reach past the end of one. */
+        CHECK(crew_line((ChatterKind)kind, 0x7fff) != NULL);
+        CHECK(crew_line((ChatterKind)kind, -1) != NULL);
+    }
+
+    /* "<NAME>: <line>" at 8px a cell, inside the 800px frame with its 14px
+     * inset and the plate's own padding. */
+    CHECK((widest_name + 2 + CREW_LINE_MAX) * 8 + 14 + 22 <= 800);
+}
+
 /* The other half of the same rule: the building has to be quiet for it. A
  * guard hunting Chuck is not filing a routine report. */
 static void test_no_radio_checks_while_the_alarm_is_up(void)
@@ -5557,6 +5654,8 @@ int main(void)
     test_medkit_heals_before_granting_life();
     test_night_props_ask_for_the_right_wall();
     test_lone_guard_calls_in_without_going_blind();
+    test_the_net_carries_words();
+    test_crew_traffic_fits_the_plate();
     test_no_radio_checks_while_the_alarm_is_up();
     test_chase_cordon_thickens_toward_the_building();
 

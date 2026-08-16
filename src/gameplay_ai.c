@@ -588,6 +588,25 @@ static void civilian_init(Civilian *civilian, float x, float y,
 
 static void civilian_begin_run(GameplayState *state, Civilian *civilian)
 {
+    /*
+     * Only the first of them gets words. The five break over a 2.4 second
+     * spread (`CIVILIAN_STARTLE_SPREAD`) and the strip holds a line for nearly
+     * four, so letting each one speak would replace the caption four times
+     * before anybody could finish reading the first — five half-second flashes
+     * that read as a bug rather than as a room emptying. One voice carries it
+     * and the other four stay what they always were: separate shouts.
+     */
+    bool first = true;
+    for (int i = 0; i < state->civilian_count; ++i)
+    {
+        if (&state->civilians[i] != civilian &&
+            state->civilians[i].activity != CIVILIAN_STARTLED)
+        {
+            first = false;
+            break;
+        }
+    }
+
     civilian->activity = CIVILIAN_FLEEING;
     civilian->dir = civilian->flee_dir;
     /* One voice per person as they break, so the room empties as a handful of
@@ -597,6 +616,15 @@ static void civilian_begin_run(GameplayState *state, Civilian *civilian)
                                                 : SFX_CIVILIAN_SHOUT,
                          civilian->x + CIVILIAN_W * 0.5f,
                          civilian->y + CIVILIAN_H * 0.5f);
+    /* And what the voice is saying. This is the first thing anybody sees in
+     * the campaign, and until now it was five people running out of a room
+     * for no stated reason: the crew walked Ellen through this lobby ninety
+     * seconds ago and these are the only witnesses in the game. A shout with
+     * no words in it makes them scenery. */
+    if (first)
+        gameplay_crew_chatter(state, CHATTER_PANIC, -1,
+                              civilian->x + CIVILIAN_W * 0.5f,
+                              civilian->y + CIVILIAN_H * 0.5f);
 }
 
 static void update_civilian(GameplayState *state, Civilian *civilian, float dt)
@@ -1423,6 +1451,9 @@ static void update_radio_checks(GameplayState *state, float dt)
         gameplay_world_sound(state, SFX_GUARD_RADIO,
                              enemy->x + ENEMY_W * 0.5f,
                              enemy->y + ENEMY_H * 0.5f);
+        gameplay_crew_chatter(state, CHATTER_RADIO, i,
+                              enemy->x + ENEMY_W * 0.5f,
+                              enemy->y + ENEMY_H * 0.5f);
     }
 }
 
@@ -1481,6 +1512,15 @@ static void update_conversations(GameplayState *state, float dt)
                                          ENEMY_W * 0.5f,
                                      (left->y + right->y) * 0.5f +
                                          ENEMY_H * 0.5f);
+                /* Credited to the man on the left, who is the one facing the
+                 * way the sector is read. Whichever it is, the pair are stood
+                 * a body's width apart and the caption names one of them. */
+                gameplay_crew_chatter(state, CHATTER_TALK,
+                                      (int)(left - state->enemies),
+                                      (left->x + right->x) * 0.5f +
+                                          ENEMY_W * 0.5f,
+                                      (left->y + right->y) * 0.5f +
+                                          ENEMY_H * 0.5f);
                 break;
             }
         }
@@ -1580,6 +1620,12 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
                     {
                         gameplay_trigger_alarm(state, switch_x, switch_y,
                                                switch_index);
+                        /* The one line the player is guaranteed to read,
+                         * because they caused it. It goes off the switch
+                         * rather than off the man: he is at arm's length from
+                         * it and the switch is what the eye is on. */
+                        gameplay_crew_chatter(state, CHATTER_ALARM, i,
+                                              switch_x, switch_y);
                         enemy->raising_alarm = false;
                         enemy->alarm_switch_index = -1;
                         enemy->alarm_use_timer = 0.0f;

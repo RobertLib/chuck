@@ -7,6 +7,11 @@ bool gameplay_boxes_overlap(float ax, float ay, float aw, float ah,
                             float bx, float by, float bw, float bh);
 void gameplay_world_sound(GameplayState *state, SoundEffect effect,
                           float x, float y);
+/* Somebody on the crew spoke. The simulation reports the kind, the man and the
+ * place, and draws one number for the shell to pick a line with; it never
+ * holds a word of what was said. See [crew.h](crew.h). */
+void gameplay_crew_chatter(GameplayState *state, ChatterKind kind, int speaker,
+                           float x, float y);
 bool gameplay_alarm_active(const GameplayState *state);
 void gameplay_trigger_alarm(GameplayState *state, float source_x,
                             float source_y, int switch_index);

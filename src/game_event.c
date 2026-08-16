@@ -91,3 +91,17 @@ bool game_events_camera_shake(GameEventBuffer *events, float strength,
     event->data.shake.duration = duration;
     return true;
 }
+
+bool game_events_chatter(GameEventBuffer *events, float x, float y,
+                         int speaker, ChatterKind kind, int roll)
+{
+    GameEvent *event = next_event(events, GAME_EVENT_CHATTER);
+    if (event == NULL)
+        return false;
+    event->data.chatter.x = x;
+    event->data.chatter.y = y;
+    event->data.chatter.speaker = speaker;
+    event->data.chatter.kind = kind;
+    event->data.chatter.roll = roll;
+    return true;
+}

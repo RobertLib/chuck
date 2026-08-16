@@ -17,6 +17,19 @@ void gameplay_world_sound(GameplayState *state, SoundEffect effect,
     game_events_world_sound(&state->events, effect, x, y);
 }
 
+void gameplay_crew_chatter(GameplayState *state, ChatterKind kind, int speaker,
+                           float x, float y)
+{
+    /* The draw is made here rather than at each call site so every kind of
+     * line costs the seeded stream exactly one number, whatever the shell
+     * later does with it. `rng_range` and not the table size: the count of
+     * lines is presentation, and a gameplay module that knew it would have to
+     * be recompiled — and re-tested for determinism — every time somebody
+     * wrote another one. */
+    game_events_chatter(&state->events, x, y, speaker, kind,
+                        rng_range(&state->rng, 1 << 15));
+}
+
 bool gameplay_alarm_active(const GameplayState *state)
 {
     return state->terminal_alarm_timer > 0.0f;

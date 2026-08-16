@@ -84,6 +84,21 @@ static void dispatch_events(Game *game, GameEventBuffer *events,
                                  event->data.dust.count,
                                  event->data.dust.spread);
             break;
+        case GAME_EVENT_CHATTER:
+        {
+            /* Earshot is measured from the same listener the positional audio
+             * uses, so the words and the voice that carries them can never
+             * disagree about whether Chuck was close enough. */
+            float dx = event->data.chatter.x - listener_x;
+            float dy = event->data.chatter.y - listener_y;
+            if (dx * dx + dy * dy > CHATTER_EARSHOT * CHATTER_EARSHOT)
+                break;
+            game->presentation.chatter_kind = event->data.chatter.kind;
+            game->presentation.chatter_speaker = event->data.chatter.speaker;
+            game->presentation.chatter_roll = event->data.chatter.roll;
+            game->presentation.chatter_timer = CHATTER_HOLD_TIME;
+            break;
+        }
         case GAME_EVENT_CAMERA_SHAKE:
             game->presentation.camera_shake_strength =
                 event->data.shake.strength;
@@ -114,6 +129,9 @@ static void reset_level_presentation(Game *game)
     game->presentation.message_timer = 0.0f;
     game->presentation.exit_unlocked_timer = 0.0f;
     game->presentation.extra_life_timer = 0.0f;
+    /* Otherwise a sector opens still printing what somebody said in the one
+     * before it. */
+    game->presentation.chatter_timer = 0.0f;
     game->presentation.camera_shake_timer = 0.0f;
     game->presentation.camera_shake_duration = 0.0f;
     game->presentation.camera_shake_strength = 0.0f;
@@ -1136,6 +1154,15 @@ static void update_facade_playing(Game *game, float dt)
 
 static void update_playing(Game *game, float dt)
 {
+    /* Above the facade branch, because the men leaning out of the windows are
+     * on the same net as the ones inside and their line has to expire too. */
+    if (game->presentation.chatter_timer > 0.0f)
+    {
+        game->presentation.chatter_timer -= dt;
+        if (game->presentation.chatter_timer < 0.0f)
+            game->presentation.chatter_timer = 0.0f;
+    }
+
     if (game->gameplay.level.map.mode == LEVEL_MODE_FACADE)
     {
         update_facade_playing(game, dt);

@@ -26,6 +26,7 @@
 
 #include <math.h>
 
+#include "crew.h"
 #include "fx.h"
 
 /* ---- Palette ---------------------------------------------------------- */
@@ -746,6 +747,105 @@ static void illus_night(SDL_Renderer *r, SDL_FRect p, float time,
     }
 }
 
+/*
+ * The night access log, on the clipboard it was signed on.
+ *
+ * The sheet beside it names the crew in prose; this is the same twelve names
+ * as a document, which is the difference between being told there are twelve
+ * of them and counting twelve of them. It is drawn off `crew_callsign`
+ * (see [crew.h](crew.h)) rather than out of a list of its own, so the man who
+ * answers to KARL on the strip while a sector is being played is the man on
+ * line one of the log — a manual that named a thirteenth would be a manual for
+ * a different building.
+ *
+ * The bottom of the sheet is the joke and the threat at once: twelve badged
+ * in, twelve accounted for, and a signature block nobody ever checked.
+ */
+static void illus_crew(SDL_Renderer *r, SDL_FRect p, float time,
+                       const PadHints *pad)
+{
+    (void)pad;
+    (void)time;
+    float cx = p.x + p.w * 0.5f;
+    SDL_Color paper = {168, 170, 158, 255};
+    SDL_Color ink = {42, 46, 46, 255};
+    SDL_Color faint = {116, 120, 112, 255};
+
+    fx_vgrad(r, p.x, p.y, p.w, p.h, (SDL_Color){10, 14, 22, 255}, 255,
+             (SDL_Color){21, 27, 37, 255}, 255);
+    fx_glow(r, p.x + p.w * 0.30f, p.y - 30.0f, 260.0f,
+            (SDL_Color){146, 168, 190, 255}, 32);
+
+    const float bw = 232.0f;
+    const float bh = 296.0f;
+    float bx = cx - bw * 0.5f;
+    float by = p.y + 14.0f;
+    fx_contact_shadow(r, cx, by + bh + 3.0f, 150.0f, 0.0f, 195);
+
+    /* Hardboard behind, docket clipped over it: the board is what makes this
+       a thing on a desk rather than a page of the manual with a border. */
+    ink_block(r, bx, by, bw, bh);
+    fx_vgrad(r, bx, by, bw, bh, (SDL_Color){64, 53, 40, 255}, 255,
+             (SDL_Color){33, 28, 23, 255}, 255);
+    color_rect(r, (SDL_Color){99, 84, 62, 255}, bx, by, bw, 1.0f);
+
+    float px = bx + 10.0f;
+    float py = by + 18.0f;
+    float pw = bw - 20.0f;
+    float ph = bh - 30.0f;
+    color_rect(r, FX_INK, px + 2.0f, py + 3.0f, pw, ph);
+    color_rect(r, paper, px, py, pw, ph);
+    color_rect(r, fx_mix(paper, FX_CREAM, 0.55f), px, py, pw, 1.0f);
+    color_rect(r, fx_mix(paper, FX_INK, 0.35f), px, py + ph - 1.0f, pw, 1.0f);
+
+    /* The spring clip, biting the head of the sheet. */
+    color_rect(r, FX_INK, cx - 41.0f, by + 2.0f, 82.0f, 24.0f);
+    fx_vgrad(r, cx - 40.0f, by + 3.0f, 80.0f, 22.0f, FX_STEEL_LT, 255,
+             FX_STEEL_DK, 255);
+    color_rect(r, fx_mix(FX_STEEL_LT, FX_CREAM, 0.4f), cx - 40.0f, by + 3.0f,
+               80.0f, 1.0f);
+    color_rect(r, FX_INK, cx - 31.0f, by + 11.0f, 62.0f, 4.0f);
+
+    draw_tracked(r, px + 9.0f, py + 30.0f, 1.0f, ink, "MERIDIAN FACILITY");
+    draw_text(r, px + 9.0f, py + 42.0f, 1.0f, faint, "NIGHT ACCESS LOG");
+    draw_text(r, px + 9.0f, py + 54.0f, 1.0f, faint, "14 MARCH  22:00-06:00");
+    color_rect(r, fx_dim(FX_RUST, 0.9f), px + 9.0f, py + 66.0f, 76.0f, 2.0f);
+
+    /* Twelve ruled lines, twelve names, twelve marks in the box. The
+       signatures are hash-driven scribble rather than glyphs: a signature made
+       of letters is a printed name, and a printed name is what the left
+       column already is. */
+    const float first = py + 76.0f;
+    const float pitch = 13.0f;
+    for (int i = 0; i < CREW_SIZE; ++i)
+    {
+        float ly = first + (float)i * pitch;
+        dash_h(r, fx_mix(paper, ink, 0.30f), px + 9.0f, ly + 10.0f,
+               pw - 18.0f, 3.0f, 2.0f);
+        color_rect(r, fx_dim(FX_RUST, 0.85f), px + 9.0f, ly + 2.0f, 4.0f, 4.0f);
+        draw_text(r, px + 18.0f, ly, 1.0f, ink, crew_callsign(i));
+
+        for (int stroke = 0; stroke < 7; ++stroke)
+        {
+            unsigned h = fx_hash((unsigned)(i * 13 + stroke) * 2654435761u);
+            float sx = px + 124.0f + (float)stroke * 8.0f;
+            float sh = 3.0f + (float)(h % 5u);
+            color_rect(r, fx_mix(paper, ink, 0.62f), sx,
+                       ly + 7.0f - sh * 0.5f, 2.0f, sh);
+        }
+    }
+
+    /* The stamp along the foot: the count nobody ever went back and checked
+       against a case. */
+    float foot = first + (float)CREW_SIZE * pitch + 5.0f;
+    color_rect(r, fx_mix(paper, ink, 0.25f), px + 9.0f, foot, pw - 18.0f, 1.0f);
+    draw_text(r, px + 9.0f, foot + 8.0f, 1.0f, ink, "12 SIGNED IN");
+    color_rect(r, FX_INK, px + pw - 74.0f, foot + 4.0f, 64.0f, 17.0f);
+    color_rect(r, fx_dim(FX_RUST, 0.95f), px + pw - 73.0f, foot + 5.0f, 62.0f,
+               15.0f);
+    draw_text(r, px + pw - 68.0f, foot + 9.0f, 1.0f, FX_INK, "A. VOSS");
+}
+
 /* Sector one to the roof, and where the four climbs fall in it. */
 static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time,
                           const PadHints *pad)
@@ -1370,11 +1470,44 @@ static const ManualLine PAGE_NIGHT[] = {
     {LINE_BULLET, "The demand they broadcast at 00:04 is"},
     {LINE_BODY, "theatre. It puts every unit in the city"},
     {LINE_BODY, "on the cordon and nobody in the building."},
-    {LINE_BULLET, "Six hundred million in bearer bonds,"},
-    {LINE_BODY, "and at 01:00 it leaves by helicopter."},
-    {LINE_BULLET, "The last door needs the bank's key and"},
-    {LINE_BODY, "the duty controller, alive and present."},
-    {LINE_BODY, "That is the only reason she still is."},
+    {LINE_BULLET, "Six hundred and forty million in bearer"},
+    {LINE_BODY, "bonds, and at 01:00 it leaves by air."},
+    {LINE_BULLET, "The sub-vault runs on seven locks. The"},
+    {LINE_BODY, "seventh needs the bank's key and the duty"},
+    {LINE_BODY, "controller, alive and present. That is"},
+    {LINE_BODY, "the only reason she still is."},
+};
+
+/*
+ * The sheet the net is explained on. It earns its place because the traffic
+ * along the top of the screen is the one system in the game the player meets
+ * without being told it exists: a line appears, a name is on it, and nothing
+ * anywhere else says why. Everything on this sheet is the same twelve men the
+ * strip is quoting.
+ */
+static const ManualLine PAGE_CREW[] = {
+    {LINE_HEAD, "TWELVE MEN, ONE DOCKET"},
+    {LINE_BODY, "Badged in on 14 March as the night"},
+    {LINE_BODY, "maintenance contractor. Nobody has"},
+    {LINE_BODY, "opened a case of theirs since."},
+    {LINE_GAP, NULL},
+    {LINE_HEAD, "ANTON VOSS"},
+    {LINE_BODY, "Not a soldier. He reads the settlement"},
+    {LINE_BODY, "clock and nothing else, and he is on"},
+    {LINE_BODY, "the roof at 00:57. Not before."},
+    {LINE_GAP, NULL},
+    {LINE_HEAD, "THEIR NET"},
+    {LINE_BULLET, "Alone, a guard calls in. Stand near"},
+    {LINE_BODY, "enough and the strip prints what he"},
+    {LINE_BODY, "said, and who said it."},
+    {LINE_BULLET, "Two together talk instead. That is four"},
+    {LINE_BODY, "seconds of a man facing the wrong way."},
+    {LINE_BULLET, "A pulled alarm is shouted, not filed."},
+    {LINE_GAP, NULL},
+    {LINE_HEAD, "THE TALLY"},
+    {LINE_BULLET, "They count each other all night. They"},
+    {LINE_BODY, "run out of names long before this"},
+    {LINE_BODY, "building runs out of floors."},
 };
 
 static const ManualLine PAGE_MISSION[] = {
@@ -1576,6 +1709,11 @@ static const ManualLine PAGE_CONSOLE[] = {
 static const ManualPage PAGES[] = {
     {"THE NIGHT", "KESSLER TOWER, 00:22, AND A CONTRACTOR NOBODY CHECKED",
      "WHAT THEY WHEELED IN AS TOOLS", PAGE(PAGE_NIGHT), illus_night},
+    /* Straight after the night itself, because it is the same page seen from
+     * the other side: who wheeled the cases in, and what they call each other
+     * while the player is walking past them. */
+    {"THE CREW", "TWELVE MEN ON ONE CONTRACTOR'S DOCKET",
+     "NIGHT ACCESS LOG, SIGNED 14 MARCH", PAGE(PAGE_CREW), illus_crew},
     {"THE MISSION", "FIFTEEN SECTORS BETWEEN THE LOBBY AND THE ROOF",
      "FOUR OF THEM ARE ON THE OUTSIDE", PAGE(PAGE_MISSION), illus_mission},
     {"CONTROLS", "KEYBOARD AND GAMEPAD ARE BOTH ALWAYS LIVE",

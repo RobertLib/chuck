@@ -4,6 +4,7 @@
 #include <math.h>
 
 #include "chase_render.h"
+#include "crew.h"
 #include "fx.h"
 #include "gameplay_interaction.h"
 #include "gameplay_world.h"
@@ -5296,6 +5297,103 @@ static void render_hud(Game *game)
   }
 }
 
+/*
+ * What the crew just said, printed under the strip.
+ *
+ * The building has always had a night shift talking to itself — a pose, a
+ * bubble of dots and a handset sound — and never once a word of it. This is
+ * the words, and it is the only place in the game the plot is told while the
+ * player is actually playing rather than watching. It is deliberately a strip
+ * and not a speech bubble: at twenty-six pixels across, a guard is not wide
+ * enough to hang a sentence off, and a bubble would have to track a man who is
+ * about to walk out of frame. The plate stays put and names him instead.
+ *
+ * The accent is the palette's own semantics rather than five decorative
+ * colours: cyan is the handset (technology), red is the alarm (danger), amber
+ * is a voice shouting out of a window on the wall (warning), cream is somebody
+ * who does not work for Meridian, and two men talking in a room carry no
+ * accent at all, because nothing is happening.
+ */
+static void render_crew_chatter(Game *game, int win_w)
+{
+  if (game->presentation.chatter_timer <= 0.0f)
+    return;
+  /* The unlocked-exit banner lands in exactly this band and owns the frame
+   * for its two seconds. Two plates arguing over the same rows is worse than
+   * losing one overheard line. */
+  if (game->presentation.exit_unlocked_timer > 0.0f)
+    return;
+
+  SDL_Renderer *r = game->platform.renderer;
+  ChatterKind kind = game->presentation.chatter_kind;
+  const char *line = crew_line(kind, game->presentation.chatter_roll);
+  if (line == NULL)
+    return;
+  /* Everybody on the crew is named; the people running out of the lobby are
+   * not on anybody's docket and are not given one. */
+  const char *who = kind == CHATTER_PANIC
+                        ? NULL
+                        : crew_callsign(game->presentation.chatter_speaker);
+
+  SDL_Color accent = FX_CYAN;
+  if (kind == CHATTER_ALARM)
+    accent = FX_RED;
+  else if (kind == CHATTER_WALL)
+    accent = FX_AMBER;
+  else if (kind == CHATTER_PANIC)
+    accent = FX_CREAM;
+  else if (kind == CHATTER_TALK)
+    accent = (SDL_Color){118, 134, 138, 255};
+
+  /* One curve for the whole life of the line: up fast, hold, and out over the
+   * last half second. Read off the timer rather than off a wall clock, so it
+   * freezes with the sector when the game is paused. */
+  float left = game->presentation.chatter_timer;
+  float rising = (CHATTER_HOLD_TIME - left) / 0.16f;
+  float falling = left / 0.5f;
+  float fade = rising < falling ? rising : falling;
+  if (fade > 1.0f)
+    fade = 1.0f;
+  if (fade < 0.0f)
+    fade = 0.0f;
+
+  char buffer[96];
+  if (who != NULL)
+    SDL_snprintf(buffer, sizeof(buffer), "%s: %s", who, line);
+  else
+    SDL_strlcpy(buffer, line, sizeof(buffer));
+
+  const float x = 14.0f;
+  const float y = (float)HUD_HEIGHT + 8.0f;
+  const float h = 17.0f;
+  float w = draw_text_width(buffer, 1.0f) + 22.0f;
+  if (w > (float)win_w - x * 2.0f)
+    w = (float)win_w - x * 2.0f;
+
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  set_rgba(r, 6, 10, 16, (Uint8)(206.0f * fade));
+  fill_rect(r, x, y, w, h);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  /* The tick down the left edge is the same mark the report between sectors
+   * puts against its intel line: this is the same kind of thing, overheard
+   * instead of read afterwards. */
+  color_rect(r, fx_dim(accent, fade), x, y, 3.0f, h);
+
+  SDL_Color body = fx_dim((SDL_Color){186, 196, 192, 255}, fade);
+  if (who != NULL)
+  {
+    draw_text(r, x + 11.0f, y + 5.0f, 1.0f,
+              (Uint8)(accent.r * fade), (Uint8)(accent.g * fade),
+              (Uint8)(accent.b * fade), who);
+    draw_text(r, x + 11.0f + draw_text_width(who, 1.0f), y + 5.0f, 1.0f,
+              body.r, body.g, body.b, buffer + SDL_strlen(who));
+  }
+  else
+  {
+    draw_text(r, x + 11.0f, y + 5.0f, 1.0f, body.r, body.g, body.b, buffer);
+  }
+}
+
 static void render_interaction_prompt(Game *game, int win_w, int win_h)
 {
   bool terminal_available = game->gameplay.terminal_in_range &&
@@ -5693,6 +5791,7 @@ void game_render(Game *game)
   {
     render_world(game);
     render_hud(game);
+    render_crew_chatter(game, win_w);
     render_interaction_prompt(game, win_w, win_h);
 
     if (game->presentation.exit_unlocked_timer > 0.0f)
