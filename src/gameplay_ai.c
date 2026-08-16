@@ -8,6 +8,17 @@
 #define ENEMY_SIDE_PROBE 4.0f
 
 /*
+ * A corpse slot is being handed back to a live body, so nobody may still be
+ * remembering it as a corpse they have already dealt with. Cheaper than it
+ * looks and only ever runs when the array is full — see `find_enemy_slot`.
+ */
+static void release_body_bit(GameplayState *state, uint32_t bit)
+{
+    for (int i = 0; i < state->enemy_count; ++i)
+        state->enemies[i].bodies_investigated &= ~bit;
+}
+
+/*
  * Somewhere to put a guard the doors have just sent.
  *
  * A fresh slot first, and a downed guard's only if the array is full. The
@@ -41,15 +52,53 @@ static int find_enemy_slot(GameplayState *state)
     for (int dog = 0; dog < state->dog_count; ++dog)
         if (!state->dogs[dog].dead && state->dogs[dog].owner == furthest)
             state->dogs[dog].owner = -1;
+    /* The body about to be overwritten stops being a body, so every guard who
+     * had already been over to look at it forgets it. Left set, the bit would
+     * belong to the live reinforcement taking the slot and would silently
+     * cancel the walk over for whoever finds *him* dead later. */
+    release_body_bit(state, enemy_body_bit(furthest, false));
     return furthest;
 }
 
+/*
+ * And the same rule for the animal, for the same two reasons.
+ *
+ * This used to take a dead dog's slot first and a fresh one only afterwards,
+ * which is exactly the arrangement `find_enemy_slot` above was rewritten to
+ * stop — the fix was made for the guards and the dogs were left behind. Both
+ * halves of the argument apply here word for word: a dog's body is drawn
+ * (`draw_downed_dog`), and it is also a place on the map, because
+ * `update_body_discovery` sends a calm guard over to look at a fallen animal as
+ * readily as at a fallen man. Recycling the slot therefore deleted a corpse off
+ * the floor in front of the player *and* quietly removed the thing the guard
+ * beside it was walking towards.
+ */
 static int find_dog_slot(GameplayState *state)
 {
+    if (state->dog_count < MAX_DOGS)
+        return state->dog_count++;
+
+    int furthest = -1;
+    float best_distance = -1.0f;
+    float player_x = state->player.x + PLAYER_W * 0.5f;
     for (int i = 0; i < state->dog_count; ++i)
-        if (state->dogs[i].dead)
-            return i;
-    return state->dog_count < MAX_DOGS ? state->dog_count++ : -1;
+    {
+        if (!state->dogs[i].dead)
+            continue;
+        float distance = fabsf(state->dogs[i].x + DOG_W * 0.5f - player_x);
+        if (distance > best_distance)
+        {
+            best_distance = distance;
+            furthest = i;
+        }
+    }
+    if (furthest < 0)
+        return -1;
+
+    /* Same reason as the guard slot above: the animal about to be overwritten
+     * stops being a body anybody has dealt with. */
+    release_body_bit(state, enemy_body_bit(furthest, true));
+    return furthest;
 }
 
 /*
@@ -324,10 +373,18 @@ static void guard_run_to_alarm(GameplayState *state, Enemy *enemy,
                          enemy->y + ENEMY_H * 0.5f);
 }
 
+/* The handler is checked before the slot is taken, and the order is the whole
+ * point: `find_dog_slot` grows `dog_count` when it hands back a fresh slot, so
+ * asking it first and refusing the handler afterwards left a counted dog that
+ * `dog_init` never filled in — a live animal made of whatever the last one left
+ * behind. Both callers pass an index they have just validated, which is exactly
+ * why it went unnoticed; the third one would not have been so lucky. */
 static void spawn_dog_for_enemy(GameplayState *state, int enemy_index)
 {
+    if (enemy_index < 0 || enemy_index >= state->enemy_count)
+        return;
     int slot = find_dog_slot(state);
-    if (slot < 0 || enemy_index < 0 || enemy_index >= state->enemy_count)
+    if (slot < 0)
         return;
     const Enemy *handler = &state->enemies[enemy_index];
     float base_x = handler->x + ENEMY_W * 0.5f - DOG_W * 0.5f;
@@ -598,12 +655,15 @@ static void civilian_init(Civilian *civilian, float x, float y,
 static void civilian_begin_run(GameplayState *state, Civilian *civilian)
 {
     /*
-     * Only the first of them gets words. The five break over a 2.4 second
-     * spread (`CIVILIAN_STARTLE_SPREAD`) and the strip holds a line for nearly
-     * four, so letting each one speak would replace the caption four times
-     * before anybody could finish reading the first — five half-second flashes
-     * that read as a bug rather than as a room emptying. One voice carries it
-     * and the other four stay what they always were: separate shouts.
+     * Only the first of them gets words, and the count is deliberately not
+     * written down here: how many people are in the room is the map's business
+     * (`f` in levels/level1.txt), and a number in this comment is one more
+     * place for the two to drift apart. They break over a 2.4 second spread
+     * (`CIVILIAN_STARTLE_SPREAD`) and the strip holds a line for nearly four,
+     * so letting each one speak would replace the caption before anybody could
+     * finish reading the first — a run of half-second flashes that reads as a
+     * bug rather than as a room emptying. One voice carries it and the rest
+     * stay what they always were: separate shouts.
      */
     bool first = true;
     for (int i = 0; i < state->civilian_count; ++i)
@@ -1909,9 +1969,26 @@ static void update_guard_encounters(GameplayState *state, float dt)
     }
 }
 
-/* A calm guard that sees a fallen comrade nearby becomes suspicious, walks over
- * to investigate, and often sprints to raise the building alarm. Latched per
- * guard so it reacts once, not every frame it stands beside the body. */
+/*
+ * A calm guard that sees a fallen comrade nearby becomes suspicious, walks over
+ * to investigate, and often sprints to raise the building alarm.
+ *
+ * Latched **per body**, not per guard, and that distinction is the feature.
+ * The single flag this replaced did the job it was written for — it stopped a
+ * guard re-triggering every frame he stood beside the same corpse — and then
+ * kept going: having looked at one body he was blind to every other for the
+ * rest of the sector. On a floor with ten guards on it the whole rule that
+ * bodies can be read therefore switched itself off after the first kill, which
+ * is precisely the point in a sector where a player has started leaving them
+ * about. A mask costs one word per guard and says the thing that was meant:
+ * each corpse is worth exactly one walk over from each man who finds it.
+ *
+ * A chain through several bodies is allowed and is the right answer — five
+ * corpses should alarm a floor more surely than one — and it terminates on its
+ * own: every body is marked as it is taken, `another_guard_is_raising_alarm`
+ * keeps the roll to one man at a time, and the moment anybody reaches a switch
+ * the alarm goes up and this function returns at the top.
+ */
 static void update_body_discovery(GameplayState *state)
 {
     if (gameplay_alarm_active(state))
@@ -1919,18 +1996,20 @@ static void update_body_discovery(GameplayState *state)
     for (int i = 0; i < state->enemy_count; ++i)
     {
         Enemy *enemy = &state->enemies[i];
-        if (enemy->dead || enemy->climbing || enemy->alerted_by_body ||
+        if (enemy->dead || enemy->climbing ||
             enemy->raising_alarm || enemy->provoked ||
             enemy->investigate_timer > 0.0f)
             continue;
 
         float bx = 0.0f;
         float by = 0.0f;
+        uint32_t bit = 0;
         bool found = false;
         for (int j = 0; j < state->enemy_count && !found; ++j)
         {
             const Enemy *body = &state->enemies[j];
-            if (j == i || !body->dead)
+            if (j == i || !body->dead ||
+                (enemy->bodies_investigated & enemy_body_bit(j, false)) != 0)
                 continue;
             float cx = body->x + ENEMY_W * 0.5f;
             float cy = body->y + ENEMY_H * 0.5f;
@@ -1939,13 +2018,15 @@ static void update_body_discovery(GameplayState *state)
             {
                 bx = cx;
                 by = cy;
+                bit = enemy_body_bit(j, false);
                 found = true;
             }
         }
         for (int j = 0; j < state->dog_count && !found; ++j)
         {
             const Dog *body = &state->dogs[j];
-            if (!body->dead)
+            if (!body->dead ||
+                (enemy->bodies_investigated & enemy_body_bit(j, true)) != 0)
                 continue;
             float cx = body->x + DOG_W * 0.5f;
             float cy = body->y + DOG_H * 0.5f;
@@ -1954,13 +2035,14 @@ static void update_body_discovery(GameplayState *state)
             {
                 bx = cx;
                 by = cy;
+                bit = enemy_body_bit(j, true);
                 found = true;
             }
         }
         if (!found)
             continue;
 
-        enemy->alerted_by_body = true;
+        enemy->bodies_investigated |= bit;
         enemy->investigate_x = bx;
         enemy->investigate_y = by;
         enemy->investigate_timer = ENEMY_INVESTIGATE_TIME;

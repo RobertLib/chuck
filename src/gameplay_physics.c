@@ -474,8 +474,26 @@ void gameplay_ride_platforms(GameplayState *state, float dt)
             player->vy = 0.0f;
             player->on_ground = true;
             state->player_on_moving_platform = i;
-            /* Carry the rider sideways with the platform. */
-            player->x += platform->vx * dt;
+            /*
+             * Carry the rider sideways with the platform — but only into air.
+             *
+             * The platform's limits are the ends of its own row's clear run, so
+             * the *platform* never reaches a wall; the rider does. A tile is 32
+             * and the box is 26, and the ride only asks that the player's
+             * centre is over the platform, so somebody standing on its edge
+             * hangs 13px past it and meets the masonry the platform stops
+             * short of. Pushed in regardless, they stayed there: `level_move`
+             * resolves the horizontal axis only when `vx` is non-zero, and a
+             * rider holding no direction has none, so the frame drew Chuck a
+             * third of the way inside the wall until he happened to touch a
+             * key.
+             */
+            float carried = player->x + platform->vx * dt;
+            if (gameplay_box_tiles_clear(state, carried, player->y,
+                                         PLAYER_W, height))
+            {
+                player->x = carried;
+            }
             break;
         }
     }

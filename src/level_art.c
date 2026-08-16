@@ -16,7 +16,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     [LEVEL_THEME_PLANT] = {
         WALL_STYLE_PLATE, FLOOR_SCREED, BACKDROP_PLANT,
         {41, 51, 64, 255}, {20, 27, 39, 255}, {88, 104, 120, 255},
-        {104, 122, 136, 255}, {168, 184, 192, 255}, {168, 112, 40, 255},
+        {FX_STEEL_LT_RGBA}, {168, 184, 192, 255}, {FX_AMBER_DK_RGBA},
         {7, 10, 18, 255}, {20, 30, 42, 255},
         {13, 18, 29, 255}, {18, 25, 38, 255},
         {248, 202, 118, 255}, {130, 162, 170, 255}, 70},
@@ -46,7 +46,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     [LEVEL_THEME_SERVER] = {
         WALL_STYLE_PLATE, FLOOR_PANEL, BACKDROP_SERVER,
         {26, 34, 42, 255}, {10, 15, 20, 255}, {62, 84, 96, 255},
-        {66, 116, 122, 255}, {148, 214, 208, 255}, {74, 222, 212, 255},
+        {66, 116, 122, 255}, {148, 214, 208, 255}, {FX_CYAN_RGBA},
         {4, 10, 16, 255}, {9, 23, 31, 255},
         {8, 16, 22, 255}, {12, 24, 32, 255},
         {96, 226, 220, 255}, {90, 180, 190, 255}, 58},
@@ -86,7 +86,7 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
     [LEVEL_THEME_SECURITY] = {
         WALL_STYLE_PLATE, FLOOR_CARPET, BACKDROP_SECURITY,
         {46, 40, 44, 255}, {18, 14, 17, 255}, {92, 76, 80, 255},
-        {112, 68, 62, 255}, {202, 130, 114, 255}, {232, 74, 62, 255},
+        {112, 68, 62, 255}, {202, 130, 114, 255}, {FX_RED_RGBA},
         {10, 6, 10, 255}, {28, 15, 17, 255},
         {16, 10, 13, 255}, {26, 16, 19, 255},
         {236, 120, 96, 255}, {170, 120, 120, 255}, 64},
@@ -153,14 +153,19 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
         {13, 16, 23, 255}, {58, 62, 66, 255},
         {198, 178, 120, 255}, {170, 196, 214, 255}, 0},
 
-    /* DAWN — the third: the sun comes up mid-climb and the stone goes warm. */
-    [LEVEL_THEME_FACADE_DAWN] = {
-        WALL_STYLE_CONCRETE, FLOOR_SCREED, BACKDROP_FACADE_DAWN,
-        {86, 72, 64, 255}, {62, 52, 48, 255}, {118, 100, 86, 255},
-        {158, 132, 104, 255}, {214, 186, 148, 255}, {232, 96, 72, 255},
-        {44, 38, 74, 255}, {236, 150, 96, 255},
-        {52, 44, 62, 255}, {120, 96, 74, 255},
-        {252, 214, 150, 255}, {252, 206, 158, 255}, 0},
+    /* MOON — the third: the storm has blown through, the sky has cleared, and
+     * a low moon stands off the corner of the building. It is the one climb
+     * lit from the side rather than from underneath, which is what makes it
+     * read differently from the other three without moving the clock: the
+     * whole night is thirty-eight minutes long (`NIGHT_CLOCK_*`), so the light
+     * out here cannot come from the sun, and it does not. */
+    [LEVEL_THEME_FACADE_MOON] = {
+        WALL_STYLE_CONCRETE, FLOOR_SCREED, BACKDROP_FACADE_MOON,
+        {58, 64, 76, 255}, {38, 43, 53, 255}, {92, 101, 116, 255},
+        {124, 134, 150, 255}, {186, 196, 210, 255}, {228, 88, 70, 255},
+        {12, 17, 33, 255}, {46, 56, 82, 255},
+        {20, 26, 44, 255}, {74, 84, 104, 255},
+        {214, 224, 236, 255}, {162, 178, 198, 255}, 0},
 
     /* HIGH — the last: above the weather, a sea of cloud below and the
      * building's own neon signage for company. */
@@ -204,7 +209,7 @@ static const MusicTrack THEME_MUSIC[LEVEL_THEME_COUNT] = {
     [LEVEL_THEME_RESTROOM] = MUSIC_RESTROOM,
     [LEVEL_THEME_FACADE_NIGHT] = MUSIC_FACADE_NIGHT,
     [LEVEL_THEME_FACADE_STORM] = MUSIC_FACADE_STORM,
-    [LEVEL_THEME_FACADE_DAWN] = MUSIC_FACADE_DAWN,
+    [LEVEL_THEME_FACADE_MOON] = MUSIC_FACADE_MOON,
     [LEVEL_THEME_FACADE_HIGH] = MUSIC_FACADE_HIGH};
 
 MusicTrack level_theme_music(LevelTheme theme)
@@ -1219,11 +1224,11 @@ static void backdrop_motes(const LevelArtScene *s, const LevelThemeArt *art,
     for (int i = 0; i < count; ++i)
     {
         unsigned h = art_hash(i + s->level_index * 29, 91);
-        float x = fmodf((float)(h % (unsigned)span) +
+        float x = fmodf((float)fx_spread(h, span) +
                             s->time * (4.0f + (float)(i % 5)),
                         span) -
                   40.0f;
-        float y = oy + 18.0f + (float)((h >> 8) % (unsigned)band) +
+        float y = oy + 18.0f + (float)fx_spread(h >> 8, (float)band) +
                   sinf(s->time * 0.8f + (float)i) * 2.0f;
         SDL_SetRenderDrawColor(r, art->haze.r, art->haze.g, art->haze.b,
                                (Uint8)(22 + (h % 20u)));
@@ -2109,7 +2114,7 @@ static void backdrop_security(const LevelArtScene *s, const LevelThemeArt *art,
                 for (int line = 0; line < 6; ++line)
                 {
                     unsigned lh = fx_hash(h + (unsigned)line +
-                                          (unsigned)(s->time * 12.0f));
+                                          fx_salt(s->time * 12.0f));
                     fx_rect_a(r, art->haze, (Uint8)(30u + lh % 90u), sx + 2.0f,
                               sy + 3.0f + (float)line * 5.0f, 32.0f, 3.0f);
                 }
@@ -2307,8 +2312,8 @@ static void backdrop_roof(const LevelArtScene *s, const LevelThemeArt *art,
     for (int i = 0; i < 40; ++i)
     {
         unsigned h = art_hash(i * 17 + 3, 401);
-        float x = (float)(h % (unsigned)s->win_w);
-        float y = oy + (float)((h >> 9) % (unsigned)star_band);
+        float x = (float)fx_spread(h, (float)s->win_w);
+        float y = oy + (float)fx_spread(h >> 9, (float)star_band);
         fx_rect_a(r, art->haze, (Uint8)(60 + h % 90u), x, y, 1.0f, 1.0f);
     }
     /*
@@ -2402,7 +2407,7 @@ static void backdrop_roof(const LevelArtScene *s, const LevelThemeArt *art,
     for (int drop = 0; drop < 34; ++drop)
     {
         unsigned h = art_hash(drop * 23, 907);
-        float x = (float)(h % (unsigned)s->win_w);
+        float x = (float)fx_spread(h, (float)s->win_w);
         float speed = 40.0f + (float)(h % 60u);
         float y = oy + fmodf(s->time * speed + (float)((h >> 7) % 400u), fh);
         SDL_SetRenderDrawColor(r, art->haze.r, art->haze.g, art->haze.b, 60);
@@ -2613,9 +2618,11 @@ static void facade_skyline(const LevelArtScene *s, const LevelThemeArt *art,
  * have to be invented somewhere below the bottom edge. What a cordon actually
  * does to a tower is wash the lower face in blue from underneath, out of step
  * with itself because a dozen light bars are never in phase. The strength
- * falls away with the hour: the third sector is the lowest wall and still in
- * the thick of it, the storm climb is higher and wetter, and by the dawn
- * climb it is a suggestion. Above the weather there is nothing to see at all.
+ * falls away with height, not with the hour — the whole night is thirty-eight
+ * minutes long and the ring was already standing before any of it: the third
+ * sector is the lowest wall and still in the thick of it, the storm climb is
+ * higher and wetter, and by the moon climb it is a suggestion. Above the
+ * weather there is nothing to see at all.
  */
 static void facade_cordon(const LevelArtScene *s, float top, float height,
                           float strength)
@@ -2642,9 +2649,17 @@ static void facade_cordon(const LevelArtScene *s, float top, float height,
         bool red_half = (bar & 1) != 0;
         float rate = red_half ? 2.6f : 3.3f;
         float beat = fmodf(s->time * rate + (float)(h % 100u) * 0.01f, 1.0f);
-        if (beat > 0.34f)
-            continue;
-        float flash = 1.0f - beat / 0.34f;
+        /* Held at the pulse's own mean when the player has asked for it: the
+         * triangle is on for 0.34 of the period and averages half of that, so
+         * a steady 0.17 puts the same amount of light on the same wall
+         * without the bar ever being a strobe. */
+        float flash = 0.17f;
+        if (!s->steady_lights)
+        {
+            if (beat > 0.34f)
+                continue;
+            flash = 1.0f - beat / 0.34f;
+        }
         SDL_Color c = red_half ? FX_RED : CORDON_BLUE;
         fx_glow(r, x, floor_y + 30.0f, 150.0f + (float)(h % 60u), c,
                 (Uint8)(52.0f * flash * strength));
@@ -2763,25 +2778,64 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
         break;
     }
-    case BACKDROP_FACADE_DAWN:
+    case BACKDROP_FACADE_MOON:
     {
-        /* The sun sits just off the corner of the building; everything the
-         * light touches goes warm, and the towers become silhouettes. */
-        float sun_x = (float)s->win_w * 0.78f;
-        float sun_y = (float)s->win_h * 0.72f;
-        /* The sun is the game's warm light writ large: FX_WARM for the halo,
-         * lifted toward cream at the core. */
-        fx_glow(r, sun_x, sun_y, 300.0f, FX_WARM, 110);
-        fx_glow(r, sun_x, sun_y, 120.0f, fx_mix(FX_WARM, FX_CREAM, 0.65f), 150);
+        /*
+         * A low moon just off the corner of the building, and the towers go
+         * to silhouette against it.
+         *
+         * This was a sunrise for a long time, and it was the one thing in the
+         * game that contradicted the clock outright: the night runs 00:22 to
+         * 01:00, this is sector 11, and the wall clocks in the sectors either
+         * side of it read a few minutes before and after 00:47. A player who
+         * looked up in sector 10, climbed through a dawn and looked up again
+         * in sector 12 was told the sun had risen and set inside five minutes.
+         *
+         * What the beat is actually for survives the change intact — one
+         * climb lit from the side by a single round source off the corner,
+         * against three that are not — so this keeps the composition and
+         * swaps the light. A moon is cold where the sun was warm, and it has
+         * a **hard edge**, which is most of what tells the two apart at this
+         * size: the sun was drawn as haze alone and would still read as a sun
+         * however blue it was painted.
+         */
+        float moon_x = (float)s->win_w * 0.78f;
+        float moon_y = (float)s->win_h * 0.72f;
+        /* Cold light, out of the palette's own cool end rather than out of
+         * new literals: FX_STEEL_LT for the far halo, FX_PALE for the near
+         * one. Not FX_LAMP — that is the fluorescent tube, and hanging one in
+         * the sky is exactly what the palette's three light temperatures
+         * exist to stop. */
+        fx_glow(r, moon_x, moon_y, 300.0f, FX_STEEL_LT, 90);
+        fx_glow(r, moon_x, moon_y, 120.0f, FX_PALE, 120);
+        /* The disc. Cut hard at the corners the way the wall clock's face is,
+         * so it comes out round in the game's own drawing vocabulary rather
+         * than as a rasterised circle nothing else in the tree draws. */
+        fx_mass(r, fx_mix(FX_PALE, FX_STEEL, 0.35f),
+                moon_x - 21.0f, moon_y - 21.0f, 42.0f, 42.0f, 13, 13);
+        fx_mass(r, fx_mix(FX_PALE, FX_CREAM, 0.55f),
+                moon_x - 19.0f, moon_y - 19.0f, 38.0f, 38.0f, 12, 12);
+        /* Two maria, so the disc is a body and not a hole in the sky. */
+        fx_rect_a(r, FX_STEEL_LT, 70, moon_x - 9.0f, moon_y - 7.0f,
+                  11.0f, 8.0f);
+        fx_rect_a(r, FX_STEEL_LT, 55, moon_x + 3.0f, moon_y + 4.0f,
+                  7.0f, 6.0f);
         facade_skyline(s, art, 0.0f);
+        /* Haze lying on the air near the ground, lit from the side by the
+         * moon. It is what keeps the lower sky from going flat now the light
+         * is cold, and it is why there are no stars out here: they are up in
+         * the HIGH climb, above all of this. */
         for (int band = 0; band < 3; ++band)
         {
             float y = (float)s->win_h - 150.0f + (float)band * 34.0f;
-            fx_rect_a(r, fx_mix(FX_WARM, FX_CREAM, 0.20f), 60, 0.0f, y,
+            fx_rect_a(r, fx_mix(FX_PALE, FX_STEEL_LT, 0.45f), 46, 0.0f, y,
                       (float)s->win_w, 12.0f);
         }
         facade_shell(s, art, top, height);
-        /* Birds, far enough out to be scenery rather than the gameplay kind. */
+        /* Birds off the ledges, far enough out to be scenery rather than the
+         * gameplay kind — the same population the climb throws at Chuck up
+         * close, put out where it is only weather. Cold against a cold sky:
+         * a warm dark out here would be the sunrise back again in one line. */
         for (int bird = 0; bird < 5; ++bird)
         {
             unsigned h = art_hash(bird * 7, 55);
@@ -2792,8 +2846,7 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
             float y = top + 40.0f + (float)((h >> 5) % 130u) +
                       sinf(s->time * 1.4f + (float)bird) * 5.0f;
             float flap = sinf(s->time * 7.0f + (float)bird) * 3.0f;
-            /* A bird against the dawn is a warm dark, not interface ink. */
-            fx_set(r, fx_mix(FX_SHADOW, FX_WOOD, 0.3f));
+            fx_set(r, fx_mix(FX_SHADOW, FX_STEEL_DK, 0.45f));
             SDL_RenderLine(r, x - 5.0f, y - flap, x, y);
             SDL_RenderLine(r, x, y, x + 5.0f, y - flap);
         }
@@ -2815,7 +2868,7 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
         for (int i = 0; i < 60; ++i)
         {
             unsigned h = art_hash(i * 11 + 5, 733);
-            float x = (float)(h % (unsigned)s->win_w);
+            float x = (float)fx_spread(h, (float)s->win_w);
             float y = top + fmodf((float)((h >> 8) % 900u) -
                                       s->cam_y * 0.05f + 900.0f,
                                   900.0f);
@@ -2866,7 +2919,7 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
         for (int i = 0; i < 30; ++i)
         {
             unsigned h = art_hash(i * 13 + 7, 211);
-            float x = (float)(h % (unsigned)s->win_w);
+            float x = (float)fx_spread(h, (float)s->win_w);
             float y = top + fmodf((float)((h >> 8) % 700u) -
                                       s->cam_y * 0.08f + 700.0f,
                                   700.0f);
@@ -2897,7 +2950,7 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
     case BACKDROP_FACADE_STORM:
         cordon = 0.60f;
         break;
-    case BACKDROP_FACADE_DAWN:
+    case BACKDROP_FACADE_MOON:
         cordon = 0.26f;
         break;
     default:
@@ -2923,7 +2976,7 @@ void level_art_backdrop(const LevelArtScene *s)
     {
     case BACKDROP_FACADE_NIGHT:
     case BACKDROP_FACADE_STORM:
-    case BACKDROP_FACADE_DAWN:
+    case BACKDROP_FACADE_MOON:
     case BACKDROP_FACADE_HIGH:
         backdrop_facade(s, art, oy, fh);
         return; /* Exteriors get no interior dust or floor haze. */

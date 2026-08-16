@@ -6,11 +6,13 @@
 #include "common.h"
 #include "credits.h"
 #include "cutscene.h"
+#include "demo.h"
 #include "gameplay_state.h"
 #include "intro.h"
 #include "manual.h"
 #include "pad_hint.h"
 #include "particle.h"
+#include "progress.h"
 #include "settings.h"
 
 typedef enum
@@ -52,10 +54,36 @@ typedef struct
      * it is plugged in, because every prompt on every screen is spelled from
      * it and none of them should be asking a driver mid-frame. */
     PadHints pad;
+    /* Which way the left stick was last pushed, as the d-pad button that means
+     * the same thing, or `SDL_GAMEPAD_BUTTON_INVALID` for centred. A stick is
+     * an axis and a menu wants presses, so the edge has to be remembered
+     * somewhere; see `menu_stick_step` in
+     * [game_input.c](game_input.c). */
+    SDL_GamepadButton pad_menu_direction;
     AudioSystem audio;
     bool fullscreen;
     bool gamepad_active;
     Uint64 last_tick;
+
+    /* Real time taken off the clock and not yet spent on a simulation step.
+     * The step is fixed (`SIM_STEP_DT`) so that what the physics produces is a
+     * property of the game rather than of the display it is drawn on; this is
+     * where the remainder between two frames waits. */
+    float sim_accumulator;
+
+    /*
+     * Whether the renderer actually took the vsync it was asked for, and what
+     * to do about it if it did not.
+     *
+     * `SDL_SetRenderVSync` can refuse — a software renderer, a compositor that
+     * ignores it, a VM — and the return value used to be dropped on the floor.
+     * With nothing else limiting it `SDL_AppIterate` then runs as fast as the
+     * machine can draw: a pinned core and a spun-up fan for a game that needs
+     * neither. `frame_min_ns` is the floor the loop sleeps to when the swap is
+     * not doing the waiting, and it is nought whenever vsync was granted.
+     */
+    bool vsync;
+    Uint64 frame_min_ns;
 } PlatformState;
 
 typedef struct
@@ -161,12 +189,39 @@ typedef struct
      * disk when the sheet is closed, so a run is never what a preference
      * belongs to. */
     Settings settings;
+    /* Which of the sheet's two pages is open, where its cursor is standing, and
+     * — on the controls page — which of the row's two key slots the caret is
+     * on and whether the next key pressed is being taken rather than obeyed. */
+    SettingsPage settings_page;
     int settings_cursor;
+    int settings_bind_slot;
+    bool settings_capturing;
     int pause_cursor;
+    /* What outlives the process: the best score any run has finished on, and
+     * the furthest sector one has reached. Written on the frames that move a
+     * number and read once at startup, so a campaign that takes more than one
+     * sitting can be picked up from the title screen. */
+    Progress progress;
+    /* Set by the title screen's quit chip and read once a frame by
+     * SDL_AppIterate. The chip is reached by holding the pad's B, by clicking
+     * it, or by ESC, and none of those three sit where they could return an
+     * SDL_AppResult of their own — so the answer is parked here rather than
+     * threaded back out through three different call paths. */
+    bool quit_requested;
+    /* `--demo`: a scripted hand on the controls instead of a player's, so that
+     * `make smoke` executes the drawing that only a *played* sector reaches.
+     * See [demo.h](demo.h) for what it is for and what it deliberately is not.
+     * False everywhere else, and nothing in a normal run ever sets it. */
+    bool demo_active;
+    DemoHand demo_hand;
 #ifdef CHUCK_DEBUG
     int debug_selected_level;
 #endif
 } Game;
+
+/* Hand the sector over to the scripted hand. Read after `--level`, refused
+ * outside a sector for the reason `--page` is refused outside the manual. */
+bool game_start_demo(Game *game);
 
 bool game_init(Game *game);
 bool game_init_seeded(Game *game, uint64_t seed);
@@ -196,6 +251,36 @@ void game_open_settings(Game *game);
 void game_close_settings(Game *game);
 void game_settings_move_cursor(Game *game, int delta);
 void game_settings_adjust(Game *game, int delta);
+/*
+ * ENTER on the sheet. It opens the controls page, resets the bindings, or arms
+ * the capture, depending on the row — and on a slider or a toggle it is a
+ * change input like any other, which is why it is one call rather than a test
+ * at every key that means "yes".
+ */
+void game_settings_confirm(Game *game);
+/*
+ * A key pressed while the capture is armed. Returns true when the press was
+ * swallowed by the sheet, which is every press once it is armed: the whole
+ * point is that the next key means itself rather than what it is bound to.
+ * `scancode` of an unbindable key cancels, which is what makes ESC the way
+ * out of a capture as well as out of the sheet.
+ */
+bool game_settings_capture_key(Game *game, int scancode);
+/*
+ * And the pad's half of the same row. `button` is already the positional value
+ * the file keeps — the caller resolves the physical press through the pad's
+ * own letters first — so nothing about which controller is plugged in crosses
+ * this line. An unbindable button cancels, which is how START and BACK come to
+ * be the pad's way out of a capture.
+ */
+bool game_settings_capture_pad(Game *game, int button);
+/* True when the caret is on one of the row's pad caps rather than its keys.
+ * The two captures are separate tables and this is what decides which one a
+ * press is offered to. */
+bool game_settings_slot_is_pad(const Game *game);
+/* Back out of the controls page to the main one; false when there is nothing
+ * to back out of, so the caller can close the sheet instead. */
+bool game_settings_leave_page(Game *game);
 
 /* Fullscreen, from the sheet or from F. One function, because the window and
  * the saved setting must never disagree about which the player asked for. */
@@ -209,6 +294,47 @@ void game_save_settings(const Game *game);
  * screen and the prologue. The debug level picker uses it, and so does the
  * `--level N` switch the editor's playtest button launches the game with. */
 bool game_start_at_level(Game *game, int level_index);
+
+/* Go straight to one named screen, for the `--scene NAME` switch. It exists so
+ * `make smoke` can execute the presentation code that is only reached by
+ * playing — the two prologue cutscenes, the drive, the manual, the options
+ * sheet, the report between sectors, the outro and the credits — none of which
+ * anything in the tree ran before. Combine with `--level N` for the screens
+ * that report on a sector. False when the name is not one of them. */
+bool game_start_at_scene(Game *game, const char *name);
+
+/*
+ * Which sheet of the manual is open, for the `--page N` switch (0-based here,
+ * 1-based on the command line, like `--level`).
+ *
+ * The book is eight sheets and each one draws its own illustration, and a sheet
+ * is only ever turned by a hand: `manual_init` opens on the first one and
+ * nothing advances it on a clock. `make smoke` presses no keys, so seven of the
+ * eight illustrations — some six hundred lines of drawing, and the figure
+ * helpers only they reach — were executed by nothing in this tree at all, in a
+ * file `make test` cannot link. `test_manual_sheets_fit_the_column` measures
+ * every sheet's *words*, which is exactly what made the gap easy to miss.
+ *
+ * False when there is no manual open or the sheet does not exist, for the same
+ * reason `--scene restroom` refuses a sector with no door: a switch that
+ * quietly draws sheet one and reports it as having drawn sheet six is worse
+ * than one that says it cannot.
+ */
+bool game_show_manual_page(Game *game, int page);
+
+/* The furthest sector any run has reached, 0-based, and 0 when nobody has got
+ * past the lobby — which is also what the title screen reads to decide whether
+ * it offers a resume at all. */
+int game_resume_sector(const Game *game);
+
+/* The best score any finished run has left behind. Drawn on the game-over
+ * card, which is the one screen a score is being looked at on. */
+int game_best_score(const Game *game);
+
+/* Take the resume the title screen is offering: a clean run of the furthest
+ * sector reached, prologue and all the floors below it skipped. False when
+ * there is nothing to resume or this is not the title screen. */
+bool game_resume_campaign(Game *game);
 
 /* Helper: obtain current view size (logical or window). Exposed to render
  * module so rendering and camera code can share the same behavior. */

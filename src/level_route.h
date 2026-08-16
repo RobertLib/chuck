@@ -3,9 +3,10 @@
 
 /*
  * A deliberately conservative account of what the player can do on foot: walk,
- * fall, step up one tile, jump a one-tile hole (two tiles with a second open
- * row overhead), hop a single floor spike with that same clearance, ride
- * ladders, lift shafts and moving platforms, and step through a paired door.
+ * fall as far as a landing can be survived, step up one tile, jump a one-tile
+ * hole (two tiles with a second open row overhead), hop a single floor spike
+ * with that same clearance, ride ladders, lift shafts and moving platforms,
+ * and step through a paired door.
  * Falling panels are left out on purpose, because a map has to still work once
  * every one of them has gone. Everything it reaches really is reachable, so a
  * map it calls finishable is finishable.
@@ -43,8 +44,15 @@ bool route_inside(const RouteMap *route, int col, int row);
 bool route_passable(const RouteMap *route, int col, int row);
 bool route_support(const RouteMap *route, int col, int row);
 bool route_standing(const RouteMap *route, int col, int row);
-/* Where a body dropped at (col,row) comes to rest. False if it never does. */
+/* Where a body dropped at (col,row) comes to rest. False if it never does.
+ * Unbounded on purpose: this answers where a thing ends up, not whether the
+ * player survives getting there. See route_survivable_fall. */
 bool route_landing(const RouteMap *route, int col, int row, RouteCell *landing);
+
+/* Whether a fall between these two rows is one the player walks away from.
+ * Past PLAYER_FATAL_FALL_HEIGHT a landing kills outright however many hearts
+ * are left, so the model refuses to route through one. */
+bool route_survivable_fall(int from_row, int landing_row);
 bool route_in_shaft(const RouteMap *route, int col, int row);
 
 /* Every cell one step of the model leads to. `out` needs ROUTE_MAX_NEIGHBOURS. */

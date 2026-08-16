@@ -80,12 +80,22 @@ static void clear_road(Chase *chase)
     memset(chase->intersections, 0, sizeof(chase->intersections));
 }
 
-/* Places both cars and the road generator at the start of a pursuit attempt. */
-static void reset_pursuit_layout(Chase *chase)
+/*
+ * Places both cars and the road generator at the start of a pursuit attempt.
+ *
+ * `resume_y` is where on the route the attempt picks up, and it is a parameter
+ * rather than zero because the cordon is a *spatial* ramp: how likely a
+ * junction is to be held is read off the block it is generated in, so a retry
+ * that put the player back on block zero rebuilt the ring from its thinnest
+ * end with only a fraction of the clock left to cross it. Measured before this,
+ * a crash near the end left the tower standing behind an empty street — the
+ * exact opposite of what the drive is there to show.
+ */
+static void reset_pursuit_layout(Chase *chase, float resume_y)
 {
     clear_road(chase);
     chase->player.x = chase_lane_center(CHASE_LANE_COUNT - 1);
-    chase->player.y = 0.0f;
+    chase->player.y = resume_y;
     chase->player.speed = CHASE_CRUISE_SPEED;
     chase->player.integrity = CHASE_INTEGRITY;
     chase->player.invuln_timer = CHASE_HIT_INVULN;
@@ -94,7 +104,7 @@ static void reset_pursuit_layout(Chase *chase)
 
     chase->target.x = chase_lane_center(CHASE_LANE_COUNT - 1);
     chase->target.lane_target_x = chase->target.x;
-    chase->target.y = CHASE_START_GAP;
+    chase->target.y = resume_y + CHASE_START_GAP;
     chase->target.speed = CHASE_TARGET_SPEED;
     chase->target.lane_timer = CHASE_TARGET_LANE_TIME_MIN;
     chase->target.boost_timer = 0.0f;
@@ -792,13 +802,26 @@ static void update_failed(Chase *chase, float dt)
          * stops insisting on itself, and it stops taking itself back too, so
          * the pursuit clock only ever grows and the prologue always ends —
          * whether or not anybody presses the skip it is now offering.
+         *
+         * The clock and the road are handed back together, a beat of each, so
+         * the two never disagree about how far along the route this attempt
+         * is. That is what keeps the cordon thickening: the ring is read off
+         * the block a junction is generated in, and a retry that kept the
+         * clock but reset the road drove the last of the route through the
+         * thinnest part of the ring.
          */
         float resume_time = chase->pursuit_time;
+        float resume_y = chase->player.y;
         if (chase->attempts < CHASE_SKIP_AFTER_ATTEMPTS)
+        {
             resume_time -= CHASE_FAIL_REWIND;
+            resume_y -= CHASE_FAIL_REWIND * CHASE_CRUISE_SPEED;
+        }
         if (resume_time < 0.0f)
             resume_time = 0.0f;
-        reset_pursuit_layout(chase);
+        if (resume_y < 0.0f)
+            resume_y = 0.0f;
+        reset_pursuit_layout(chase, resume_y);
         chase->pursuit_time = resume_time;
         begin_phase(chase, CHASE_PHASE_PURSUIT);
         game_events_sound(&chase->events, SFX_RESPAWN);

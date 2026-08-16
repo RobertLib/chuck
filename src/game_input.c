@@ -7,6 +7,52 @@
 #include "embedded_levels.h"
 #endif
 
+/*
+ * The numbers in [keybind.h](keybind.h) are SDL scancodes, and that file links
+ * no SDL — so this is where the two are made to agree.
+ *
+ * One assertion per row, generated from the same list the table is, so the
+ * check cannot fall behind the thing it is checking: adding a key to
+ * `CHUCK_KEY_LIST` adds its assertion with it, and a scancode that is ever
+ * wrong is a build failure rather than a key that silently does nothing. It is
+ * the same reason `packaging/fetch_sdl3.sh`'s pin is read by CI rather than
+ * copied into it — two hand-kept copies of a number are two numbers.
+ */
+#define CHUCK_KEY_ASSERT(ident, code, name)                                   \
+    _Static_assert((code) == SDL_SCANCODE_##ident,                            \
+                   "keybind.h disagrees with SDL about " name);
+CHUCK_KEY_LIST(CHUCK_KEY_ASSERT)
+#undef CHUCK_KEY_ASSERT
+
+/* The pad's numbers are a copy of somebody else's constants for exactly the
+ * same reason and are checked exactly the same way. */
+#define CHUCK_PAD_ASSERT(ident, button, file_name, shown)                     \
+    _Static_assert((button) == SDL_GAMEPAD_BUTTON_##ident,                    \
+                   "keybind.h disagrees with SDL about " file_name);
+CHUCK_PAD_LIST(CHUCK_PAD_ASSERT)
+#undef CHUCK_PAD_ASSERT
+_Static_assert(PADBIND_NONE == SDL_GAMEPAD_BUTTON_INVALID,
+               "keybind.h disagrees with SDL about the absent button");
+
+/* Whether a bound key is down, for the controls read every frame rather than
+ * delivered as presses. */
+static bool key_bound_down(const Game *game, const bool *ks, BindAction action)
+{
+  for (int slot = 0; slot < BIND_SLOTS; ++slot)
+  {
+    int code = game->settings.bindings.keys[action][slot];
+    if (code != KEYBIND_NONE && ks[code])
+      return true;
+  }
+  return false;
+}
+
+/* And whether a press is one of the keys an action answers to. */
+static bool key_press_is(const Game *game, SDL_Scancode sc, BindAction action)
+{
+  return keybind_action_has(&game->settings.bindings, action, (int)sc);
+}
+
 static void open_gamepad(Game *game, SDL_JoystickID id)
 {
   if (game->platform.gamepad != NULL)
@@ -21,6 +67,9 @@ static void open_gamepad(Game *game, SDL_JoystickID id)
 
   game->platform.gamepad_id = id;
   game->platform.gamepad_active = true;
+  /* Centred until it says otherwise, so the first push off centre is an edge
+   * rather than a value that happens to differ from a zeroed struct. */
+  game->platform.pad_menu_direction = SDL_GAMEPAD_BUTTON_INVALID;
   /* Everything downstream — which button jumps, which letter the title screen
    * asks for — is decided here, once, from what this pad says it is. */
   pad_hints_read(&game->platform.pad, game->platform.gamepad);
@@ -62,6 +111,59 @@ static bool gamepad_button(const Game *game, SDL_GamepadButton button)
          SDL_GetGamepadButton(game->platform.gamepad, button);
 }
 
+/*
+ * A stored binding, turned into the button on the pad that is actually in the
+ * player's hands.
+ *
+ * The four faces are kept as letters and everything else as itself — see the
+ * note on `keybind_pad_face_index`. This is the one place that translation
+ * happens, in both directions: `pad_bound_down` reads through it and
+ * `pad_capture_button` writes through its inverse, so a Switch player's chosen
+ * button and an Xbox player's chosen button are the same entry in the file.
+ */
+static SDL_GamepadButton pad_resolve(const Game *game, int stored)
+{
+  if (stored == PADBIND_NONE)
+    return SDL_GAMEPAD_BUTTON_INVALID;
+  int face = keybind_pad_face_index(stored);
+  if (face < 0)
+    return (SDL_GamepadButton)stored;
+  return pad_hints_button(&game->platform.pad, (PadFace)face);
+}
+
+/* And the way back, for a capture: the physical button the player pressed,
+ * said as the thing the file will keep. */
+static int pad_capture_button(const Game *game, SDL_GamepadButton pressed)
+{
+  PadFace face = pad_hints_face(&game->platform.pad, pressed);
+  if (face != PAD_FACE_NONE)
+    return keybind_pad_face_button((int)face);
+  return (int)pressed;
+}
+
+/* Whether a bound pad button is down, for the controls read every frame. */
+static bool pad_bound_down(const Game *game, BindAction action)
+{
+  if (game->platform.gamepad == NULL)
+    return false;
+  for (int slot = 0; slot < BIND_SLOTS; ++slot)
+  {
+    SDL_GamepadButton at =
+        pad_resolve(game, game->settings.bindings.pad[action][slot]);
+    if (at != SDL_GAMEPAD_BUTTON_INVALID && gamepad_button(game, at))
+      return true;
+  }
+  return false;
+}
+
+/* And whether a press is one of the buttons an action answers to. */
+static bool pad_press_is(const Game *game, SDL_GamepadButton pressed,
+                         BindAction action)
+{
+  return keybind_action_has_pad(&game->settings.bindings, action,
+                                pad_capture_button(game, pressed));
+}
+
 /* The button carrying a letter on this pad, for the two inputs read every
  * frame rather than delivered as presses. */
 static bool gamepad_face(const Game *game, PadFace face)
@@ -72,16 +174,16 @@ static bool gamepad_face(const Game *game, PadFace face)
 void game_read_input(Game *game)
 {
   const bool *ks = SDL_GetKeyboardState(NULL);
-  bool key_left = ks[SDL_SCANCODE_LEFT] || ks[SDL_SCANCODE_A];
-  bool key_right = ks[SDL_SCANCODE_RIGHT] || ks[SDL_SCANCODE_D];
-  bool key_up = ks[SDL_SCANCODE_UP] || ks[SDL_SCANCODE_W];
-  bool key_down = ks[SDL_SCANCODE_DOWN] || ks[SDL_SCANCODE_S];
-  bool key_interact = ks[SDL_SCANCODE_E];
+  bool key_left = key_bound_down(game, ks, BIND_LEFT);
+  bool key_right = key_bound_down(game, ks, BIND_RIGHT);
+  bool key_up = key_bound_down(game, ks, BIND_UP);
+  bool key_down = key_bound_down(game, ks, BIND_DOWN);
+  bool key_interact = key_bound_down(game, ks, BIND_USE);
   /* The dedicated jump key. UP is the keyboard's jump everywhere except over a
    * ladder, where the same key has to mean climb — which left the keyboard as
    * the one input that could not jump off a ladder at all, a move the pad has
    * had all along under A. */
-  bool key_jump = ks[SDL_SCANCODE_LSHIFT];
+  bool key_jump = key_bound_down(game, ks, BIND_JUMP);
 
   bool pad_left = false;
   bool pad_right = false;
@@ -98,16 +200,19 @@ void game_read_input(Game *game)
                                   SDL_GAMEPAD_AXIS_LEFTX);
     Sint16 y = SDL_GetGamepadAxis(game->platform.gamepad,
                                   SDL_GAMEPAD_AXIS_LEFTY);
-    pad_left = x < -GAMEPAD_AXIS_DEAD_ZONE ||
-               gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_LEFT);
-    pad_right = x > GAMEPAD_AXIS_DEAD_ZONE ||
-                gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_RIGHT);
-    pad_up = y < -GAMEPAD_AXIS_DEAD_ZONE ||
-             gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_UP);
-    pad_down = y > GAMEPAD_AXIS_DEAD_ZONE ||
-               gamepad_button(game, SDL_GAMEPAD_BUTTON_DPAD_DOWN);
-    pad_interact = gamepad_face(game, PAD_FACE_DOOR);
-    pad_jump_held = gamepad_face(game, PAD_FACE_CONFIRM);
+    /* The stick is not a binding and cannot be — it is an axis, and there is
+     * nothing about "push left" a player could usefully move elsewhere. The
+     * buttons beside it are, and they are the d-pad only until somebody says
+     * otherwise on the controls sheet. */
+    pad_left = x < -GAMEPAD_AXIS_DEAD_ZONE || pad_bound_down(game, BIND_LEFT);
+    pad_right = x > GAMEPAD_AXIS_DEAD_ZONE || pad_bound_down(game, BIND_RIGHT);
+    pad_up = y < -GAMEPAD_AXIS_DEAD_ZONE || pad_bound_down(game, BIND_UP);
+    pad_down = y > GAMEPAD_AXIS_DEAD_ZONE || pad_bound_down(game, BIND_DOWN);
+    pad_interact = pad_bound_down(game, BIND_USE);
+    pad_jump_held = pad_bound_down(game, BIND_JUMP);
+    /* The pedal and the way out of a sheet stay on the letter rather than on
+     * the binding: B is `cancel_held` on the title screen and the brake on the
+     * drive, and neither of those is a sector control the sheet offers. */
     pad_brake = gamepad_face(game, PAD_FACE_CANCEL);
     /* The triggers are what a driver's fingers go to, so the drive answers
      * them as well as the letters it prompts for: RT accelerates, LT brakes.
@@ -137,6 +242,10 @@ void game_read_input(Game *game)
    * presses, because a throttle is held. */
   game->input.gas = game->input.up || pad_jump_held || pad_gas_trigger;
   game->input.brake = game->input.down || pad_brake || pad_brake_trigger;
+  /* Pad only, and deliberately not the keyboard's ESC: ESC is a key that means
+   * nothing but "quit" on the title screen and can answer on the press, where
+   * B has four other jobs and has to be held to mean this one. */
+  game->input.cancel_held = pad_brake;
 
   if (key_left || key_right || key_up || key_down || key_interact || key_jump)
     game->platform.gamepad_active = false;
@@ -223,10 +332,22 @@ static void turn_manual_page(Game *game, int delta)
  * them. Everything that means "done" puts the sheet away, B included, which is
  * the whole reason a player reaches for B; A, Y and START are here because
  * whichever button opened the manual is the one the thumb will press again.
+ *
+ * X is the exception, and it keeps its own meaning rather than being folded
+ * into "done": everywhere else X opens the options sheet, and the manual and
+ * the options are the two things the title screen's one quiet line offers. So
+ * it crosses straight from one to the other, and the sheet hands back to the
+ * title screen the way it would have from there. Left out, X was the only
+ * letter on the pad that did nothing at all on this screen.
  */
 static bool handle_manual_gamepad(Game *game, SDL_GamepadButton button,
                                   PadFace face)
 {
+  if (face == PAD_FACE_ATTACK)
+  {
+    game_open_settings(game);
+    return true;
+  }
   if (button == SDL_GAMEPAD_BUTTON_DPAD_LEFT ||
       button == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER)
   {
@@ -268,6 +389,21 @@ static bool handle_manual_gamepad(Game *game, SDL_GamepadButton button,
 static bool handle_settings_gamepad(Game *game, SDL_GamepadButton button,
                                     PadFace face)
 {
+  /*
+   * An armed pad cap takes the very next button, and it has to come first: the
+   * d-pad and A below are how the sheet is *navigated*, so testing them before
+   * this would make the four directions and the confirm the five buttons a
+   * player could never bind — which on a pad is most of the ones worth having.
+   *
+   * The same rule the keyboard's capture keeps, arrived at from the other
+   * side: once armed, the next press means itself rather than what it does.
+   * START and BACK are unbindable and so cancel, which is the pad's ESC.
+   */
+  if (game->settings_capturing && game_settings_slot_is_pad(game))
+  {
+    game_settings_capture_pad(game, pad_capture_button(game, button));
+    return true;
+  }
   if (button == SDL_GAMEPAD_BUTTON_DPAD_UP)
   {
     game_settings_move_cursor(game, -1);
@@ -283,16 +419,30 @@ static bool handle_settings_gamepad(Game *game, SDL_GamepadButton button,
     game_settings_adjust(game, -1);
     return true;
   }
-  if (button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT || face == PAD_FACE_CONFIRM)
+  if (button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT)
   {
     game_settings_adjust(game, 1);
+    return true;
+  }
+  /* A is the sheet's yes, and what yes means is the row's business: it changes
+   * a slider or a switch, opens the controls page, or arms a capture. It used
+   * to be a straight `adjust(+1)`, which is the same thing for the only two
+   * kinds of row that existed then. */
+  if (face == PAD_FACE_CONFIRM)
+  {
+    game_settings_confirm(game);
     return true;
   }
   if (button == SDL_GAMEPAD_BUTTON_START ||
       button == SDL_GAMEPAD_BUTTON_BACK || face == PAD_FACE_CANCEL ||
       face == PAD_FACE_ATTACK || face == PAD_FACE_DOOR)
   {
-    game_close_settings(game);
+    /* Innermost first, as on the keyboard: a capture, then the controls page,
+     * then the sheet. A pad cannot take a key, so arming a capture and then
+     * reaching for the keyboard is exactly what a player does — and B has to
+     * put it down again for anyone who changes their mind. */
+    if (!game_settings_leave_page(game))
+      game_close_settings(game);
     return true;
   }
   return false;
@@ -375,6 +525,86 @@ static void back_out_with_gamepad(Game *game, bool abandons_run)
    * close, so B is deliberately inert here. See the third rule above. */
 }
 
+static void handle_gamepad_button(Game *game, SDL_GamepadButton button);
+
+/*
+ * Which way the left stick is pushed, said as the d-pad button that means the
+ * same thing — or INVALID when it is inside the dead zone.
+ *
+ * Read live off both axes rather than off the one the event happened to carry:
+ * a diagonal arrives as two separate events, and which of the two a menu
+ * should answer is only decidable with both in hand. The dominant axis wins,
+ * with a tie going to the vertical, because every cursor in the game runs down
+ * a column.
+ */
+static SDL_GamepadButton menu_stick_direction(const Game *game)
+{
+  if (game->platform.gamepad == NULL)
+    return SDL_GAMEPAD_BUTTON_INVALID;
+
+  Sint16 x = SDL_GetGamepadAxis(game->platform.gamepad,
+                                SDL_GAMEPAD_AXIS_LEFTX);
+  Sint16 y = SDL_GetGamepadAxis(game->platform.gamepad,
+                                SDL_GAMEPAD_AXIS_LEFTY);
+  int px = x < 0 ? -(int)x : (int)x;
+  int py = y < 0 ? -(int)y : (int)y;
+  if (px < GAMEPAD_AXIS_DEAD_ZONE && py < GAMEPAD_AXIS_DEAD_ZONE)
+    return SDL_GAMEPAD_BUTTON_INVALID;
+  if (py >= px)
+    return y < 0 ? SDL_GAMEPAD_BUTTON_DPAD_UP : SDL_GAMEPAD_BUTTON_DPAD_DOWN;
+  return x < 0 ? SDL_GAMEPAD_BUTTON_DPAD_LEFT : SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
+}
+
+/*
+ * The left stick, on the three screens that have a cursor.
+ *
+ * Every menu in the game answered the d-pad and nothing else, while the same
+ * stick steered Chuck, steered the car and is the first thing most thumbs
+ * reach for — so the pause sheet, the options sheet and the manual were three
+ * screens where half the pad quietly stopped working. The footers were honest
+ * about it (`D-PAD: SELECT`), which is why this was a gap rather than a lie,
+ * but naming the limitation is not the same as having a reason for it.
+ *
+ * The push is translated into the d-pad button that means the same thing and
+ * handed to the very same three handlers, so there is exactly one description
+ * anywhere of what up does on each sheet. A stick is an axis and a menu wants
+ * presses, so the edge is made here: a step is taken when the push *changes*,
+ * and holding a direction is one step rather than a row a frame.
+ *
+ * Nothing without a cursor is touched. A synthesised d-pad press has no
+ * business reaching a sector, where the stick is already read every frame as
+ * movement, and none reaching the title screen, whose chips are not a list.
+ */
+static void menu_stick_step(Game *game)
+{
+  SDL_GamepadButton pushed = menu_stick_direction(game);
+  if (pushed == game->platform.pad_menu_direction)
+    return;
+  game->platform.pad_menu_direction = pushed;
+  if (pushed == SDL_GAMEPAD_BUTTON_INVALID)
+    return;
+  /*
+   * Not into an armed capture, and this is the one place the translation has
+   * to stop being transparent.
+   *
+   * A push is handed on as *the d-pad button that means the same thing*, which
+   * is exactly right for walking a cursor and exactly wrong for the one moment
+   * the sheet is waiting to be told which button an action answers to: a thumb
+   * resting on the stick would bind DPAD UP to whatever row was armed, and the
+   * player never touched the d-pad. The stick is not on the bindable list for
+   * the same reason it is not a control the sheet offers — it is an axis, and
+   * it always moves you.
+   */
+  if (game->state == STATE_SETTINGS && game->settings_capturing &&
+      game_settings_slot_is_pad(game))
+  {
+    return;
+  }
+  if (game->state == STATE_MANUAL || game->state == STATE_SETTINGS ||
+      game->state == STATE_PAUSED)
+    handle_gamepad_button(game, pushed);
+}
+
 static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
 {
   game->platform.gamepad_active = true;
@@ -392,26 +622,58 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
   if (game->state == STATE_PAUSED && handle_pause_gamepad(game, button))
     return;
 
+  /*
+   * Inside a sector the bindings answer first, and that is the whole of what
+   * made the pad rebindable: the three edges a sector reads — attack, use and
+   * the two weapon steps — used to be a `switch` over letters and bumpers
+   * here, which is where "the pad layout is a property of the source rather
+   * than of the player" was still true long after the keyboard stopped being.
+   *
+   * Only in a sector. Everywhere else a letter keeps its job, because the
+   * letters are what every prompt in the game asks for by name and a player
+   * who has moved attack onto B has said nothing whatever about which button
+   * closes the pause sheet.
+   */
+  if (game->state == STATE_PLAYING)
+  {
+    bool handled = false;
+    if (pad_press_is(game, button, BIND_SHOOT))
+    {
+      game->input.shoot = true;
+      handled = true;
+    }
+    if (pad_press_is(game, button, BIND_USE))
+    {
+      game->input.use_door = true;
+      handled = true;
+    }
+    if (pad_press_is(game, button, BIND_WEAPON_NEXT))
+    {
+      game->input.switch_weapon = true;
+      handled = true;
+    }
+    if (pad_press_is(game, button, BIND_WEAPON_PREV))
+    {
+      game->input.switch_weapon_back = true;
+      handled = true;
+    }
+    if (handled)
+      return;
+  }
+
   switch (face)
   {
   case PAD_FACE_CONFIRM:
     confirm_with_gamepad(game, true);
     return;
   case PAD_FACE_CANCEL:
-    /* In a sector B is the second trigger finger. A and B are the two buttons
-     * every thumb finds first, so leaving B inert while the game is being
-     * played reads as a dead button on the pad; there is nothing to back out
-     * of mid-sector anyway. Attack sits on both B and X, and B keeps meaning
-     * "back" everywhere something is actually open. */
-    if (game->state == STATE_PLAYING)
-      game->input.shoot = true;
-    else
-      back_out_with_gamepad(game, false);
+    /* Not in a sector: attack is bound to B by default and the branch above
+     * has already answered it there. Everywhere something is open, B backs
+     * out of it. */
+    back_out_with_gamepad(game, false);
     return;
   case PAD_FACE_ATTACK:
-    if (game->state == STATE_PLAYING)
-      game->input.shoot = true;
-    else
+    if (game->state != STATE_PLAYING)
       /* The sheet opens from the title screen and from pause and returns to
        * whichever opened it; game_open_settings ignores every other state. */
       game_open_settings(game);
@@ -419,7 +681,7 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
   case PAD_FACE_DOOR:
     /* The drive reads use_door as its skip: A and B are the pedals there, so
      * the way past the prologue moved to the one letter still free. */
-    if (game->state == STATE_PLAYING || game->state == STATE_CHASE)
+    if (game->state == STATE_CHASE)
       game->input.use_door = true;
     else if (game->state == STATE_INTRO)
       game_open_manual(game);
@@ -444,18 +706,19 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
       confirm_with_gamepad(game, false);
     break;
   case SDL_GAMEPAD_BUTTON_BACK:
-    back_out_with_gamepad(game, true);
+    /* On the title screen SELECT takes the resume the third chip is offering,
+     * and does nothing at all when there is none. It is the one button left
+     * that is free there: A starts, X and Y open the two sheets, and B is
+     * deliberately inert. Everywhere else SELECT keeps its one other job,
+     * which is the deliberate second step out of a paused run. */
+    if (game->state == STATE_INTRO)
+      game_resume_campaign(game);
+    else
+      back_out_with_gamepad(game, true);
     break;
-  /* The bumpers cycle, which is the one job every platform's own guidance
-   * gives them: RB takes the next weapon, LB the one before it. */
-  case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
-    if (game->state == STATE_PLAYING)
-      game->input.switch_weapon_back = true;
-    break;
-  case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
-    if (game->state == STATE_PLAYING)
-      game->input.switch_weapon = true;
-    break;
+  /* The bumpers cycle the weapons by default — the one job every platform's
+   * own guidance gives them — and that is now a row on the controls sheet
+   * rather than a case here; the sector branch above is what answers it. */
   default:
     break;
   }
@@ -482,11 +745,17 @@ void game_handle_event(Game *game, const SDL_Event *event)
 
   if (event->type == SDL_EVENT_GAMEPAD_AXIS_MOTION &&
       game->platform.gamepad != NULL &&
-      game->platform.gamepad_id == event->gaxis.which &&
-      (event->gaxis.value < -GAMEPAD_AXIS_DEAD_ZONE ||
-       event->gaxis.value > GAMEPAD_AXIS_DEAD_ZONE))
+      game->platform.gamepad_id == event->gaxis.which)
   {
-    game->platform.gamepad_active = true;
+    /* Only a real push counts as the player picking the pad back up; a stick
+     * settling back to centre is not somebody reaching for it. */
+    if (event->gaxis.value < -GAMEPAD_AXIS_DEAD_ZONE ||
+        event->gaxis.value > GAMEPAD_AXIS_DEAD_ZONE)
+      game->platform.gamepad_active = true;
+    /* The release matters as much as the push here, because it is what re-arms
+     * the next step — so this runs on every axis event rather than only on the
+     * ones past the dead zone. */
+    menu_stick_step(game);
     return;
   }
 
@@ -526,6 +795,10 @@ void game_handle_event(Game *game, const SDL_Event *event)
     {
       game->input.confirm = true;
     }
+    else if (intro_hit_resume_button(&game->presentation.intro, mx, my))
+    {
+      game_resume_campaign(game);
+    }
     else if (intro_hit_manual_button(&game->presentation.intro, mx, my))
     {
       game_open_manual(game);
@@ -533,6 +806,14 @@ void game_handle_event(Game *game, const SDL_Event *event)
     else if (intro_hit_options_button(&game->presentation.intro, mx, my))
     {
       game_open_settings(game);
+    }
+    /* A click on the quit chip needs no hold: the mouse that reached it is the
+     * same mouse that reaches the window's own close box, and neither is a
+     * button anybody presses by reflex. The hold belongs to the pad's B, which
+     * has four other jobs and no ESC beside it in fullscreen. */
+    else if (intro_hit_quit_button(&game->presentation.intro, mx, my))
+    {
+      game->quit_requested = true;
     }
     return;
   }
@@ -571,6 +852,10 @@ void game_handle_event(Game *game, const SDL_Event *event)
                key == SDLK_SPACE || sc == SDL_SCANCODE_H ||
                sc == SDL_SCANCODE_F1 || sc == SDL_SCANCODE_BACKSPACE)
         game_return_to_intro(game);
+      /* J crosses to the options sheet, as X does on the pad: the two sheets
+       * are siblings hanging off the title screen, not a hierarchy. */
+      else if (sc == SDL_SCANCODE_J)
+        game_open_settings(game);
       else if (sc == SDL_SCANCODE_M)
         audio_toggle_mute(&game->platform.audio);
       return;
@@ -582,21 +867,46 @@ void game_handle_event(Game *game, const SDL_Event *event)
      * the hand leaving the row it is on. */
     if (game->state == STATE_SETTINGS)
     {
+      /*
+       * A capture swallows the whole keyboard, and it has to: the next press
+       * means *itself* rather than what it is bound to or what this screen
+       * would otherwise do with it, which is the only way a player can put
+       * their jump on W without the sheet reading it as "cursor up".
+       */
+      if (game_settings_capture_key(game, (int)sc))
+        return;
+      /*
+       * The sheet's own navigation is not rebindable and is deliberately the
+       * keys it always was. They are how a player who has just bound something
+       * unreachable walks back to the row and undoes it — a menu steered by
+       * the bindings it edits is a menu that can be locked shut.
+       */
       if (sc == SDL_SCANCODE_UP || sc == SDL_SCANCODE_W)
         game_settings_move_cursor(game, -1);
       else if (sc == SDL_SCANCODE_DOWN || sc == SDL_SCANCODE_S)
         game_settings_move_cursor(game, 1);
       else if (sc == SDL_SCANCODE_LEFT || sc == SDL_SCANCODE_A)
         game_settings_adjust(game, -1);
-      else if (sc == SDL_SCANCODE_RIGHT || sc == SDL_SCANCODE_D ||
-               key == SDLK_SPACE || key == SDLK_RETURN ||
-               key == SDLK_KP_ENTER)
+      else if (sc == SDL_SCANCODE_RIGHT || sc == SDL_SCANCODE_D)
         game_settings_adjust(game, 1);
+      /* ENTER and SPACE are the sheet's "yes", and what yes means is the row's
+       * business: a slider and a switch are changed by it, the controls row
+       * opens its page, a binding row arms the capture. */
+      else if (key == SDLK_SPACE || key == SDLK_RETURN || key == SDLK_KP_ENTER)
+        game_settings_confirm(game);
       else if (sc == SDL_SCANCODE_J || sc == SDL_SCANCODE_H ||
                sc == SDL_SCANCODE_BACKSPACE)
-        game_close_settings(game);
-      else if (sc == SDL_SCANCODE_M)
-        audio_toggle_mute(&game->platform.audio);
+      {
+        /* Back out of the innermost thing first: the capture, then the
+         * controls page, then the sheet. */
+        if (!game_settings_leave_page(game))
+          game_close_settings(game);
+      }
+      /* M is deliberately not answered here. It is the kill switch on top of
+       * the mix, and this is the one screen showing the mix: a sheet reading
+       * MUSIC 100 over a silent game is the same "two answers to one question"
+       * that took mute off the pad's Y, said to the player who is looking
+       * straight at the two levels that actually decide it. */
       return;
     }
 
@@ -646,7 +956,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
       return;
     }
 
-    if (state_accepts_confirm(game->state) && game->state != STATE_PLAYING &&
+    if (state_accepts_confirm(game->state) &&
         (key == SDLK_SPACE || key == SDLK_RETURN || key == SDLK_KP_ENTER))
     {
       game->input.confirm = true;
@@ -657,12 +967,16 @@ void game_handle_event(Game *game, const SDL_Event *event)
       audio_toggle_mute(&game->platform.audio);
       return;
     }
-    /* Shoot on Space only */
-    if (key == SDLK_SPACE)
+    /* Attack on Space only, and only in a sector — the same gate E, LSHIFT and
+     * the UP jump keep. Every other state clears the edge inputs it did not
+     * ask for, so an ungated press was harmless; a press the sector does not
+     * own being reported anyway is still the rule this file is built on being
+     * kept by accident rather than on purpose. */
+    if (key_press_is(game, sc, BIND_SHOOT) && game->state == STATE_PLAYING)
     {
       game->input.shoot = true;
     }
-    if ((sc == SDL_SCANCODE_Q || sc == SDL_SCANCODE_TAB) &&
+    if (key_press_is(game, sc, BIND_WEAPON_NEXT) &&
         game->state == STATE_PLAYING)
     {
       game->input.switch_weapon = true;
@@ -670,14 +984,15 @@ void game_handle_event(Game *game, const SDL_Event *event)
     /* The ring is walked both ways on the pad, so it is walked both ways here
      * too: a keyboard that could only ever go forward is a keyboard three
      * presses from the weapon a bumper reaches in one. */
-    if (sc == SDL_SCANCODE_Z && game->state == STATE_PLAYING)
+    if (key_press_is(game, sc, BIND_WEAPON_PREV) &&
+        game->state == STATE_PLAYING)
     {
       game->input.switch_weapon_back = true;
     }
     /* A jump key that is not also the climb key, so it needs no ladder test:
      * it reports the press and player_update decides whether to honour it,
      * now or from the buffer — exactly as the pad's A does. */
-    if (sc == SDL_SCANCODE_LSHIFT && game->state == STATE_PLAYING)
+    if (key_press_is(game, sc, BIND_JUMP) && game->state == STATE_PLAYING)
     {
       game->input.jump = true;
     }
@@ -689,8 +1004,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
      * Only in a sector, like LSHIFT above: the ladder test below reads the
      * player out of the live simulation, and outside a sector that simulation
      * is whatever the last one left behind. */
-    if ((key == SDLK_UP || event->key.scancode == SDL_SCANCODE_W) &&
-        game->state == STATE_PLAYING)
+    if (key_press_is(game, sc, BIND_UP) && game->state == STATE_PLAYING)
     {
       /* Determine whether player box overlaps a ladder near center/feet */
       int col = (int)floorf((game->gameplay.player.x + PLAYER_W * 0.5f) / TILE_SIZE);
@@ -710,7 +1024,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
      * is never told about it: the drive prompts the keyboard for ENTER/SPACE,
      * and a button that works without ever being named is the mirror image of
      * a prompt naming a button that does not. */
-    if (sc == SDL_SCANCODE_E && game->state == STATE_PLAYING)
+    if (key_press_is(game, sc, BIND_USE) && game->state == STATE_PLAYING)
     {
       game->input.use_door = true;
     }
@@ -718,6 +1032,13 @@ void game_handle_event(Game *game, const SDL_Event *event)
         game->presentation.outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)
     {
       game->input.restart = true;
+    }
+    /* R on the title screen takes the resume the third chip is offering. The
+     * two readings of R never overlap: one is a card at the end of a finished
+     * campaign, the other is the screen a new session opens on. */
+    if (key == SDLK_R && game->state == STATE_INTRO)
+    {
+      game_resume_campaign(game);
     }
   }
 }

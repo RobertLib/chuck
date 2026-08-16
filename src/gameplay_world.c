@@ -180,6 +180,21 @@ void gameplay_restore_checkpoint(GameplayState *state)
         gameplay_climb_restore_checkpoint(state);
         return;
     }
+    /*
+     * Nothing already in flight may greet the respawn — and the map's own
+     * start tile is a respawn as much as a banked checkpoint is.
+     *
+     * This clear used to sit *below* the guard, so it only ran for a player
+     * who had already banked something. That made the one death the sector
+     * gives nothing back for — before the first card, terminal, door or
+     * medkit — also the only one the rule was not kept for: `player_reset`
+     * had put Chuck back on `S` and the rounds that killed him were still
+     * crossing the room. `finish_player_death` has already moved him either
+     * way, so there is always a respawn here to protect.
+     */
+    for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
+        state->enemy_bullets[i].active = false;
+
     if (!state->interior_has_checkpoint)
         return;
 
@@ -187,9 +202,6 @@ void gameplay_restore_checkpoint(GameplayState *state)
     state->player.y = state->interior_checkpoint_y;
     state->player.vx = 0.0f;
     state->player.vy = 0.0f;
-    /* Nothing already in flight may greet the respawn. */
-    for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
-        state->enemy_bullets[i].active = false;
 }
 
 void gameplay_spawn_ammo_drop(GameplayState *state, float x, float y)
@@ -238,6 +250,12 @@ void gameplay_update_ammo_drops(GameplayState *state, float dt)
                                    AMMO_DROP_W, AMMO_DROP_H))
         {
             drop->active = false;
+            /* The same exception the boxed magazine gets: rounds handed to a
+             * man holding a knife because his clip is dry raise the sidearm,
+             * and nothing else a pickup does may change the weapon in hand. */
+            if (state->player.bullets == 0 &&
+                state->player.active_weapon == PLAYER_WEAPON_KNIFE)
+                state->player.active_weapon = PLAYER_WEAPON_PISTOL;
             state->player.bullets += AMMO_DROP_BULLETS;
             if (state->player.bullets > MAX_AMMO)
                 state->player.bullets = MAX_AMMO;
@@ -439,9 +457,29 @@ int gameplay_break_walls_in_radius(GameplayState *state,
     return broken;
 }
 
-void gameplay_record_neutralized(GameplayState *state)
+/*
+ * One man down, counted twice, and the two counts answer different questions.
+ *
+ * The sector's own tally is what the report between floors prints, so it is
+ * wiped with the sector. The run's is what the crew's net reads — twelve men
+ * who have noticed how few of them are answering — and it has to outlive the
+ * floor they were lost on, so it sits in `CampaignState` beside the score.
+ * Both are bumped here rather than at the six kill sites, which is the whole
+ * reason this function exists.
+ *
+ * `campaign` is not optional, and used to be checked here as though it were —
+ * the two crate kills below and every kill in
+ * [gameplay_combat.c](gameplay_combat.c) score straight through the same pointer
+ * with no guard at all, so a caller who honoured the invitation would have
+ * reached one of those instead. A check that only one of seven call sites keeps
+ * is not a defence, it is a note claiming the parameter is optional when it is
+ * not.
+ */
+void gameplay_record_neutralized(GameplayState *state,
+                                 CampaignState *campaign)
 {
     state->hostiles_neutralized++;
+    campaign->hostiles_down++;
 }
 
 void gameplay_kill_enemy_with_crate(GameplayState *state,
@@ -451,7 +489,7 @@ void gameplay_kill_enemy_with_crate(GameplayState *state,
         return;
     enemy->hp = 0;
     enemy->dead = true;
-    gameplay_record_neutralized(state);
+    gameplay_record_neutralized(state, campaign);
     float x = enemy->x + ENEMY_W * 0.5f;
     float y = enemy->y + ENEMY_H * 0.5f;
     game_events_particles(&state->events, x, y, 24, enemy->dir);
@@ -466,7 +504,7 @@ void gameplay_kill_dog_with_crate(GameplayState *state,
         return;
     dog->hp = 0;
     dog->dead = true;
-    gameplay_record_neutralized(state);
+    gameplay_record_neutralized(state, campaign);
     float x = dog->x + DOG_W * 0.5f;
     float y = dog->y + DOG_H * 0.5f;
     game_events_particles(&state->events, x, y, 14, dog->dir);

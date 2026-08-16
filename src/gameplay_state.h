@@ -180,9 +180,36 @@ typedef struct
     float level_elapsed_time;
     int level_start_score;
     int level_deaths;
+    /*
+     * Whether this sector has already been paid for being finished.
+     *
+     * `try_finish_current_level` runs on every frame the player is standing in
+     * the exit and is only *usually* the last thing that happens on a floor:
+     * the window route can fail to load the sector above, and it returns
+     * having changed nothing so the next frame tries again. With the pay-out
+     * above that branch — which is where it has to be, because all three ways
+     * out of a sector pass through it and only one of them draws a report —
+     * that retry is a second pay-out, once per frame, for as long as the
+     * player stands there. A latch rather than a rearranged control flow,
+     * because the next way out of a sector will pass through the same place
+     * and will not think about this.
+     */
+    bool sector_bonus_paid;
     /* The next score threshold that pays out an extra life. */
     int next_extra_life_score;
     float continue_timer;
+    /*
+     * How many of the crew this run has put down, across every sector of it.
+     *
+     * `GameplayState.hostiles_neutralized` is the *floor's* tally and is wiped
+     * with the rest of the simulation at every sector, which is right for the
+     * report between floors and wrong for the one other thing that asks: the
+     * crew's own net says things like "I COUNTED ELEVEN OF US TONIGHT", and a
+     * crew does not get its men back because the player opened a stair door.
+     * Counted here, beside the score, because the score is the other number
+     * that belongs to the run rather than to the floor.
+     */
+    int hostiles_down;
 } CampaignState;
 
 void campaign_reset(CampaignState *campaign);
@@ -193,6 +220,36 @@ bool campaign_accept_continue(CampaignState *campaign);
 /* Returns true each time the score crosses an extra-life threshold, granting
  * the life; the shell turns the report into sound and HUD flash. */
 bool campaign_check_extra_life(CampaignState *campaign);
+
+/*
+ * What finishing a sector pays, and the two numbers the report prints beside
+ * the time and the deaths it has always shown. See SECTOR_PAR_SECONDS for why
+ * the par is the night clock's own allowance rather than a figure of its own.
+ *
+ * Both are handed back separately because the report shows them separately —
+ * a bonus folded silently into SCORE is a bonus the player cannot learn to
+ * play for — and the total is added to the score here, so the one caller
+ * cannot bank one of the two and forget the other. Called on the way out of a
+ * sector, whichever way out that is: the stair door, the window onto a climb,
+ * and the last floor of all.
+ *
+ * **A second call for the same sector pays nothing and reports nothing**, and
+ * that is this function's own guarantee rather than the caller's — see
+ * `CampaignState.sector_bonus_paid`. The latch is cleared by
+ * `campaign_begin_sector`.
+ */
+void campaign_award_sector_bonus(CampaignState *campaign,
+                                 int *out_time_bonus, int *out_clean_bonus);
+
+/*
+ * The per-sector counters the report reads, and the pay-out latch, started
+ * over. Called from the shell as a sector loads.
+ *
+ * One function rather than four assignments at the call site because the latch
+ * is the fourth and arrived last: a new field that has to be reset alongside
+ * the others is exactly what an open-coded reset forgets.
+ */
+void campaign_begin_sector(CampaignState *campaign);
 
 typedef struct
 {

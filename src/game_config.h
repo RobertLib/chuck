@@ -24,6 +24,45 @@
 #define MIN_FRAME_RATE 20
 #define MAX_FRAME_DT (1.0f / (float)MIN_FRAME_RATE)
 
+/*
+ * The step the simulation actually takes, and why it is not the frame.
+ *
+ * Feeding the real frame time straight to `game_update` made every number the
+ * physics produces a property of the display it was drawn on, because the jump
+ * impulse is written into `vy` *after* that frame's gravity (see
+ * `player_update`): the launch step therefore carried the undecayed
+ * `PLAYER_JUMP_SPEED` and the apex came out at `v0^2/2g + v0*dt/2`. Measured,
+ * that is 68.7px at 240Hz, 71.0px at 60Hz and 77.4px at the MIN_FRAME_RATE
+ * floor — nearly a third of a tile of difference between a fast machine and a
+ * stuttering one, in the one quantity every map is drawn against. A ceiling
+ * placed to cap a jump could be cleared on a slow machine and not on a quick
+ * one, which is the only thing in this tree that ever answered differently
+ * depending on the hardware under it.
+ *
+ * So `SDL_AppIterate` accumulates real time and spends it in steps of exactly
+ * this length. The apex is now one number everywhere — 68.7px, which is also
+ * the closest the discrete integrator gets to the 68px the level legend has
+ * always quoted from the continuous arithmetic.
+ *
+ * 240 rather than 60 for two reasons. It divides every common refresh rate the
+ * game is likely to meet, so a 60, 120 or 240Hz display spends a whole number
+ * of steps per frame and nothing judders; and where it does not divide (144Hz)
+ * the un-rendered remainder is at most one step of travel, which at walking
+ * speed is half a pixel. Raising it costs update time and buys nothing;
+ * lowering it puts visible judder back on high-refresh displays.
+ */
+#define SIM_STEPS_PER_SECOND 240
+#define SIM_STEP_DT (1.0f / (float)SIM_STEPS_PER_SECOND)
+
+/*
+ * The two collision proofs below are written against MAX_FRAME_DT, and they
+ * stay written against it: MIN_FRAME_RATE is still the longest step anything
+ * downstream may see, and this assertion is what keeps the fixed step inside
+ * that promise rather than becoming a second, unproved one.
+ */
+_Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
+               "the simulation step must be no longer than MAX_FRAME_DT");
+
 /* Ignore the loose center of an analogue stick so a resting gamepad cannot
  * make Chuck or his car creep. D-pad input bypasses this threshold. */
 #define GAMEPAD_AXIS_DEAD_ZONE 8000
@@ -107,7 +146,11 @@
 #define MINE_W 16
 #define MINE_H 10
 #define MINE_TRIGGER_DELAY 0.45f
-#define MINE_DAMAGE 1
+/* What a mine costs is not written here: it goes through `apply_blast` like
+ * every other explosive and so costs EXPLOSION_DAMAGE, which is the whole point
+ * of "one blast, one rule". A MINE_DAMAGE of its own sat here long after
+ * nothing read it — a number that reads like a tuning knob and is not one is
+ * exactly what the assertion beside MAX_FALL_SPEED exists to prevent. */
 #define MINE_RADIUS 36.0f
 
 /* Small floor-level gas canisters. Their low profile deliberately puts them
@@ -150,8 +193,6 @@
  * actually been quiet for a while. */
 #define MAX_ALARM_SWITCHES 16
 #define ALARM_CALM_TIME 9.0f
-/* Backwards-compatible name for code treating terminal noise as the alarm. */
-#define TERMINAL_ALARM_TIME ALARM_CALM_TIME
 #define ALARM_SWITCH_USE_TIME 0.65f
 #define ALARM_SWITCH_USE_RANGE 18.0f
 #define ALARM_SWITCH_STAND_DISTANCE 14.0f
@@ -182,11 +223,35 @@
 #define PLAYER_H 32
 #define PLAYER_WALK_SPEED 135.0f
 #define PLAYER_CLIMB_SPEED 100.0f
+/*
+ * How far into the top rung the box is snapped when the climb is joined from
+ * the tile above it. See the note in `player_update`: without it the grab and
+ * the release fight each other for ever and the ladder becomes one-way.
+ *
+ * One pixel would do — `player_over_ladder` samples the box's bottom edge at
+ * `y + height - 1` — and this is two, so the grab does not turn on where the
+ * arithmetic rounds. It stays well under the 3px the horizontal snap on the
+ * same line already moves a player, which nobody has ever seen.
+ */
+#define LADDER_TOP_GRAB_OVERLAP 2.0f
 #define PLAYER_JUMP_SPEED 365.0f
 #define PLAYER_LIVES 3
 #define PLAYER_CONTINUES 3
 #define CONTINUE_COUNTDOWN_TIME 10.0f
 #define GAME_OVER_DISPLAY_TIME 3.0f
+/*
+ * How long B has to be held on the title screen to close the game.
+ *
+ * The keyboard has ESC and the mouse has the window's close box; a pad in
+ * fullscreen has neither, and every letter on that screen is already spoken
+ * for — A starts, X and Y open the two sheets, SELECT takes the resume. That
+ * leaves B, which is the one button that must never end a session on a press:
+ * it is what a thumb reaches for to back out of the manual, and a second
+ * reflex press landing on the title screen would close the game. Holding is
+ * the same "deliberate second step" the terminal already asks for, and the
+ * chip fills while it is held so the rule teaches itself.
+ */
+#define TITLE_QUIT_HOLD_TIME 1.1f
 #define MAX_LIVES 9
 /* Hearts within one life. Ordinary contact damage costs hearts; only the
  * physics deaths (a fatal fall, a crushing elevator) skip them, so "what hits
@@ -205,6 +270,25 @@
 #define PLAYER_JUMP_BUFFER 0.12f
 /* Releasing the button caps the rise, so a tap hops and a hold clears. */
 #define PLAYER_JUMP_CUT_FACTOR 0.45f
+/*
+ * How long a ladder stays let go of after a jump off it — the same idea as
+ * `ENEMY_STOMP_LADDER_LOCKOUT` below, and needed for exactly the same reason.
+ *
+ * The ladder branch of `player_update` sets `vy` from the climb input every
+ * frame, and the grab only asks that the box is over a rung with up or down
+ * held. So a jump taken *while climbing* was let go of and grabbed again on the
+ * very next frame, and the climb speed overwrote the jump — which made holding
+ * up and pressing jump do nothing whatever. That is the one case the keyboard's
+ * `LSHIFT` was added for: `UP` cannot be the jump over a ladder because it is
+ * the climb, so the player pressing the separate jump key is nearly always
+ * already holding the climb key, and the pad has the same shape under A.
+ *
+ * Short on purpose. It is long enough to carry the boots clear of the rung they
+ * left — about a tile and a half at `PLAYER_JUMP_SPEED` — and no longer, so a
+ * jump up a shaft still catches the ladder again on the way and reads as a
+ * boost rather than as the rungs going dead.
+ */
+#define PLAYER_LADDER_JUMP_LOCKOUT 0.18f
 #define PLAYER_CRAWL_H 18
 #define PLAYER_CRAWL_SPEED 75.0f
 #define PLAYER_KNIFE_RANGE 18.0f
@@ -216,6 +300,15 @@
  * threshold is about five tiles of uninterrupted free fall. */
 #define PLAYER_LAND_SOUND_SPEED 150.0f
 #define PLAYER_FATAL_FALL_SPEED 560.0f
+/*
+ * The same threshold as a height, which is what the route model needs: from
+ * v^2 = 2gh, the drop that arrives at PLAYER_FATAL_FALL_SPEED. Derived here
+ * rather than written down as a number of tiles, so retuning the speed or the
+ * gravity moves the model's idea of a survivable fall with it instead of
+ * leaving it certifying sectors the player would die crossing.
+ */
+#define PLAYER_FATAL_FALL_HEIGHT \
+    ((PLAYER_FATAL_FALL_SPEED * PLAYER_FATAL_FALL_SPEED) / (2.0f * GRAVITY))
 
 /* Enemy tuning */
 #define ENEMY_W 26
@@ -389,6 +482,38 @@ _Static_assert((int)ENEMY_BULLET_SPEED < TILE_SIZE * MIN_FRAME_RATE,
                "a guard's round would cross a whole tile in one frame");
 _Static_assert((int)ROCKET_SPEED < TILE_SIZE * MIN_FRAME_RATE,
                "a rocket would cross a whole tile in one frame");
+
+/*
+ * And the one projectile that is *not* swept has to clear a second bar.
+ *
+ * Everything the player fires is tested against the ground it crossed
+ * (`gameplay_combat_update_player_bullets`), because a round is four pixels by
+ * eight and a dog is sixteen tall. A guard's round is tested where it ended up
+ * instead, which is only honest while one step is shorter than the target it
+ * would otherwise step over — and the smallest target in the game is Chuck
+ * crawling, eighteen pixels of him under an eight-pixel round fired straight
+ * down a shaft. There are seven pixels of margin at the moment, which is
+ * exactly why this is written down rather than left to be rediscovered: raising
+ * the speed past this line means the enemy round has to be swept first.
+ */
+_Static_assert((int)ENEMY_BULLET_SPEED <
+                   (BULLET_W + PLAYER_CRAWL_H) * MIN_FRAME_RATE,
+               "a guard's round could step over a crawling player");
+
+/*
+ * And the same round now has a second thing it can hit, which is smaller than
+ * Chuck is.
+ *
+ * A gas canister is twelve pixels across, so a horizontal round crossing
+ * twenty of them per step is the tightest case in the game: eight of bullet
+ * plus twelve of cylinder against nineteen pixels of travel is one pixel of
+ * margin, and the whole point of the canister being on this list is that the
+ * player can shelter behind it. A round that steps over it is a round that
+ * goes through it, which is the bug this replaced.
+ */
+_Static_assert((int)ENEMY_BULLET_SPEED <
+                   (BULLET_W + GAS_CANISTER_W) * MIN_FRAME_RATE,
+               "a guard's round could step over a gas canister");
 
 #define ENEMY_SPEED_HP2 0.60f
 #define ENEMY_SPEED_HP1 0.30f
@@ -632,12 +757,14 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
 
 /*
  * The night has a deadline and the building states it out loud: at 01:00 the
- * overnight settlement — six hundred million in bearer bonds — leaves the roof
- * on their helicopter, which is the only reason any of this is happening
- * tonight. A `w` clock reads the campaign sector it is standing in, so the
- * minute hand climbs toward the top of the dial across the fifteen sectors and
- * the player can watch the job close in without a line of text anywhere.
- * Presentation only: nothing in the simulation reads the time.
+ * overnight settlement — six hundred and forty million in bearer bonds — leaves
+ * the roof on their helicopter, which is the only reason any of this is
+ * happening tonight. A `w` clock reads the campaign sector it is standing in,
+ * so the minute hand climbs toward the top of the dial across the fifteen
+ * sectors and the player can watch the job close in without a line of text.
+ * The dial itself is presentation and nothing reads its position — but the
+ * *rate* is not, any more: `SECTOR_PAR_SECONDS` below is derived from it, so
+ * the allowance the fiction gives a floor is the allowance the score gives it.
  *
  * The first sector opens at 00:22, which is when the prologue hands over: the
  * SUV reaches the tower at 00:22 and Chuck is through the door behind it, so
@@ -646,5 +773,36 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
  */
 #define NIGHT_CLOCK_FIRST_MINUTE 22.0f
 #define NIGHT_CLOCK_MINUTES_PER_SECTOR 2.5f
+
+/*
+ * What a sector is worth for being finished, and why the clock decides it.
+ *
+ * The report between floors has printed TIME and DEATHS since it existed and
+ * neither number was read by anything: of the four fields on it only SCORE
+ * belonged to the run, so the game showed a player a stopwatch that could not
+ * matter and a death count that cost nothing beyond the walk back. That is
+ * worse than showing neither, because the fiction spends a great deal of
+ * effort insisting the night is against a clock — 01:00 is when the bonds
+ * leave the roof, the wall dials climb toward it, the intel line after sector
+ * eleven says TEN MINUTES — and the one place the player could act on that
+ * said nothing.
+ *
+ * **The par is the fiction's own allowance, not a number invented for a
+ * bonus.** A sector gets NIGHT_CLOCK_MINUTES_PER_SECTOR on the dial upstairs,
+ * so that is exactly what it gets down here: finish inside the slot the night
+ * clock gives the floor and the seconds left over pay, overrun it and they do
+ * not. Deriving it means the two can never disagree — moving the dial moves
+ * the par with it, and `test_the_sector_par_is_the_night_clock_s_own` says so
+ * out loud rather than leaving it to whoever edits the constant above.
+ *
+ * The rates are set so a fast, clean floor is worth about what its guards are:
+ * a full 150 seconds under par is 3000 and a sector holds eight or so men at
+ * 150 apiece. Speed is therefore a real alternative to clearing the floor
+ * rather than a rounding error on top of it, which is the whole point — the
+ * two ways to play a sector should pay comparably.
+ */
+#define SECTOR_PAR_SECONDS (NIGHT_CLOCK_MINUTES_PER_SECTOR * 60.0f)
+#define SECTOR_TIME_BONUS_PER_SECOND 20
+#define SECTOR_CLEAN_BONUS 500
 
 #endif /* CHUCK_GAME_CONFIG_H */

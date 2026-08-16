@@ -21,8 +21,9 @@ TEST_TARGET := $(BUILD_DIR)/core_tests
 TEST_SOURCES := tests/test_main.c \
 	src/camera.c src/chase.c src/credits.c src/crew.c src/enemy.c src/game_event.c src/gameplay_ai.c src/gameplay_combat.c \
 	src/gameplay_climb.c src/gameplay_interaction.c src/gameplay_physics.c src/gameplay_world.c \
-	src/gameplay_state.c src/level.c src/level_route.c src/player.c src/rng.c \
-	src/settings.c \
+	src/gameplay_state.c src/intel.c src/level.c src/level_route.c src/manual_pages.c \
+	src/demo.c src/player.c src/rng.c \
+	src/keybind.c src/progress.c src/settings.c \
 	editor/editor_doc.c editor/editor_legend.c editor/editor_validate.c
 
 SOURCES := $(wildcard $(SRC_DIR)/*.c)
@@ -41,8 +42,8 @@ EDITOR_SOURCES := $(wildcard $(EDITOR_DIR)/*.c) \
 EDITOR_OBJECTS := $(patsubst %.c,$(BUILD_DIR)/editor/%.o,$(notdir $(EDITOR_SOURCES)))
 EDITOR_DEPENDENCIES := $(EDITOR_OBJECTS:.o=.d)
 
-.PHONY: all release debug run run-debug run-editor editor test sanitize clean \
-	app notarize sdl3
+.PHONY: all release debug run run-debug run-editor editor test lint smoke \
+	sanitize clean app notarize sdl3
 
 all: $(TARGET)
 
@@ -93,8 +94,25 @@ run-editor: $(EDITOR_TARGET)
 $(TEST_TARGET): $(TEST_SOURCES) $(EMBEDDED_LEVELS_SOURCE) | $(BUILD_DIR)
 	$(CC) $(CPPFLAGS) $(TEST_CFLAGS) $(TEST_SOURCES) $(EMBEDDED_LEVELS_SOURCE) -o $@ -lm
 
-test: $(TEST_TARGET)
+test: lint $(TEST_TARGET)
 	./$(TEST_TARGET)
+
+# The rules the suite structurally cannot reach, because they are about source
+# text rather than behaviour: a colour literal that reproduces an fx.h value is
+# that constant misspelt, and docs/art-and-audio.md has said so for a long time
+# with nothing behind it. `test` depends on this so the two are one gate.
+lint:
+	python3 tools/check_palette.py
+
+# `sanitize` proves the gameplay core; this proves the half of the tree the
+# core suite cannot link. It boots the real binary — title screen, then every
+# campaign sector — against a dummy video and audio driver, so the renderers,
+# the level art and the audio synthesis all actually run under ASan/UBSan.
+# Nothing here asserts on what was drawn: the point is that ~19k lines of
+# presentation code get executed at all before a release goes out.
+smoke: sanitize
+	SECONDS_PER_SCENE=$(SMOKE_SECONDS) tools/smoke.sh build/chuck-sanitize
+SMOKE_SECONDS ?= 3
 
 sanitize:
 	$(MAKE) BUILD_DIR=build/sanitize TARGET=build/chuck-sanitize \

@@ -73,7 +73,7 @@ typedef enum
     BACKDROP_RESTROOM,      /* drawn by game_render.c from the room's own walls */
     BACKDROP_FACADE_NIGHT,  /* the four exterior climbs */
     BACKDROP_FACADE_STORM,
-    BACKDROP_FACADE_DAWN,
+    BACKDROP_FACADE_MOON,
     BACKDROP_FACADE_HIGH
 } BackdropStyle;
 
@@ -121,6 +121,10 @@ typedef struct
     int win_w, win_h;
     float time;      /* wall-clock seconds; visual only, never gameplay */
     int level_index; /* campaign index, for stable per-level variation */
+    /* The player asked for reduced motion, so anything in the backdrop that
+     * blinks is held at its own average brightness instead. The light the
+     * scene casts is unchanged — only its modulation goes. */
+    bool steady_lights;
 } LevelArtScene;
 
 /* Draw the parallax backdrop for the scene's level theme. */

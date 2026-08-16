@@ -17,7 +17,7 @@
 #  H        #        #            #        #        H  #
 #  H  O     #        #            #        #O       H  #
 #  H                                                H  #
-# UH  W  ^    S  i  X tknnn  WAD M X t  M m G   ^   HN #
+# UH  W  ^    S  i  X t nnn  WAD M X t  M m G   ^   HN #
 ########################################################
 
 SPAWNS 0 3

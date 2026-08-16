@@ -6,6 +6,7 @@
 #include "rng.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 typedef struct
 {
@@ -54,9 +55,22 @@ typedef struct
     float investigate_x;
     float investigate_y;
     float investigate_scan_timer;
-    /* Latched once a guard has reacted to a fallen comrade, so it does not keep
-     * re-triggering while standing next to the same body. */
-    bool alerted_by_body;
+    /*
+     * Which bodies this guard has already been over to look at.
+     *
+     * One bit per corpse rather than one flag per guard, and the difference is
+     * the whole feature. A single latch stopped him re-triggering on the body
+     * he was standing next to — which is what it was for — but it also made him
+     * blind to every *other* corpse for the rest of the sector, so in a floor
+     * with ten guards on it the rule that bodies can be read switched itself
+     * off after the first kill. A bit is cleared again when the slot behind it
+     * is handed to a live guard (`find_enemy_slot` / `find_dog_slot`), so a
+     * recycled slot never arrives pre-investigated.
+     *
+     * Bits 0..MAX_ENEMIES-1 are guards; MAX_ENEMIES..MAX_ENEMIES+MAX_DOGS-1 are
+     * dogs. `enemy_body_bit` is the one place that mapping is written down.
+     */
+    uint32_t bodies_investigated;
     /* How long this guard has held an unbroken line of sight on Chuck. A
      * fresh sighting is noticed for ENEMY_NOTICE_TIME before the aim starts,
      * so detection around a corner never fires below reaction time. */
@@ -124,6 +138,19 @@ typedef struct
 static inline bool enemy_on_radio(const Enemy *enemy)
 {
     return enemy->talking && enemy->talk_partner < 0;
+}
+
+/*
+ * Which bit of `Enemy.bodies_investigated` stands for a given corpse. Guards
+ * are filed under their own slot and dogs after them, so one mask covers both
+ * kinds and the two arrays can never be read as each other.
+ */
+_Static_assert(MAX_ENEMIES + MAX_DOGS <= 32,
+               "the body-discovery mask has one bit per corpse");
+
+static inline uint32_t enemy_body_bit(int slot, bool is_dog)
+{
+    return 1u << (unsigned)(is_dog ? MAX_ENEMIES + slot : slot);
 }
 
 void enemy_init(Enemy *enemy, float x, float y, Rng *rng);

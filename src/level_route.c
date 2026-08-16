@@ -93,6 +93,30 @@ bool route_landing(const RouteMap *route, int col, int row, RouteCell *landing)
     return false;
 }
 
+bool route_survivable_fall(int from_row, int landing_row)
+{
+    float drop = (float)(landing_row - from_row) * (float)TILE_SIZE;
+    return drop < PLAYER_FATAL_FALL_HEIGHT;
+}
+
+/*
+ * Stepping off a ledge, which is the one move in this model that is a fall the
+ * player chooses to make. It has to be one they can also get up from: a drop
+ * past PLAYER_FATAL_FALL_HEIGHT kills outright, whatever the hearts say, so a
+ * route that depends on one is not a route.
+ *
+ * Only this move is capped. `route_landing` itself stays unbounded because its
+ * other two callers are not falls at all — the player's own start tile settling
+ * onto the floor the map put it above, and a card hanging in mid-air resolving
+ * to the floor it is collected from.
+ */
+static bool route_step_off(const RouteMap *route, int col, int row,
+                           RouteCell *landing)
+{
+    return route_landing(route, col, row, landing) &&
+           route_survivable_fall(row, landing->row);
+}
+
 /* A shaft only carries anybody if its run is long enough to hold a lift. */
 bool route_in_shaft(const RouteMap *route, int col, int row)
 {
@@ -143,7 +167,7 @@ int route_neighbours(const RouteMap *route, int col, int row, RouteCell *out)
         {
             if (route_standing(route, next, row))
                 out[count++] = (RouteCell){next, row};
-            else if (route_landing(route, next, row, &landing))
+            else if (route_step_off(route, next, row, &landing))
                 out[count++] = landing;
         }
         if (route_in_shaft(route, next, row))

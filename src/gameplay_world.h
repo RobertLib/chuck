@@ -59,7 +59,14 @@ void gameplay_kill_dog_with_crate(GameplayState *state,
 /* One more hostile off the floor, however it went down. Every path that sets a
  * `dead` flag calls this, because the flags themselves are the living
  * population and a reinforcement reusing a downed guard's slot would otherwise
- * un-count the kill that emptied it. */
-void gameplay_record_neutralized(GameplayState *state);
+ * un-count the kill that emptied it.
+ *
+ * Two counters, answering two questions: the sector's tally is what the report
+ * between floors prints and is wiped with the sector, while the run's — in
+ * `CampaignState` — is what the crew's net reads, and a crew does not get its
+ * men back because the player opened a stair door. Both are bumped here rather
+ * than at the six kill sites, which is the whole reason this exists. */
+void gameplay_record_neutralized(GameplayState *state,
+                                 CampaignState *campaign);
 
 #endif /* CHUCK_GAMEPLAY_WORLD_H */

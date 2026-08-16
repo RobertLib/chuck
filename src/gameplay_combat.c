@@ -73,7 +73,7 @@ static void damage_dog(GameplayState *state, CampaignState *campaign,
     if (dog->hp <= 0)
     {
         dog->dead = true;
-        gameplay_record_neutralized(state);
+        gameplay_record_neutralized(state, campaign);
         campaign->score += 75;
         game_events_particles(&state->events,
                               dog->x + DOG_W * 0.5f,
@@ -93,7 +93,7 @@ static void damage_enemy(GameplayState *state, CampaignState *campaign,
     if (enemy->hp <= 0)
     {
         enemy->dead = true;
-        gameplay_record_neutralized(state);
+        gameplay_record_neutralized(state, campaign);
         campaign->score += 150;
         game_events_particles(&state->events,
                               enemy->x + ENEMY_W * 0.5f,
@@ -188,6 +188,12 @@ static void damage_crates_in_radius(GameplayState *state,
 static void explode_gas_canister(GameplayState *state,
                                  CampaignState *campaign,
                                  GasCanister *canister);
+static void explode_mine(GameplayState *state, CampaignState *campaign,
+                         Mine *mine);
+static void explode_grenade(GameplayState *state, CampaignState *campaign,
+                            Grenade *grenade);
+static void explode_rocket(GameplayState *state, CampaignState *campaign,
+                           Rocket *rocket);
 
 /*
  * Everything a blast does to the world, in one place.
@@ -201,10 +207,44 @@ static void explode_gas_canister(GameplayState *state,
  * is a blast the player cannot reason about.
  *
  * A guard taken by a blast leaves no magazine: the drop belongs to direct
- * combat, and an explosion destroys it with its owner. Canisters chain, and the
- * chain always terminates because a canister is deactivated before its own
- * blast is applied. The player can only be hurt once however many blasts a
- * chain sets off, because the first one opens the mercy window.
+ * combat, and an explosion destroys it with its owner. The player can only be
+ * hurt once however many blasts a chain sets off, because the first one opens
+ * the mercy window.
+ *
+ * **Everything explosive in reach goes off with it**, and that is the rule
+ * rather than a list: a canister, a mine and a live grenade are all charges
+ * sitting in the blast, and a blast that set off one of the three and left the
+ * other two lying there is a blast the player cannot reason about. The canister
+ * chained on its own for a long time while the mine did not, so a rocket fired
+ * into a mined corridor cleared the canisters and stepped over the mines — and
+ * nothing on screen said why. Every chain terminates for the same reason: each
+ * charge is deactivated *before* its own blast is applied, so the set of live
+ * explosives strictly shrinks and a charge can never re-enter through its own
+ * radius.
+ *
+ * **A blast is a radius and nothing else: it is not stopped by a wall.** This
+ * is the one place the game's single solidity rule does not apply — a bullet
+ * stops on masonry and a guard cannot see through it, but pressure goes round
+ * the corner. It is deliberate, and the reason is the `%` patch: an explosive
+ * spent bringing a blocked-up opening down is supposed to take whoever was
+ * standing behind it with the wall, and a blast that opened the hole and left
+ * the man in it untouched would read as the charge going off in a different
+ * room. It cuts both ways, which is what keeps it fair — Chuck's own rocket
+ * reaches him through the wall he fired it at just as readily.
+ *
+ * What decides whether it *actually* reaches through is the radius against the
+ * geometry, and the four explosives land on both sides of that line. Across one
+ * tile of wall the nearest a guard's centre can be to the blast is the tile
+ * itself plus half of each body — a little over fifty pixels — so the mine (36)
+ * and the grenade (48) fall short of it and the rocket (72) clears it
+ * comfortably. The canister (56) sits close enough to that number that which
+ * side of it any particular pair of bodies lands on is arithmetic rather than a
+ * rule, and nothing should be designed around it either way.
+ *
+ * That difference is real in how the four play, and it is the kind of thing a
+ * tuning pass moves without noticing, so `test_a_blast_carries_through_a_wall`
+ * pins the two unambiguous ends: raising a radius past the wall is a decision,
+ * not a nudge.
  */
 static void apply_blast(GameplayState *state, CampaignState *campaign,
                         float x, float y, float radius)
@@ -223,7 +263,7 @@ static void apply_blast(GameplayState *state, CampaignState *campaign,
         }
         enemy->hp = 0;
         enemy->dead = true;
-        gameplay_record_neutralized(state);
+        gameplay_record_neutralized(state, campaign);
         game_events_particles(&state->events,
                               enemy->x + ENEMY_W * 0.5f,
                               enemy->y + ENEMY_H * 0.5f,
@@ -247,7 +287,7 @@ static void apply_blast(GameplayState *state, CampaignState *campaign,
         }
         dog->hp = 0;
         dog->dead = true;
-        gameplay_record_neutralized(state);
+        gameplay_record_neutralized(state, campaign);
         game_events_particles(&state->events,
                               dog->x + DOG_W * 0.5f,
                               dog->y + DOG_H * 0.5f,
@@ -270,6 +310,54 @@ static void apply_blast(GameplayState *state, CampaignState *campaign,
                           x, y, radius))
         {
             explode_gas_canister(state, campaign, canister);
+        }
+    }
+
+    /* A charge in the blast is a charge that goes off, whether or not anybody
+     * ever stepped on it: the player's weight is what *arms* a mine, and
+     * pressure is what sets one off. Waiting out MINE_TRIGGER_DELAY here would
+     * be the wrong reading of both — the delay is the beat between a boot and
+     * the bang, and there is no boot in this. */
+    for (int i = 0; i < state->mine_count; ++i)
+    {
+        Mine *mine = &state->mines[i];
+        if (mine->active &&
+            within_radius(mine->x + MINE_W * 0.5f, mine->y + MINE_H * 0.5f,
+                          x, y, radius))
+        {
+            explode_mine(state, campaign, mine);
+        }
+    }
+
+    for (int i = 0; i < state->grenade_count; ++i)
+    {
+        Grenade *grenade = &state->grenades[i];
+        if (grenade->active &&
+            within_radius(grenade->x + GRENADE_W * 0.5f,
+                          grenade->y + GRENADE_H * 0.5f,
+                          x, y, radius))
+        {
+            explode_grenade(state, campaign, grenade);
+        }
+    }
+
+    /* A rocket still in the air is a warhead in a fireball, and it was the one
+     * charge on the list that a blast stepped over. `MAX_ROCKETS` is one, so
+     * this is only ever reachable by walking a rocket into a chain the player
+     * set off themselves — but "everything explosive in reach goes off with
+     * it" is a rule or it is a list, and a list is what the four hand-written
+     * copies of this function used to be. Terminating for the same reason as
+     * the rest: `explode_rocket` clears `active` before applying its own
+     * blast, so the set of live charges strictly shrinks. */
+    for (int i = 0; i < MAX_ROCKETS; ++i)
+    {
+        Rocket *rocket = &state->rockets[i];
+        if (rocket->active &&
+            within_radius(rocket->x + rocket_width(rocket) * 0.5f,
+                          rocket->y + rocket_height(rocket) * 0.5f,
+                          x, y, radius))
+        {
+            explode_rocket(state, campaign, rocket);
         }
     }
 
@@ -297,9 +385,33 @@ static void explode_gas_canister(GameplayState *state,
     apply_blast(state, campaign, x, y, GAS_CANISTER_RADIUS);
 }
 
+/* Its own function so the boot that arms it and the blast that sets it off
+ * reach the same code, and so the guard below can stop a chain that has already
+ * come through here — see `apply_blast`. */
+static void explode_mine(GameplayState *state, CampaignState *campaign,
+                         Mine *mine)
+{
+    if (!mine->active)
+        return;
+
+    mine->active = false;
+    float x = mine->x + MINE_W * 0.5f;
+    float y = mine->y + MINE_H * 0.5f;
+    game_events_explosion(&state->events, x, y, 48);
+    gameplay_world_sound(state, SFX_EXPLOSION, x, y);
+    game_events_camera_shake(&state->events, 5.0f, 0.24f);
+    apply_blast(state, campaign, x, y, MINE_RADIUS);
+}
+
 static void explode_grenade(GameplayState *state, CampaignState *campaign,
                             Grenade *grenade)
 {
+    /* The same guard the canister and the mine keep: a grenade caught by a
+     * blast is spent by it, and the fuse that was already running must not
+     * spend it a second time when the loop that owns it comes round. */
+    if (!grenade->active)
+        return;
+
     grenade->active = false;
     float x = grenade->x + GRENADE_W * 0.5f;
     float y = grenade->y + GRENADE_H * 0.5f;
@@ -312,6 +424,12 @@ static void explode_grenade(GameplayState *state, CampaignState *campaign,
 static void explode_rocket(GameplayState *state, CampaignState *campaign,
                            Rocket *rocket)
 {
+    /* The same guard the other three keep, and it is what makes chaining a
+     * rocket safe to say: a rocket taken by somebody else's blast is spent by
+     * it, and the impact test that owns it must not spend it again. */
+    if (!rocket->active)
+        return;
+
     float width = rocket_width(rocket);
     float height = rocket_height(rocket);
     rocket->active = false;
@@ -349,17 +467,11 @@ void gameplay_combat_update_explosives(GameplayState *state,
         if (mine->timer > 0.0f)
             continue;
 
-        mine->active = false;
-        float x = mine->x + MINE_W * 0.5f;
-        float y = mine->y + MINE_H * 0.5f;
-        game_events_explosion(&state->events, x, y, 48);
-        gameplay_world_sound(state, SFX_EXPLOSION, x, y);
-        game_events_camera_shake(&state->events, 5.0f, 0.24f);
         /* Only the player's own weight arms a mine, but the delay between the
          * step and the blast is long enough to run out of and long enough for
          * whoever is chasing him to run into: the charge does not check who is
          * standing over it when it finally goes off. */
-        apply_blast(state, campaign, x, y, MINE_RADIUS);
+        explode_mine(state, campaign, mine);
     }
 
     for (int i = 0; i < state->grenade_count; ++i)
@@ -419,7 +531,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
     if (!player_weapon_available(&state->player,
                                  state->player.active_weapon))
     {
-        player_select_next_weapon(&state->player);
+        player_fall_back_to_sidearm(&state->player);
     }
 
     if (state->player.active_weapon == PLAYER_WEAPON_BAZOOKA &&
@@ -438,7 +550,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                             (PLAYER_W - ROCKET_H) * 0.5f;
                 rocket->y = vertical < 0
                                 ? state->player.y - ROCKET_W - 3.0f
-                                : state->player.y + PLAYER_H + 3.0f;
+                                : state->player.y + player_height(state) + 3.0f;
                 rocket->vx = 0.0f;
                 rocket->vy = vertical * ROCKET_SPEED;
             }
@@ -462,7 +574,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                                  rocket->x + ROCKET_W * 0.5f,
                                  rocket->y + ROCKET_H * 0.5f);
             if (state->player.bazooka_rockets == 0)
-                player_select_next_weapon(&state->player);
+                player_fall_back_to_sidearm(&state->player);
         }
         else
         {
@@ -494,7 +606,8 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                              (PLAYER_W - GRENADE_W) * 0.5f;
                 grenade->y = vertical < 0
                                  ? state->player.y - GRENADE_H - 3.0f
-                                 : state->player.y + PLAYER_H + 3.0f;
+                                 : state->player.y + player_height(state) +
+                                       3.0f;
                 grenade->vx = 0.0f;
                 grenade->vy = vertical * GRENADE_THROW_SPEED;
             }
@@ -516,14 +629,20 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                     arc_speed = 220.0f;
                 grenade->vy = -arc_speed;
             }
-            state->player.grenades = 0;
+            /* Spent one at a time, like the rocket two branches above. Cleared
+             * outright, as this used to be, a second grenade was destroyed by
+             * throwing the first — identical for the campaign, which never
+             * hands over two, and the reason the demo hand's vertical throw was
+             * drawn by nothing: it is granted two precisely so the pose on the
+             * floor and the pose on the rung both get one. */
+            state->player.grenades--;
             state->player.shot_vertical = vertical;
             state->player.knife_attacking = false;
             state->player.grenade_throwing = true;
             state->player.bazooka_firing = false;
             state->player.action_timer = 0.18f;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
-            player_select_next_weapon(&state->player);
+            player_fall_back_to_sidearm(&state->player);
         }
         else
         {
@@ -551,7 +670,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                             (PLAYER_W - BULLET_H) * 0.5f;
                 bullet->y = vertical < 0
                                 ? state->player.y - BULLET_W
-                                : state->player.y + PLAYER_H;
+                                : state->player.y + player_height(state);
                 bullet->vx = 0.0f;
                 bullet->vy = vertical * BULLET_SPEED;
             }
@@ -576,7 +695,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                 state->player.y + player_height(state) * 0.5f,
                 ENEMY_HEAR_RADIUS_SHOT);
             if (state->player.bullets == 0)
-                player_select_next_weapon(&state->player);
+                player_fall_back_to_sidearm(&state->player);
             break;
         }
         if (!fired)
@@ -870,7 +989,27 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
     }
 }
 
-void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt)
+/*
+ * A guard's round hits the same world the player's does.
+ *
+ * It used to be tested against tiles, crates and Chuck, and against nothing
+ * else — so a gas canister was neither cover nor a target on this side of the
+ * fight. A round went straight through the steel as if it were air: the player
+ * could not shelter behind one, and a guard could empty a clip past the
+ * cylinder he was standing beside without ever setting it off. The manual
+ * teaches "crawl and shoot a GAS CANISTER" as a rule about the world, and a
+ * rule the world only obeys for one of the two people in the room is not a
+ * rule, it is a special case nothing on screen explains.
+ *
+ * The low profile that makes the player crouch to hit one applies to the guard
+ * unchanged, and that is what keeps this from being a difficulty change: a
+ * guard aiming at a standing Chuck fires between 30% and 70% of body height
+ * and passes over the cylinder exactly as the player's standing shot does. It
+ * is the shot at a *crawling* Chuck that comes in low enough to find it — the
+ * same trade the player makes, read from the other end.
+ */
+void gameplay_combat_update_enemy_bullets(GameplayState *state,
+                                          CampaignState *campaign, float dt)
 {
     for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
     {
@@ -925,7 +1064,28 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state, float dt)
                 break;
             }
         }
-        if (bullet->active && state->invuln_timer <= 0.0f &&
+        if (!bullet->active)
+            continue;
+
+        for (int j = 0; j < state->level.runtime.gas_canister_count; ++j)
+        {
+            GasCanister *canister =
+                &state->level.runtime.gas_canisters[j];
+            if (canister->active &&
+                gameplay_boxes_overlap(bullet->x, bullet->y,
+                                       width, height,
+                                       canister->x, canister->y,
+                                       GAS_CANISTER_W, GAS_CANISTER_H))
+            {
+                bullet->active = false;
+                explode_gas_canister(state, campaign, canister);
+                break;
+            }
+        }
+        if (!bullet->active)
+            continue;
+
+        if (state->invuln_timer <= 0.0f &&
             gameplay_boxes_overlap(bullet->x, bullet->y,
                                    width, height,
                                    state->player.x, state->player.y,
@@ -971,7 +1131,14 @@ void gameplay_combat_check_contacts(GameplayState *state,
         float overlap_y = fminf(state->player.y + height,
                                 enemy->y + ENEMY_H) -
                           fmaxf(state->player.y, enemy->y);
-        if (state->player.vy > 0.0f && overlap_y < overlap_x)
+        /* Which of the two is on top, which a shallow overlap does not say on
+         * its own — it reports only that the boxes just met on that axis.
+         * Jumping up into a guard standing on the ledge above satisfies
+         * everything else here the moment the rise turns into a fall, and used
+         * to read as a stomp landing on a man who was over Chuck's head. */
+        bool from_above = state->player.y + height * 0.5f <
+                          enemy->y + ENEMY_H * 0.5f;
+        if (state->player.vy > 0.0f && overlap_y < overlap_x && from_above)
         {
             /* Climbing down onto a guard would otherwise just have the
              * ladder overwrite this with the climb speed next frame. */

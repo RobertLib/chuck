@@ -15,8 +15,11 @@ has to be added there as well, or it is a character the editor cannot paint.
   sector's own material and cracked. It is solid in every way a `#` is until an
   explosion takes it out: bullets stop on it, guards cannot see through it, and
   props will not stand on it. Any blast within reach opens it (grenade, rocket,
-  mine, gas canister) and the hole is permanent for the rest of the run, so it
-  survives a lost life and is back the next time the sector loads. Interiors
+  mine, gas canister) and the hole lasts as long as the visit does: a lost life
+  keeps it, because a death respawns at a checkpoint rather than reloading, and
+  reloading the sector — which is what a continue does — puts the wall back.
+  That is the same bargain `F` panels make, and it is written up in
+  [The hole is runtime, not map](../docs/levels.md#walls-that-open). Interiors
   only, and never the way out — see the authoring rule below.
 - `H` : Ladder (can climb up/down).
 - (space) : Empty space / air.
@@ -40,9 +43,36 @@ has to be added there as well, or it is a character the editor cannot paint.
 - `K` : Medkit item (`ITEM_MEDKIT`). Refills the hearts, or adds a life if they
   are already full. Does not respawn.
 - `Z` : Bazooka item (`ITEM_BAZOOKA`). Contains one explosive rocket and does not respawn.
+
+**None of the three above is spent on a counter that is already full**, and
+that rule is what makes it safe to put two of one kind on a floor. Walking over
+a second `N` while carrying a grenade, a second `Z` with the tube loaded, or a
+`K` with the hearts and the spare lives both at their cap leaves the pickup
+exactly where it is, to be collected on the way back once it is worth
+something; the pickup sound only ever plays for a pickup that did something.
+`G` is deliberately the exception, because it is the one that comes back:
+taking a magazine on a full clip costs nothing and the box is there again ten
+seconds later. `test_a_pickup_that_would_be_wasted_is_left_alone` pins both
+halves.
+
+**A grenade and a rocket also survive the way out of a sector.** Nothing else
+does — the sidearm is refilled anyway and the weapon in the hand is reset to it
+— and the rule is `player_begin_sector` in [../src/player.c](../src/player.c).
+The climbs are why it exists: nothing on a facade can be thrown or fired at
+all, so the `N` on each of the four is a pickup whose entire value is in the
+sector above it.
 - `M` : Enemy spawn (enemy is placed here).
 - `W` : Enemy spawn with a guard dog.
-- `J` : Ambient janitor with a cleaning cart and mop (visual-only NPC).
+- `J` : Ambient janitor with a cleaning cart and mop (visual-only NPC). Unlike
+  the receptionist below, he is **not** confined to the lobby, and the
+  difference is worth writing down because the two look like the same
+  objection. A staffed counter is a post: somebody standing at it at 00:55 is
+  being *served by the building*, which is why `k` belongs to sector 1 and to
+  nothing above it. A janitor is one man alone on a floor with a cart, and the
+  building never told him anything — the crew took the lobby, not the whole
+  night shift, and nothing about a mopped corridor two floors up claims he has
+  heard a shot. He may stand in any interior sector; he still owes the ordinary
+  rule that he never fights, blocks or is seen.
 - `f` : Fleeing civilian (visual-only NPC). The level starts with him frozen
   facing the way the player came in; after a staggered beat he shouts and runs
   for it, dissolving as he reaches it, and the part is over. He falls off
@@ -100,7 +130,12 @@ has to be added there as well, or it is a character the editor cannot paint.
 - `Y` : Open traversable window. In an interior it is the alternative route
   out; in a `MODE FACADE` level it is the window back into the building.
 - `D` : Door tile (`TILE_DOOR`).
-- `U` : Entrance to a separate sublevel (currently the WC/restroom).
+- `U` : Entrance to a separate sublevel — the restroom off this floor. **Which
+  room it opens on is decided by the sector's `THEME`**, exactly as the score
+  is (`level_theme_sublevel` in [level.c](../src/level.c)), so a sector names
+  its room by being what it already is and a theme with no room of its own
+  falls back to the lobby's. The four rooms are tabulated under
+  [Restrooms](#restrooms) below.
 - `R` : Return door from a sublevel to its paused parent level.
 - `q` : Decorative restroom toilet (non-solid).
 - `b` : Decorative restroom washbasin (non-solid). A mirror is drawn in the
@@ -150,10 +185,18 @@ Notes:
   doors, guards, or ordinary platform simulation. Pickups do work, so items
   placed on a facade are optional detours that carry into the next sector.
   Nothing can be *fired* out there — `update_facade_playing` never runs the
-  attack — so a climb's pickups are entirely a bet on the sector above it, and
-  every climb carries the same three: a `G`, an `N` and a `K`. Sector 7 spent a
-  while without the `G`, which made the one climb that hands straight into the
-  LAB the one you arrived at with whatever ammunition was left.
+  attack — so a climb's pickups are entirely a bet on the sector above it.
+  **Which means only what actually crosses the doorway is worth placing**, and
+  that is the grenade and the rocket: `player_begin_sector` carries those two and
+  nothing else, because `player_reset` hands the next sector a full clip either
+  way. So every climb carries an `N` and a `K`, and none of them carries a `G`.
+  All four used to, on the stated grounds that sector 7's climb otherwise handed
+  into the LAB "with whatever ammunition was left" — which was never true of any
+  sector, since the clip is refilled at every doorway. A magazine on a wall
+  cannot be spent up there, changes no counter when it is walked over, pays no
+  score, and plays the sound of a pickup that worked.
+  `test_no_climb_lays_out_a_pickup_it_cannot_use` is what keeps one from coming
+  back.
 - `THEME <name>` on a metadata line picks the level's art direction — see
   [Themes](#themes) below.
 - Facade masonry authoring: the climber box is exactly one tile tall, so a
@@ -174,6 +217,17 @@ other simulated behaviour, so the same map plays identically under any of them.
 A map with no `THEME` line keeps the default for its mode — `PLANT` inside,
 `FACADE_NIGHT` on a wall — so a new sector drops in without one. A misspelt
 name is a parse error rather than a silent fall back.
+
+**With one exception, and it is how the four restrooms get their look.**
+Placing any restroom fitting — `q`, `b`, `u`, `p`, `o` or `z` — sets the theme
+to `RESTROOM` as the grid is read, which is why none of the four sublevel maps
+carries a `THEME` line and why `RESTROOM` is the one name in the table below
+that no map ever spells. A tiled room is a tiled room whatever it hangs off, so
+the fittings are the sentence and the metadata line would only be a second copy
+of it. The line still wins where a map has both — it is read after the grid —
+so an interior that wants a washbasin in the corner without becoming a
+washroom says so by naming its own theme, which every campaign map already
+does.
 
 The Floor column is the finish on the walkable top of a slab: a sliver a few
 pixels deep, and the one surface the player looks at for the whole level. The
@@ -197,7 +251,7 @@ says which floor of the building he is standing on.
 | `RESTROOM` | tile | ceramic | implied by restroom fittings; sublevel only | 72 bpm E♭ minor; tiled and dripping, no kit — the sector's score waits outside |
 | `FACADE_NIGHT` | — | — | clear night, city lights below | 90 bpm E minor; wide, slow and exposed, the city glittering under it |
 | `FACADE_STORM` | — | — | rain, lightning, wet stone | 116 bpm C minor; the only climb in a hurry, rain on the cornices |
-| `FACADE_DAWN` | — | — | sunrise, warm stone, distant birds | 82 bpm A major; the one climb with the light coming |
+| `FACADE_MOON` | — | — | a low moon off the corner, silver stone, haze bands, distant birds | 82 bpm A major; the storm has blown through and the sky is clear — a breath, not a sunrise |
 | `FACADE_HIGH` | — | — | above the cloud layer, neon signage | 70 bpm B minor; thin air — barely a bass note, a long way between phrases |
 
 Two rules the campaign keeps, both pinned by
@@ -205,6 +259,17 @@ Two rules the campaign keeps, both pinned by
 and a facade level uses a `FACADE_*` theme while an interior never does. The
 second rule is what keeps the scores changing too, since the theme-to-track
 mapping is one to one.
+
+**The four climbs differ by weather and height, never by hour**, and that is a
+constraint rather than a preference. The night is thirty-eight minutes long —
+00:22 to 01:00, `NIGHT_CLOCK_*` in [../src/game_config.h](../src/game_config.h)
+— and the wall clock `w` hanging in every interior sector reads it out, so a
+climb between two of them is pinned to the minute on both sides. `FACADE_MOON`
+was a sunrise until it was measured against the sectors either side of it,
+which read a few minutes before and after 00:47: the player looked up in
+sector 10, climbed through a dawn, and looked up again in sector 12 to be told
+the sun had risen and set inside five minutes. A fifth climb owes the same
+check before it is painted.
 
 ## Sector plans
 
@@ -227,11 +292,39 @@ or a storey rhythm.
 | 8 | `LAB` | a spine corridor with sealed clean-room bays combed off it above — each an airlock reached by its own ladder — and basement chambers and a deep-storage crawl below; the rocket vault opens only through a paired door |
 | 9 | `ARCHIVE` | a grid of canyons between blocks of shelving, linked only where an aisle was cut through; the route weaves up, across the reading room, and back down before the exit stair |
 | 10 | `SECURITY` | a patrol ring around the control bunker; both corridors are bricked up, so the bunker's lower floor is the only way across, and the airlock doors flanking it are where the reinforcements come out |
-| 11 | `FACADE_DAWN` | two breaches that braid, swapping sides as the climb rises and merging where the lines cross |
+| 11 | `FACADE_MOON` | two breaches that braid, swapping sides as the climb rises and merging where the lines cross |
 | 12 | `DUCTS` | six crawl levels chopped into runs, one riser each; climb, drop through a missing panel, climb again. The rocket pocket hides behind a blocked-up bulkhead |
 | 13 | `FACADE_HIGH` | offset stubs laid like brickwork: every band is a lateral detour |
 | 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall crossed by balcony stubs. The far bay keeps the medkit and the rocket behind a paired door whose other end is the one guards come out of; the `%` in the bay's end wall is a second way in, for anyone who can spare a blast |
-| 15 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, a gondola strung between the two towers, and a fan-choked service level beneath the deck that is the only way past the two breaches in it |
+| 15 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, a gondola strung between the two towers, and a fan-choked service level beneath the deck that is the only way past the two breaches in it. **The last stretch is where the crew is**: the roof of the final plant room is mined under its own guard, the run out of the service level past the second breach is mined at both ends under a fan, and the helicopter pad is held by a man standing on it — Voss's remaining crew between Chuck and the ride, which is the one thing the finale has to say |
+
+### Restrooms
+
+Four sectors carry a `U`, and each opens on a room of its own — picked by the
+sector's `THEME`, so the room belongs to the place it hangs off. There used to
+be one room behind all four doors, which meant the marble washroom off the
+lobby and the executive suite two floors under the roof were the same
+twenty-nine tiles with the same guard standing in the same place.
+
+**What they pay is deliberately identical**: one magazine on the floor, one
+grenade and one medkit up top. The campaign is balanced on four grenades coming
+out of these doors on top of the fourteen it lays out itself, and a room that
+paid differently would move that line. What changes is the plan, the climb and
+what is waiting — which is what was actually repeating.
+
+| Sector | Room | Plan | Waiting |
+| --- | --- | --- | --- |
+| 1 `LOBBY` | `restroom_lobby` | the room the game teaches with: one ladder straight up to a service walkway broken once | a guard, a janitor, a crate and a canister |
+| 5 `PLANT` | `restroom_plant` | a works toilet under a long mezzanine broken twice, and the only ladder is at the far end — so both pickups are walked back over both breaks | a guard, and a pair of canisters close enough to chain |
+| 9 `ARCHIVE` | `restroom_archive` | three short levels behind the stacks, the risers at opposite ends so the climb doubles back on itself each time; the top shelf has a break of its own | two guards |
+| 14 `PENTHOUSE` | `restroom_penthouse` | the only symmetrical one, like the floor it hangs off: a centre riser with a wing either side and a break in each, the grenade in one wing and the medkit in the other | two guards and a dog — and the riser is the way out of the dog's reach, since dogs do not climb |
+
+`test_embedded_restroom_sublevels` walks the route model through every one of
+them to both pickups and back to the door, holds the three-pickup payout, and
+requires that no two share a footprint;
+`test_every_restroom_theme_names_a_room_that_exists` holds the theme table
+against the files actually embedded, because a renamed map would otherwise be a
+`U` that silently falls back to the lobby's washroom.
 
 Two campaign-wide rules go with it, both pinned by the same test:
 
@@ -239,7 +332,21 @@ Two campaign-wide rules go with it, both pinned by the same test:
   `3·guards + 2·dogs + 2·mines + spikes + fans` — must exceed the previous
   interior's; a climb's budget (`3·throwers + 2·birds`) and its height must
   exceed the previous climb's. The campaign runs 6, 14, 20, 24, 29, 37, 48, 53,
-  55, 64, 67 inside and 20, 25, 30, 35 on the walls. Sector 1 spends its whole
+  59, 64, 79 inside and 20, 25, 30, 35 on the walls. **The last number is the
+  largest step in the run on purpose**: it was 67 against sector 14's 64, which
+  cleared the rule by three and made the finale the flattest beat in the back
+  half — the sector the whole night is climbing toward, playing a shade easier
+  than the floor below it.
+  **Sector 12 was the same complaint one floor lower**, and clearing the rule is
+  not the same as keeping it: at 55 against sector 10's 53 it beat the floor
+  below by two, the smallest step anywhere in the campaign, while dropping from
+  ten guards to seven. Fewer men in a crawl duct is the right instinct and the
+  arithmetic still has to hold, so the two it was short went where the sector
+  already speaks — a charge on the approach to the blocked-up bulkhead, so
+  opening it with the rocket is not free, and one out on the bottom service run
+  between the last guard and the exit ladder. 59 is a step of six, which is the
+  middle of the campaign's own range rather than the bottom of it. Sector 1
+  spends its whole
   budget on two guards and carries no hazard at all: it is where the player
   finds out what the controls do — including, since it gained a medkit on the
   lobby stair, what a pickup looks like before anything is shooting.
@@ -270,11 +377,19 @@ bottom row of that band, so a two-row band is a corridor and a three-row band is
 a hall. These rules come from the tuning in
 [game_config.h](../src/game_config.h) and every campaign map obeys them.
 
-- **Jump reach.** A 365px/s jump under 980px/s² gravity peaks at 68px. In a
-  two-row band the ceiling caps it at one tile and the player only covers about
-  48px of ground — enough to clear a one-tile hole in the floor, not a two-tile
-  one. Give him a second open row (~87px) before asking for a two-tile jump;
-  anything wider needs a ladder, a lift shaft or a moving platform.
+- **Jump reach.** A 365px/s jump under 980px/s² gravity peaks at **68.7px**, and
+  that is a measured number rather than the continuous arithmetic's 68: the
+  impulse is written into `vy` after the step's gravity, so the launch step
+  carries the full launch speed and the apex lands half a step's travel above
+  `v0²/2g`. It is the same 68.7 on every machine because the simulation is
+  stepped at a fixed `SIM_STEP_DT` — before that it was 71px at 60Hz and 77px on
+  a stuttering one, which made a ceiling placed to cap a jump clearable on a
+  slow machine and not on a quick one. `test_the_jump_apex_does_not_depend_on_the_frame_rate`
+  is what holds it there, so an author may draw against this figure.
+  In a two-row band the ceiling caps it at one tile and the player only covers
+  about 48px of ground — enough to clear a one-tile hole in the floor, not a
+  two-tile one. Give him a second open row (~87px) before asking for a two-tile
+  jump; anything wider needs a ladder, a lift shaft or a moving platform.
 - **Spikes are area denial, not an obstacle course.** Clearing a single 32px
   spike means covering 58px of ground while the whole 26px-wide player box is
   above floor level, and even an unobstructed jump only offers about 73px of

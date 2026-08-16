@@ -10,7 +10,7 @@
 static const char *const LEVEL_THEME_NAMES[LEVEL_THEME_COUNT] = {
     "PLANT", "LOBBY", "OFFICE", "SERVER", "CANTEEN", "LAB",
     "ARCHIVE", "SECURITY", "DUCTS", "PENTHOUSE", "ROOF", "RESTROOM",
-    "FACADE_NIGHT", "FACADE_STORM", "FACADE_DAWN", "FACADE_HIGH"};
+    "FACADE_NIGHT", "FACADE_STORM", "FACADE_MOON", "FACADE_HIGH"};
 
 bool level_theme_from_name(const char *name, size_t length, LevelTheme *out)
 {
@@ -32,6 +32,71 @@ const char *level_theme_name(LevelTheme theme)
     if (theme < 0 || theme >= LEVEL_THEME_COUNT)
         return LEVEL_THEME_NAMES[LEVEL_THEME_PLANT];
     return LEVEL_THEME_NAMES[theme];
+}
+
+/*
+ * Which room a sector's `U` opens on, decided by the same thing that decides
+ * its walls and its score.
+ *
+ * There used to be one room and `EMBEDDED_SUBLEVELS[0]` written into the
+ * shell, so the marble washroom off the lobby, the works toilet beside the
+ * plant hall, the one behind the archive stacks and the executive suite two
+ * floors under the roof were all the same twenty-nine tiles: the same guard
+ * standing in the same place four times, and a medkit worth a shrug in sector
+ * 1 and a great deal in sector 14. The reward is deliberately still the same
+ * three pickups in every room — the campaign is balanced on four grenades
+ * coming out of these doors — so what changes between them is the plan, the
+ * risk and what the place looks like, which is what was actually repeating.
+ *
+ * Filed by theme rather than by sector index for the reason the score is: a
+ * room belongs to the *place* it hangs off, and the theme is what names the
+ * place. A sixteenth sector wanting a restroom therefore names one by being
+ * what it already is. A theme with no room of its own falls back to the
+ * lobby's rather than to nothing, because a `U` that opens on a blank screen
+ * would be worse than one that opens on a room the player has seen.
+ *
+ * These are file stems under `levels/sublevels/`, which is a filename written
+ * down in C and only safe because
+ * `test_every_restroom_theme_names_a_room_that_exists` walks this table
+ * against the embedded set and fails the build on a stem no file answers to.
+ * It lives here rather than beside `level_theme_music` in level_art.c for the
+ * same reason: which room a door opens on is level data, not art direction,
+ * and level_art.c links SDL and so is reachable by no test at all.
+ */
+static const char *const THEME_SUBLEVEL[LEVEL_THEME_COUNT] = {
+    [LEVEL_THEME_LOBBY] = "restroom_lobby",
+    [LEVEL_THEME_PLANT] = "restroom_plant",
+    [LEVEL_THEME_ARCHIVE] = "restroom_archive",
+    [LEVEL_THEME_PENTHOUSE] = "restroom_penthouse"};
+
+const char *level_theme_sublevel(LevelTheme theme)
+{
+    const char *named = (theme < 0 || theme >= LEVEL_THEME_COUNT)
+                            ? NULL
+                            : THEME_SUBLEVEL[theme];
+    return named != NULL ? named : LEVEL_FALLBACK_SUBLEVEL;
+}
+
+/*
+ * A room is embedded under its whole path — `levels/sublevels/restroom_plant.txt`
+ * — and named by its stem. One reading of that, here beside the table, because
+ * the shell resolves the door with it and the suite proves the table with it,
+ * and two copies of "which file is this" is exactly how a stem that no longer
+ * matches anything would pass the build and open the wrong door.
+ */
+bool level_sublevel_name_is(const char *path, const char *stem)
+{
+    if (path == NULL || stem == NULL)
+        return false;
+
+    const char *base = path;
+    for (const char *scan = path; *scan != '\0'; ++scan)
+        if (*scan == '/' || *scan == '\\')
+            base = scan + 1;
+
+    size_t length = strlen(stem);
+    return strncmp(base, stem, length) == 0 &&
+           strcmp(base + length, ".txt") == 0;
 }
 
 static void place_item(Level *level, int col, int row, ItemType type)

@@ -52,6 +52,31 @@ typedef struct
     int width, height;
 } EdClipboard;
 
+/*
+ * The playtest's build, running beside the editor rather than inside it.
+ *
+ * `make` takes seconds, and it used to be run straight from the keypress that
+ * asked for it — so the window stopped answering the moment the author pressed
+ * playtest, drew nothing, and on macOS collected a spinning cursor. The status
+ * line said `Building...` and was the one thing on screen that could not be
+ * repainted to say it.
+ *
+ * The read stays blocking, on a thread of its own: draining the pipe as `make`
+ * writes it is what keeps a build with a screenful of errors from filling the
+ * buffer and wedging against a reader that is off drawing a frame. The thread
+ * touches nothing of the app's — it fills this struct and sets `finished` as
+ * its last act, and the main loop joins it and does everything that reaches the
+ * screen or launches anything.
+ */
+typedef struct
+{
+    SDL_Thread *thread;
+    SDL_AtomicInt finished;
+    bool ok;
+    char error[256];
+    int level; /* the sector to open once the build succeeds */
+} EdBuild;
+
 typedef struct
 {
     SDL_Window *window;
@@ -96,6 +121,9 @@ typedef struct
     EdClipboard clipboard;
     bool clipboard_valid;
 
+    /* The playtest build, while one is running. */
+    EdBuild build;
+
     /* Chrome. */
     SDL_FRect canvas;
     SDL_FRect left_panel;
@@ -124,6 +152,13 @@ bool ed_save(EditorApp *app);
 void ed_new_level(EditorApp *app, bool facade);
 void ed_reload(EditorApp *app);
 void ed_playtest(EditorApp *app);
+/* Polled once a frame: joins a finished playtest build and launches the game,
+ * or reports what `make` said. Does nothing while one is still running, and
+ * nothing at all when none is. */
+void ed_update_playtest(EditorApp *app);
+/* Joins a build still running at shutdown, so the process does not close the
+ * window out from under a thread still reading a pipe. */
+void ed_cancel_playtest(EditorApp *app);
 void ed_focus_tile(EditorApp *app, int col, int row);
 void ed_center_view(EditorApp *app);
 void ed_set_zoom(EditorApp *app, float zoom, float anchor_x, float anchor_y);

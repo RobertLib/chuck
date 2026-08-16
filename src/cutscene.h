@@ -69,6 +69,12 @@ typedef struct
     int level_score;
     int hostiles_neutralized;
     int deaths;
+    /* What the time and the deaths were worth, printed under the two fields
+     * they belong to. Both are already inside `level_score`; they are carried
+     * separately so the report can show the player where the points came from
+     * rather than only that they arrived. See `campaign_award_sector_bonus`. */
+    int time_bonus;
+    int clean_bonus;
 } LevelTransition;
 
 typedef enum
@@ -122,7 +128,8 @@ void opening_cutscene_render(SDL_Renderer *renderer,
 void level_transition_init(LevelTransition *transition,
                            int completed_level, int next_level,
                            float elapsed_seconds, int level_score,
-                           int hostiles_neutralized, int deaths);
+                           int hostiles_neutralized, int deaths,
+                           int time_bonus, int clean_bonus);
 bool level_transition_update(LevelTransition *transition, float dt,
                              Uint32 *out_cues);
 void level_transition_render(SDL_Renderer *renderer,

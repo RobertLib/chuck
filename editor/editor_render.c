@@ -510,7 +510,12 @@ void ed_draw_canvas(EditorApp *app)
                                app->time,
                                app->current_file >= 0
                                    ? app->files[app->current_file].number - 1
-                                   : 0};
+                                   : 0,
+                               /* The editor draws the backdrop as the game
+                                * ships it, so the strobes stay strobing here:
+                                * reduced motion is a player's setting and this
+                                * canvas is an author's. */
+                               false};
         level_art_backdrop(&scene);
     }
     else

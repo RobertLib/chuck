@@ -212,7 +212,7 @@ typedef enum
     LEVEL_THEME_RESTROOM, /* implied by restroom fittings in the map */
     LEVEL_THEME_FACADE_NIGHT, /* facade default */
     LEVEL_THEME_FACADE_STORM,
-    LEVEL_THEME_FACADE_DAWN,
+    LEVEL_THEME_FACADE_MOON,
     LEVEL_THEME_FACADE_HIGH,
     LEVEL_THEME_COUNT
 } LevelTheme;
@@ -325,6 +325,15 @@ bool level_theme_from_name(const char *name, size_t length, LevelTheme *out);
 
 /* The authoring name a theme is written with. Never NULL. */
 const char *level_theme_name(LevelTheme theme);
+
+/* The room a sector's `U` opens on, as a file stem under `levels/sublevels/`.
+ * Never NULL: a theme with no room of its own gets the lobby's, because a door
+ * that opens on nothing is worse than one that opens on a familiar room. */
+#define LEVEL_FALLBACK_SUBLEVEL "restroom_lobby"
+const char *level_theme_sublevel(LevelTheme theme);
+
+/* True when an embedded sublevel path is the file that stem names. */
+bool level_sublevel_name_is(const char *path, const char *stem);
 
 /* Tile queries. Out-of-bounds is treated as solid wall. */
 TileType level_tile(const Level *level, int col, int row);

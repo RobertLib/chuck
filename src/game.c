@@ -21,6 +21,13 @@ static void game_enter_state(Game *game, GameState next_state);
  * have been read first. */
 static void game_load_settings(Game *game);
 static void game_apply_volumes(Game *game);
+/* And the same for what outlives the process: load_level banks the sector it
+ * opens, and every way a run can end banks the score it ended on. There are
+ * five of them and they are counted in one place, at `game_record_run_score`
+ * below — a number written twice is a number that drifts, and this one has. */
+static void game_load_progress(Game *game);
+static void game_save_progress(const Game *game);
+static void game_record_run_score(Game *game);
 
 static void update_camera_shake(Game *game, float dt)
 {
@@ -37,6 +44,18 @@ static void update_camera_shake(Game *game, float dt)
     if (game->presentation.camera_shake_timer <= 0.0f)
     {
         game->presentation.camera_shake_timer = 0.0f;
+        game->presentation.camera_shake_x = 0.0f;
+        game->presentation.camera_shake_y = 0.0f;
+        return;
+    }
+
+    /* Asked to hold still, the shake is spent rather than skipped: the timer
+     * above has already run down, so a blast still ends its shake at the
+     * moment it always did and nothing downstream can tell the difference
+     * except the camera. Returning early instead would leave the timer
+     * standing and the next shake would find one already in progress. */
+    if (game->settings.reduced_motion)
+    {
         game->presentation.camera_shake_x = 0.0f;
         game->presentation.camera_shake_y = 0.0f;
         return;
@@ -210,6 +229,28 @@ static void snap_camera_to_player(Game *game)
                   &game->presentation.cam_y);
 }
 
+/*
+ * The room the sector's own `U` opens on — see `level_theme_sublevel`, which
+ * picks it by theme the way `level_theme_music` picks the score.
+ *
+ * A miss cannot happen in a build the suite has passed, because
+ * `test_every_restroom_theme_names_a_room_that_exists` walks the same table
+ * through the same matcher against the same embedded set; falling back to the
+ * first room rather than refusing the door is still the right answer for a
+ * build it has not, since a `U` that swallows the press is a door the player
+ * reads as broken.
+ */
+static const EmbeddedLevelData *restroom_source(const Game *game)
+{
+    const char *stem = level_theme_sublevel(game->gameplay.level.map.theme);
+    for (size_t i = 0; i < EMBEDDED_SUBLEVEL_COUNT; ++i)
+        if (level_sublevel_name_is(EMBEDDED_SUBLEVELS[i].name, stem))
+            return &EMBEDDED_SUBLEVELS[i];
+
+    SDL_Log("No embedded sublevel is named '%s'; opening the first one", stem);
+    return &EMBEDDED_SUBLEVELS[0];
+}
+
 static bool initialize_restroom(Game *game)
 {
     if (EMBEDDED_SUBLEVEL_COUNT == 0)
@@ -223,7 +264,7 @@ static bool initialize_restroom(Game *game)
     restroom->rng = game->gameplay.rng;
     gameplay_state_begin_level(restroom);
 
-    const EmbeddedLevelData *source = &EMBEDDED_SUBLEVELS[0];
+    const EmbeddedLevelData *source = restroom_source(game);
     if (!level_load_data(&restroom->level, source->name,
                          source->data, source->size, &restroom->rng))
     {
@@ -240,6 +281,19 @@ static bool initialize_restroom(Game *game)
     return true;
 }
 
+/*
+ * The sector and the room change places, and the one that is not being played
+ * is not ticked either — `update_playing` only ever advances `gameplay`.
+ *
+ * That is the decision, not an oversight, and the alarm is what settles it. A
+ * countdown that kept running behind the door would make the restroom the one
+ * place in the building where an alert can be waited out, which is exactly the
+ * safe room the sector never granted; frozen, a detour neither winds the alarm
+ * down nor stands it up, and the player comes back to the floor they left. The
+ * strip says so throughout, because every field on it that names the
+ * building's state reads through the *sector* rather than through whatever is
+ * being simulated (see `render_hud`).
+ */
 static void swap_gameplay_areas(Game *game)
 {
     GameplayState temporary = game->gameplay;
@@ -304,14 +358,79 @@ static bool leave_restroom(Game *game)
     game->in_sublevel = false;
     game->presentation.cam_x = game->main_level_cam_x;
     game->presentation.cam_y = game->main_level_cam_y;
+    /*
+     * A guard put down in the restroom was put down on this floor.
+     *
+     * The tally is a field of whichever simulation was running when he went
+     * down, and inside the room that is the room's own — so the report between
+     * sectors, which reads the sector's, credited the floor with one hostile
+     * fewer than the player had actually cleared. The score never had the
+     * problem, because `CampaignState` is shared across the door, and a room
+     * that pays for a kill in points but not in the count is the strip
+     * reporting the room instead of the sector, which is the one thing
+     * `render_hud`'s `sector` pointer exists to prevent.
+     *
+     * Carried here rather than added at the kill, because the gameplay core
+     * has no idea a sublevel exists and must not gain one. Zeroed on the way
+     * out for the same reason the flags are swapped above: the door can be
+     * used again, and a second visit must not bank the first one's kills a
+     * second time.
+     */
+    game->gameplay.hostiles_neutralized +=
+        game->inactive_gameplay.hostiles_neutralized;
+    game->inactive_gameplay.hostiles_neutralized = 0;
     return true;
 }
 
-static bool load_level(Game *game, int index)
+/*
+ * How a sector is being entered, which decides two things that have nothing to
+ * do with the map.
+ *
+ * The first is whether reaching it is worth writing down. The record is meant
+ * to be a record of a run: the sector is banked on arrival rather than on
+ * finishing, because a player who died on sector nine got to sector nine. An
+ * authoring shortcut is not getting there — `--level N`, the editor's playtest
+ * button and the debug picker all hand `game_start_at_level` an arbitrary
+ * sector, and banking that unlocked the title screen's resume chip at a floor
+ * nobody had played to.
+ *
+ * The second is whether the explosive in Chuck's hands survives the doorway.
+ * See `load_level` for why only one of these three entries hands anything over.
+ */
+typedef enum
 {
+    /* An author put him here. Banks nothing, hands over nothing. */
+    LEVEL_ENTRY_AUTHORED = 0,
+    /* The first sector of a run, or the retry after a continue: a campaign
+     * arrival worth banking, but not a step out of the sector below, so there
+     * is nothing to bring through. */
+    LEVEL_ENTRY_RUN_START,
+    /* One sector to the next, by the stair door or through the window. */
+    LEVEL_ENTRY_CAMPAIGN_STEP
+} LevelEntry;
+
+static bool load_level(Game *game, int index, LevelEntry entry)
+{
+    /* Who walked out of the sector below, copied before
+     * `gameplay_state_begin_level` memsets the player along with the rest of
+     * the simulation. What of him survives the doorway is
+     * `player_begin_sector`'s decision and is written down there, in the
+     * SDL-free half where the suite can hold it. */
+    Player departed = game->gameplay.player;
+    const Player *previous =
+        entry == LEVEL_ENTRY_CAMPAIGN_STEP ? &departed : NULL;
+
     if (index < 0 || (size_t)index >= EMBEDDED_LEVEL_COUNT)
     {
-        SDL_Log("Level index %d is out of range", index);
+        /* Said as a sector number, because that is the only way a sector is
+         * ever named anywhere a human reads one — `--level N`, the strip's
+         * SECTOR field, the debug picker and the editor's playtest button are
+         * all 1-based. This line used to print the 0-based array index beside
+         * `game_start_at_level`'s 1-based one, so a mistyped `--level 99` was
+         * answered by two numbers, neither of them together and one of them
+         * never typed. */
+        SDL_Log("Sector %d is outside the campaign (1-%zu)", index + 1,
+                EMBEDDED_LEVEL_COUNT);
         return false;
     }
 
@@ -325,16 +444,33 @@ static bool load_level(Game *game, int index)
         return false;
     }
     game->campaign.current_level = index;
+    /* Reaching a sector is the thing worth remembering across a session, and
+     * it is banked on arrival rather than on finishing: a player who dies on
+     * sector nine got to sector nine, and making them earn it twice is exactly
+     * the walk this is here to give back. See `LevelEntry` above for the one
+     * kind of arrival that does not count. */
+    if (entry != LEVEL_ENTRY_AUTHORED &&
+        progress_note_sector(&game->progress, index))
+        game_save_progress(game);
     audio_play_music(&game->platform.audio,
                      level_theme_music(game->gameplay.level.map.theme));
 
-    player_reset(&game->gameplay.player, &game->gameplay.level);
+    player_begin_sector(&game->gameplay.player, &game->gameplay.level,
+                        previous);
     apply_assist_to_state(game, &game->gameplay);
     game->gameplay.player.hp = gameplay_player_max_hp(&game->gameplay);
+    /* A demo run gets its kit back at every doorway and starts its script over,
+     * so a sector reached by playing out of the one below it is driven exactly
+     * as the one `--level` opened on. Without this the hand would arrive on
+     * floor two with a spent tube and cover none of the rocket art from there
+     * on — which is the same silent under-coverage the switch exists to end. */
+    if (game->demo_active)
+    {
+        demo_grant_loadout(&game->gameplay);
+        demo_hand_init(&game->demo_hand);
+    }
 
-    game->campaign.level_elapsed_time = 0.0f;
-    game->campaign.level_start_score = game->campaign.score;
-    game->campaign.level_deaths = 0;
+    campaign_begin_sector(&game->campaign);
     reset_level_presentation(game);
     game_enter_state(game, STATE_LEVEL_START);
 
@@ -356,18 +492,24 @@ static bool load_level(Game *game, int index)
 static void restart_game(Game *game)
 {
     campaign_reset(&game->campaign);
-    load_level(game, 0);
+    load_level(game, 0, LEVEL_ENTRY_RUN_START);
     audio_play(&game->platform.audio, SFX_MENU_START);
 }
 
 static bool continue_game(Game *game)
 {
     int level = game->campaign.current_level;
+    /* Banked before the retry is taken, because past the last continue the
+     * retry starts the score again from nothing — which ends this run's
+     * scoring as surely as the game-over card does. Left out, letting the
+     * countdown expire kept the record and accepting the retry the prompt is
+     * offering destroyed it, silently and in the player's favour nowhere. */
+    game_record_run_score(game);
     if (!campaign_accept_continue(&game->campaign))
         return false;
 
     audio_stop_effects(&game->platform.audio);
-    if (!load_level(game, level))
+    if (!load_level(game, level, LEVEL_ENTRY_RUN_START))
     {
         SDL_Log("Could not continue from level %d", level);
         game_enter_state(game, STATE_GAME_OVER);
@@ -389,6 +531,8 @@ bool game_init_seeded(Game *game, uint64_t seed)
     /* Before the window and before the audio device, because both of them are
      * opened to match what the player last chose. */
     game_load_settings(game);
+    /* And before the first title screen, which offers the resume it finds. */
+    game_load_progress(game);
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
@@ -396,7 +540,17 @@ bool game_init_seeded(Game *game, uint64_t seed)
         return false;
     }
 
-    if (!SDL_CreateWindowAndRenderer("Chuck", 800, 552, 0,
+    /*
+     * Resizable, and the whole cost of it is this flag: the logical
+     * presentation below already fixes the coordinate system every renderer
+     * lays out against, and the mouse already arrives through
+     * `SDL_RenderCoordinatesFromWindow`. The window opened at a fixed 800x552
+     * for a long time, which on a desktop that is now routinely four times
+     * that meant a small rectangle with fullscreen as the only alternative —
+     * a scaling decision taken away from the player by omission rather than
+     * on purpose.
+     */
+    if (!SDL_CreateWindowAndRenderer("Chuck", 800, 552, SDL_WINDOW_RESIZABLE,
                                      &game->platform.window, &game->platform.renderer))
     {
         SDL_Log("SDL_CreateWindowAndRenderer failed: %s", SDL_GetError());
@@ -409,11 +563,45 @@ bool game_init_seeded(Game *game, uint64_t seed)
      * This makes the game look identical but scaled when entering fullscreen. */
     SDL_SetRenderLogicalPresentation(game->platform.renderer, 800, 552, SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
-    SDL_SetRenderVSync(game->platform.renderer, 1);
+    /*
+     * Vsync if the renderer will give it, and a frame floor of our own if it
+     * will not.
+     *
+     * The swap is the only thing pacing this loop — there is no sleep anywhere
+     * else in it — so a refusal here used to mean the game quietly ran at
+     * whatever rate the machine could draw, pinning a core to redraw a picture
+     * nobody could see change. The floor is the display's own rate where SDL
+     * knows it, because that is the fastest number worth drawing at, and
+     * 60 where it does not.
+     */
+    game->platform.vsync = SDL_SetRenderVSync(game->platform.renderer, 1);
+    if (game->platform.vsync)
+    {
+        game->platform.frame_min_ns = 0;
+    }
+    else
+    {
+        float hz = 60.0f;
+        const SDL_DisplayMode *mode = SDL_GetDesktopDisplayMode(
+            SDL_GetDisplayForWindow(game->platform.window));
+        if (mode != NULL && mode->refresh_rate > 1.0f)
+            hz = mode->refresh_rate;
+        /* Clamped at both ends: below the floor the game is slower than it was
+         * tuned at, and above the ceiling this is burning a core again for
+         * frames nobody asked for. */
+        if (hz < 60.0f)
+            hz = 60.0f;
+        if (hz > 240.0f)
+            hz = 240.0f;
+        game->platform.frame_min_ns = (Uint64)(1.0e9f / hz);
+        SDL_Log("VSync unavailable (%s); limiting to %.0f frames per second",
+                SDL_GetError(), (double)hz);
+    }
+
     SDL_srand(SDL_GetTicksNS());
 
     campaign_reset(&game->campaign);
-    if (!load_level(game, 0))
+    if (!load_level(game, 0, LEVEL_ENTRY_RUN_START))
     {
         SDL_DestroyRenderer(game->platform.renderer);
         game->platform.renderer = NULL;
@@ -458,8 +646,48 @@ void game_open_manual(Game *game)
     game_enter_state(game, STATE_MANUAL);
 }
 
+/*
+ * `--page N`, and why the book needs one when no other screen does.
+ *
+ * Every other thing `--scene` opens is either a still or a clock: it draws what
+ * it draws, or it runs its own beats out on a timer and the smoke run only has
+ * to wait. The manual is neither. It is eight sheets, each with an illustration
+ * of its own, and the only thing that ever turns one is a hand — so a run that
+ * presses no keys draws the first sheet for three seconds and the other seven
+ * never at all. That is the same gap the whole `--scene` switch exists to
+ * close, one level further in, and it is easy to miss precisely because the
+ * *words* of all eight are held by `make test`: the sheet everybody checks is
+ * measured and the picture beside it is not.
+ *
+ * Set after the state is entered rather than handed to `manual_init`, because
+ * that is where the manual is born and the page it opens on for a *player* is
+ * the first one, always. This is an authoring switch and moves nothing else.
+ */
+bool game_show_manual_page(Game *game, int page)
+{
+    if (game->state != STATE_MANUAL)
+    {
+        SDL_Log("--page needs the manual; give it --scene manual");
+        return false;
+    }
+    if (page < 0 || page >= manual_page_count())
+    {
+        /* Said as a sheet number, because that is how the switch is typed and
+         * how the book's own footer counts them. */
+        SDL_Log("The manual has no sheet %d (1-%d)", page + 1,
+                manual_page_count());
+        return false;
+    }
+    game->presentation.manual.page = page;
+    return true;
+}
+
 void game_return_to_intro(Game *game)
 {
+    /* Whatever this was — a finished campaign, a game over, a run abandoned
+     * from the pause sheet — it is over now, and the score it reached is the
+     * last thing worth keeping off it. */
+    game_record_run_score(game);
     particle_system_clear(&game->presentation.particles);
     audio_stop_effects(&game->platform.audio);
     audio_play_music(&game->platform.audio, MUSIC_INTRO);
@@ -471,9 +699,13 @@ bool game_start_at_level(Game *game, int level_index)
 {
     campaign_reset(&game->campaign);
     audio_stop_effects(&game->platform.audio);
-    if (!load_level(game, level_index))
+    /* Deliberately not banked: this is the authoring entry point, not a run.
+     * See the note on `load_level`. A resume comes through here too, and the
+     * sector it names is by definition already in the record. */
+    if (!load_level(game, level_index, LEVEL_ENTRY_AUTHORED))
     {
-        SDL_Log("Could not start at level %d", level_index + 1);
+        SDL_Log("Could not start at sector %d; opening the title screen instead",
+                level_index + 1);
         audio_play_music(&game->platform.audio, MUSIC_INTRO);
         game_enter_state(game, STATE_INTRO);
         return false;
@@ -483,11 +715,201 @@ bool game_start_at_level(Game *game, int level_index)
     return true;
 }
 
+/*
+ * `--demo`, and the half of the coverage hole `--scene` could not reach.
+ *
+ * `--scene` opens a *screen*; this drives a *sector*. The distinction is the
+ * whole reason it exists — see [demo.h](demo.h), which lists the twelve live
+ * drawing functions that a keyless smoke run left executed by nothing at all.
+ *
+ * It refuses anything that is not a sector, for the same reason `--page`
+ * refuses a run with no manual open: a switch that quietly does nothing is a
+ * switch that reports a state the game is not in.
+ */
+bool game_start_demo(Game *game)
+{
+    if (game->state != STATE_LEVEL_START && game->state != STATE_PLAYING)
+    {
+        SDL_Log("--demo needs a sector; give it --level N");
+        return false;
+    }
+    game->demo_active = true;
+    demo_hand_init(&game->demo_hand);
+    demo_grant_loadout(&game->gameplay);
+    return true;
+}
+
+/*
+ * `--scene NAME`, and why a shipped binary carries it.
+ *
+ * `make test` links no SDL, so it reaches none of the renderers; `make smoke`
+ * reaches them by booting the real binary — but only into the title screen and
+ * the fifteen sectors, and it never presses a key. Everything that is only
+ * reached by *playing* was therefore executed by nothing in the tree at all:
+ * both prologue cutscenes, the drive, the manual, the options sheet, the report
+ * between sectors, the outro and the roll of names after it. That is around a
+ * fifth of the presentation code, and the one undefined-behaviour bug this
+ * switch was written to catch was sitting in the last of them — the screen
+ * every finished run ends on, going off in every frame of it.
+ *
+ * It sits beside `--level N` because it is the same kind of thing: an authoring
+ * and testing entry point, not a campaign path. Nothing here banks progress and
+ * nothing here fabricates a state the game could not reach by playing — each
+ * name is the same transition the game itself makes, taken early.
+ */
+bool game_start_at_scene(Game *game, const char *name)
+{
+    if (name == NULL)
+        return false;
+
+    static const struct
+    {
+        const char *name;
+        GameState state;
+    } SCENES[] = {
+        {"abduction", STATE_ABDUCTION},
+        {"drive", STATE_CHASE},
+        {"arrival", STATE_OPENING_CUTSCENE},
+        {"manual", STATE_MANUAL},
+        {"options", STATE_SETTINGS},
+        {"report", STATE_LEVEL_TRANSITION},
+        {"cleared", STATE_LEVEL_CLEARED},
+        {"outro", STATE_OUTRO},
+        {"credits", STATE_CREDITS},
+        {"continue", STATE_CONTINUE},
+        {"gameover", STATE_GAME_OVER},
+        {"pause", STATE_PAUSED},
+    };
+
+    /*
+     * The options sheet's second page, which is a page rather than a state and
+     * so cannot be a row in the table above.
+     *
+     * It owes a name here for exactly the reason the restroom and the manual's
+     * sheets do: nothing but a hand opens it. `--scene options` draws the first
+     * page, and the nine binding rows, their keycaps and the squeeze that makes
+     * a long page fit the frame are drawn by nothing at all — new renderer code
+     * in a file `make test` cannot link, which is the shape every bug this
+     * target has ever caught has had.
+     */
+    if (SDL_strcmp(name, "controls") == 0)
+    {
+        game_open_settings(game);
+        if (game->state != STATE_SETTINGS)
+        {
+            SDL_Log("--scene controls could not open the options sheet");
+            return false;
+        }
+        game->settings_page = SETTINGS_PAGE_CONTROLS;
+        game->settings_cursor = settings_first_row(SETTINGS_PAGE_CONTROLS);
+        game->settings_bind_slot = 0;
+        /* Armed, because the "PRESS A KEY" state has art of its own — an amber
+         * cap and a different footer — and a run that only ever draws the
+         * resting sheet has not drawn it. */
+        game->settings_capturing = true;
+        return true;
+    }
+
+    /*
+     * The restroom is the one playable screen with no state of its own to
+     * enter: it is a swap, not a transition, so it goes through the same
+     * `enter_restroom` the door does rather than through the table below.
+     *
+     * It owes a name here for the reason everything else does. Booting a
+     * sector never opens a `U`, so until the door was resolved by theme there
+     * was one room behind all four and nothing in the tree ever drew it — and
+     * now there are four, each a different shape, and the room's whole
+     * interior is derived from its own wall bounding box. That derivation runs
+     * on four sets of numbers it has never seen, in a renderer `make test`
+     * cannot link.
+     */
+    if (SDL_strcmp(name, "restroom") == 0)
+    {
+        if (game->state != STATE_PLAYING && game->state != STATE_LEVEL_START)
+        {
+            SDL_Log("--scene restroom needs a sector; give it --level N");
+            return false;
+        }
+        /* Asked of the sector rather than left to the fall-back, so the switch
+         * cannot quietly draw the lobby's washroom for a floor that has no
+         * door to it and report that as having drawn something. */
+        if (!game->gameplay.level.map.has_sublevel_entrance)
+        {
+            SDL_Log("Sector %d has no restroom door",
+                    game->campaign.current_level + 1);
+            return false;
+        }
+        if (!enter_restroom(game))
+            return false;
+        game_enter_state(game, STATE_PLAYING);
+        return true;
+    }
+
+    for (size_t i = 0; i < SDL_arraysize(SCENES); ++i)
+    {
+        if (SDL_strcmp(name, SCENES[i].name) != 0)
+            continue;
+
+        /* The three screens that read something off a run rather than standing
+         * on their own. They are given the run they would have had, out of the
+         * campaign state `--level` has already set up, so the screen is drawn
+         * from real numbers rather than from zeroes. */
+        switch (SCENES[i].state)
+        {
+        case STATE_SETTINGS:
+            game->settings_return_state = STATE_INTRO;
+            game->settings_page = SETTINGS_PAGE_MAIN;
+            game->settings_cursor = settings_first_row(SETTINGS_PAGE_MAIN);
+            game->settings_bind_slot = 0;
+            game->settings_capturing = false;
+            break;
+        case STATE_PAUSED:
+            game->pause_return_state = STATE_PLAYING;
+            game->pause_cursor = PAUSE_ITEM_RESUME;
+            break;
+        case STATE_LEVEL_TRANSITION:
+        {
+            /* Paid here too, through the same function the stair door uses, so
+             * `--scene report` draws the sheet the game would have drawn
+             * rather than one with two of its fields blank. It banks nothing
+             * that outlives the process, like every other `--scene`. */
+            int time_bonus = 0;
+            int clean_bonus = 0;
+            campaign_award_sector_bonus(&game->campaign, &time_bonus,
+                                        &clean_bonus);
+            level_transition_init(
+                &game->presentation.level_transition,
+                game->campaign.current_level,
+                game->campaign.current_level + 1,
+                game->campaign.level_elapsed_time,
+                game->campaign.score - game->campaign.level_start_score,
+                gameplay_neutralized_hostiles(&game->gameplay),
+                game->campaign.level_deaths,
+                time_bonus, clean_bonus);
+            break;
+        }
+        case STATE_CONTINUE:
+            game->campaign.lives = 0;
+            campaign_begin_continue(&game->campaign);
+            break;
+        default:
+            break;
+        }
+
+        game_enter_state(game, SCENES[i].state);
+        return true;
+    }
+
+    SDL_Log("--scene does not know '%s'", name);
+    return false;
+}
+
 static void advance_level(Game *game)
 {
     if ((size_t)(game->campaign.current_level + 1) < EMBEDDED_LEVEL_COUNT)
     {
-        load_level(game, game->campaign.current_level + 1);
+        load_level(game, game->campaign.current_level + 1,
+                   LEVEL_ENTRY_CAMPAIGN_STEP);
     }
     else
     {
@@ -637,19 +1059,32 @@ void game_set_fullscreen(Game *game, bool on)
 }
 
 /*
- * Where the settings file lives. SDL answers this per platform — Application
+ * Where a saved file lives. SDL answers this per platform — Application
  * Support on macOS, AppData on Windows, XDG on Linux — and it is the only part
- * of the settings that needs a platform at all, which is why it is here and not
- * in [settings.c](settings.c).
+ * of either file that needs a platform at all, which is why it is here and not
+ * in [settings.c](settings.c) or [progress.c](progress.c).
  */
-static bool settings_file_path(char *out, size_t cap)
+static bool pref_file_path(char *out, size_t cap, const char *name)
 {
     char *dir = SDL_GetPrefPath(CHUCK_APP_ORG, CHUCK_APP_NAME);
     if (dir == NULL)
         return false;
-    int written = SDL_snprintf(out, cap, "%ssettings.cfg", dir);
+    int written = SDL_snprintf(out, cap, "%s%s", dir, name);
     SDL_free(dir);
     return written > 0 && (size_t)written < cap;
+}
+
+static bool settings_file_path(char *out, size_t cap)
+{
+    return pref_file_path(out, cap, "settings.cfg");
+}
+
+/* Two files rather than one, because they answer different questions: the
+ * settings are what the player decided, the progress is what happened. Wiping
+ * a campaign must not cost somebody their volume levels. */
+static bool progress_file_path(char *out, size_t cap)
+{
+    return pref_file_path(out, cap, "progress.cfg");
 }
 
 static void game_load_settings(Game *game)
@@ -678,7 +1113,16 @@ void game_save_settings(const Game *game)
     if (!settings_file_path(path, sizeof(path)))
         return;
 
-    char text[512];
+    /*
+     * Big enough for the whole sheet with room to spare, which it stopped being
+     * the moment the bindings arrived: nine lines of `bind_weapon_next LSHIFT
+     * RSHIFT` on top of the eight values and the header comment is around 450
+     * bytes against the 512 this used to be. `settings_serialize` truncates
+     * cleanly rather than overrunning, so the failure would have been the last
+     * few bindings quietly not being saved — which is the worst shape this bug
+     * can have, because it looks like the sheet forgetting one row.
+     */
+    char text[2048];
     size_t len = settings_serialize(&game->settings, text, sizeof(text));
     if (len == 0)
         return;
@@ -686,12 +1130,109 @@ void game_save_settings(const Game *game)
         SDL_Log("Could not save settings: %s", SDL_GetError());
 }
 
+static void game_load_progress(Game *game)
+{
+    progress_defaults(&game->progress);
+
+    char path[1024];
+    if (!progress_file_path(path, sizeof(path)))
+        return;
+
+    size_t size = 0;
+    void *data = SDL_LoadFile(path, &size);
+    if (data == NULL)
+        return; /* Nobody has played yet, which is not an error. */
+
+    if (size > 0)
+        progress_parse(&game->progress, (const char *)data);
+    SDL_free(data);
+    /* A file that names a sector this build does not have — an older save, or
+     * a hand-edited one — must not offer a resume that cannot be loaded. */
+    if ((size_t)game->progress.furthest_sector >= EMBEDDED_LEVEL_COUNT)
+        game->progress.furthest_sector = (int)EMBEDDED_LEVEL_COUNT - 1;
+}
+
+static void game_save_progress(const Game *game)
+{
+    char path[1024];
+    if (!progress_file_path(path, sizeof(path)))
+        return;
+
+    char text[256];
+    size_t len = progress_serialize(&game->progress, text, sizeof(text));
+    if (len == 0)
+        return;
+    if (!SDL_SaveFile(path, text, len))
+        SDL_Log("Could not save progress: %s", SDL_GetError());
+}
+
+/*
+ * The run is over, however it ended. Banking the score here rather than as it
+ * is earned keeps the write off the frames the player is actually playing, and
+ * **five** ways out of a campaign call it:
+ *
+ * - the game-over card (`game_enter_state`, STATE_GAME_OVER), banked before
+ *   the card is drawn so the BEST printed on it is already this run's own;
+ * - the outro (`game_enter_state`, STATE_OUTRO), the one exit that never
+ *   passes through the card;
+ * - `game_return_to_intro`, which is abandoning from the pause sheet and every
+ *   other way of landing back on the title screen;
+ * - `continue_game`, banking before the retry past the last continue — that
+ *   retry zeroes the score, so it ends the run's scoring without ever reaching
+ *   any of the others;
+ * - `game_shutdown`, because closing the window is a way out too.
+ *
+ * That last one is why this comment counts them explicitly instead of saying
+ * "every way out". It read "four call sites … cover every way out of a
+ * campaign" long after quitting had been added as the fifth, which is the
+ * failure mode a rule stated more absolutely than it is kept always has: the
+ * next reader trusts it and stops looking. A sixth way out owes an entry here
+ * and a call beside it.
+ */
+static void game_record_run_score(Game *game)
+{
+    if (progress_note_score(&game->progress, game->campaign.score))
+        game_save_progress(game);
+}
+
+int game_resume_sector(const Game *game)
+{
+    return game->progress.furthest_sector;
+}
+
+int game_best_score(const Game *game)
+{
+    return game->progress.best_score;
+}
+
+bool game_resume_campaign(Game *game)
+{
+    if (game->state != STATE_INTRO || game->progress.furthest_sector <= 0)
+        return false;
+    /* A resume is a fresh run of that sector, not a restored one: nothing
+     * about the sector's own state was ever written down. What it hands back
+     * is the walk up to it, which is the part that costs an evening. */
+    return game_start_at_level(game, game->progress.furthest_sector);
+}
+
 void game_open_settings(Game *game)
 {
-    if (game->state != STATE_INTRO && game->state != STATE_PAUSED)
+    /* The manual is on this list because the two sheets are siblings hanging
+     * off the title screen: X (or J) crosses from one to the other, and the
+     * options sheet then hands back to the title screen rather than to the
+     * page that was open, because that is where both of them live. */
+    if (game->state != STATE_INTRO && game->state != STATE_PAUSED &&
+        game->state != STATE_MANUAL)
         return;
-    game->settings_return_state = game->state;
-    game->settings_cursor = settings_first_row();
+    game->settings_return_state =
+        game->state == STATE_MANUAL ? STATE_INTRO : game->state;
+    /* Always the first page, for the reason the pause menu always opens on
+     * RESUME: a sheet that remembers where it was left is a sheet whose next
+     * press of confirm lands somewhere the player did not choose. */
+    game->settings_page = SETTINGS_PAGE_MAIN;
+    game->settings_cursor = settings_first_row(SETTINGS_PAGE_MAIN);
+    game->settings_bind_slot = 0;
+    game->settings_capturing = false;
     audio_play(&game->platform.audio, SFX_MENU_PAGE);
     game_enter_state(game, STATE_SETTINGS);
 }
@@ -700,6 +1241,7 @@ void game_close_settings(Game *game)
 {
     if (game->state != STATE_SETTINGS)
         return;
+    game->settings_capturing = false;
     audio_play(&game->platform.audio, SFX_MENU_BACK);
     game_save_settings(game);
     if (game->settings_return_state == STATE_PAUSED)
@@ -712,8 +1254,183 @@ void game_settings_move_cursor(Game *game, int delta)
 {
     if (game->state != STATE_SETTINGS || delta == 0)
         return;
-    game->settings_cursor = settings_move_cursor(game->settings_cursor, delta);
+    game->settings_cursor =
+        settings_move_cursor(game->settings_page, game->settings_cursor, delta);
+    /* The caret goes back to the first key of whatever row was arrived at: it
+     * belongs to the row rather than to the sheet, and carrying it across would
+     * put it on the second slot of a row the player is seeing for the first
+     * time. */
+    game->settings_bind_slot = 0;
     audio_play(&game->platform.audio, SFX_MENU_PAGE);
+}
+
+/* The row under the cursor, or NULL if the cursor is somehow off the page. */
+static const SettingRow *settings_current_row(const Game *game)
+{
+    int row_count = 0;
+    const SettingRow *rows = settings_rows(game->settings_page, &row_count);
+    if (game->settings_cursor < 0 || game->settings_cursor >= row_count)
+        return NULL;
+    return &rows[game->settings_cursor];
+}
+
+static void settings_open_page(Game *game, SettingsPage page)
+{
+    game->settings_page = page;
+    game->settings_cursor = settings_first_row(page);
+    game->settings_bind_slot = 0;
+    game->settings_capturing = false;
+    audio_play(&game->platform.audio, SFX_MENU_PAGE);
+}
+
+bool game_settings_leave_page(Game *game)
+{
+    if (game->state != STATE_SETTINGS)
+        return false;
+    /* An armed capture is the innermost thing open, so it is what a press of
+     * back puts away first: otherwise the one way out of "PRESS A KEY" would be
+     * to press a key, which is the state the player is trying to escape. */
+    if (game->settings_capturing)
+    {
+        game->settings_capturing = false;
+        audio_play(&game->platform.audio, SFX_MENU_BACK);
+        return true;
+    }
+    if (game->settings_page == SETTINGS_PAGE_MAIN)
+        return false;
+    settings_open_page(game, SETTINGS_PAGE_MAIN);
+    return true;
+}
+
+void game_settings_confirm(Game *game)
+{
+    if (game->state != STATE_SETTINGS)
+        return;
+
+    const SettingRow *row = settings_current_row(game);
+    if (row == NULL)
+        return;
+
+    switch (row->kind)
+    {
+    case SETTING_ROW_BINDING:
+        /* Armed, not taken: the key itself arrives as the next press, through
+         * `game_settings_capture_key`. */
+        game->settings_capturing = true;
+        audio_play(&game->platform.audio, SFX_MENU_PAGE);
+        break;
+    case SETTING_ROW_ACTION:
+        if (row->id == SETTING_OPEN_CONTROLS)
+        {
+            settings_open_page(game, SETTINGS_PAGE_CONTROLS);
+        }
+        else if (row->id == SETTING_BINDINGS_RESET)
+        {
+            keybind_defaults(&game->settings.bindings);
+            audio_play(&game->platform.audio, SFX_CARD_TARGET);
+        }
+        break;
+    case SETTING_ROW_SLIDER:
+    case SETTING_ROW_TOGGLE:
+        /* ENTER is a change input on these two, which is what lets a switch be
+         * flipped without the hand leaving the row it is on. */
+        game_settings_adjust(game, 1);
+        break;
+    case SETTING_ROW_HEADING:
+        break;
+    }
+}
+
+/* Whether the caret is standing on one of the row's pad caps rather than one
+ * of its keys, which is the whole of the difference between the two captures
+ * below. */
+bool game_settings_slot_is_pad(const Game *game)
+{
+    return game->settings_bind_slot >= BIND_PAD_SLOT;
+}
+
+bool game_settings_capture_key(Game *game, int scancode)
+{
+    if (game->state != STATE_SETTINGS || !game->settings_capturing)
+        return false;
+
+    /* A keyboard press while a *pad* cap is armed is not a binding and must
+     * not be one — the caps are two different tables — but it is also the most
+     * natural way to say "not this", so it cancels exactly as an unbindable
+     * key does below. */
+    if (game_settings_slot_is_pad(game))
+    {
+        game->settings_capturing = false;
+        audio_play(&game->platform.audio, SFX_MENU_BACK);
+        return true;
+    }
+
+    game->settings_capturing = false;
+
+    const SettingRow *row = settings_current_row(game);
+    BindAction action = row != NULL ? settings_row_action(row->id) : BIND_COUNT;
+    if (action == BIND_COUNT)
+        return true;
+
+    /*
+     * A key this sheet will not bind cancels rather than being refused with a
+     * noise. That is what makes ESC the way out of a capture — it is the one
+     * key a player already knows means "not this", and it is deliberately not
+     * bindable precisely so that it can always mean it here.
+     */
+    if (!keybind_set(&game->settings.bindings, action, game->settings_bind_slot,
+                     scancode))
+    {
+        audio_play(&game->platform.audio, SFX_MENU_BACK);
+        return true;
+    }
+    audio_play(&game->platform.audio, SFX_CARD_TARGET);
+    return true;
+}
+
+/*
+ * The same thing for a button, and it is a separate entry point rather than a
+ * flag on the one above because the two arrive by different routes: a key is a
+ * scancode out of an SDL_EVENT_KEY_DOWN and a button is a position out of an
+ * SDL_EVENT_GAMEPAD_BUTTON_DOWN, already translated into the letter it carries.
+ *
+ * `button` is what the file will keep — the caller has resolved the physical
+ * press through `pad_capture_button` — so nothing about which pad is plugged
+ * in reaches this side of the line.
+ */
+bool game_settings_capture_pad(Game *game, int button)
+{
+    if (game->state != STATE_SETTINGS || !game->settings_capturing)
+        return false;
+
+    /* And the mirror of the guard above: a pad press while a *key* cap is
+     * armed cancels. Neither is an error the player made — both are somebody
+     * reaching for the wrong half of a row that has both on it. */
+    if (!game_settings_slot_is_pad(game))
+    {
+        game->settings_capturing = false;
+        audio_play(&game->platform.audio, SFX_MENU_BACK);
+        return true;
+    }
+
+    game->settings_capturing = false;
+
+    const SettingRow *row = settings_current_row(game);
+    BindAction action = row != NULL ? settings_row_action(row->id) : BIND_COUNT;
+    if (action == BIND_COUNT)
+        return true;
+
+    /* START and BACK are what a pad has instead of ESC, so a press of either
+     * lands here as an unbindable button and cancels — the same escape the
+     * keyboard gets, by the same mechanism rather than by a special case. */
+    if (!keybind_set_pad(&game->settings.bindings, action,
+                         game->settings_bind_slot - BIND_PAD_SLOT, button))
+    {
+        audio_play(&game->platform.audio, SFX_MENU_BACK);
+        return true;
+    }
+    audio_play(&game->platform.audio, SFX_CARD_TARGET);
+    return true;
 }
 
 void game_settings_adjust(Game *game, int delta)
@@ -722,9 +1439,27 @@ void game_settings_adjust(Game *game, int delta)
         return;
 
     int row_count = 0;
-    const SettingRow *rows = settings_rows(&row_count);
+    const SettingRow *rows = settings_rows(game->settings_page, &row_count);
     if (game->settings_cursor < 0 || game->settings_cursor >= row_count)
         return;
+
+    /* On a binding row the change inputs move the caret between the row's two
+     * keys rather than changing anything: this is the row whose value is taken
+     * by pressing it, not by pushing at it. */
+    if (rows[game->settings_cursor].kind == SETTING_ROW_BINDING)
+    {
+        int next = game->settings_bind_slot + (delta > 0 ? 1 : -1);
+        /* Four caps rather than two: the row's keys, then the row's pad
+         * buttons. One caret walks all of them, so the pad is a pair of slots
+         * on the same row instead of a page of its own — which is what keeps
+         * "what does JUMP answer to" a single line of the sheet however the
+         * player is holding the game. */
+        if (next < 0 || next >= BIND_TOTAL_SLOTS)
+            return; /* Already at an end: nothing moved, so nothing clicks. */
+        game->settings_bind_slot = next;
+        audio_play(&game->platform.audio, SFX_MENU_PAGE);
+        return;
+    }
 
     SettingId id = rows[game->settings_cursor].id;
     if (!settings_adjust(&game->settings, id, delta))
@@ -754,11 +1489,26 @@ void game_settings_adjust(Game *game, int delta)
     case SETTING_SLOWER_GUARDS:
         game_apply_assist_everywhere(game);
         break;
+    case SETTING_REDUCED_MOTION:
+        /* The strobes are read where they are drawn, but a shake already in
+         * flight is state rather than a draw, so it is put down here: switching
+         * this on in the middle of one and watching the frame carry on shaking
+         * is the sheet not doing what it says. */
+        game->presentation.camera_shake_x = 0.0f;
+        game->presentation.camera_shake_y = 0.0f;
+        break;
     case SETTING_CRT_FILTER:
     case SETTING_INFINITE_LIVES:
     case SETTING_NONE:
         /* Read where they are used: the finishing pass at the bottom of
          * game_render, and the death that would have cost a life. */
+        break;
+    case SETTING_OPEN_CONTROLS:
+    case SETTING_BINDINGS_RESET:
+    case SETTING_BIND_FIRST:
+        /* Not values: `settings_adjust` already refused them above, so this is
+         * unreachable and is listed so that a tenth setting cannot be added
+         * without this switch being looked at. */
         break;
     }
 
@@ -804,7 +1554,8 @@ static void game_enter_state(Game *game, GameState next_state)
         int win_w = 0;
         int win_h = 0;
         game_get_view_size(game, &win_w, &win_h);
-        intro_init(&game->presentation.intro, win_w, win_h);
+        intro_init(&game->presentation.intro, win_w, win_h,
+                   game_pad_hints(game), game_resume_sector(game));
         break;
     }
     case STATE_MANUAL:
@@ -821,6 +1572,9 @@ static void game_enter_state(Game *game, GameState next_state)
         break;
     case STATE_OUTRO:
         outro_cutscene_init(&game->presentation.outro_cutscene);
+        /* A finished campaign is a finished run, and this is the only way out
+         * of one that never passes through the game-over card. */
+        game_record_run_score(game);
         break;
     case STATE_CREDITS:
     {
@@ -840,6 +1594,9 @@ static void game_enter_state(Game *game, GameState next_state)
         break;
     case STATE_GAME_OVER:
         game->presentation.message_timer = GAME_OVER_DISPLAY_TIME;
+        /* Banked before the card is drawn, so the BEST on it is already this
+         * run's own score when this run is the best one. */
+        game_record_run_score(game);
         audio_play(&game->platform.audio, SFX_GAME_OVER);
         break;
     case STATE_SHOW_KEYCARD:
@@ -928,7 +1685,15 @@ static bool update_scene(Game *game, float dt)
 
         int win_w = 0, win_h = 0;
         game_get_view_size(game, &win_w, &win_h);
-        intro_update(&game->presentation.intro, dt, win_w, win_h, mx, my);
+        /* The hold is only ever answered from the title screen, which is the
+         * one screen the player did not open and so the one place quitting is
+         * not "backing out" of anything. */
+        if (intro_update(&game->presentation.intro, dt, win_w, win_h, mx, my,
+                         game_pad_hints(game), game_resume_sector(game),
+                         game->input.cancel_held))
+        {
+            game->quit_requested = true;
+        }
 
         if (game->input.confirm)
         {
@@ -1273,6 +2038,29 @@ static bool try_finish_current_level(Game *game)
     if (!gameplay_player_reached_exit(&game->gameplay))
         return false;
 
+    /*
+     * The floor pays before anything is decided about where the player goes
+     * next, because all three ways out of a sector come through here and only
+     * one of them draws a report: the stair door reports, the window onto a
+     * climb hands straight over, and the last sector goes to the outro. Banked
+     * inside the reporting branch — which is where it is easiest to put — the
+     * four climbs and the roof would have been the five floors in the campaign
+     * that paid nothing for being cleared quickly.
+     */
+    int time_bonus = 0;
+    int clean_bonus = 0;
+    campaign_award_sector_bonus(&game->campaign, &time_bonus, &clean_bonus);
+    /* And the threshold is looked at here rather than left to the next
+     * sector's first frame: a bonus is the largest single jump the score ever
+     * makes, so it is the most likely thing in the game to buy a life, and a
+     * 1UP that arrives a screen later has arrived for no reason the player can
+     * see. */
+    while (campaign_check_extra_life(&game->campaign))
+    {
+        game_events_sound(&game->gameplay.events, SFX_PICKUP_HEALTH);
+        game->presentation.extra_life_timer = 2.5f;
+    }
+
     if ((size_t)(game->campaign.current_level + 1) < EMBEDDED_LEVEL_COUNT)
     {
         int next_level = game->campaign.current_level + 1;
@@ -1282,7 +2070,7 @@ static bool try_finish_current_level(Game *game)
              * facade. The hostage/elevator report belongs only between normal
              * interior sectors and would contradict what is on screen here. */
             audio_stop_music(&game->platform.audio);
-            if (!load_level(game, next_level))
+            if (!load_level(game, next_level, LEVEL_ENTRY_CAMPAIGN_STEP))
             {
                 SDL_Log("Could not follow window route to level %d",
                         next_level);
@@ -1298,7 +2086,8 @@ static bool try_finish_current_level(Game *game)
                 game->campaign.level_elapsed_time,
                 game->campaign.score - game->campaign.level_start_score,
                 gameplay_neutralized_hostiles(&game->gameplay),
-                game->campaign.level_deaths);
+                game->campaign.level_deaths,
+                time_bonus, clean_bonus);
             audio_stop_music(&game->platform.audio);
             game_enter_state(game, STATE_LEVEL_TRANSITION);
         }
@@ -1560,7 +2349,8 @@ static void update_playing(Game *game, float dt)
 
     gameplay_ai_update_combat(&game->gameplay, dt);
 
-    gameplay_combat_update_enemy_bullets(&game->gameplay, dt);
+    gameplay_combat_update_enemy_bullets(&game->gameplay, &game->campaign,
+                                         dt);
 
     gameplay_combat_check_contacts(&game->gameplay, &game->campaign);
 
@@ -1587,6 +2377,23 @@ void game_update(Game *game, float dt)
 {
     game_events_clear(&game->gameplay.events);
     game_read_input(game);
+    /*
+     * And then thrown away again, if this is a demo run.
+     *
+     * After the read rather than instead of it, because the read is also what
+     * polls the pad and keeps the hot-plug state honest, and because a demo
+     * that skipped it would be the one code path in the game where
+     * `game_read_input` is not exercised. It only replaces the input on the
+     * frames a sector is actually being simulated: the title screen and the
+     * cutscenes have their own script — the dwell in `tools/smoke.sh` — and a
+     * hand mashing confirm through them would skip the very screens that dwell
+     * exists to sit on.
+     */
+    if (game->demo_active &&
+        (game->state == STATE_PLAYING || game->state == STATE_LEVEL_START))
+    {
+        demo_hand_drive(&game->demo_hand, &game->gameplay, &game->input, dt);
+    }
     audio_update_music(&game->platform.audio);
     bool scene_handled_frame = update_scene(game, dt);
     if (!scene_handled_frame)
@@ -1603,6 +2410,14 @@ void game_update(Game *game, float dt)
 
 void game_shutdown(Game *game)
 {
+    /* Closing the window is the fifth way a run ends, and for a long time it
+     * was the one that did not count. The other four bank the score
+     * (`game_record_run_score`), so abandoning from the pause sheet kept a
+     * record and Cmd-Q one keystroke later threw the same run away — two
+     * answers to the same question, and the losing one is whichever the
+     * player happened to reach for. The write is already happening here for
+     * the settings, so it costs nothing to be honest about it. */
+    game_record_run_score(game);
     /* The sheet already saved on the way out; this is what catches a
      * fullscreen toggled with F and never gone back to the sheet. */
     game_save_settings(game);

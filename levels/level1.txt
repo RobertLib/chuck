@@ -12,7 +12,7 @@
 #                  K############H#
 #                  #            H#
 #                 ##            H#
-# S tssJf ffnnnkg### U i Tdc A  H#
+# S tss f ffnnnkg### U i Tdc A  H#
 ##################################
 
 THEME LOBBY

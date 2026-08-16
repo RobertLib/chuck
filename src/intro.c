@@ -96,20 +96,22 @@ static const SDL_Color COL_TYPE = {206, 212, 202, 255};
 #define MANUAL_ROW_H 18.0f
 /* Padding on the hit rect only: there is no plate to pad. */
 #define MANUAL_HIT_PAD 10.0f
-#define MANUAL_LABEL_W ((float)(sizeof(MANUAL_LABEL) - 1) * \
-                        ((float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + MANUAL_TRACK) - \
-                        MANUAL_TRACK)
-#define MANUAL_ROW_W (MANUAL_KEY_W + MANUAL_KEY_GAP + MANUAL_LABEL_W + \
-                      MANUAL_HIT_PAD * 2.0f)
+
+/*
+ * There is deliberately no compile-time width for a chip here.
+ *
+ * There used to be one per label, sized from `sizeof(LABEL) - 1` against a
+ * fixed `MANUAL_KEY_W` — which is the measurement this screen was explicitly
+ * rewritten to stop making, because a keycap is as wide as the letter on it
+ * and the letter is not known until `pad_hint` has spelled it. `chip_width`
+ * below is the live answer, and a second one sitting up here in macros was the
+ * stale half of exactly the disagreement the token system exists to prevent.
+ */
 
 /* The options sheet shares the manual's line and its hint weight: the pair is
  * still one quiet line of things to know about, not a menu. */
 #define OPTIONS_LABEL "OPTIONS"
-#define OPTIONS_LABEL_W ((float)(sizeof(OPTIONS_LABEL) - 1) * \
-                        ((float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + MANUAL_TRACK) - \
-                        MANUAL_TRACK)
-#define OPTIONS_ROW_W (MANUAL_KEY_W + MANUAL_KEY_GAP + OPTIONS_LABEL_W + \
-                      MANUAL_HIT_PAD * 2.0f)
+#define QUIT_LABEL "QUIT"
 #define PROMPT_ROW_GAP 18.0f
 
 typedef struct
@@ -276,27 +278,125 @@ static bool pane_light(int fl, int pane, float time, SDL_Color *out)
 }
 
 /*
- * Two things, on the screen's centre line: the start plate on the street, and
- * the way into the manual on the bottom line.  Both keep the line the wordmark
- * and the tower are composed on, and the forty pixels between them are what
- * stop the pair reading as a menu rather than as one thing to press and one
- * thing to know about.
+ * A keycap is as wide as the letter on it.
+ *
+ * `$Y` is one cell on an Xbox pad and two on a PlayStation, `$SELECT` is six —
+ * or seven, spelled OPTIONS. A fixed-width cap was fine while the line only
+ * carried single letters and quietly wrong the moment it did not, which is the
+ * same rule the manual's control table already keeps: measure *after*
+ * spelling, never before.
  */
-static void place_buttons(Intro *intro, int w, int h)
+static float chip_key_width(const char *key)
+{
+    float text = (float)SDL_strlen(key) *
+                 (float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE;
+    float wanted = text + 12.0f;
+    return wanted < MANUAL_KEY_W ? MANUAL_KEY_W : wanted;
+}
+
+static float chip_width(const char *key, const char *label)
+{
+    float label_w = (float)SDL_strlen(label) *
+                        ((float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE +
+                         MANUAL_TRACK) -
+                    MANUAL_TRACK;
+    return chip_key_width(key) + MANUAL_KEY_GAP + label_w +
+           MANUAL_HIT_PAD * 2.0f;
+}
+
+/*
+ * Two things, on the screen's centre line: the start plate on the street, and
+ * the quiet line of things to know about under it.  Both keep the line the
+ * wordmark and the tower are composed on, and the forty pixels between them
+ * are what stop the pair reading as a menu rather than as one thing to press
+ * and some things to know about.
+ *
+ * The resume chip joins that same line rather than earning a band of its own:
+ * a plate, a second plate and a keycap row is three bands of interface across
+ * the bottom of the shot, which is the composition this screen was rebuilt to
+ * get rid of. It is the same hint weight as its two neighbours, and like them
+ * it is a thing to know about — the campaign is longer than one sitting, and
+ * this is where the game says so.
+ *
+ * The quit chip joins it on the same terms and for the same reason the line
+ * exists at all: ESC has always closed the game from here and this screen
+ * never said so, and a pad in fullscreen had no ESC to press. Four chips at
+ * their widest — a PlayStation pad spelling OPTIONS for SELECT — come to about
+ * 660 of the 800 the frame is laid out in, so it is still one line and still
+ * one band.
+ */
+static void place_buttons(Intro *intro, int w, int h, const PadHints *pad)
 {
     intro->start_button.x = ((float)w - intro->start_button.w) * 0.5f;
     intro->start_button.y = (float)h - 78.0f;
-    /* The manual and options chips are centred as one line. */
+
+    char manual_key[8];
+    char options_key[8];
+    char resume_key[12];
+    char quit_key[8];
+    intro->manual_button.w =
+        chip_width(pad_hint(pad, manual_key, sizeof(manual_key), "$Y", "H"),
+                   MANUAL_LABEL);
+    intro->options_button.w =
+        chip_width(pad_hint(pad, options_key, sizeof(options_key), "$X", "J"),
+                   OPTIONS_LABEL);
+    intro->resume_button.w =
+        intro->resume_offered
+            ? chip_width(pad_hint(pad, resume_key, sizeof(resume_key),
+                                  "$SELECT", "R"),
+                         intro->resume_label)
+            : 0.0f;
+    intro->quit_button.w =
+        chip_width(pad_hint(pad, quit_key, sizeof(quit_key), "$B", "ESC"),
+                   QUIT_LABEL);
+    intro->manual_button.h = MANUAL_ROW_H;
+    intro->options_button.h = MANUAL_ROW_H;
+    intro->resume_button.h = intro->resume_offered ? MANUAL_ROW_H : 0.0f;
+    intro->quit_button.h = MANUAL_ROW_H;
+
+    /* Centred as one line, resume first: it is the one anybody coming back to
+     * the game is looking for. Quit last, which is where the one thing on this
+     * screen that cannot be taken back belongs. */
     float line_w = intro->manual_button.w + PROMPT_ROW_GAP +
-                   intro->options_button.w;
-    intro->manual_button.x = ((float)w - line_w) * 0.5f;
-    intro->manual_button.y = (float)h - 30.0f;
-    intro->options_button.x = intro->manual_button.x +
-                             intro->manual_button.w + PROMPT_ROW_GAP;
-    intro->options_button.y = intro->manual_button.y;
+                   intro->options_button.w + PROMPT_ROW_GAP +
+                   intro->quit_button.w;
+    if (intro->resume_offered)
+        line_w += intro->resume_button.w + PROMPT_ROW_GAP;
+
+    float x = ((float)w - line_w) * 0.5f;
+    float y = (float)h - 30.0f;
+    if (intro->resume_offered)
+    {
+        intro->resume_button.x = x;
+        intro->resume_button.y = y;
+        x += intro->resume_button.w + PROMPT_ROW_GAP;
+    }
+    intro->manual_button.x = x;
+    intro->manual_button.y = y;
+    x += intro->manual_button.w + PROMPT_ROW_GAP;
+    intro->options_button.x = x;
+    intro->options_button.y = y;
+    x += intro->options_button.w + PROMPT_ROW_GAP;
+    intro->quit_button.x = x;
+    intro->quit_button.y = y;
 }
 
-void intro_init(Intro *intro, int win_w, int win_h)
+/* The chip's own words. Nothing is offered for the lobby, because arriving in
+ * the lobby is what pressing START already does. */
+static void set_resume(Intro *intro, int resume_sector)
+{
+    intro->resume_offered = resume_sector > 0;
+    if (!intro->resume_offered)
+    {
+        intro->resume_label[0] = '\0';
+        return;
+    }
+    SDL_snprintf(intro->resume_label, sizeof(intro->resume_label),
+                 "RESUME SECTOR %d", resume_sector + 1);
+}
+
+void intro_init(Intro *intro, int win_w, int win_h, const PadHints *pad,
+                int resume_sector)
 {
     SDL_zerop(intro);
     int w = win_w > 0 ? win_w : 800;
@@ -315,21 +415,20 @@ void intro_init(Intro *intro, int win_w, int win_h)
 
     intro->start_button.w = START_PLATE_W;
     intro->start_button.h = 34.0f;
-    intro->manual_button.w = MANUAL_ROW_W;
-    intro->manual_button.h = MANUAL_ROW_H;
-    intro->options_button.w = OPTIONS_ROW_W;
-    intro->options_button.h = MANUAL_ROW_H;
-    place_buttons(intro, w, h);
+    set_resume(intro, resume_sector);
+    place_buttons(intro, w, h, pad);
 }
 
-void intro_update(Intro *intro, float dt, int win_w, int win_h,
-                  float mouse_x, float mouse_y)
+bool intro_update(Intro *intro, float dt, int win_w, int win_h,
+                  float mouse_x, float mouse_y, const PadHints *pad,
+                  int resume_sector, bool quit_held)
 {
     intro->time += dt;
 
     int w = win_w > 0 ? win_w : 800;
     int h = win_h > 0 ? win_h : 552;
-    place_buttons(intro, w, h);
+    set_resume(intro, resume_sector);
+    place_buttons(intro, w, h, pad);
 
     for (int i = 0; i < INTRO_STAR_COUNT; ++i)
     {
@@ -342,6 +441,40 @@ void intro_update(Intro *intro, float dt, int win_w, int win_h,
     intro->start_hovered = intro_hit_start_button(intro, mouse_x, mouse_y);
     intro->manual_hovered = intro_hit_manual_button(intro, mouse_x, mouse_y);
     intro->options_hovered = intro_hit_options_button(intro, mouse_x, mouse_y);
+    intro->resume_hovered = intro_hit_resume_button(intro, mouse_x, mouse_y);
+    intro->quit_hovered = intro_hit_quit_button(intro, mouse_x, mouse_y);
+
+    /*
+     * The hold. It runs back down at the same rate it ran up, so a thumb that
+     * came off the button has visibly undone what it did — a fill that stayed
+     * where it was left would mean the next brush of B finished the job.
+     *
+     * Nothing counts until B has been seen up at least once: this screen is
+     * what closing the manual and closing the options sheet both hand back to,
+     * and both are closed with B.
+     */
+    bool done = false;
+    if (!quit_held)
+        intro->quit_armed = true;
+    else if (!intro->quit_armed)
+        quit_held = false;
+
+    if (quit_held)
+    {
+        intro->quit_hold += dt;
+        if (intro->quit_hold >= TITLE_QUIT_HOLD_TIME)
+        {
+            intro->quit_hold = TITLE_QUIT_HOLD_TIME;
+            done = true;
+        }
+    }
+    else if (intro->quit_hold > 0.0f)
+    {
+        intro->quit_hold -= dt;
+        if (intro->quit_hold < 0.0f)
+            intro->quit_hold = 0.0f;
+    }
+    return done;
 }
 
 static bool hit_plate(const SDL_FRect *button, float x, float y)
@@ -363,6 +496,16 @@ bool intro_hit_manual_button(const Intro *intro, float x, float y)
 bool intro_hit_options_button(const Intro *intro, float x, float y)
 {
     return hit_plate(&intro->options_button, x, y);
+}
+
+bool intro_hit_resume_button(const Intro *intro, float x, float y)
+{
+    return intro->resume_offered && hit_plate(&intro->resume_button, x, y);
+}
+
+bool intro_hit_quit_button(const Intro *intro, float x, float y)
+{
+    return hit_plate(&intro->quit_button, x, y);
 }
 
 /* ---- Sky ------------------------------------------------------------ */
@@ -1788,26 +1931,29 @@ static void render_prompt_chip(SDL_Renderer *r, const SDL_FRect *button,
 {
     float x = button->x + MANUAL_HIT_PAD;
     float y = button->y;
+    /* The same measurement the layout used, so the cap the mouse can hit and
+     * the cap on screen are one rectangle. */
+    float cap_w = chip_key_width(key);
 
     /* Keycap: dark bezel, lit top edge, sunken base. */
-    fx_rect_a(r, FX_INK, (Uint8)(190.0f * appear), x, y, MANUAL_KEY_W,
+    fx_rect_a(r, FX_INK, (Uint8)(190.0f * appear), x, y, cap_w,
               MANUAL_ROW_H);
     fx_rect_a(r, (SDL_Color){32, 42, 56, 255}, (Uint8)(215.0f * appear),
-              x + 1.0f, y + 1.0f, MANUAL_KEY_W - 2.0f, MANUAL_ROW_H - 2.0f);
+              x + 1.0f, y + 1.0f, cap_w - 2.0f, MANUAL_ROW_H - 2.0f);
     fx_rect_a(r, hot ? FX_RUST : (SDL_Color){68, 84, 102, 255},
               (Uint8)(215.0f * appear), x + 1.0f, y + 1.0f,
-              MANUAL_KEY_W - 2.0f, 1.0f);
-    fx_rect_a(r, (SDL_Color){10, 14, 22, 255}, (Uint8)(215.0f * appear),
-              x + 1.0f, y + MANUAL_ROW_H - 2.0f, MANUAL_KEY_W - 2.0f, 1.0f);
+              cap_w - 2.0f, 1.0f);
+    fx_rect_a(r, FX_NIGHT, (Uint8)(215.0f * appear),
+              x + 1.0f, y + MANUAL_ROW_H - 2.0f, cap_w - 2.0f, 1.0f);
     /* Centred in the cap rather than set at a fixed inset: a PlayStation pad
      * spells two of its faces with two characters, and a keycap the label
      * hangs out of is worse than no keycap at all. */
     float key_w = (float)SDL_strlen(key) *
                   (float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE;
-    draw_text(r, x + (MANUAL_KEY_W - key_w) * 0.5f, y + 5.0f, 1.0f,
+    draw_text(r, x + (cap_w - key_w) * 0.5f, y + 5.0f, 1.0f,
               fx_dim(hot ? FX_CREAM : fx_dim(COL_TYPE, 0.94f), appear),
               key);
-    draw_tracked(r, x + MANUAL_KEY_W + MANUAL_KEY_GAP, y + 5.0f, 1.0f,
+    draw_tracked(r, x + cap_w + MANUAL_KEY_GAP, y + 5.0f, 1.0f,
                  MANUAL_TRACK, fx_dim(hot ? FX_AMBER : FX_LABEL, appear),
                  label);
 }
@@ -1819,13 +1965,23 @@ static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
     if (appear <= 0.0f)
         return;
 
-    if (intro->manual_hovered || intro->options_hovered)
+    if (intro->manual_hovered || intro->options_hovered ||
+        intro->resume_hovered || intro->quit_hovered)
         fx_glow(r, s->w * 0.5f,
                 intro->manual_button.y + MANUAL_ROW_H * 0.5f, 116.0f,
                 (SDL_Color){226, 104, 78, 255}, 26);
 
     char manual_key[8];
     char options_key[8];
+    char resume_key[12];
+    char quit_key[8];
+    /* The resume chip only exists once a sector has been earned. */
+    if (intro->resume_offered)
+        render_prompt_chip(r, &intro->resume_button, appear,
+                           intro->resume_hovered,
+                           pad_hint(pad, resume_key, sizeof(resume_key),
+                                    "$SELECT", "R"),
+                           intro->resume_label);
     render_prompt_chip(r, &intro->manual_button, appear,
                        intro->manual_hovered,
                        pad_hint(pad, manual_key, sizeof(manual_key), "$Y", "H"),
@@ -1834,6 +1990,26 @@ static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
                        intro->options_hovered,
                        pad_hint(pad, options_key, sizeof(options_key), "$X", "J"),
                        OPTIONS_LABEL);
+    render_prompt_chip(r, &intro->quit_button, appear,
+                       intro->quit_hovered || intro->quit_hold > 0.0f,
+                       pad_hint(pad, quit_key, sizeof(quit_key), "$B", "ESC"),
+                       QUIT_LABEL);
+
+    /*
+     * The hold, drawn as the chip filling from its leading edge in the
+     * palette's own danger red — the colour ABANDON RUN is set in, because
+     * this is the same kind of decision and the player should recognise it as
+     * one. Nothing is drawn until the button is actually down, so until
+     * somebody starts to mean it the line is just four things to know about.
+     */
+    if (intro->quit_hold > 0.0f)
+    {
+        float t = intro->quit_hold / TITLE_QUIT_HOLD_TIME;
+        float bar_x = intro->quit_button.x + MANUAL_HIT_PAD;
+        float bar_w = (intro->quit_button.w - MANUAL_HIT_PAD * 2.0f) * t;
+        fx_rect_a(r, FX_RED, (Uint8)(225.0f * appear), bar_x,
+                  intro->quit_button.y + MANUAL_ROW_H - 2.0f, bar_w, 2.0f);
+    }
 }
 
 void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,

@@ -1,0 +1,146 @@
+# What has to be true before anything is merged.
+#
+# The tree has been warning-free and green for a long time, but only because
+# somebody remembered to run `make test` — which is a poor place to keep an
+# invariant in a project whose whole thesis is that the rules are written down
+# and held to. Three jobs, and the split is by what each one needs:
+#
+#   core     — `make test` links no SDL at all, so it needs nothing installed
+#              and runs in under a second. It is the gate that must never be
+#              slow, because it is the one that runs on every push.
+#   sanitize — the same suite under ASan/UBSan, plus `make smoke`, which boots
+#              the real binary through the title screen, all fifteen sectors,
+#              every named scene and all eight manual sheets against a dummy
+#              display. That is the only thing in the tree that executes the
+#              ~19k lines of renderers, level art and audio synth the core suite
+#              structurally cannot link. It is the long job of the three, and
+#              deliberately: each timed scene now dwells for its own length
+#              rather than a flat few seconds, because a cutscene cut off after
+#              three of its twenty-seven is a cutscene only the first frame of
+#              which has ever been run.
+#   macos    — the platform the game actually ships on, and the only place the
+#              editor, the debug target and the shipped bundle get built.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: core tests (no SDL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Deliberately no SDL install: if this job ever needs one, the boundary
+      # in AGENTS.md — "the gameplay core links no SDL" — has been crossed and
+      # the failure is the point.
+      - name: make test
+        run: make test
+
+  sanitize:
+    name: sanitizers + smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config git \
+            libasound2-dev libpulse-dev
+          # The version is pinned for the same reason packaging/fetch_sdl3.sh
+          # pins one: "whatever was released that day" is not a thing a build
+          # failure can be traced to. It has to be *the same* pin as that
+          # script's, too — this job is the only thing in the tree that runs
+          # the renderers and the audio synth under a sanitizer, and a clean
+          # run against a library two minor versions off the one the shipped
+          # .app links is a clean run of something nobody is being handed.
+          #
+          # So it is read out of that script rather than written down a second
+          # time here. The rule used to be a sentence in this comment with two
+          # hand-kept copies of the number under it, which is the arrangement
+          # this repository keeps finding on the floor: a colour spelled from
+          # memory, a ceiling written as prose. One place, or it drifts.
+          sdl_version=$(sed -n 's/^SDL_VERSION="\(.*\)"$/\1/p' \
+            packaging/fetch_sdl3.sh)
+          if [ -z "$sdl_version" ]; then
+            echo "could not read SDL_VERSION from packaging/fetch_sdl3.sh" >&2
+            exit 1
+          fi
+          echo "building SDL $sdl_version (pinned in packaging/fetch_sdl3.sh)"
+          git clone --depth 1 --branch "release-$sdl_version" \
+            https://github.com/libsdl-org/SDL.git /tmp/SDL
+          # No X11 and no Wayland, because this job never opens a window:
+          # tools/smoke.sh runs the binary against SDL's dummy video and audio
+          # drivers, which is the whole reason it needs no display and no sound
+          # card. Building the two real video backends covered nothing this job
+          # runs — or that the shipped .app links, which is Cocoa — and cost a
+          # dependency list that has to be guessed right, because SDL turns
+          # every X extension it wants into a hard configure error rather than
+          # a feature it goes without: the list here was missing libxss-dev and
+          # libxtst-dev, and the next version bump is free to want a third.
+          # A backend nothing loads is not worth a build that stops for a
+          # reason the game has nothing to do with. The audio backends stay,
+          # because that check is the other shape — a missing ALSA or Pulse is
+          # a line of output, not a stopped build.
+          #
+          # SDL_UNIX_CONSOLE_BUILD is how SDL is told that a unix build with
+          # neither backend is the intent rather than a mistake: without it,
+          # SDL_PrintSummary ends in a FATAL_ERROR on any unix that is not
+          # Android, Apple, Emscripten, Haiku or RISC OS, because a library
+          # that cannot open a window is nearly always somebody's missing
+          # -dev package. Here it is the whole point.
+          #
+          # SDL_TESTS is ON by default when SDL is the project being
+          # configured, so this was also building SDL's own test suite, which
+          # is several minutes of a library nobody here tests.
+          cmake -S /tmp/SDL -B /tmp/SDL/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DSDL_STATIC=OFF -DSDL_TESTS=OFF \
+            -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_UNIX_CONSOLE_BUILD=ON
+          cmake --build /tmp/SDL/build --parallel
+          sudo cmake --install /tmp/SDL/build
+          sudo ldconfig
+      - name: make sanitize
+        run: make sanitize
+      # Two seconds is the dwell for a *still* — a sector, the pause sheet, a
+      # manual page — and is enough for several hundred frames of one. It is a
+      # floor rather than the whole answer: a screen that runs on a clock takes
+      # its own length from the header that owns the number, so the outro gets
+      # its twenty-seven seconds and the drive its minute whatever this says.
+      - name: make smoke
+        run: make smoke SMOKE_SECONDS=2
+
+  macos:
+    name: macOS build (game + editor)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL3
+        run: brew install sdl3 pkgconf
+      - name: make
+        run: make
+      - name: make editor
+        run: make editor
+      - name: make test
+        run: make test
+      - name: make debug
+        run: make debug
+      # The bundle is what actually ships, and it is built by none of the above:
+      # `make` links Homebrew's SDL for this arch and this macOS, while the app
+      # is two slices against the vendored universal framework with an older
+      # deployment floor. Left out, a break in that build — the fetch, the
+      # lipo, the framework's rpath, the Info.plist read out of version.h —
+      # was only ever found by someone cutting a release, which is the worst
+      # moment to find one. No signing identity here, and none is needed:
+      # packaging/build_app.sh falls back to an ad-hoc signature, which is
+      # enough to prove the bundle is assembled and verifies. `make notarize`
+      # is the step that needs a real identity, and stays a local one.
+      - name: make app
+        run: make app

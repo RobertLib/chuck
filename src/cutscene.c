@@ -15,6 +15,7 @@
 #include <math.h>
 
 #include "fx.h"
+#include "intel.h"
 
 static const float TRANSITION_DOOR_TOP = 358.0f;
 static const float TRANSITION_DOOR_INNER_TOP = 368.0f;
@@ -195,7 +196,7 @@ static void render_city(SDL_Renderer *r, float time, int win_w, int win_h)
     for (unsigned i = 0; i < 58u; ++i)
     {
         unsigned h = scene_hash(i + 31u);
-        float x = (float)(h % (unsigned)win_w);
+        float x = (float)fx_spread(h, (float)win_w);
         float y = 25.0f + (float)((h >> 8) % 205u);
         float blink = 0.45f + 0.55f *
                                   sinf(time * (0.5f + (float)(i % 4u) * 0.17f) +
@@ -836,13 +837,13 @@ static void render_rain(SDL_Renderer *r, float time, int win_w, int win_h)
     {
         unsigned h = scene_hash(i * 17u + 5u);
         float speed = 128.0f + (float)(h % 95u);
-        float x = fmodf((float)(h % (unsigned)(win_w + 70)) -
+        float x = fmodf((float)fx_spread(h, (float)(win_w + 70)) -
                             time * (20.0f + (float)(i % 4u) * 7.0f),
                         (float)(win_w + 70));
         if (x < 0.0f)
             x += (float)(win_w + 70);
         x -= 25.0f;
-        float y = fmodf((float)((h >> 9) % (unsigned)(win_h + 40)) +
+        float y = fmodf((float)fx_spread(h >> 9, (float)(win_h + 40)) +
                             time * speed,
                         (float)(win_h + 40)) -
                   20.0f;
@@ -1064,7 +1065,7 @@ static void render_kerb_backdrop(SDL_Renderer *r, float time, int win_w)
     /* Kessler Tower, five blocks up, behind everything else on the street. */
     color_rect(r, (SDL_Color){19, 27, 35, 255}, 594.0f, 52.0f, 136.0f, 294.0f);
     color_rect(r, (SDL_Color){36, 47, 54, 255}, 594.0f, 52.0f, 136.0f, 3.0f);
-    color_rect(r, (SDL_Color){10, 16, 23, 255}, 602.0f, 59.0f, 120.0f, 287.0f);
+    color_rect(r, FX_NIGHT, 602.0f, 59.0f, 120.0f, 287.0f);
     for (int row = 0; row < 13; ++row)
     {
         for (int col = 0; col < 5; ++col)
@@ -1160,9 +1161,9 @@ static void render_kerb_backdrop(SDL_Renderer *r, float time, int win_w)
     color_rect(r, (SDL_Color){28, 24, 20, 255}, shop_x + 9.0f, 396.0f,
                22.0f, 23.0f);
     fx_glow(r, shop_x + 43.0f, 400.0f, 96.0f,
-            (SDL_Color){238, 190, 112, 255}, 40);
+            FX_WARM, 40);
     fx_light_cone(r, shop_x + 43.0f, 420.0f, 44.0f, 96.0f, 22.0f,
-                  (SDL_Color){238, 190, 112, 255}, 22);
+                  FX_WARM, 22);
 
     /* Two street lamps, so the pavement is lit in pools rather than evenly:
        the taking happens in the gap between them. */
@@ -1441,7 +1442,8 @@ void abduction_cutscene_render(SDL_Renderer *r,
 void level_transition_init(LevelTransition *transition,
                            int completed_level, int next_level,
                            float elapsed_seconds, int level_score,
-                           int hostiles_neutralized, int deaths)
+                           int hostiles_neutralized, int deaths,
+                           int time_bonus, int clean_bonus)
 {
     SDL_zerop(transition);
     transition->completed_level = completed_level;
@@ -1450,6 +1452,8 @@ void level_transition_init(LevelTransition *transition,
     transition->level_score = level_score;
     transition->hostiles_neutralized = hostiles_neutralized;
     transition->deaths = deaths;
+    transition->time_bonus = time_bonus;
+    transition->clean_bonus = clean_bonus;
 }
 
 bool level_transition_update(LevelTransition *transition, float dt,
@@ -1483,65 +1487,6 @@ bool level_transition_update(LevelTransition *transition, float dt,
     if (out_cues != NULL)
         *out_cues = cues;
     return transition->time >= LEVEL_TRANSITION_DURATION;
-}
-
-/*
- * One line of what the sector just told him, indexed by the sector he just
- * finished.
- *
- * The plot lives here rather than in a cutscene nobody replays or on a manual
- * page most players never open: this is a screen the run passes through
- * repeatedly, and a thriller told a sentence at a time between floors is the
- * version of it the game can be reasonably sure was read.
- *
- * Two constraints shape the table, and both are easy to break by accident.
- *
- * Sixty characters is the hard ceiling — the report's first divider stands at
- * x=526 and a line that runs under it stops being a line.
- *
- * And **a sector that leaves by the window has no report at all**: the window
- * is a continuous physical route out onto the facade, so `try_finish_current_level`
- * loads the next sector directly rather than cutting to a screen that would
- * contradict what is on the display. In the campaign as shipped that is
- * sectors 2, 3, 6, 7, 10, 11, 12 and 13, which leaves exactly six reports —
- * after 1, 4, 5, 8, 9 and 14 — and those six carry the whole arc: she walked
- * in, they have been here since March, the police response is the plan, this
- * is a military load-out, it is the vault, and she is the key. The other eight
- * lines are written anyway, because the table is indexed by sector and a
- * sector that later gains a stair door must not gain a blank line with it.
- */
-/*
- * Indexed by finished sector, but only a sector that leaves by a stair door
- * shows a report at all — a window is a continuous physical route onto the
- * facade and cuts straight to the next sector. So the six rows marked SHOWN
- * are the whole of the plot the player meets while actually playing, and they
- * have to carry the arc between them; the rest are written for the sectors
- * they belong to and are only read if the campaign's layout changes. Put a
- * beat the ending depends on in an unmarked row and nobody will ever see it.
- */
-static const char *const TRANSITION_INTEL[] = {
-    /*  1 LOBBY    SHOWN */ "FRONT DESK LOG: SHE BADGED IN AT 00:22. CALMLY.",
-    /*  2 OFFICE         */ "EVERY STAIR CORE IS WELDED. SEALED FROM THE INSIDE.",
-    /*  3 CLIMB          */ "NO SIRENS UP HERE. THE CORDON IS FOUR BLOCKS WIDE.",
-    /*  4 SERVER   SHOWN */ "MERIDIAN. NIGHT MAINTENANCE CONTRACTOR SINCE MARCH.",
-    /*  5 PLANT    SHOWN */ "THEIR DEMAND AT 00:04 BOUGHT THE CORDON. NOBODY IS COMING.",
-    /*  6 CANTEEN        */ "TWELVE PLACES LAID IN THE GALLEY. TWELVE MEN.",
-    /*  7 CLIMB          */ "THEIR DEMAND WENT OUT AT 00:04. IT ASKED FOR NO MONEY.",
-    /*  8 LAB      SHOWN */ "FLIGHT CASES IN EVERY BAY. NONE OF IT WAS INSPECTED.",
-    /*  9 ARCHIVE  SHOWN */ "01:00: SIX HUNDRED AND FORTY MILLION LEAVES.",
-    /* 10 SECURITY       */ "MONITOR WALL: VOSS. HER HAND ON THE SEVENTH LOCK.",
-    /* 11 CLIMB          */ "THE SETTLEMENT CLOCK IS RUNNING. TEN MINUTES.",
-    /* 12 DUCTS          */ "NOT FOR RANSOM. THEY TOOK HER TO OPEN A DOOR.",
-    /* 13 CLIMB          */ "THE VAULT IS OPEN AND EMPTY. THEY ARE GOING UP.",
-    /* 14 PENTHSE  SHOWN */ "TWO-KEY DOOR. SHE IS THE SECOND. VOSS IS ON THE ROOF.",
-};
-
-static const char *transition_intel(int completed_level)
-{
-    if (completed_level < 0 ||
-        completed_level >= (int)SDL_arraysize(TRANSITION_INTEL))
-        return NULL;
-    return TRANSITION_INTEL[completed_level];
 }
 
 static void render_transition_report(SDL_Renderer *r,
@@ -1579,13 +1524,23 @@ static void render_transition_report(SDL_Renderer *r,
 
     draw_text(r, 27.0f, 34.0f, 2.0f, title, "ONE FLOOR BEHIND");
 
-    const char *intel = transition_intel(transition->completed_level);
+    /* Set from INTEL_TEXT_LEFT, and stopped by the divider at
+     * INTEL_TEXT_RIGHT drawn below. Both come out of [intel.h](intel.h), which
+     * is where the suite measures the table against them, so the line and the
+     * column it has to live in cannot drift apart. */
+    const char *intel = intel_line(transition->completed_level);
     if (intel != NULL)
     {
         color_rect(r, fx_dim(FX_RUST, line_reveal), 27.0f, 69.0f, 3.0f, 9.0f);
-        draw_text(r, 37.0f, 69.0f, 1.0f,
+        draw_text(r, INTEL_TEXT_LEFT, 69.0f, 1.0f,
                   fx_dim((SDL_Color){158, 174, 178, 255}, line_reveal), intel);
     }
+
+    /* What the two earned fields paid, printed under the field that earned it.
+     * Dimmer than the value above, because it is the reason for a number
+     * rather than the number: the eye should find the clock first and then the
+     * credit beside it. See `campaign_award_sector_bonus`. */
+    SDL_Color credit = fx_dim(FX_AMBER_DK, line_reveal);
 
     int elapsed = (int)transition->elapsed_seconds;
     int minutes = elapsed / 60;
@@ -1593,6 +1548,18 @@ static void render_transition_report(SDL_Renderer *r,
     draw_text(r, 27.0f, 88.0f, 1.0f, muted, "TIME");
     SDL_snprintf(buffer, sizeof(buffer), "%02d:%02d", minutes, seconds);
     draw_text(r, 27.0f, 106.0f, 1.0f, value, buffer);
+    /* A floor that ran over its slot on the night clock is told so rather than
+     * left with a blank line: nothing there reads as a field that sometimes
+     * pays for no reason, and the words are what teach the par exists. */
+    if (transition->time_bonus > 0)
+    {
+        SDL_snprintf(buffer, sizeof(buffer), "+%d", transition->time_bonus);
+        draw_text(r, 27.0f, 122.0f, 1.0f, credit, buffer);
+    }
+    else
+    {
+        draw_text(r, 27.0f, 122.0f, 1.0f, muted, "OVER PAR");
+    }
 
     color_rect(r, (SDL_Color){31, 47, 52, 255},
                129.0f, 85.0f, 1.0f, 43.0f);
@@ -1617,9 +1584,17 @@ static void render_transition_report(SDL_Renderer *r,
     else
         SDL_snprintf(buffer, sizeof(buffer), "%02d", transition->deaths);
     draw_text(r, 434.0f, 106.0f, 1.0f, value, buffer);
+    if (transition->clean_bonus > 0)
+    {
+        SDL_snprintf(buffer, sizeof(buffer), "+%d", transition->clean_bonus);
+        draw_text(r, 434.0f, 122.0f, 1.0f, credit, buffer);
+    }
 
+    /* The divider the intel line above is measured against. It is the same
+     * constant the test walks the table off, so moving this column moves what
+     * a line is allowed to be. */
     color_rect(r, (SDL_Color){31, 47, 52, 255},
-               526.0f, 37.0f, 1.0f, 91.0f);
+               INTEL_TEXT_RIGHT, 37.0f, 1.0f, 91.0f);
     draw_text(r, 558.0f, 45.0f, 1.0f, muted, "TRAIL LEADS TO");
     SDL_snprintf(buffer, sizeof(buffer), "SECTOR %02d",
                  transition->next_level + 1);
@@ -1699,7 +1674,7 @@ static void render_transition_corridor(SDL_Renderer *r, float time,
     color_rect(r, (SDL_Color){54, 61, 59, 255},
                door_x - 11.0f, TRANSITION_DOOR_TOP,
                112.0f, ground_y - TRANSITION_DOOR_TOP);
-    color_rect(r, (SDL_Color){4, 8, 12, 255},
+    color_rect(r, FX_INK,
                door_x, TRANSITION_DOOR_INNER_TOP,
                90.0f, ground_y - TRANSITION_DOOR_INNER_TOP);
     color_rect(r, (SDL_Color){12, 24, 29, 255},
@@ -1952,7 +1927,7 @@ static void render_outro_sky(SDL_Renderer *r, float time,
     for (unsigned i = 0; i < 92u; ++i)
     {
         unsigned h = scene_hash(i + 0x524f4f46u);
-        float x = (float)(h % (unsigned)win_w);
+        float x = (float)fx_spread(h, (float)win_w);
         float y = 24.0f + (float)((h >> 9) % 245u);
         float glow = 0.45f + 0.55f *
                                  sinf(time * (0.42f + (float)(i % 5u) * 0.12f) +
@@ -2204,14 +2179,18 @@ static void draw_outro_agent_sky_aim(SDL_Renderer *r, float x,
                        shoulder_y - 37.0f * scale + (float)i);
 }
 
-static void draw_muzzle_flash(SDL_Renderer *r, float x, float y,
-                              float angle, float strength)
+/* An angled shot, which is the only kind this screen fires. The name says
+   `angled` because the figures have a muzzle flash of their own and the two
+   used to be called the same thing in two files while drawing different light;
+   they share `fx_muzzle_glow` now and only the flame is still local. */
+static void draw_angled_muzzle_flash(SDL_Renderer *r, float x, float y,
+                                     float angle, float strength)
 {
     float dx = cosf(angle);
     float dy = sinf(angle);
     /* The brightest thing in the frame illuminates the air around it, or it
        reads as a decal stuck on the gun. */
-    fx_glow(r, x, y, 26.0f, FX_AMBER, 120);
+    fx_muzzle_glow(r, x, y, strength, FX_AMBER);
     set_color(r, FX_FLAME_HOT);
     SDL_RenderLine(r, x - dy * 5.0f, y + dx * 5.0f,
                    x + dy * 5.0f, y - dx * 5.0f);
@@ -2243,8 +2222,8 @@ static void draw_shot_tracer(SDL_Renderer *r, float time, float shot_time,
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
     if (age < 0.07f)
-        draw_muzzle_flash(r, from_x, from_y,
-                          atan2f(to_y - from_y, to_x - from_x), 1.0f);
+        draw_angled_muzzle_flash(r, from_x, from_y,
+                                 atan2f(to_y - from_y, to_x - from_x), 1.0f);
 }
 
 static void draw_terrorist_down(SDL_Renderer *r, float x, float ground_y,
@@ -2471,8 +2450,8 @@ void outro_cutscene_render(SDL_Renderer *r,
     render_outro_sky(r, time, win_w, win_h);
     render_rooftop(r, time, win_w, win_h);
 
-    float heli_x = (float)win_w + 155.0f;
-    float heli_y = 126.0f;
+    float heli_x;
+    float heli_y;
     float heli_angle = 0.0f;
     float rotor_angle = time * 22.0f;
     float heli_damage = 0.0f;

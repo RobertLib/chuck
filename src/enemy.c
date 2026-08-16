@@ -38,7 +38,7 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->investigate_x = x + ENEMY_W * 0.5f;
     enemy->investigate_y = y + ENEMY_H * 0.5f;
     enemy->investigate_scan_timer = 0.0f;
-    enemy->alerted_by_body = false;
+    enemy->bodies_investigated = 0;
     enemy->aim_vdir = 0;
     enemy->talking = false;
     enemy->talk_timer = 0.0f;
@@ -620,8 +620,11 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
     {
         enemy->mounting_crate = false;
         int center_col = (int)floorf((enemy->x + ENEMY_W * 0.5f) / TILE_SIZE);
+        /* The row the body occupies, which is the row a wall has to be in to
+         * stop him — the one under his feet is the floor he is standing on.
+         * This used to be computed twice, the second copy called `foot_row`,
+         * which named a row it was not. */
         int center_row = (int)floorf((enemy->y + ENEMY_H * 0.5f) / TILE_SIZE);
-        int foot_row = (int)floorf((enemy->y + ENEMY_H * 0.5f) / TILE_SIZE);
 
         /* A guard routing to another storey waits at a shaft instead of
          * jumping over it. The lift never pauses, so once it aligns with the
@@ -683,7 +686,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                             ? (int)floorf((enemy->x + ENEMY_W + 1.0f) / TILE_SIZE)
                             : (int)floorf((enemy->x - 1.0f) / TILE_SIZE);
         if (enemy->on_ground && !hemmed_in && enemy->vx != 0.0f &&
-            level_is_solid(level, ahead_col, foot_row))
+            level_is_solid(level, ahead_col, center_row))
         {
             enemy->dir = -enemy->dir;
             enemy->vx = (float)enemy->dir * speed;

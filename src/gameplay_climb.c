@@ -238,23 +238,29 @@ void gameplay_climb_update_player(GameplayState *state, const Input *input,
 
 void gameplay_climb_restore_checkpoint(GameplayState *state)
 {
-    if (state->level.map.mode != LEVEL_MODE_FACADE ||
-        !state->facade_has_checkpoint)
-    {
+    if (state->level.map.mode != LEVEL_MODE_FACADE)
         return;
-    }
+
+    /* Nothing already in the air should be allowed to land on a climber who
+     * has just been put back on the wall — and the bottom of the wall is a
+     * respawn too. The clear used to sit under the checkpoint guard below,
+     * which meant a fall before the first `FACADE_CHECKPOINT_STEP` was banked
+     * put Chuck back on the opening course with the brick that took him still
+     * coming down. Same rule and same reason as the interior's; see
+     * `gameplay_restore_checkpoint`. */
+    for (int i = 0; i < MAX_THROWN_OBJECTS; ++i)
+        state->thrown_objects[i].active = false;
+    for (int i = 0; i < MAX_BIRDS; ++i)
+        state->birds[i].active = false;
+
+    if (!state->facade_has_checkpoint)
+        return;
+
     state->player.x = state->facade_checkpoint_x;
     state->player.y = state->facade_checkpoint_y;
     state->player.vx = 0.0f;
     state->player.vy = 0.0f;
     state->player.facade_climbing = true;
-
-    /* Nothing already in the air should be allowed to land on a climber who
-     * has just been put back on the wall. */
-    for (int i = 0; i < MAX_THROWN_OBJECTS; ++i)
-        state->thrown_objects[i].active = false;
-    for (int i = 0; i < MAX_BIRDS; ++i)
-        state->birds[i].active = false;
 }
 
 static bool spawn_thrown_object(GameplayState *state,

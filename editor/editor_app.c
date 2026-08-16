@@ -333,14 +333,25 @@ void ed_new_level(EditorApp *app, bool facade)
 
 /* ---- Playtest ---------------------------------------------------------- */
 
-static bool run_make(EditorApp *app)
+/*
+ * The build itself, on the playtest thread and touching nothing but its own
+ * struct. Reading the pipe to the end as `make` writes it is the point: a build
+ * that fails with a screenful of errors fills the buffer, and a reader that
+ * only came back between frames would leave `make` blocked on a write.
+ */
+static int SDLCALL build_thread(void *data)
 {
+    EdBuild *build = (EdBuild *)data;
+
     FILE *pipe = popen("make 2>&1", "r");
     if (pipe == NULL)
     {
-        ed_status(app, true, "Could not run make");
-        return false;
+        SDL_snprintf(build->error, sizeof(build->error), "could not run make");
+        build->ok = false;
+        SDL_SetAtomicInt(&build->finished, 1);
+        return 0;
     }
+
     char line[512];
     char last_error[256] = "";
     while (fgets(line, sizeof(line), pipe) != NULL)
@@ -352,19 +363,42 @@ static bool run_make(EditorApp *app)
         }
     }
     int status = pclose(pipe);
-    if (status == 0)
-        return true;
 
     char *newline = SDL_strchr(last_error, '\n');
     if (newline != NULL)
         *newline = '\0';
-    ed_status(app, true, "make failed: %s",
-              last_error[0] != '\0' ? last_error : "see the terminal");
-    return false;
+    SDL_snprintf(build->error, sizeof(build->error), "%s",
+                 last_error[0] != '\0' ? last_error : "see the terminal");
+    build->ok = status == 0;
+    /* Last, and after everything above it: the main loop reads the rest of this
+     * struct only once it has seen this. */
+    SDL_SetAtomicInt(&build->finished, 1);
+    return 0;
+}
+
+static void launch_playtest(EditorApp *app, int number)
+{
+    char level_arg[16];
+    SDL_snprintf(level_arg, sizeof(level_arg), "%d", number);
+    const char *args[] = {"./chuck", "--level", level_arg, NULL};
+    SDL_Process *process = SDL_CreateProcess(args, false);
+    if (process == NULL)
+    {
+        ed_status(app, true, "Could not launch the game: %s", SDL_GetError());
+        return;
+    }
+    /* Destroying the handle leaves the game running on its own. */
+    SDL_DestroyProcess(process);
+    ed_status(app, false, "Playing sector %d", number);
 }
 
 void ed_playtest(EditorApp *app)
 {
+    if (app->build.thread != NULL)
+    {
+        ed_status(app, false, "Already building...");
+        return;
+    }
     if (!ed_save(app))
         return;
 
@@ -388,22 +422,60 @@ void ed_playtest(EditorApp *app)
         }
     }
 
-    ed_status(app, false, "Building...");
-    if (!run_make(app))
-        return;
-
-    char level_arg[16];
-    SDL_snprintf(level_arg, sizeof(level_arg), "%d", number);
-    const char *args[] = {"./chuck", "--level", level_arg, NULL};
-    SDL_Process *process = SDL_CreateProcess(args, false);
-    if (process == NULL)
+    app->build.level = number;
+    app->build.ok = false;
+    app->build.error[0] = '\0';
+    SDL_SetAtomicInt(&app->build.finished, 0);
+    app->build.thread = SDL_CreateThread(build_thread, "chuck-editor-build",
+                                         &app->build);
+    if (app->build.thread == NULL)
     {
-        ed_status(app, true, "Could not launch the game: %s", SDL_GetError());
+        ed_status(app, true, "Could not start the build: %s", SDL_GetError());
         return;
     }
-    /* Destroying the handle leaves the game running on its own. */
-    SDL_DestroyProcess(process);
-    ed_status(app, false, "Playing sector %d", number);
+    ed_status(app, false, "Building sector %d...", number);
+}
+
+void ed_update_playtest(EditorApp *app)
+{
+    if (app->build.thread == NULL)
+        return;
+
+    if (SDL_GetAtomicInt(&app->build.finished) == 0)
+    {
+        /* Re-stamped every frame, because a status line stands for five seconds
+         * and a full rebuild takes longer than that: left to expire, the one
+         * thing on screen saying why nothing is happening would go out halfway
+         * through the wait. The moving dots are the other half of the answer —
+         * they are the frame being drawn, which is what says the window is
+         * still alive rather than what it used to be, which was frozen. */
+        static const char *const DOTS[] = {"", ".", "..", "..."};
+        int step = (int)(app->time * 3.0f) & 3;
+        ed_status(app, false, "Building sector %d%s", app->build.level,
+                  DOTS[step]);
+        return;
+    }
+
+    SDL_WaitThread(app->build.thread, NULL);
+    app->build.thread = NULL;
+
+    if (!app->build.ok)
+    {
+        ed_status(app, true, "make failed: %s", app->build.error);
+        return;
+    }
+    launch_playtest(app, app->build.level);
+}
+
+void ed_cancel_playtest(EditorApp *app)
+{
+    if (app->build.thread == NULL)
+        return;
+    /* There is nothing to cancel — `make` is a child of this process and will
+     * finish whatever happens. Waiting for it is what stops the window and the
+     * renderer being torn down while the thread is still holding a pipe. */
+    SDL_WaitThread(app->build.thread, NULL);
+    app->build.thread = NULL;
 }
 
 /* ---- View -------------------------------------------------------------- */
@@ -1282,6 +1354,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     if (app->status_timer > 0.0f)
         app->status_timer -= dt;
 
+    /* A playtest build runs beside this loop rather than inside it, so the
+     * window keeps answering while `make` works; this is where a finished one
+     * is collected. */
+    ed_update_playtest(app);
+
     /* A stroke is one edit, so the report waits for the mouse to come up
      * rather than re-running the route model on every pixel of a drag. */
     if (app->revalidate && !app->painting && !app->erasing)
@@ -1305,6 +1382,10 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result)
     EditorApp *app = (EditorApp *)appstate;
     if (app == NULL)
         return;
+    /* Before the renderer and the window go, because a build thread outliving
+     * them is a thread holding a pipe into a process that no longer has a
+     * screen to report to. */
+    ed_cancel_playtest(app);
     if (app->canvas_texture != NULL)
         SDL_DestroyTexture(app->canvas_texture);
     if (app->renderer != NULL)

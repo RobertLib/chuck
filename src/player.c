@@ -28,6 +28,15 @@ static const PlayerWeapon WEAPON_CYCLE[] = {
     PLAYER_WEAPON_GRENADE,
     PLAYER_WEAPON_PISTOL};
 
+/* The ring and the enum are two lists of the same weapons, and
+ * `select_weapon_step` walks the ring modulo the *enum's* count — so a weapon
+ * added to the enum and not to the ring is an index past the end of this
+ * array, on the bumpers, in every sector. The same guard `PAGE_ILLUSTRATIONS`
+ * keeps against the manual's page count. */
+_Static_assert(sizeof(WEAPON_CYCLE) / sizeof(WEAPON_CYCLE[0]) ==
+                   (size_t)PLAYER_WEAPON_COUNT,
+               "the weapon ring has to name every weapon exactly once");
+
 /* One step through the cycle in either direction, skipping whatever is out of
  * ammo. `step` is +1 for the next weapon and PLAYER_WEAPON_COUNT - 1 for the
  * one before it, so both bumpers walk the same ring rather than two lists that
@@ -67,6 +76,21 @@ void player_select_prev_weapon(Player *player)
     select_weapon_step(player, PLAYER_WEAPON_COUNT - 1);
 }
 
+/* A weapon that has just been spent cannot stay in the hand, but what replaces
+ * it is never chosen by the player, so it must never be a one-shot explosive.
+ * Walking the cycle put the grenade in Chuck's hand the instant the last rocket
+ * left the tube, and the next press of attack — the one aimed at whatever the
+ * rocket did not kill — threw it. The sidearm is the weapon nothing is wasted
+ * by holding, so the fall-back is the sidearm, or the knife when the clip is
+ * dry. An explosive is only ever selected on purpose. */
+void player_fall_back_to_sidearm(Player *player)
+{
+    player->active_weapon = player_weapon_available(player,
+                                                    PLAYER_WEAPON_PISTOL)
+                                ? PLAYER_WEAPON_PISTOL
+                                : PLAYER_WEAPON_KNIFE;
+}
+
 void player_reset(Player *player, const Level *level)
 {
     player->x = level->map.start_x;
@@ -97,6 +121,37 @@ void player_reset(Player *player, const Level *level)
     player->grenade_throwing = false;
     player->bazooka_firing = false;
     player->shot_vertical = 0;
+}
+
+/*
+ * Opening a sector, and the one thing the sector below is allowed to send with
+ * him.
+ *
+ * **A grenade and a rocket cross the threshold; nothing else does.** The
+ * facade is what settles it: nothing on a climb can be thrown or fired at all
+ * — the shell clears `shoot` for the whole of `update_facade_playing` and
+ * [gameplay_climb.c](gameplay_climb.c) has no notion of a weapon — so the `N`
+ * standing mid-wall on every one of the four climbs is a pickup whose entire
+ * value is in the sector above it. Wiped at the doorway, it was a detour paid
+ * for in wind and thrown bricks that bought nothing whatever, and the
+ * campaign's own count of the explosive it lays out was counting four grenades
+ * that could never be spent.
+ *
+ * The sidearm does not travel because it does not need to: `player_reset` hands
+ * over a full clip either way. The **weapon in the hand** deliberately does not
+ * travel either — "a pickup never arms itself" is a rule about a doorway as
+ * much as about a floor tile, and a sector that opened with the last grenade
+ * already raised would throw it at the first thing the player pulled the
+ * trigger on. It arrives on the pistol, like everything else.
+ */
+void player_begin_sector(Player *player, const Level *level,
+                         const Player *previous)
+{
+    player_reset(player, level);
+    if (previous == NULL)
+        return;
+    player->grenades = previous->grenades;
+    player->bazooka_rockets = previous->bazooka_rockets;
 }
 
 /* True when the player box overlaps a ladder near its center or feet. */
@@ -221,6 +276,46 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
         {
             int col = (int)floorf((player->x + PLAYER_W * 0.5f) / TILE_SIZE);
             player->x = (float)col * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+            /*
+             * Stepping on from the top also snaps the box *down*, far enough
+             * that it actually overlaps the rung, and without it the move is
+             * not merely awkward — it deadlocks.
+             *
+             * A player standing on the top edge overlaps no rung at all, which
+             * is the whole reason `descend_from_top` exists: his feet are on
+             * the tile and the ladder is under them. But `descend_from_top`
+             * also requires `on_ground`, and the first thing climbing does is
+             * take `on_ground` away. So the grab has one frame to travel far
+             * enough for `player_over_ladder` to take over, and at
+             * SIM_STEP_DT it cannot: the climb covers 0.42px of the 1px it
+             * needs. The frame after, neither predicate holds, the grip is
+             * dropped at the release below, and `level_move` — now called with
+             * `climbing` false, so the rung is a one-way platform again —
+             * catches the fall and puts him back exactly where he started.
+             * Then it happens again. The ladder reads as one-way: up works,
+             * down is a man juddering on the spot forever.
+             *
+             * It is a distance rather than a rule, which is why it hid: at
+             * 1/60 the same climb covers 1.67px and latches on the first
+             * frame, so every hand-written test that picked its own timestep
+             * saw a working ladder.
+             * `test_every_ladder_in_the_campaign_can_be_climbed_down` runs at
+             * the rate the game actually steps at, and at three others either
+             * side of it.
+             *
+             * Snapping is the fix the line above already uses for the same
+             * kind of problem, and it is invisible for the same reason.
+             */
+            if (descend_from_top && !over_ladder)
+            {
+                float height = player->crawling ? (float)PLAYER_CRAWL_H
+                                                : (float)PLAYER_H;
+                int rung = (int)floorf((player->y + height) / TILE_SIZE);
+                float onto = (float)rung * TILE_SIZE - height +
+                             LADDER_TOP_GRAB_OVERLAP;
+                if (onto > player->y)
+                    player->y = onto;
+            }
         }
         player->on_ladder = true;
     }
@@ -261,6 +356,16 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
             player->coyote_timer = 0.0f;
             player->jump_cut_ok = true;
             player->jumped = true;
+            /* And the rung stays let go of for a beat, exactly as it does after
+             * a stomp bounce and for the same reason: the grab above only asks
+             * that the box is over a rung with up or down held, so a jump taken
+             * mid-climb was caught again on the very next frame and the climb
+             * speed wrote the jump straight back out. Holding up and pressing
+             * jump therefore did nothing at all — which is precisely the case
+             * the keyboard's separate jump key exists for, since over a ladder
+             * `UP` is the climb and the player pressing jump is nearly always
+             * already holding it. */
+            player->ladder_lockout_timer = PLAYER_LADDER_JUMP_LOCKOUT;
         }
     }
     else

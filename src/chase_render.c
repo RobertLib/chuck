@@ -20,6 +20,11 @@ typedef struct
     float camera_y;
     float shake_x;
     float shake_y;
+    /* The player's reduced-motion switch, carried down to the one thing out
+     * here that strobes: the light bars on the cordon. It rides in this struct
+     * because this struct is already threaded through every part of the road,
+     * which is the same reason the shake offsets do. */
+    bool steady_lights;
 } ChaseView;
 
 /* The chase's material table: the road surfaces, markings and glass this
@@ -251,7 +256,7 @@ static void draw_wreck_debris(SDL_Renderer *r, const CarFrame *f, float wreck)
     float fade = 1.0f - wreck / 0.7f;
     for (unsigned i = 0; i < 10u; ++i)
     {
-        unsigned h = fx_hash(i * 2246822519u + (unsigned)(f->cx * 3.0f));
+        unsigned h = fx_hash(i * 2246822519u + fx_salt(f->cx * 3.0f));
         float angle = (float)(h % 628u) * 0.01f;
         float distance = 8.0f + (float)((h >> 9) % 34u) * wreck * 3.0f;
         SDL_Color spark = (i & 1u) ? FX_AMBER : fx_mix(FX_PALE, FX_CREAM, 0.7f);
@@ -425,7 +430,7 @@ static void draw_chuck_on_foot(SDL_Renderer *r, const ChaseView *view,
     const float pavement_x = CHASE_ROAD_WIDTH + CHASE_PAVEMENT_WIDTH * 0.5f;
     float door_x = chase->player.x - CHASE_CAR_WIDTH * 0.5f - 11.0f;
     float road_x = pavement_x;
-    float road_y = chase->player.y - 86.0f;
+    float road_y;
     if (progress < 0.62f)
     {
         float leg = progress / 0.62f;
@@ -548,7 +553,7 @@ static void render_road(SDL_Renderer *r, const ChaseView *view,
         unsigned seed = fx_hash((unsigned)(int)index * 40503u + 17u);
         if ((seed & 3u) != 0u)
             continue;
-        float x = view->road_left + (float)(seed % (unsigned)CHASE_ROAD_WIDTH);
+        float x = view->road_left + (float)fx_spread(seed, CHASE_ROAD_WIDTH);
         float y = screen_y(view, index * patch_span);
         float w = 40.0f + (float)((seed >> 7) % 70u);
         if (x + w > road_right)
@@ -618,7 +623,7 @@ static void draw_traffic_signal(SDL_Renderer *r, float x, float y,
  * nose-in to the main road, because that is how a road gets closed.
  */
 static void draw_cordon_car(SDL_Renderer *r, float cx, float cy, int facing,
-                            float time, unsigned seed)
+                            float time, unsigned seed, bool steady)
 {
     CarFrame frame;
     frame.cx = cx;
@@ -642,6 +647,12 @@ static void draw_cordon_car(SDL_Renderer *r, float cx, float cy, int facing,
     bool blue_half = phase < 0.5f;
     float flash = blue_half ? 1.0f - phase * 2.0f : 1.0f - (phase - 0.5f) * 2.0f;
     flash = 0.35f + 0.65f * flash;
+    /* Held at the ramp's own mean when the player has asked for it. The two
+     * halves still alternate, because that is the bar being a bar rather than
+     * a strobe — what goes is the brightness sweeping up and down 3.4 times a
+     * second on top of it, for the whole minute the drive lasts. */
+    if (steady)
+        flash = 0.675f;
 
     for (int half = 0; half < 2; ++half)
     {
@@ -743,7 +754,8 @@ static void render_junctions(SDL_Renderer *r, const ChaseView *view,
                                    CHASE_CAR_LENGTH * 0.5f);
             draw_cordon_car(r, cx, middle, -junction->cordon_side, chase->time,
                             fx_hash((unsigned)i * 2654435761u +
-                                    (unsigned)(junction->y * 0.5f)));
+                                    fx_salt(junction->y * 0.5f)),
+                            view->steady_lights);
         }
     }
 }
@@ -837,7 +849,7 @@ static void render_speed_streaks(SDL_Renderer *r, const ChaseView *view,
     for (unsigned i = 0; i < 26u; ++i)
     {
         unsigned h = fx_hash(i * 374761393u);
-        float x = view->road_left + (float)(h % (unsigned)CHASE_ROAD_WIDTH);
+        float x = view->road_left + (float)fx_spread(h, CHASE_ROAD_WIDTH);
         float phase = fmodf(chase->time * chase->player.speed * 1.6f +
                                 (float)((h >> 8) % 700u),
                             view->view_h + 120.0f);
@@ -1121,7 +1133,8 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
 }
 
 void chase_render(SDL_Renderer *r, const Chase *chase, int win_w, int win_h,
-                  float shake_x, float shake_y, const PadHints *pad)
+                  float shake_x, float shake_y, bool steady_lights,
+                  const PadHints *pad)
 {
     ChaseView view;
     view.road_left = ((float)win_w - CHASE_ROAD_WIDTH) * 0.5f;
@@ -1130,6 +1143,7 @@ void chase_render(SDL_Renderer *r, const Chase *chase, int win_w, int win_h,
     view.camera_y = chase->camera_y;
     view.shake_x = shake_x;
     view.shake_y = shake_y;
+    view.steady_lights = steady_lights;
 
     fx_rect(r, FX_NIGHT, 0.0f, 0.0f, (float)win_w, (float)win_h);
     render_blocks(r, &view, win_w);

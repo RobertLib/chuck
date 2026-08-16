@@ -4,8 +4,11 @@
 
 #define AUDIO_SAMPLE_RATE 44100
 #define AUDIO_MASTER_GAIN 0.69f
+/* Only the hand-written title theme counts its bars here. A level's loop gets
+ * its length from its own `MusicPlan` and the four sections `synth_music_plan`
+ * reads it in, so a single number for "a level is this many bars" is a rule
+ * the score table stopped obeying the day it became a table. */
 #define INTRO_MUSIC_BARS 12
-#define LEVEL_MUSIC_BARS 16
 #define CHUCK_PI 3.14159265358979323846f
 
 typedef enum
@@ -577,12 +580,15 @@ static const int FACADE_STORM_LEAD_A[16] = {
 static const int FACADE_STORM_LEAD_B[16] = {
     -1, 17, -1, 15, -1, 13, -1, 12, -1, -1, 15, -1, 13, -1, -1, -1};
 
-/* The dawn wall: the one climb with the light coming, and the only major key
- * outside the building. */
-static const int FACADE_DAWN_BARS[12] = {0, 0, 5, 7, 0, -3, 5, 2, 0, 7, 5, 0};
-static const int FACADE_DAWN_LEAD_A[16] = {
+/* The moon wall: the storm has blown through and for one climb the sky is
+ * clear, which is the only major key outside the building. It is a breath and
+ * not a sunrise — the whole night is thirty-eight minutes long — so what the
+ * key is doing is the lull before the last two sectors, not a promise that
+ * morning is on its way. */
+static const int FACADE_MOON_BARS[12] = {0, 0, 5, 7, 0, -3, 5, 2, 0, 7, 5, 0};
+static const int FACADE_MOON_LEAD_A[16] = {
     -1, -1, 12, -1, -1, 16, -1, -1, 19, -1, -1, -1, 16, -1, -1, -1};
-static const int FACADE_DAWN_LEAD_B[16] = {
+static const int FACADE_MOON_LEAD_B[16] = {
     -1, 19, -1, -1, 21, -1, -1, 19, -1, 16, -1, -1, 12, -1, -1, -1};
 
 /* The high wall: thin air. Barely a bass note, barely a beat, and a long way
@@ -940,9 +946,9 @@ static const MusicPlan MUSIC_PLANS[MUSIC_TRACK_COUNT] = {
                    MUSIC_COLOUR_CLANK,
         .seed = 0x10a00u},
 
-    [MUSIC_FACADE_DAWN] = {
+    [MUSIC_FACADE_MOON] = {
         .bpm = 82.0f, .bars = 12, .gain = 0.205f,
-        .root = 45, .progression = FACADE_DAWN_BARS, .minor = false,
+        .root = 45, .progression = FACADE_MOON_BARS, .minor = false,
         .bass_wave = WAVE_TRIANGLE, .bass_gain = 0.14f, .bass_length = 2.4f,
         .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
                        MUSIC_BEATS(0x1, 0x0, 0x5, 0x0)},
@@ -955,7 +961,7 @@ static const MusicPlan MUSIC_PLANS[MUSIC_TRACK_COUNT] = {
         .hat_steps = {MUSIC_BEATS(0x0, 0x4, 0x0, 0x4),
                       MUSIC_BEATS(0x0, 0x4, 0x0, 0x4)},
         .kick_gain = 0.22f, .snare_gain = 0.12f, .hat_gain = 0.030f,
-        .lead_a = FACADE_DAWN_LEAD_A, .lead_b = FACADE_DAWN_LEAD_B,
+        .lead_a = FACADE_MOON_LEAD_A, .lead_b = FACADE_MOON_LEAD_B,
         .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(5) |
                      MUSIC_BAR(6) | MUSIC_BAR(9) | MUSIC_BAR(10) |
                      MUSIC_BAR(11),
@@ -2228,4 +2234,9 @@ void audio_toggle_mute(AudioSystem *audio)
     if (audio->device != 0)
         SDL_SetAudioDeviceGain(audio->device,
                                audio->muted ? 0.0f : AUDIO_MASTER_GAIN);
+}
+
+bool audio_is_muted(const AudioSystem *audio)
+{
+    return audio->muted;
 }

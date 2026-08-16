@@ -217,10 +217,46 @@ static void check_one_cap(EdReport *report, int used, int cap, const char *what)
     }
 }
 
+/*
+ * Lift shafts, counted the way `level_load_data` counts them rather than by
+ * tile: a shaft is a *run* of two or more `V` down one column, and a lone `V`
+ * builds nothing at all. Counting the character instead would report a
+ * fourteen-tile shaft as fourteen lifts and fail a map that is well inside the
+ * limit, which is worse than the silence this check replaces.
+ */
+static int count_elevator_shafts(const EditorGrid *grid)
+{
+    int shafts = 0;
+    for (int col = 0; col < grid->width; ++col)
+    {
+        int row = 0;
+        while (row < grid->height)
+        {
+            if (grid->cells[row][col] != 'V')
+            {
+                ++row;
+                continue;
+            }
+            int first = row;
+            while (row < grid->height && grid->cells[row][col] == 'V')
+                ++row;
+            if (row - 1 > first)
+                ++shafts;
+        }
+    }
+    return shafts;
+}
+
 static void check_caps(const EditorDoc *doc, EdReport *report)
 {
     check_one_cap(report, count_of(report, 'M') + count_of(report, 'W'),
                   MAX_ENEMIES, "guards");
+    /* A `W` is a guard *and* his dog, so it is counted against both ceilings.
+     * The loader takes the dog through `find_dog_slot`, which hands back
+     * nothing once the array is full — the same silent drop as every other cap
+     * on this list, and the reason this line and the lift one below were worth
+     * adding: they were the two the list was missing. */
+    check_one_cap(report, count_of(report, 'W'), MAX_DOGS, "guard dogs");
     check_one_cap(report,
                   count_of(report, 'C') + count_of(report, 'G') +
                       count_of(report, 'N') + count_of(report, 'K') +
@@ -244,6 +280,8 @@ static void check_caps(const EditorDoc *doc, EdReport *report)
                   "falling panels");
     check_one_cap(report, count_of(report, 'P'), MAX_MOVING_PLATFORMS,
                   "moving platforms");
+    check_one_cap(report, count_elevator_shafts(&doc->grid), MAX_ELEVATORS,
+                  "lift shafts");
     check_one_cap(report, count_of(report, 'r') + count_of(report, 'v'),
                   MAX_FACADE_HAZARD_SPAWNS, "facade hazards");
     check_one_cap(report,

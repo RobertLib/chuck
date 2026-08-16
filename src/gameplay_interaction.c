@@ -9,9 +9,36 @@ static float reinforcement_delay(Rng *rng, float minimum, float maximum)
     return minimum + (maximum - minimum) * rng_unit(rng);
 }
 
+/*
+ * Standing at the terminal with the button held, and what that costs.
+ *
+ * **The reinforcements belong to the terminal, not to the alarm.** They used to
+ * be queued off `alarm_started` — the frame the hack put the alarm up — which
+ * quietly made them conditional on the building having been quiet beforehand: a
+ * player who had already been seen, whose alarm was already ringing, hacked the
+ * same terminal and nobody came out of the doors at all. That is the incentive
+ * exactly backwards. The manual sells the console as the loud way through
+ * ("Hacking wakes the building: guards are sent to the terminal you used"), and
+ * a rule that waives the cost for the player who was *caught first* rewards
+ * getting spotted on the three sectors that have both a terminal and a door
+ * pair to send anyone out of — 4, 8 and 14. Nothing on screen explained it,
+ * because there was nothing to explain: it was the gate reading the alarm when
+ * what it meant to read was the hack.
+ *
+ * So it is the *start of a hack* that calls them, and `was_hacking` is the only
+ * thing needed to see one: `terminal_hacking` is recomputed every frame, so the
+ * value it is about to lose is the previous frame's answer. Two guards keep it
+ * honest. A batch already on its way is not doubled, so tapping the button does
+ * not stack them up — and since `gameplay_update_alarm` clears the pending
+ * count when the alarm lapses, that guard can never wedge permanently. And the
+ * alarm itself is still raised only when it was not already up, because
+ * `gameplay_trigger_alarm` is what makes the whole floor turn round and doing
+ * that twice is not a second event.
+ */
 void gameplay_prepare_terminal(GameplayState *state, const Input *input,
                                float dt)
 {
+    bool was_hacking = state->terminal_hacking;
     state->terminal_in_range = gameplay_player_near_active_terminal(state);
     state->terminal_hacking = state->terminal_in_range &&
                               input->interact &&
@@ -19,6 +46,7 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
                               !state->player.on_ladder;
     bool alarm_started = state->terminal_hacking &&
                          !gameplay_alarm_active(state);
+    bool hack_began = state->terminal_hacking && !was_hacking;
     if (state->terminal_hacking)
     {
         const Terminal *terminal =
@@ -31,21 +59,14 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
                                    (terminal->col + 0.5f) * TILE_SIZE,
                                    (terminal->row + 0.5f) * TILE_SIZE, -1);
         }
-    }
-    else
-    {
-        state->terminal_hack_progress = 0.0f;
-        state->terminal_hack_tick_timer = 0.0f;
-    }
-
-    if (state->terminal_hacking)
-    {
-        const Terminal *terminal =
-            &state->level.map.terminals[state->level.runtime.active_terminal_index];
+        /* Held after the trigger above, which sets the same two values: while
+         * the hack runs, the floor converges on the console rather than on
+         * wherever Chuck was last seen, however the alarm came to be up. */
         state->terminal_alarm_timer = ALARM_CALM_TIME;
         state->alarm_target_x = (terminal->col + 0.5f) * TILE_SIZE;
         state->alarm_target_y = (terminal->row + 0.5f) * TILE_SIZE;
-        if (alarm_started && state->level.map.door_count > 0)
+        if (hack_began && state->level.map.door_count > 0 &&
+            state->terminal_reinforcements_pending <= 0)
         {
             int count_range = TERMINAL_REINFORCEMENT_MAX_COUNT -
                               TERMINAL_REINFORCEMENT_MIN_COUNT + 1;
@@ -57,6 +78,11 @@ void gameplay_prepare_terminal(GameplayState *state, const Input *input,
                                     TERMINAL_REINFORCEMENT_FIRST_MIN,
                                     TERMINAL_REINFORCEMENT_FIRST_MAX);
         }
+    }
+    else
+    {
+        state->terminal_hack_progress = 0.0f;
+        state->terminal_hack_tick_timer = 0.0f;
     }
     (void)dt;
 }
@@ -177,7 +203,59 @@ void gameplay_use_door(GameplayState *state, Input *input)
         gameplay_bank_checkpoint(state);
         game_events_sound(&state->events, SFX_DOOR);
     }
+    else
+    {
+        /* Doors are matched 0<->1, 2<->3, so an odd number of them leaves the
+         * last one with nowhere to go. The editor calls that an error and no
+         * shipped sector has it, but a press that does nothing at all still has
+         * to say so: it is the same rule the dry clip and the busy launcher
+         * keep, and a silent door reads as the key having missed rather than as
+         * the door being dead. */
+        game_events_sound(&state->events, SFX_EMPTY_CLICK);
+    }
     input->use_door = false;
+}
+
+/*
+ * A pickup that would change nothing is left where it is.
+ *
+ * This is the rule `gameplay_update_ammo_drops` already keeps — *"Left lying
+ * until it is actually useful, so a full magazine does not eat the pickup"* —
+ * said for the boxes on the floor, and it was missing from all three of the
+ * ones that cannot come back. Walking over a second `N` while already carrying
+ * a grenade set `collected` with a nought respawn timer and played
+ * `SFX_PICKUP_GRENADE`: the scarcest thing in the sector destroyed by crossing
+ * a tile, announced with the sound of a successful pickup. Sector 12 carries
+ * two grenades, sectors 10, 12 and 15 two medkits apiece, and every restroom
+ * hands out the grenade the campaign's own budget is balanced on — so the case
+ * is not a corner, it is the middle of four maps.
+ *
+ * The boxed magazine is deliberately *not* on this list, and the difference is
+ * the respawn: `ITEM_GUN` comes back on `ITEM_RESPAWN_TIME`, so taking one with
+ * a full clip costs the player nothing and the box is there again before it is
+ * wanted. Nothing else in the game gets a second chance, which is exactly why
+ * nothing else may be spent on a counter that is already full.
+ */
+static bool item_would_be_wasted(const GameplayState *state,
+                                 const CampaignState *campaign,
+                                 ItemType type)
+{
+    switch (type)
+    {
+    case ITEM_GRENADE:
+        return state->player.grenades > 0;
+    case ITEM_BAZOOKA:
+        return state->player.bazooka_rockets >= BAZOOKA_AMMO;
+    case ITEM_MEDKIT:
+        /* The kit answers the hearts first and the spare lives second, so it
+         * is only wasted when both are already at their cap. */
+        return state->player.hp >= gameplay_player_max_hp(state) &&
+               campaign->lives >= MAX_LIVES;
+    case ITEM_CARD:
+    case ITEM_GUN:
+        break;
+    }
+    return false;
 }
 
 void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
@@ -190,6 +268,7 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
     {
         Item *item = &state->level.runtime.items[i];
         if (!item->collected &&
+            !item_would_be_wasted(state, campaign, item->type) &&
             gameplay_boxes_overlap(state->player.x, state->player.y,
                                    PLAYER_W, player_h,
                                    item->x - 8.0f, item->y - 8.0f,
@@ -218,19 +297,52 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                 if (i == state->level.runtime.active_card_index)
                 {
                     state->level.runtime.items_remaining = 0;
+                    /*
+                     * The live card always answers, and only the door's own
+                     * fanfare is conditional.
+                     *
+                     * `gameplay_unlock_exit` returns without a sound when there
+                     * is no door to open — an interior whose stair core is
+                     * welded and whose route out is the window, or a sector
+                     * where a finished hack already opened it. Left at that,
+                     * the *right* card was the one pickup in the game that made
+                     * no sound at all, while a decoy buzzed: the feedback
+                     * exactly backwards, in a sector where the strip reads
+                     * BLOCKED and cannot report it either. No shipped map has a
+                     * card in a window sector today, which is the only reason
+                     * nobody has heard it.
+                     */
+                    bool was_locked = !state->level.runtime.exit_unlocked;
                     gameplay_unlock_exit(state);
+                    if (!(was_locked && state->level.runtime.exit_unlocked))
+                        game_events_sound(&state->events, SFX_CARD_SCAN);
                 }
                 else
                     game_events_sound(&state->events, SFX_CARD_WRONG);
                 break;
             case ITEM_GUN:
+                /* The one pickup allowed to change what is in the hand, and
+                 * only out of the knife: a dry clip is the whole reason Chuck
+                 * is holding a blade, so the magazine that ends that has to
+                 * end it without a button press. Nothing is spent by holding
+                 * the sidearm, so this can never cost the player anything —
+                 * unlike the explosives below. A player who deliberately
+                 * picked the knife while carrying a loaded gun is not in this
+                 * case and keeps it. */
+                if (state->player.bullets == 0 &&
+                    state->player.active_weapon == PLAYER_WEAPON_KNIFE)
+                    state->player.active_weapon = PLAYER_WEAPON_PISTOL;
                 state->player.bullets = MAX_AMMO;
-                state->player.active_weapon = PLAYER_WEAPON_PISTOL;
                 game_events_sound(&state->events, SFX_PICKUP_AMMO);
                 break;
             case ITEM_GRENADE:
+                /* Picking a one-shot explosive up is not deciding to spend it.
+                 * Arming it here meant walking over an `N` mid-firefight and
+                 * throwing the grenade with the next press of the trigger that
+                 * was meant for the pistol — a single pickup silently spending
+                 * the scarcest thing in the sector. The HUD shows the grenade
+                 * is carried; the bumpers are how it reaches the hand. */
                 state->player.grenades = 1;
-                state->player.active_weapon = PLAYER_WEAPON_GRENADE;
                 game_events_sound(&state->events, SFX_PICKUP_GRENADE);
                 break;
             case ITEM_MEDKIT:
@@ -244,8 +356,11 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                 game_events_sound(&state->events, SFX_PICKUP_HEALTH);
                 break;
             case ITEM_BAZOOKA:
+                /* Same rule as the grenade, and it matters more here: one `Z`
+                 * a sector, and the patched walls it was placed for are only
+                 * opened by a rocket that was not fired at the first guard
+                 * along. */
                 state->player.bazooka_rockets = BAZOOKA_AMMO;
-                state->player.active_weapon = PLAYER_WEAPON_BAZOOKA;
                 game_events_sound(&state->events, SFX_PICKUP_BAZOOKA);
                 break;
             }

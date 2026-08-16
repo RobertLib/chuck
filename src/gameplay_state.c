@@ -85,6 +85,50 @@ bool campaign_check_extra_life(CampaignState *campaign)
     return true;
 }
 
+void campaign_begin_sector(CampaignState *campaign)
+{
+    campaign->level_elapsed_time = 0.0f;
+    campaign->level_start_score = campaign->score;
+    campaign->level_deaths = 0;
+    campaign->sector_bonus_paid = false;
+}
+
+void campaign_award_sector_bonus(CampaignState *campaign,
+                                 int *out_time_bonus, int *out_clean_bonus)
+{
+    if (out_time_bonus != NULL)
+        *out_time_bonus = 0;
+    if (out_clean_bonus != NULL)
+        *out_clean_bonus = 0;
+    /* Once a sector, however many times the way out is asked about — see the
+     * note on the latch. */
+    if (campaign->sector_bonus_paid)
+        return;
+    campaign->sector_bonus_paid = true;
+
+    /* Whole seconds under par, floored, so the number on the report and the
+     * number in the score are arrived at the same way: the field prints
+     * `elapsed / 60` and `elapsed % 60` off an int, and a bonus computed off
+     * the float would pay for a second the player was never shown. */
+    int elapsed = (int)campaign->level_elapsed_time;
+    int par = (int)SECTOR_PAR_SECONDS;
+    int spare = par - elapsed;
+    if (spare < 0)
+        spare = 0;
+
+    int time_bonus = spare * SECTOR_TIME_BONUS_PER_SECOND;
+    /* A death is what costs this, not a hit: the hearts are the sector's own
+     * currency and spending all three is already the walk back. */
+    int clean_bonus = campaign->level_deaths == 0 ? SECTOR_CLEAN_BONUS : 0;
+
+    campaign->score += time_bonus + clean_bonus;
+
+    if (out_time_bonus != NULL)
+        *out_time_bonus = time_bonus;
+    if (out_clean_bonus != NULL)
+        *out_clean_bonus = clean_bonus;
+}
+
 void gameplay_state_begin_level(GameplayState *state)
 {
     Rng rng = state->rng;

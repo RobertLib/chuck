@@ -66,3 +66,9 @@ dist/
 vendor/
 *.dmg
 *.icns
+
+# Finder metadata. Nothing in the repository is a binary asset on purpose —
+# the levels are text, the art is drawn and the audio is synthesized — so a
+# folder-view blob checked in beside them is the one file here that says
+# nothing and changes every time somebody opens the directory.
+.DS_Store

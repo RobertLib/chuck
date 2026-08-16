@@ -110,6 +110,12 @@ and open a brief mercy window; an explosion costs two; only a fatal fall and an
 elevator crush are immediate. Medkits refill the hearts, and add a spare life
 once they are already full. Every 10,000 points is an extra life.
 
+Finishing a sector pays for the two things the report between floors has always
+printed. The night clock gives each floor two and a half minutes, and every
+second of that you hand back is worth points; clear one without dying and it
+pays again. Both are shown under the field that earned them, so the report says
+where the score came from rather than only that it arrived.
+
 Progress inside a sector is banked and a death resumes at it rather than at the
 start: any key card, a finished hack, a passed door and a medkit all bank, and
 a death keeps the carried grenade and rocket, refills the pistol, and never
@@ -118,22 +124,33 @@ Running out of lives always offers a retry of the same sector; the campaign
 never sends anyone back to the lobby uninvited. Continues are the score
 insurance: while one is left the retry keeps the score, after that it costs it.
 
+Fifteen sectors is more than one sitting, and the game remembers two things
+across them: the furthest sector any run has reached, and the best score any
+run has finished on. The furthest sector is offered back on the title screen as
+a third chip beside the manual and the options — `R`, or SELECT on a pad — and
+taking it is a clean run of that sector with the floors below it and the
+prologue already behind you. Nothing about the sector itself is saved, so a
+resume is a fresh attempt at it rather than a restored one. The best score is
+shown where a score is actually being looked at: the game-over card.
+
 The game rewards careful movement as much as combat. A sector locked behind a
 stair door carries one to three terminals — the eight that leave by a window
 carry none, because a window has no lock to pick — but only the brightly lit
 active terminal can be hacked.
 Holding position while breaching it takes several seconds and leaves Chuck
 exposed; the noise alerts guards and dogs, who pursue Chuck during the hack
-and for a short time afterward. It can also bring one or two reinforcements
-through randomly selected doors after varied delays. This makes breaching a
-risky alternative to finding the correct key card.
+and for a short time afterward. In a sector with doors it also brings one or
+two reinforcements through randomly selected ones after varied delays, and it
+does that whether or not the alarm was already ringing — the console is what
+calls them, so being caught beforehand never buys the breach at a discount.
+This makes breaching a risky alternative to finding the correct key card.
 The active terminal is always selected away from the level entrance.
 Ammunition is limited; once the pistol is empty, the attack button switches to
 a short-range knife strike, and a guard downed in direct combat drops a spare
 magazine that is only picked up while the pistol is short. A one-shot bazooka
 appears in every second level; its rocket detonates on impact and can clear a
 tightly grouped patrol. Grenades are powerful but risky, and hazards such as
-mines, spikes, ceiling fans, falling panels, and moving platforms make the
+mines, spikes, ceiling fans and falling panels make the
 building itself part of the challenge. Some doors connect distant parts of a level,
 creating shortcuts, ambushes, or escape routes depending on how you use them.
 Small gas canisters can also be used against nearby guards, but their low profile
@@ -153,9 +170,12 @@ what he has inside the next sector, which makes a pickup out there a real
 detour rather than a free collect.
 
 Sectors 1, 5, 9 and 14 also contain a marked WC door. It enters a small,
-separate restroom sublevel with a guard, a shovable crate, a gas canister, a
-magazine on the floor, and a medkit and a grenade on a catwalk past a jumped
-gap — enough to be worth the detour, and available once per sector. The parent
+separate restroom sublevel — one of four, chosen by the floor's own theme, so
+the marble washroom off the lobby and the executive suite under the roof are
+different rooms with different plans and different garrisons. What all four pay
+is the same: a magazine on the floor, and a medkit and a grenade on a catwalk
+past a jumped gap — enough to be worth the detour, and available once per
+sector. The parent
 level is paused rather than reloaded while Chuck is inside, both areas retain
 their state when he leaves or returns, and only his loadout and hearts cross
 over; this WC entrance is independent of the paired shortcut-door system.
@@ -173,16 +193,20 @@ them are still answering all get said out loud by the people doing it, and none
 of it is repeated anywhere the player has to stop playing to read.
 
 Two screens hang off the title screen. The **field manual** (`H`, or `Y` on a
-pad) is eight illustrated sheets covering who is in the building and why, who
-the twelve of them are, what
-the floor plan allows, what the guards do, how the wall is climbed and how to
-read the HUD. **Options** (`J`, or `X` on a pad, and also reachable from the
+pad) is eight illustrated sheets: who is in the building and why, who the twelve
+of them are, what the building is and what the night costs, what every button
+does, what the floor plan allows, what the guards do, how the wall is climbed,
+and how to read the HUD. **Options** (`J`, or `X` on a pad, and also reachable from the
 pause screen) is one sheet in three sections: separate levels for the music and
-the sound effects, fullscreen and the CRT filter, and the three assist switches
-— five hearts a life, guards and dogs at 80% speed, and deaths that never cost
-a life. Everything on it takes effect on the frame it is changed, and the sheet
-writes the lot to disk when it is closed, so the next launch opens the way the
-last one was left.
+the sound effects; fullscreen, the CRT filter and reduced motion; and the three
+assist switches — five hearts a life, guards and dogs at 80% speed, and deaths
+that never cost a life. **Reduced motion** takes the screen shake out and holds
+every warning light — the alarm call points, a mine's fuse, the police cordon
+on the drive — at a steady glow instead of a strobe, without changing what any
+of them is telling you. A row on the same sheet opens a second page where
+**every key can be rebound**. Everything takes effect on the frame it is
+changed, and the sheet writes the lot to disk when it is closed, so the next
+launch opens the way the last one was left.
 
 Pausing (`Esc`, or `Start` on a pad) is a menu of three: resume, the options
 sheet, and abandoning the run. The cursor always opens on resume, because the
@@ -217,12 +241,21 @@ whatever is actually in your hands.
 - Choose the item under the pause cursor, or change the selected option: `A`
 - Field manual, from the title screen: `Y`
 - Options, from the title screen or from pause: `X`
+- Resume the furthest sector reached, from the title screen: `Back`
 - Abandon the run, from the pause screen only: `Back`
+- Quit the game, from the title screen only: hold `B`
 - Turn a sheet of the manual: the shoulder buttons or the D-pad
 
-`B` does not quit from the title screen and does not abandon a run in progress:
-backing out never destroys anything. Fullscreen has no pad binding — it is `F`
-or `Alt+Enter`.
+`B` does not abandon a run in progress: backing out never destroys anything, so
+a press of it during a sector, a cutscene, the report between sectors or the
+drive does nothing at all. The one exception is the title screen, where it is
+the way out of the game — a pad in fullscreen has no `Esc` and no close box, and
+every other button on that screen is spoken for. A press is still inert there:
+it has to be **held**, the chip fills in red while it is down and empties again
+as soon as it comes up, and the hold does not arm until `B` has been seen
+released, so letting go of the button that closed the manual cannot walk
+straight on into closing the game. Fullscreen has no pad binding — it is `F` or
+`Alt+Enter`.
 
 ### Pursuit drive
 
@@ -239,13 +272,26 @@ still free. `Start` still pauses.
 
 ### Platformer
 
+**All nine of the sector controls below can be rebound, on the keyboard and on
+a controller**, from the options sheet's second page (`J`, then `CONTROLS`).
+Each row carries four caps — two keys, then two pad buttons — which is how the
+arrows and `WASD` are both first class rather than one being a fallback, and
+one key or button only ever does one job: binding one that is already taken
+takes it off whoever had it. `Esc`, `Enter` and `Backspace` are deliberately
+not bindable, and neither are `START` and `BACK` on a pad: they are pause,
+confirm and back, and they are how you walk back to the sheet and undo a
+binding you cannot press. The left stick is not on the sheet either — it is an
+axis, and it always moves you. What follows is what the game ships with.
+
 - Move: arrow keys or `WASD`
 - Jump: `Up`, `W`, or `Left Shift`
 - Climb: `Up` / `Down` or `W` / `S` on ladders
 - Jump off a ladder: `Left Shift` — over a ladder `Up` means climb, so the
   dedicated jump key is the way off one
 - Shoot vertically from a ladder: hold `Up` / `W` or `Down` / `S` and press `Space`
-- Use the knife sideways from a ladder: press `Space` without holding `Up` or `Down`
+- Attack sideways from a ladder: hold `Left` / `Right` and press `Space`. A
+  ladder remembers the last direction you aimed, so an attack with nothing held
+  repeats it — stepping sideways is what clears it back to a side attack
 - Crawl: hold `Down` or `S` while on the ground
 - Launch a carried rocket, throw a grenade, shoot, or use the knife: `Space`
 - Cycle weapons: `Tab` or `Q` for the next, `Z` for the one before
@@ -258,6 +304,10 @@ still free. `Start` still pauses.
 - Options, from the title screen or from pause: `J`
 - Mute or unmute everything at once: `M` (the options sheet has the levels)
 - Toggle fullscreen: `F` or `Alt+Enter`
+- Rebind any of the nine sector controls: `J`, then `CONTROLS`. Left and right
+  pick which of a row's four caps you are setting — its two keys, then its two
+  pad buttons — `Enter` arms it, and the next key or button you press is taken.
+  `Esc` leaves a key alone and `START` leaves a button alone.
 - Skip a cinematic to its next screen: `Space` or `Enter`
 - Replay after the ending: `R`
 
@@ -305,12 +355,53 @@ Run the deterministic core test suite with:
 make test
 ```
 
+It needs no SDL at all — the gameplay core links none, which is the boundary
+the whole architecture is built on — and it runs in well under a second.
+
 Build the complete game and run the core tests with AddressSanitizer and
 UndefinedBehaviorSanitizer enabled:
 
 ```sh
 make sanitize
 ```
+
+The core suite cannot reach the renderers, the level art or the audio synthesis,
+because those are the half of the tree that links SDL. `make smoke` runs them:
+it boots the instrumented binary through the title screen, all fifteen sectors,
+every screen that is otherwise only reached by playing — both prologue
+cutscenes, the drive, the manual, the options sheet, the report between sectors,
+the continue prompt, the game-over card, the outro and the credits — and all
+eight sheets of the field manual, against a dummy video and audio driver, so it
+needs neither a display nor a sound card and works the same in CI.
+
+Then it plays all fifteen again. Booting a sector executes a sector standing
+still, so everything behind the player *acting* — the bodies on the floor, the
+crawl, the hacking pose, the bazooka, the rocket, the alarm lighting — was run
+by nothing at all; measured, that was twelve drawing functions flat at zero.
+`--demo` puts a scripted hand on the controls, so those states are reached by
+being played into rather than assembled.
+
+Each screen is held for as long as it actually lasts rather than a flat few
+seconds. A sector or a sheet is a still and a couple of seconds is hundreds of
+frames of it; the outro runs twenty-seven seconds and the drive over a minute,
+and cutting those short executes the frame they open on and calls the screen
+covered.
+
+```sh
+make smoke
+```
+
+Any build can be sent straight to one of those screens the same way it can be
+sent to a sector, which is what that last group is driven with:
+
+```sh
+./chuck --scene credits
+./chuck --level 9 --scene report
+./chuck --scene manual --page 6
+./chuck --level 4 --demo
+```
+
+All of it runs on every push — see [.github/workflows/ci.yml](.github/workflows/ci.yml).
 
 To remove build outputs:
 

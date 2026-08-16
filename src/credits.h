@@ -59,6 +59,25 @@ typedef struct
 /* How long the closing card is held before the title screen takes over. */
 #define CREDITS_HOLD_TIME 5.0f
 
+/*
+ * The longest the whole roll may take, closing hold included.
+ *
+ * It is a ceiling rather than a measurement because something outside this file
+ * has to wait for it: `make smoke` dwells on each screen for a fixed few
+ * seconds, and a screen that is a *clock* rather than a still is only covered
+ * for the beats that fit inside the dwell. The roll opens on a skyline and ends
+ * on a card thirty-odd seconds later, so a three-second dwell executed the
+ * skyline — which is where the one undefined-behaviour bug this whole target
+ * was written to catch was sitting — and never once reached the card.
+ *
+ * [../tools/smoke.sh](../tools/smoke.sh) reads this number out of this header
+ * rather than keeping a copy of it, the way CI reads the pinned SDL version out
+ * of the script that owns it, and `test_credits_fit_the_frame` holds the table
+ * under it. A roll that outgrows the dwell therefore fails the build instead of
+ * quietly outliving the only thing that runs it.
+ */
+#define CREDITS_MAX_DURATION 45.0f
+
 typedef struct
 {
     float time;     /* seconds since the roll began */

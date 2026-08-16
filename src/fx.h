@@ -20,64 +20,119 @@
 #include <SDL3/SDL.h>
 #include <math.h>
 
+/*
+ * Every colour below is written once and reachable two ways.
+ *
+ * `FX_X` is the SDL_Color, which is what a draw call wants. `FX_X_RGBA` is the
+ * same four numbers as a bare list, which is what a *static initialiser*
+ * wants — and C will not take the first in place of the second: an object with
+ * static storage duration has to be initialised by a constant expression, and
+ * a `static const` struct is not one. That is not a language pedantry, it is
+ * the reason the theme tables in [level_art.c](level_art.c) spent a long time
+ * spelling three palette colours out in digits: they physically could not name
+ * them, so the rule that a literal repeating an fx.h value is that constant
+ * misspelt had a hole in it exactly where the game's art direction is decided.
+ *
+ * The macro is the value and the SDL_Color is derived from it, so the two can
+ * never drift. Use `FX_X` everywhere it compiles; reach for `FX_X_RGBA` only
+ * inside a static table. `tools/check_palette.py` fails the build on a literal
+ * that reproduces one of these instead of naming it.
+ */
 /* ---- Core darks (blue-slate ramp) ---------------------------------- */
-static const SDL_Color FX_INK = {5, 7, 12, 255};        /* outlines, void  */
-static const SDL_Color FX_NIGHT = {10, 14, 23, 255};    /* darkest fill    */
-static const SDL_Color FX_SHADOW = {17, 23, 35, 255};   /* deep interior   */
-static const SDL_Color FX_BASE = {27, 35, 49, 255};     /* room walls      */
-static const SDL_Color FX_MID = {41, 52, 68, 255};      /* mid structure   */
+#define FX_INK_RGBA 5, 7, 12, 255           /* outlines, void  */
+static const SDL_Color FX_INK = {FX_INK_RGBA};
+#define FX_NIGHT_RGBA 10, 14, 23, 255       /* darkest fill    */
+static const SDL_Color FX_NIGHT = {FX_NIGHT_RGBA};
+#define FX_SHADOW_RGBA 17, 23, 35, 255      /* deep interior   */
+static const SDL_Color FX_SHADOW = {FX_SHADOW_RGBA};
+#define FX_BASE_RGBA 27, 35, 49, 255        /* room walls      */
+static const SDL_Color FX_BASE = {FX_BASE_RGBA};
+#define FX_MID_RGBA 41, 52, 68, 255         /* mid structure   */
+static const SDL_Color FX_MID = {FX_MID_RGBA};
 
 /* ---- Steel / concrete ramp ----------------------------------------- */
-static const SDL_Color FX_STEEL_DK = {49, 60, 74, 255};
-static const SDL_Color FX_STEEL = {70, 84, 99, 255};
-static const SDL_Color FX_STEEL_LT = {104, 121, 137, 255};
-static const SDL_Color FX_PALE = {156, 173, 186, 255};
-static const SDL_Color FX_CREAM = {236, 238, 224, 255};
+#define FX_STEEL_DK_RGBA 49, 60, 74, 255
+static const SDL_Color FX_STEEL_DK = {FX_STEEL_DK_RGBA};
+#define FX_STEEL_RGBA 70, 84, 99, 255
+static const SDL_Color FX_STEEL = {FX_STEEL_RGBA};
+#define FX_STEEL_LT_RGBA 104, 121, 137, 255
+static const SDL_Color FX_STEEL_LT = {FX_STEEL_LT_RGBA};
+#define FX_PALE_RGBA 156, 173, 186, 255
+static const SDL_Color FX_PALE = {FX_PALE_RGBA};
+#define FX_CREAM_RGBA 236, 238, 224, 255
+static const SDL_Color FX_CREAM = {FX_CREAM_RGBA};
 
 /* ---- Accents -------------------------------------------------------- */
-static const SDL_Color FX_CYAN = {74, 222, 212, 255};
-static const SDL_Color FX_CYAN_DK = {26, 112, 112, 255};
-static const SDL_Color FX_AMBER = {248, 188, 74, 255};
-static const SDL_Color FX_AMBER_DK = {168, 112, 40, 255};
-static const SDL_Color FX_RED = {232, 74, 62, 255};
-static const SDL_Color FX_RED_DK = {130, 36, 34, 255};
-static const SDL_Color FX_GREEN = {96, 230, 140, 255};
-static const SDL_Color FX_GREEN_DK = {32, 120, 76, 255};
+#define FX_CYAN_RGBA 74, 222, 212, 255
+static const SDL_Color FX_CYAN = {FX_CYAN_RGBA};
+#define FX_CYAN_DK_RGBA 26, 112, 112, 255
+static const SDL_Color FX_CYAN_DK = {FX_CYAN_DK_RGBA};
+#define FX_AMBER_RGBA 248, 188, 74, 255
+static const SDL_Color FX_AMBER = {FX_AMBER_RGBA};
+#define FX_AMBER_DK_RGBA 168, 112, 40, 255
+static const SDL_Color FX_AMBER_DK = {FX_AMBER_DK_RGBA};
+#define FX_RED_RGBA 232, 74, 62, 255
+static const SDL_Color FX_RED = {FX_RED_RGBA};
+#define FX_RED_DK_RGBA 130, 36, 34, 255
+static const SDL_Color FX_RED_DK = {FX_RED_DK_RGBA};
+#define FX_GREEN_RGBA 96, 230, 140, 255
+static const SDL_Color FX_GREEN = {FX_GREEN_RGBA};
+#define FX_GREEN_DK_RGBA 32, 120, 76, 255
+static const SDL_Color FX_GREEN_DK = {FX_GREEN_DK_RGBA};
 /* Weathering red: rust stains, corroded fixings, dried oxide. Not a danger
  * signal — FX_RED keeps that job — which is why it is its own constant
  * instead of a dimmed FX_RED that would still read as "enemy". */
-static const SDL_Color FX_RUST = {198, 62, 50, 255};
+#define FX_RUST_RGBA 198, 62, 50, 255
+static const SDL_Color FX_RUST = {FX_RUST_RGBA};
 /* Fire, the one emissive material: a core between FX_RED and FX_AMBER and a
  * near-white heart. A rocket's exhaust, a muzzle line and a cutscene blast
  * burn the same fuel or they read as three different chemistries. */
-static const SDL_Color FX_FLAME = {226, 70, 38, 255};
-static const SDL_Color FX_FLAME_HOT = {255, 218, 94, 255};
+#define FX_FLAME_RGBA 226, 70, 38, 255
+static const SDL_Color FX_FLAME = {FX_FLAME_RGBA};
+#define FX_FLAME_HOT_RGBA 255, 218, 94, 255
+static const SDL_Color FX_FLAME_HOT = {FX_FLAME_HOT_RGBA};
 
 /* ---- Light temperatures ---------------------------------------------- */
 /* Every named light in the game. A screen that invents its own lamp colour
  * is a screen lit from a fixture the rest of the game does not own. */
-static const SDL_Color FX_LAMP = {150, 206, 214, 255};   /* cool fluorescent */
-static const SDL_Color FX_WARM = {240, 190, 112, 255};   /* warm interior    */
-static const SDL_Color FX_SODIUM = {182, 116, 62, 255};  /* street sodium    */
+#define FX_LAMP_RGBA 150, 206, 214, 255     /* cool fluorescent */
+static const SDL_Color FX_LAMP = {FX_LAMP_RGBA};
+#define FX_WARM_RGBA 240, 190, 112, 255     /* warm interior    */
+static const SDL_Color FX_WARM = {FX_WARM_RGBA};
+#define FX_SODIUM_RGBA 182, 116, 62, 255    /* street sodium    */
+static const SDL_Color FX_SODIUM = {FX_SODIUM_RGBA};
 
 /* ---- Interface greys -------------------------------------------------- */
 /* The one grey UI labels are set in, everywhere a label is quieter than its
  * value: HUD captions, manual keycaps, the chase objective line. */
-static const SDL_Color FX_LABEL = {108, 128, 148, 255};
+#define FX_LABEL_RGBA 108, 128, 148, 255
+static const SDL_Color FX_LABEL = {FX_LABEL_RGBA};
 
 /* ---- Character materials ------------------------------------------- */
-static const SDL_Color FX_SKIN = {216, 160, 110, 255};
-static const SDL_Color FX_SKIN_DK = {178, 124, 86, 255};
-static const SDL_Color FX_HAIR = {82, 44, 30, 255};
-static const SDL_Color FX_HERO = {40, 108, 148, 255};   /* Chuck's jacket  */
-static const SDL_Color FX_HERO_LT = {70, 156, 180, 255};
-static const SDL_Color FX_HERO_DK = {24, 66, 96, 255};
-static const SDL_Color FX_GUARD = {84, 94, 66, 255};    /* enemy olive     */
-static const SDL_Color FX_GUARD_LT = {122, 132, 88, 255};
-static const SDL_Color FX_GUARD_DK = {52, 60, 42, 255};
-static const SDL_Color FX_WOOD = {124, 82, 46, 255};
-static const SDL_Color FX_WOOD_LT = {168, 116, 62, 255};
-static const SDL_Color FX_WOOD_DK = {82, 55, 34, 255};
+#define FX_SKIN_RGBA 216, 160, 110, 255
+static const SDL_Color FX_SKIN = {FX_SKIN_RGBA};
+#define FX_SKIN_DK_RGBA 178, 124, 86, 255
+static const SDL_Color FX_SKIN_DK = {FX_SKIN_DK_RGBA};
+#define FX_HAIR_RGBA 82, 44, 30, 255
+static const SDL_Color FX_HAIR = {FX_HAIR_RGBA};
+#define FX_HERO_RGBA 40, 108, 148, 255      /* Chuck's jacket  */
+static const SDL_Color FX_HERO = {FX_HERO_RGBA};
+#define FX_HERO_LT_RGBA 70, 156, 180, 255
+static const SDL_Color FX_HERO_LT = {FX_HERO_LT_RGBA};
+#define FX_HERO_DK_RGBA 24, 66, 96, 255
+static const SDL_Color FX_HERO_DK = {FX_HERO_DK_RGBA};
+#define FX_GUARD_RGBA 84, 94, 66, 255       /* enemy olive     */
+static const SDL_Color FX_GUARD = {FX_GUARD_RGBA};
+#define FX_GUARD_LT_RGBA 122, 132, 88, 255
+static const SDL_Color FX_GUARD_LT = {FX_GUARD_LT_RGBA};
+#define FX_GUARD_DK_RGBA 52, 60, 42, 255
+static const SDL_Color FX_GUARD_DK = {FX_GUARD_DK_RGBA};
+#define FX_WOOD_RGBA 124, 82, 46, 255
+static const SDL_Color FX_WOOD = {FX_WOOD_RGBA};
+#define FX_WOOD_LT_RGBA 168, 116, 62, 255
+static const SDL_Color FX_WOOD_LT = {FX_WOOD_LT_RGBA};
+#define FX_WOOD_DK_RGBA 82, 55, 34, 255
+static const SDL_Color FX_WOOD_DK = {FX_WOOD_DK_RGBA};
 
 /* ---- Tiny drawing helpers ------------------------------------------ */
 
@@ -163,6 +218,53 @@ static inline unsigned fx_hash(unsigned value)
     value ^= value >> 15;
     value *= 0x846ca68bu;
     return value ^ (value >> 16);
+}
+
+/*
+ * A drawn coordinate turned into a hash salt, and why it is a function.
+ *
+ * Casting a negative float straight to `unsigned` is undefined, and the
+ * procedural art is full of coordinates that are only ever positive because of
+ * where they happen to be drawn — a screen x left of the frame, a scroll offset
+ * above it, a plate laid out from a window size. That is not a theoretical
+ * worry in this tree: the credits skyline did exactly this, in every frame of
+ * the one screen a finished campaign always ends on, and it resolved
+ * differently on the two slices of the shipped universal binary. It survived
+ * because nothing ran that screen; the sites left doing it by hand are, for the
+ * same reason, in the least-executed corners of the renderers.
+ *
+ * Going through `int` is what makes it total: the conversion to `int` is
+ * defined for everything in range, and `int` to `unsigned` is defined for
+ * everything. The range check catches the rest, NaN included, because the test
+ * is written as a negated comparison.
+ */
+static inline unsigned fx_salt(float value)
+{
+    if (!(value > -2.14e9f && value < 2.14e9f))
+        return 0u;
+    return (unsigned)(int)value;
+}
+
+/*
+ * `hash` scattered across `span` pixels of something drawn.
+ *
+ * The companion to the rule above, for the other half of the same idiom: these
+ * hashes are almost always immediately taken modulo a width, and a width is a
+ * measurement rather than a constant — a window that reports nothing while it
+ * is minimised, a plate with no room left in it. `% 0` is not a rounding
+ * error, it traps, and a span under one pixel has nothing to scatter across
+ * anyway. Nought is the honest answer to both.
+ */
+static inline unsigned fx_spread(unsigned hash, float span)
+{
+    if (!(span >= 1.0f))
+        return 0u;
+    /* And the width still has to survive the trip through `fx_salt`, which
+     * answers nought for anything it cannot represent. A span that large is not
+     * a real plate, but `% 0` is a trap rather than a wrong pixel, so the guard
+     * is worth the line. */
+    unsigned range = fx_salt(span);
+    return range == 0u ? 0u : hash % range;
 }
 
 /* ---- Character form and contact ------------------------------------- */
@@ -453,6 +555,31 @@ static inline void fx_glow(SDL_Renderer *r, float cx, float cy,
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
+/*
+ * The light a gun going off throws, and the one place it is decided.
+ *
+ * A muzzle flash is drawn in two files — [render_figures.c](render_figures.c)
+ * for a figure in play and [cutscene.c](cutscene.c) for the outro's shots —
+ * and both of them used to own a `static draw_muzzle_flash` of their own. Same
+ * name, same event, different light: the figures threw a wide halo with a hot
+ * core inside it, the cutscene a single flat pool. So the same pistol lit the
+ * room one way while it was being played and another way while it was being
+ * watched, which is the sort of thing the palette rules exist to stop and the
+ * sort of thing nothing catches, because one of the two was executed by
+ * nothing in the tree at all.
+ *
+ * The *flame* stays with its caller and should: the figures draw an
+ * axis-aligned shape tuned to each pose, the cutscene an angled one, and those
+ * are genuinely different pictures. What is one picture is the light, so that
+ * is what lives here. `scale` is how big the shot is, 1.0 being a sidearm.
+ */
+static inline void fx_muzzle_glow(SDL_Renderer *r, float cx, float cy,
+                                  float scale, SDL_Color tint)
+{
+    fx_glow(r, cx, cy, 30.0f * scale, tint, 105);
+    fx_glow(r, cx, cy, 13.0f * scale, tint, 130);
+}
+
 /* Downward light cone from a fixture; widens as it falls and fades out. */
 static inline void fx_light_cone(SDL_Renderer *r, float apex_x, float apex_y,
                                  float half_top, float half_bottom,
@@ -597,13 +724,20 @@ static inline void fx_ammo_pip(SDL_Renderer *r, float x, float y, bool full)
 static inline void fx_grain(SDL_Renderer *r, int w, int h, float time,
                             Uint8 alpha)
 {
-    unsigned frame = (unsigned)(time * 24.0f);
+    /* Grain with no frame to cover, or no strength to cover it with, is a loop
+     * that would divide by nought twice over. A minimised window reports no
+     * size on some platforms, and the alpha is a parameter — the day somebody
+     * fades the grain out at the end of a scene is the day the modulus below
+     * takes the process with it. */
+    if (w < 1 || h < 1 || alpha == 0u)
+        return;
+    unsigned frame = fx_salt(time * 24.0f);
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
     for (unsigned i = 0; i < 90u; ++i)
     {
         unsigned hsh = fx_hash(i * 2654435761u + frame * 40503u);
-        float x = (float)(hsh % (unsigned)w);
-        float y = (float)((hsh >> 11) % (unsigned)h);
+        float x = (float)fx_spread(hsh, (float)w);
+        float y = (float)fx_spread(hsh >> 11, (float)h);
         Uint8 a = (Uint8)(alpha / 2u + (hsh >> 22) % alpha);
         if ((hsh & 1u) != 0u)
             SDL_SetRenderDrawColor(r, 210, 220, 226, a);
