@@ -144,18 +144,6 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
     enemy->vx = 0.0f;
     enemy->vy = (float)enemy->climb_dir * ENEMY_CLIMB_SPEED;
 
-    bool ladder_ahead;
-    if (enemy->climb_dir < 0)
-    {
-        int row_above = (int)floorf((enemy->y - 1.0f) / TILE_SIZE);
-        ladder_ahead = level_is_ladder(level, enemy->ladder_col, row_above);
-    }
-    else
-    {
-        int row_below = (int)floorf((enemy->y + ENEMY_H + 1.0f) / TILE_SIZE);
-        ladder_ahead = level_is_ladder(level, enemy->ladder_col, row_below);
-    }
-
     /* A side exit is only usable when the adjacent column is free of solid
        tiles across the enemy's full body height AND there is floor to land on.
        This prevents the enemy from trying to step off into a blocked column
@@ -175,6 +163,34 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
     bool can_left = left_clear && level_is_solid(level, enemy->ladder_col - 1, bot_row + 1);
     bool can_right = right_clear && level_is_solid(level, enemy->ladder_col + 1, bot_row + 1);
     bool floor_beside = can_left || can_right;
+
+    bool ladder_ahead;
+    if (enemy->climb_dir < 0)
+    {
+        int row_above = (int)floorf((enemy->y - 1.0f) / TILE_SIZE);
+        /* A rung above the head means there is more ladder to climb. When they
+           run out the climb is still not finished, because the topmost tile of
+           a ladder threaded through a slab *is* the hole cut in that slab: a
+           guard who lets go as soon as nothing is above his head lets go
+           standing in the hole, with the slab against both shoulders, no floor
+           to step onto and the rung under his feet catching him every time he
+           tries to fall back down. He stands there until something kills him.
+           So keep climbing while a rung is still inside the body — that last
+           tile is what lifts him out onto the storey above. A ladder that
+           already offers a step-off here (one run up the side of a rooftop
+           block) has arrived and needs no extra tile, and a ceiling ends the
+           climb whatever the rungs say. */
+        ladder_ahead =
+            level_is_ladder(level, enemy->ladder_col, row_above) ||
+            (level_is_ladder(level, enemy->ladder_col, bot_row) &&
+             !floor_beside &&
+             !level_is_solid(level, enemy->ladder_col, row_above));
+    }
+    else
+    {
+        int row_below = (int)floorf((enemy->y + ENEMY_H + 1.0f) / TILE_SIZE);
+        ladder_ahead = level_is_ladder(level, enemy->ladder_col, row_below);
+    }
 
     int target_row = (int)floorf(target_y / TILE_SIZE);
     int exit_floor_row = bot_row + 1;

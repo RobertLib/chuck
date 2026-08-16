@@ -297,6 +297,11 @@ a hall. These rules come from the tuning in
 - **Ladders need not run the full height.** A run from the destination floor's
   headroom down to the source floor's standing row can be mounted and left at
   both ends; staggering short runs is what turns a floor plan into a route.
+  The campaign's usual shape is shorter than that: the top tile of the run is
+  the hole cut in the slab, and the storey above is left by climbing the last
+  tile clear of it. Both the player and a guard finish that climb standing on
+  the slab, but only because the guard is told to — see the ladder top in
+  [enemy.c](../src/enemy.c), which is where that geometry was once a trap.
 - **`F` panels are a shortcut, never a lifeline.** They fall away for the rest
   of the run, so the level must still be finishable once every one of them has
   gone, and no ledge they serve may become a place the player cannot leave.

@@ -3897,6 +3897,103 @@ static void test_enemy_aligns_before_vertical_climb(void)
     CHECK(fabsf(enemy.y - 5.0f * TILE_SIZE) < 0.01f);
 }
 
+static void test_enemy_climbs_out_of_the_hole_at_a_ladder_top(void)
+{
+    /* Every ladder in the campaign is threaded through a slab, so the topmost
+     * tile of the run IS the hole cut in that slab. A guard who let go as soon
+     * as there was no rung above his head let go standing in the hole: the slab
+     * against both shoulders, no floor to step onto, and the rung under his
+     * feet catching him every time he tried to fall back down. He stood there
+     * for the rest of the sector. The last tile of the climb is what puts him
+     * on the storey the ladder serves. */
+    static const char data[] =
+        "##########\n"
+        "#S       #\n"
+        "####H#####\n"
+        "#   H    #\n"
+        "#   H  E #\n"
+        "##########\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 4242);
+    CHECK(level_load_data(&level, "ladder through a slab", data,
+                          strlen(data), &rng));
+
+    float ladder_x = 4.0f * TILE_SIZE + (TILE_SIZE - ENEMY_W) * 0.5f;
+    Enemy enemy;
+    enemy_init(&enemy, ladder_x, 4.0f * TILE_SIZE, &rng);
+    enemy.on_ground = true;
+    enemy.climb_cooldown = 0.0f;
+
+    /* The player up on the storey the ladder reaches. */
+    float target_x = level.map.start_x + PLAYER_W * 0.5f;
+    float target_y = 2.0f * TILE_SIZE - PLAYER_H * 0.5f;
+
+    for (int frame = 0; frame < 600 && !enemy.climbing; ++frame)
+        enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
+                     target_x, target_y, false, 1.0f, &rng);
+    CHECK(enemy.climbing);
+    CHECK(enemy.climb_dir == -1);
+
+    for (int frame = 0; frame < 600 && enemy.climbing; ++frame)
+        enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
+                     target_x, target_y, false, 1.0f, &rng);
+
+    CHECK(!enemy.climbing);
+    /* Standing on the slab, not inside the hole through it. */
+    CHECK(fabsf(enemy.y - (2.0f * TILE_SIZE - ENEMY_H)) < 0.01f);
+
+    /* And walking again: a guard boxed in at body height goes nowhere. */
+    float stranded_x = enemy.x;
+    for (int frame = 0; frame < 60; ++frame)
+        enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
+                     target_x, target_y, false, 1.0f, &rng);
+    CHECK(enemy.x < stranded_x - TILE_SIZE);
+}
+
+static void test_enemy_leaves_a_ladder_that_already_reaches_a_floor(void)
+{
+    /* The rooftop's ladders run up the flank of a block instead of through a
+     * slab, so the top rung is level with the roof it serves. A climb that
+     * always spent one more tile clearing the last rung would carry the guard
+     * a tile above that roof and drop him back onto it. Arriving beside a
+     * floor is arriving. */
+    static const char data[] =
+        "##########\n"
+        "#        #\n"
+        "#  H     #\n"
+        "#  H##   #\n"
+        "#S H##  E#\n"
+        "##########\n";
+    Level level;
+    Rng rng;
+    rng_seed(&rng, 4242);
+    CHECK(level_load_data(&level, "ladder up a rooftop block", data,
+                          strlen(data), &rng));
+
+    float ladder_x = 3.0f * TILE_SIZE + (TILE_SIZE - ENEMY_W) * 0.5f;
+    Enemy enemy;
+    enemy_init(&enemy, ladder_x, 4.0f * TILE_SIZE, &rng);
+    enemy.on_ground = true;
+    enemy.climb_cooldown = 0.0f;
+
+    /* The player standing on the block's roof, to the right of the ladder. */
+    float target_x = 4.5f * TILE_SIZE;
+    float target_y = 3.0f * TILE_SIZE - PLAYER_H * 0.5f;
+
+    for (int frame = 0; frame < 600 && !enemy.climbing; ++frame)
+        enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
+                     target_x, target_y, false, 1.0f, &rng);
+    CHECK(enemy.climbing);
+
+    for (int frame = 0; frame < 600 && enemy.climbing; ++frame)
+        enemy_update(&enemy, &level, 1.0f / 60.0f, true, false,
+                     target_x, target_y, false, 1.0f, &rng);
+
+    CHECK(!enemy.climbing);
+    CHECK(fabsf(enemy.y - (3.0f * TILE_SIZE - ENEMY_H)) < 0.01f);
+}
+
 static void test_dog_escapes_ladder_perch_without_spinning(void)
 {
     /* A dog stranded on a ladder rung one tile above the floor used to see a
@@ -5783,6 +5880,8 @@ int main(void)
     test_patrol_enemy_does_not_immediately_leave_ladder();
     test_enemy_leaves_climb_state_when_landing_on_crate();
     test_enemy_aligns_before_vertical_climb();
+    test_enemy_climbs_out_of_the_hole_at_a_ladder_top();
+    test_enemy_leaves_a_ladder_that_already_reaches_a_floor();
     test_dog_escapes_ladder_perch_without_spinning();
     test_hazards_emit_specific_impact_sounds();
     test_stomp_on_enemy_bounces_player_and_damages_it();
