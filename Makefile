@@ -1,6 +1,7 @@
 CC := cc
 CPPFLAGS :=
-CFLAGS := -std=c17 -Wall -Wextra -Wpedantic -O2 $(shell pkg-config --cflags sdl3)
+BASE_CFLAGS := -std=c17 -Wall -Wextra -Wpedantic -O2
+CFLAGS := $(BASE_CFLAGS) $(shell pkg-config --cflags sdl3)
 DEPFLAGS := -MMD -MP
 LDFLAGS := $(shell pkg-config --libs sdl3) -lm
 TEST_CFLAGS := -std=c17 -Wall -Wextra -Wpedantic -O2 -Isrc -Ieditor
@@ -39,7 +40,8 @@ EDITOR_SOURCES := $(wildcard $(EDITOR_DIR)/*.c) \
 EDITOR_OBJECTS := $(patsubst %.c,$(BUILD_DIR)/editor/%.o,$(notdir $(EDITOR_SOURCES)))
 EDITOR_DEPENDENCIES := $(EDITOR_OBJECTS:.o=.d)
 
-.PHONY: all release debug run run-debug run-editor editor test sanitize clean
+.PHONY: all release debug run run-debug run-editor editor test sanitize clean \
+	app notarize sdl3
 
 all: $(TARGET)
 
@@ -99,8 +101,37 @@ sanitize:
 		LDFLAGS="$(LDFLAGS) $(SANITIZER_FLAGS)" \
 		TEST_CFLAGS="$(TEST_CFLAGS) $(SANITIZER_FLAGS)" all test
 
+# The shipped macOS app. `make` links Homebrew's SDL3, which is right for
+# this machine and wrong for everyone else's: arm64 only, and built for the
+# macOS it was poured on. The bundle is therefore built against the official
+# universal SDL3.framework in vendor/ — both slices, a macOS 11 floor, and it
+# travels inside Contents/Frameworks, so the app needs nothing installed.
+MACOS_MIN_VERSION := 11.0
+APP_ARCHS := -arch arm64 -arch x86_64
+VENDOR_DIR := vendor
+SDL3_FRAMEWORK := $(VENDOR_DIR)/SDL3.framework
+APP_BUILD_DIR := build/app
+
+sdl3: $(SDL3_FRAMEWORK)
+
+$(SDL3_FRAMEWORK):
+	packaging/fetch_sdl3.sh $(VENDOR_DIR)
+
+app: $(SDL3_FRAMEWORK)
+	MACOSX_DEPLOYMENT_TARGET=$(MACOS_MIN_VERSION) $(MAKE) \
+		BUILD_DIR=$(APP_BUILD_DIR) TARGET=$(APP_BUILD_DIR)/chuck \
+		CFLAGS="$(BASE_CFLAGS) $(APP_ARCHS) -F$(CURDIR)/$(VENDOR_DIR)" \
+		LDFLAGS="$(APP_ARCHS) -F$(CURDIR)/$(VENDOR_DIR) -framework SDL3 -lm \
+			-Wl,-rpath,@executable_path/../Frameworks" all
+	MACOS_MIN_VERSION=$(MACOS_MIN_VERSION) VENDOR_DIR=$(CURDIR)/$(VENDOR_DIR) \
+		packaging/build_app.sh $(APP_BUILD_DIR)/chuck
+
+notarize: app
+	packaging/notarize.sh
+
+# vendor/ is a verified download and survives a clean; `make sdl3` refetches it.
 clean:
-	rm -rf $(BUILD_DIR) $(TARGET) $(EDITOR_TARGET)
+	rm -rf $(BUILD_DIR) dist $(TARGET) $(EDITOR_TARGET)
 
 -include $(DEPENDENCIES)
 -include $(EDITOR_DEPENDENCIES)

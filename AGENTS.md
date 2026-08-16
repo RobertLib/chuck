@@ -101,7 +101,9 @@ make editor   # build ./chuck-editor, the level editor
 make run-editor # build and launch the editor
 make test     # build and run the core test suite (build/core_tests)
 make sanitize # rebuild game + tests with ASan/UBSan into build/sanitize
-make clean    # remove build/, ./chuck and ./chuck-editor
+make app      # build dist/Chuck.app, universal and signed (macOS)
+make notarize # notarize and staple it, and cut dist/Chuck-<version>.dmg
+make clean    # remove build/, dist/, ./chuck and ./chuck-editor
 ```
 
 The debug build is the only one with the level picker on its title screen
@@ -1339,6 +1341,65 @@ tree, which is what keeps its rules and the test suite's rules the same rules.
 `F5` saves, runs `make` and launches `./chuck --level N`. That switch
 ([main.c](src/main.c)) and `game_start_at_level` are the whole of the game-side
 change; the debug level picker calls the same entry point.
+
+## The shipped macOS app
+
+`make app` builds `dist/Chuck.app`; `make notarize` gets it a ticket from Apple
+and cuts the DMG. Everything either one needs is in [packaging/](packaging/),
+and the whole of it exists to close the gap between a binary that runs *here*
+and a binary that runs on somebody else's Mac. Four decisions carry it.
+
+**`make` and `make app` do not link the same SDL, and they must not.** The
+development build takes Homebrew's, which is right for a machine with Homebrew
+on it and wrong for everybody else's: it is arm64 only and it is built for the
+macOS it was poured on — `minos 26.0` as this was written — so a bundle wrapped
+around it starts on this Mac and refuses to launch on any other, with an error
+that names nothing the player can act on. The app is therefore built against
+libsdl.org's own universal `SDL3.framework`, fetched into `vendor/` by
+[packaging/fetch_sdl3.sh](packaging/fetch_sdl3.sh) with **the version and its
+sha256 pinned in the script**: a shipped binary has to be traceable to the
+library it was linked against, and "whatever the latest release was that day"
+is not that. That framework carries both slices and a macOS 11 floor, which is
+what `LSMinimumSystemVersion` is then allowed to say.
+
+**The app is self-contained, and SDL travels inside it.** The framework's
+install name is `@rpath/SDL3.framework/Versions/A/SDL3` and the link step writes
+`@executable_path/../Frameworks` into the binary, so bundling is a copy and no
+`install_name_tool` surgery — which also means there is no path to a Homebrew
+directory left anywhere in the shipped Mach-O to work by accident on the
+developer's machine. The levels are already in the executable and the audio is
+synthesized at startup, so `Contents/Resources` holds nothing but the icon.
+
+**The build always signs, and it says which of the two ways it signed.** With a
+*Developer ID Application* certificate in the keychain it signs with that, under
+the hardened runtime (`--options runtime`) and a secure timestamp, which is
+what notarization requires. With no such certificate it signs ad-hoc and says
+so in as many words, because an unsigned build that prints nothing looks exactly
+like a build that succeeded until somebody else double-clicks it. An *Apple
+Development* certificate is not a substitute: it signs for your own devices and
+Apple will not notarize it. [packaging/notarize.sh](packaging/notarize.sh)
+refuses to upload anything not signed with a Developer ID and prints how to get
+one, rather than letting Apple reject it twenty minutes later.
+
+**Both the app and the DMG are notarized and stapled.** A player may be handed
+either, and Gatekeeper checks whichever they got; stapling writes the ticket
+into the bundle so the first launch needs no network. Credentials live in a
+notarytool keychain profile (`xcrun notarytool store-credentials`), never in the
+repository.
+
+The icon is drawn, not stored: [packaging/draw_icon.py](packaging/draw_icon.py)
+paints the tower, its lit floors, the roof beacon and Chuck on the flank out of
+the fx.h palette on a 128x128 grid, which is the same reason the levels' art is
+procedural — the repository holds no binary assets, and an icon checked in as a
+blob is one more thing that can drift from the palette everything else is drawn
+in.
+
+The version, the bundle identifier and the app name are written once, in
+[version.h](src/version.h): the binary hands them to `SDL_SetAppMetadata` (so
+the audio device, the window's owner and a crash report all name the game
+rather than "SDL Application") and `build_app.sh` greps them out of the same
+header for `Info.plist`. `CFBundleVersion` is the commit count, which is a
+number that already rises with every build anybody is handed.
 
 ## Conventions
 

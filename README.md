@@ -306,6 +306,38 @@ To remove build outputs:
 make clean
 ```
 
+## A macOS build to hand to somebody
+
+`make` links the SDL3 that is installed on this machine, which is the right
+thing for developing and the wrong thing for shipping: a Homebrew SDL3 is
+built for one architecture and one macOS version, so a copy of that binary
+starts here and refuses to launch anywhere else.
+
+```sh
+make app
+```
+
+builds `dist/Chuck.app` instead: universal (Apple Silicon and Intel), macOS 11
+and later, with SDL travelling inside the bundle and the icon drawn from the
+game's own palette. It is signed with a *Developer ID Application* certificate
+if the keychain holds one, and ad-hoc — runnable here, refused elsewhere — if
+it does not, saying which of the two it did.
+
+```sh
+make notarize
+```
+
+sends the signed app to Apple, staples the ticket into it so the first launch
+needs no network, and cuts `dist/Chuck-<version>.dmg`, also notarized and
+stapled. It needs a paid Apple Developer Program membership, a Developer ID
+Application certificate, and credentials stored once:
+
+```sh
+xcrun notarytool store-credentials chuck-notary \
+    --apple-id you@example.com --team-id XXXXXXXXXX \
+    --password <app-specific password from appleid.apple.com>
+```
+
 SDL3 development files must be available through `pkg-config`.
 
 Campaign maps remain editable as `levels/level*.txt`, while separate interiors

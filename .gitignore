@@ -58,3 +58,11 @@ dkms.conf
 build/
 chuck
 chuck-editor
+
+# The shipped macOS app: dist/ is output, vendor/ is a verified download
+# (packaging/fetch_sdl3.sh pins the version and its hash, so it is reproducible
+# rather than something worth committing eight megabytes for).
+dist/
+vendor/
+*.dmg
+*.icns

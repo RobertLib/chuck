@@ -3,6 +3,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "game.h"
+#include "version.h"
 
 /* `--level N` boots straight into campaign sector N (1-based), skipping the
  * title screen and the prologue. It is how the level editor playtests the map
@@ -23,6 +24,12 @@ static int parse_start_level(int argc, char *argv[])
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
+    /* Before SDL_Init, because this is what SDL names the process with: without
+     * it the audio device, the window's owner and macOS's own crash reports all
+     * say "SDL Application". It is the same identity the .app bundle carries,
+     * out of the one header that holds it. */
+    SDL_SetAppMetadata(CHUCK_APP_NAME, CHUCK_VERSION, CHUCK_APP_ID);
+
     Game *game = (Game *)SDL_calloc(1, sizeof(Game));
     if (game == NULL)
     {
