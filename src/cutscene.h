@@ -7,7 +7,12 @@
 #define ABDUCTION_CUTSCENE_DURATION 13.6f
 #define OPENING_CUTSCENE_DURATION 12.4f
 #define LEVEL_TRANSITION_DURATION 9.4f
-#define OUTRO_CUTSCENE_DURATION 25.0f
+/* The outro's clock runs on past its own last beat, because the thank-you card
+ * is held for the rest of it and the credits take the frame when it runs out.
+ * The card's replay prompt appears at 21.0, so this is also how long that offer
+ * stands: with the roll waiting behind it, the gap between the two is the whole
+ * of the player's chance to take it. */
+#define OUTRO_CUTSCENE_DURATION 27.0f
 #define OUTRO_FINAL_REVEAL_TIME 19.4f
 
 typedef enum
@@ -125,8 +130,10 @@ void level_transition_render(SDL_Renderer *renderer,
                              int win_w, int win_h, const PadHints *pad);
 
 /*
- * Final rooftop rescue. The scene remains on its thank-you frame after the
- * animation finishes so the player can take in the ending or replay it.
+ * Final rooftop rescue. The scene holds its thank-you frame for the rest of
+ * `OUTRO_CUTSCENE_DURATION` so the player can take in the ending or replay it,
+ * and the shell then hands the frame to the credits in [credits.h](credits.h),
+ * which is what carries a finished campaign back to the title screen.
  */
 void outro_cutscene_init(OutroCutscene *cutscene);
 void outro_cutscene_update(OutroCutscene *cutscene, float dt,

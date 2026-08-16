@@ -1,5 +1,6 @@
 #include "camera.h"
 #include "chase.h"
+#include "credits.h"
 #include "crew.h"
 #include "editor_doc.h"
 #include "editor_validate.h"
@@ -5556,6 +5557,71 @@ static void test_crew_traffic_fits_the_plate(void)
     CHECK((widest_name + 2 + CREW_LINE_MAX) * 8 + 14 + 22 <= 800);
 }
 
+/*
+ * The roll of names after the ending, held to the two things a screen of
+ * nothing but type can get wrong.
+ *
+ * A line wider than the frame it is centred in runs off both edges of the one
+ * screen nobody plays through twice, so every line is measured here at its own
+ * scale rather than eyeballed. And a roll that never comes to rest never
+ * reaches the title screen, which would strand a finished campaign on a
+ * scrolling list: the clock is walked end to end to prove it stops.
+ */
+static void test_credits_fit_the_frame(void)
+{
+    int count = 0;
+    const CreditLine *lines = credits_lines(&count);
+    CHECK(count > 0);
+
+    for (int i = 0; i < count; ++i)
+    {
+        CHECK(credits_line_height(lines[i].kind) > 0.0f);
+
+        float scale = credits_line_scale(lines[i].kind);
+        if (scale <= 0.0f)
+        {
+            /* A rule and a gap are shapes, not sentences. */
+            CHECK(lines[i].text == NULL);
+            continue;
+        }
+
+        CHECK(lines[i].text != NULL && lines[i].text[0] != '\0');
+        if (lines[i].text != NULL)
+        {
+            /* 8px a cell, centred, inside the frame's own inset. */
+            float width = (float)strlen(lines[i].text) * 8.0f * scale;
+            CHECK(width <= CREDITS_FRAME_W - 2.0f * CREDITS_SIDE_MARGIN);
+        }
+    }
+
+    CreditsRoll roll;
+    credits_init(&roll, 552.0f);
+    CHECK(roll.travel > 0.0f);
+    CHECK(roll.duration > CREDITS_HOLD_TIME);
+    CHECK(!credits_at_rest(&roll));
+
+    bool finished = false;
+    for (int step = 0; step < 60 * 300 && !finished; ++step)
+        finished = credits_update(&roll, 1.0f / 60.0f);
+    CHECK(finished);
+    CHECK(credits_at_rest(&roll));
+    /* Whatever the clock does past the end, the roll never climbs past its
+     * mark: the closing card is where it stops, not a frame it passes. */
+    CHECK(credits_scroll(&roll) >= roll.travel);
+    CHECK(credits_scroll(&roll) <= roll.travel);
+
+    /* Skipping lands on that same card with the closing hold still to run,
+     * rather than on the title screen: confirm means "get on with it" once and
+     * "done" the second time. */
+    CreditsRoll skipped;
+    credits_init(&skipped, 552.0f);
+    credits_skip_to_rest(&skipped);
+    CHECK(credits_at_rest(&skipped));
+    CHECK(credits_scroll(&skipped) >= skipped.travel);
+    CHECK(!credits_update(&skipped, CREDITS_HOLD_TIME * 0.5f));
+    CHECK(credits_update(&skipped, CREDITS_HOLD_TIME));
+}
+
 /* The other half of the same rule: the building has to be quiet for it. A
  * guard hunting Chuck is not filing a routine report. */
 static void test_no_radio_checks_while_the_alarm_is_up(void)
@@ -5921,6 +5987,7 @@ int main(void)
     test_lone_guard_calls_in_without_going_blind();
     test_the_net_carries_words();
     test_crew_traffic_fits_the_plate();
+    test_credits_fit_the_frame();
     test_no_radio_checks_while_the_alarm_is_up();
     test_chase_cordon_thickens_toward_the_building();
     test_settings_cursor_only_lands_on_rows();

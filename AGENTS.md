@@ -134,9 +134,10 @@ Two layers, and the split is the most important invariant in the codebase:
   [chase_render.c](src/chase_render.c), [audio.c](src/audio.c),
   [intro.c](src/intro.c), [manual.c](src/manual.c),
   [cutscene.c](src/cutscene.c), [pad_hint.c](src/pad_hint.c),
-  [particle.c](src/particle.c). [crew.c](src/crew.c) sits on this side too and
-  links no SDL, because it is a table of strings — but it is presentation, and
-  no gameplay module may include it. See [The net](#the-net).
+  [particle.c](src/particle.c). [crew.c](src/crew.c) and
+  [credits.c](src/credits.c) sit on this side too and link no SDL, because they
+  are tables of strings — but they are presentation, and no gameplay module may
+  include them. See [The net](#the-net) and [The credits](#the-credits).
 - **Gameplay core** (no SDL, no knowledge of `Game`): `src/gameplay_*.c`,
   [level.c](src/level.c), [level_route.c](src/level_route.c),
   [player.c](src/player.c), [enemy.c](src/enemy.c),
@@ -205,8 +206,11 @@ like a free tuning knob and it is not one.
 
 The scene order the player walks through is `STATE_INTRO` → `STATE_ABDUCTION`
 → `STATE_CHASE` → `STATE_OPENING_CUTSCENE` → level one, with `STATE_MANUAL`
-hanging off the title screen as a dead end that only leads back to it. The
-chase branch owns its own event dispatch and camera-shake tick because those
+hanging off the title screen as a dead end that only leads back to it. The far
+end of the campaign closes the same loop: the last sector → `STATE_LEVEL_CLEARED`
+→ `STATE_OUTRO` → `STATE_CREDITS` → `STATE_INTRO` again, so a finished run lands
+where a new one starts rather than parking on a card somebody has to dismiss.
+The chase branch owns its own event dispatch and camera-shake tick because those
 normally run only on playing frames.
 
 `update_playing` ([game.c:686](src/game.c#L686)) has a deliberate ordering:
@@ -712,6 +716,44 @@ outgrows the plate runs off the sheet — and `dash_arc` takes the height the
 curve actually reaches, because a quadratic only rises halfway to its handle
 and an arc drawn through the handle leaves the figure hanging above its own
 jump.
+
+### The credits
+
+The outro holds its thank-you frame for the rest of `OUTRO_CUTSCENE_DURATION`
+and then hands the frame to `STATE_CREDITS`: the names rise through the same
+letterboxed, grainy frame the rescue ended in, and when the roll runs out the
+game is back on the title screen. That last part is why it is a state and not a
+card bolted onto the outro — a finished campaign used to park on a frame the
+player had to dismiss. Confirm means "get on with it" while the names are
+moving and "done" once they have stopped; `ESC` leaves at any point, and the
+pad's B is inert here exactly as it is during a cutscene.
+
+**The table is the roll.** [credits.c](src/credits.c) links no SDL, for the
+same reason [crew.c](src/crew.c) and [settings.c](src/settings.c) do not: it is
+a table of typed lines — `CREDIT_TITLE`, `CREDIT_ROLE`, `CREDIT_NAME`,
+`CREDIT_NOTE`, `CREDIT_RULE`, `CREDIT_GAP` — plus the height and the scale each
+kind stands at, and `draw_credits_roll` in [game_render.c](src/game_render.c)
+walks both, exactly the way `draw_settings_sheet` walks the options table. A
+line added here costs no layout, and `test_credits_fit_the_frame` measures
+every one of them at its own scale, so a line too wide for the frame fails the
+build rather than running off the edge of the one screen nobody plays through
+twice. It pins the clock as well: a roll that never comes to rest never reaches
+the title screen.
+
+**One name, said six times.** Chuck is written by one person, and the roll says
+so by naming six genuinely different disciplines and answering all six the same
+way — the repetition *is* the credit, not padding. The crew's docket has twelve
+names on it and the manual's `THE CREW` sheet prints all twelve; this one has
+one, and the roll says that out loud (`TWELVE NAMES ON THEIR DOCKET. / ONE ON
+THIS ONE.`) rather than leaving it to be noticed. The homage is thanked the way
+the net does it, by describing the films rather than naming them.
+
+**It is still the same film.** The roll keeps the outro's two letterbox bars
+and its film grain, and stands on a skyline of its own: silhouette blocks, dim
+windows, Kessler Tower still the tallest thing out there with its roof beacon
+still turning. A roll on flat black would be the one screen in the game that is
+not lit — the same objection the manual's sheet answers — but the type is what
+this screen is for, so every value out there is kept under it.
 
 ### Determinism and RNG
 

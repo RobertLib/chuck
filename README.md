@@ -188,6 +188,11 @@ Pausing (`Esc`, or `Start` on a pad) is a menu of three: resume, the options
 sheet, and abandoning the run. The cursor always opens on resume, because the
 one item that cannot be taken back must never be the one under the thumb.
 
+The roof is the end of it. The rescue plays out, the thank-you frame is held,
+and then the credits roll up through the same letterboxed frame before the
+game hands itself back to the title screen. Confirm hurries the roll along and
+then closes it; `Esc` leaves at any point.
+
 ## Controls
 
 ### Gamepad

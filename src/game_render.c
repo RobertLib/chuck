@@ -5869,6 +5869,159 @@ static void draw_debug_level_select(Game *game)
 }
 #endif
 
+/*
+ * The city the names roll over.
+ *
+ * A roll on flat black would be the one screen in the game that is not lit, so
+ * the frame keeps a horizon: the skyline Chuck spent the night above, seen
+ * from nowhere in particular, with Kessler Tower still the tallest thing on it
+ * and its roof beacon still turning. Everything here is silhouette and every
+ * lit window is dim on purpose — the type is what this screen is for, and a
+ * backdrop that competes with it has stopped being a backdrop.
+ */
+static void draw_credits_skyline(SDL_Renderer *r, float view_w, float view_h,
+                                 float time)
+{
+  const float base = view_h - 19.0f; /* the lower letterbox bar is the ground */
+  const SDL_Color mass = {9, 12, 19, 255};
+  const SDL_Color lit_edge = {17, 23, 34, 255};
+  float x = -22.0f;
+
+  for (int i = 0; x < view_w; ++i)
+  {
+    unsigned h = fx_hash((unsigned)i * 2654435761u + 17u);
+    float w = 34.0f + (float)(h % 5u) * 13.0f;
+    float height = 38.0f + (float)((h >> 5) % 7u) * 15.0f;
+    bool tower = (i == 9);
+    if (tower)
+      height = 226.0f;
+
+    float top = base - height;
+    color_rect(r, mass, x, top, w, height);
+    color_rect(r, lit_edge, x, top, w, 1.0f);
+
+    /* A handful of floors still working, the way the tower's own facade is
+     * drawn on the title screen: asked for once, never twinkling. */
+    for (float wy = top + 8.0f; wy < base - 6.0f; wy += 9.0f)
+    {
+      for (float wx = x + 5.0f; wx < x + w - 5.0f; wx += 8.0f)
+      {
+        unsigned cell = fx_hash((unsigned)(wx * 7.0f) ^ (unsigned)(wy * 131.0f));
+        if ((cell % 9u) > 1u)
+          continue;
+        SDL_Color pane = (cell & 8u) ? FX_WARM : FX_LAMP;
+        fx_rect_a(r, pane, 40, wx, wy, 3.0f, 4.0f);
+      }
+    }
+
+    if (tower)
+    {
+      /* The roof they were never going to leave from. */
+      float beacon_x = x + w * 0.5f;
+      float pulse = 0.35f + 0.65f * (0.5f + 0.5f * sinf(time * 2.6f));
+      fx_glow(r, beacon_x, top - 3.0f, 11.0f, FX_RED,
+              (Uint8)(70.0f * pulse));
+      color_rect(r, fx_dim(FX_RED, 0.45f + pulse * 0.55f),
+                 beacon_x - 1.0f, top - 4.0f, 2.0f, 3.0f);
+    }
+
+    x += w + 5.0f;
+  }
+}
+
+/* A row's colour, which is the one thing about it the table does not carry: the
+ * name and the game's own name are what the screen is for, the job above a name
+ * is an interface label, and a note is prose. */
+static SDL_Color credit_ink(CreditLineKind kind)
+{
+  switch (kind)
+  {
+  case CREDIT_TITLE:
+  case CREDIT_NAME:
+    return FX_CREAM;
+  case CREDIT_ROLE:
+    return FX_LABEL;
+  case CREDIT_NOTE:
+    return FX_PALE;
+  case CREDIT_RULE:
+  case CREDIT_GAP:
+    break;
+  }
+  return FX_CREAM;
+}
+
+/*
+ * The roll itself: the table in [credits.c](credits.c), walked from the top,
+ * every row placed by the height its own kind asks for. Nothing about the
+ * layout is written here, which is the point — a line added to the table needs
+ * no change to this function, and a line too long for the frame fails the test
+ * suite rather than this screen.
+ */
+static void draw_credits_roll(Game *game)
+{
+  SDL_Renderer *r = game->platform.renderer;
+  int win_w = 0, win_h = 0;
+  game_get_view_size(game, &win_w, &win_h);
+
+  const CreditsRoll *roll = &game->presentation.credits;
+  float view_w = (float)win_w;
+  float view_h = (float)win_h;
+
+  color_rect(r, FX_NIGHT, 0.0f, 0.0f, view_w, view_h);
+  fx_vgrad(r, 0.0f, 0.0f, view_w, view_h,
+           (SDL_Color){6, 9, 16, 255}, 255,
+           (SDL_Color){16, 22, 33, 255}, 255);
+  draw_credits_skyline(r, view_w, view_h, roll->time);
+
+  int count = 0;
+  const CreditLine *lines = credits_lines(&count);
+  float scroll = credits_scroll(roll);
+  float y = view_h - scroll;
+
+  for (int i = 0; i < count; ++i)
+  {
+    float row_h = credits_line_height(lines[i].kind);
+    /* Rows above and below the frame are stepped over rather than drawn: a
+     * roll is a long strip and only a screen of it is ever on. */
+    if (y > -row_h && y < view_h)
+    {
+      float center_x = view_w * 0.5f;
+      if (lines[i].kind == CREDIT_RULE)
+      {
+        color_rect(r, FX_RUST, center_x - 56.0f, y + 8.0f, 112.0f, 2.0f);
+      }
+      else if (lines[i].kind != CREDIT_GAP)
+      {
+        SDL_Color ink = credit_ink(lines[i].kind);
+        float scale = credits_line_scale(lines[i].kind);
+        draw_text(r, center_x - draw_text_width(lines[i].text, scale) * 0.5f,
+                  y, scale, ink.r, ink.g, ink.b, lines[i].text);
+      }
+    }
+    y += row_h;
+  }
+
+  fx_grain(r, win_w, win_h, roll->time, FX_GRAIN_FILM);
+
+  /* The same two bars the outro finishes on, drawn last so the roll runs under
+   * them instead of stopping short of them. */
+  color_rect(r, FX_INK, 0.0f, 0.0f, view_w, 19.0f);
+  color_rect(r, FX_INK, 0.0f, view_h - 19.0f, view_w, 19.0f);
+
+  char hint[40];
+  const PadHints *pad = game_pad_hints(game);
+  bool resting = credits_at_rest(roll);
+  const char *prompt =
+      resting ? pad_hint(pad, hint, sizeof(hint), "$A: MAIN MENU",
+                         "SPACE / ENTER: MAIN MENU")
+              : pad_hint(pad, hint, sizeof(hint), "$A: SKIP",
+                         "SPACE / ENTER: SKIP");
+  float pulse = 0.45f + 0.55f * sinf(roll->time * 2.0f);
+  draw_text(r, view_w - draw_text_width(prompt, 1.0f) - 24.0f, view_h - 31.0f,
+            1.0f, (Uint8)(101.0f + pulse * 40.0f), (Uint8)(109.0f + pulse * 40.0f),
+            (Uint8)(108.0f + pulse * 38.0f), prompt);
+}
+
 void game_render(Game *game)
 {
   SDL_Renderer *r = game->platform.renderer;
@@ -5965,6 +6118,11 @@ void game_render(Game *game)
   {
     outro_cutscene_render(r, &game->presentation.outro_cutscene,
                           win_w, win_h, game_pad_hints(game));
+    vignette = FX_VIGNETTE_SCENE;
+  }
+  else if (game->state == STATE_CREDITS)
+  {
+    draw_credits_roll(game);
     vignette = FX_VIGNETTE_SCENE;
   }
   else

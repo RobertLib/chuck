@@ -822,6 +822,19 @@ static void game_enter_state(Game *game, GameState next_state)
     case STATE_OUTRO:
         outro_cutscene_init(&game->presentation.outro_cutscene);
         break;
+    case STATE_CREDITS:
+    {
+        int win_w = 0;
+        int win_h = 0;
+        game_get_view_size(game, &win_w, &win_h);
+        credits_init(&game->presentation.credits, (float)win_h);
+        /* The wreck is still burning under the last card; the roll is not the
+         * place for it. The title theme is already playing and stays playing,
+         * straight through the roll and into the title screen it ends on. */
+        audio_stop_effects(&game->platform.audio);
+        audio_play_music(&game->platform.audio, MUSIC_INTRO);
+        break;
+    }
     case STATE_LEVEL_CLEARED:
         game->presentation.message_timer = 1.2f;
         break;
@@ -1039,6 +1052,40 @@ static bool update_scene(Game *game, float dt)
             audio_play(&game->platform.audio, SFX_EXPLOSION);
         if (cues & OUTRO_CUE_WIN)
             audio_play(&game->platform.audio, SFX_WIN);
+
+        /* The thank-you frame is held for the rest of the outro's own clock and
+         * then hands over to the roll of names, which is what carries the
+         * player back to the title screen. Replaying is still a press of R on
+         * that card; from here on it is START on the title screen. */
+        if (game->presentation.outro_cutscene.time >= OUTRO_CUTSCENE_DURATION)
+            game_enter_state(game, STATE_CREDITS);
+
+        clear_edge_input(game);
+        return true;
+    }
+
+    if (game->state == STATE_CREDITS)
+    {
+        /* Confirm means "get on with it" while the names are moving and "done"
+         * once they have stopped, which is the same rule every other card in
+         * the game follows. Nobody has to press anything at all: the roll runs
+         * out on its own and ESC leaves early, the way it does from a cutscene.
+         * The pad's B is inert here for that same reason — there is nothing
+         * open to close and no run left to drop. */
+        if (game->input.confirm)
+        {
+            if (credits_at_rest(&game->presentation.credits))
+            {
+                game_return_to_intro(game);
+                clear_edge_input(game);
+                return true;
+            }
+            credits_skip_to_rest(&game->presentation.credits);
+            audio_play(&game->platform.audio, SFX_MENU_PAGE);
+        }
+
+        if (credits_update(&game->presentation.credits, dt))
+            game_return_to_intro(game);
 
         clear_edge_input(game);
         return true;

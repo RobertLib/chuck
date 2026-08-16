@@ -4,6 +4,7 @@
 #include "audio.h"
 #include "chase.h"
 #include "common.h"
+#include "credits.h"
 #include "cutscene.h"
 #include "gameplay_state.h"
 #include "intro.h"
@@ -27,6 +28,7 @@ typedef enum
     STATE_LEVEL_TRANSITION,
     STATE_LEVEL_CLEARED,
     STATE_OUTRO,
+    STATE_CREDITS,
     STATE_CONTINUE,
     STATE_GAME_OVER
 } GameState;
@@ -83,8 +85,10 @@ typedef struct
     /* Results report and the captors' next flight of stairs, between levels. */
     LevelTransition level_transition;
 
-    /* Final rooftop rescue and happy ending after the last level. */
+    /* Final rooftop rescue and happy ending after the last level, and the roll
+     * of names it hands to on its way back to the title screen. */
     OutroCutscene outro_cutscene;
+    CreditsRoll credits;
 
     /* Title-screen state (field-operations briefing shown before STATE_LEVEL_START) */
     Intro intro;

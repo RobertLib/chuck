@@ -155,6 +155,7 @@ static bool state_accepts_confirm(GameState state)
          state == STATE_SHOW_KEYCARD ||
          state == STATE_LEVEL_TRANSITION ||
          state == STATE_OUTRO ||
+         state == STATE_CREDITS ||
          state == STATE_CONTINUE ||
          state == STATE_GAME_OVER ||
          state == STATE_PAUSED;

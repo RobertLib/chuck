@@ -100,9 +100,11 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         {
             return SDL_APP_CONTINUE;
         }
-        /* What is left is the prologue's two cutscenes, the manual, the outro
-         * and the game-over hold: nothing with a run still on the table, so
-         * here ESC is the way out rather than an accident. */
+        /* What is left is the prologue's two cutscenes, the manual, the outro,
+         * the roll of names after it and the game-over hold: nothing with a run
+         * still on the table, so here ESC is the way out rather than an
+         * accident. The credits reach the title screen on their own anyway;
+         * ESC only says so sooner. */
         game_return_to_intro(game);
         return SDL_APP_CONTINUE;
     }
