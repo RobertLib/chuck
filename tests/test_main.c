@@ -15,6 +15,7 @@
 #include "level.h"
 #include "level_route.h"
 #include "rng.h"
+#include "settings.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -5532,6 +5533,138 @@ static void test_chase_cordon_thickens_toward_the_building(void)
     CHECK(late_held * early_total > early_held * late_total);
 }
 
+/*
+ * The options sheet is a table and a struct, and these pin the three things
+ * that make it one: the cursor cannot land on a heading, the file survives a
+ * round trip, and a file that has been edited into nonsense loads as the
+ * settings it does not mention rather than as a reset.
+ */
+static void test_settings_cursor_only_lands_on_rows(void)
+{
+    int row_count = 0;
+    const SettingRow *rows = settings_rows(&row_count);
+    CHECK(row_count > 0);
+
+    int cursor = settings_first_row();
+    CHECK(rows[cursor].kind != SETTING_ROW_HEADING);
+
+    /* Two full laps in each direction: every stop is a real row, and the walk
+     * comes back to where it started rather than getting stuck at an end. */
+    for (int direction = -1; direction <= 1; direction += 2)
+    {
+        int at = settings_first_row();
+        int seen = 0;
+        for (int step = 0; step < row_count * 2; ++step)
+        {
+            at = settings_move_cursor(at, direction);
+            CHECK(rows[at].kind != SETTING_ROW_HEADING);
+            CHECK(rows[at].id != SETTING_NONE);
+            if (at == settings_first_row())
+                ++seen;
+        }
+        CHECK(seen == 2);
+    }
+
+    /* Every row the cursor can reach says something about itself: a switch the
+     * player cannot see the point of is a switch they will not touch. */
+    for (int i = 0; i < row_count; ++i)
+    {
+        CHECK(rows[i].label != NULL);
+        if (rows[i].kind != SETTING_ROW_HEADING)
+            CHECK(rows[i].detail != NULL);
+    }
+}
+
+static void test_settings_sliders_step_and_stop(void)
+{
+    Settings settings;
+    settings_defaults(&settings);
+
+    /* Both levels open at the top, so the mix a fresh install hears is the one
+     * the effects and the scores were balanced at. */
+    CHECK(settings.music_volume == 100);
+    CHECK(settings.sfx_volume == 100);
+
+    /* At the top there is nothing to give: an unchanged value must report as
+     * unchanged, because that is what stops a slider clicking at its own end. */
+    CHECK(!settings_adjust(&settings, SETTING_MUSIC_VOLUME, 1));
+    CHECK(settings_adjust(&settings, SETTING_MUSIC_VOLUME, -1));
+    CHECK(settings.music_volume == 100 - SETTING_VOLUME_STEP);
+
+    for (int i = 0; i < 100; ++i)
+        settings_adjust(&settings, SETTING_MUSIC_VOLUME, -1);
+    CHECK(settings.music_volume == 0);
+    CHECK(!settings_adjust(&settings, SETTING_MUSIC_VOLUME, -1));
+    /* One bus at a time: the score going quiet must not take the shots with it. */
+    CHECK(settings.sfx_volume == 100);
+
+    /* A switch has no "more" and no "less", so both directions flip it. */
+    CHECK(settings_adjust(&settings, SETTING_MORE_HEARTS, 1));
+    CHECK(settings_value_bool(&settings, SETTING_MORE_HEARTS));
+    CHECK(settings_adjust(&settings, SETTING_MORE_HEARTS, -1));
+    CHECK(!settings_value_bool(&settings, SETTING_MORE_HEARTS));
+}
+
+static void test_settings_survive_the_file(void)
+{
+    Settings written;
+    settings_defaults(&written);
+    written.music_volume = 40;
+    written.sfx_volume = 70;
+    written.fullscreen = true;
+    written.crt_filter = false;
+    written.assist.more_hearts = true;
+    written.assist.infinite_lives = true;
+
+    char text[512];
+    size_t len = settings_serialize(&written, text, sizeof(text));
+    CHECK(len > 0);
+    CHECK(len < sizeof(text));
+    CHECK(text[len] == '\0');
+
+    Settings read;
+    settings_defaults(&read);
+    settings_parse(&read, text);
+    CHECK(read.music_volume == 40);
+    CHECK(read.sfx_volume == 70);
+    CHECK(read.fullscreen);
+    CHECK(!read.crt_filter);
+    CHECK(read.assist.more_hearts);
+    CHECK(!read.assist.slower_guards);
+    CHECK(read.assist.infinite_lives);
+}
+
+static void test_settings_file_damage_is_not_a_reset(void)
+{
+    Settings settings;
+    settings_defaults(&settings);
+    settings.sfx_volume = 30;
+
+    /* A comment, a blank line, a key from a build this one has never heard of,
+     * a line with no value and a level well outside the bar. None of it may
+     * take a setting the file did not mention with it. */
+    settings_parse(&settings,
+                   "# written by some other version\n"
+                   "\n"
+                   "shadows 3\n"
+                   "fullscreen\n"
+                   "music 4000\n");
+    CHECK(settings.sfx_volume == 30);
+    CHECK(!settings.fullscreen);
+    CHECK(settings.music_volume == 100);
+
+    settings_parse(&settings, "music -20\n");
+    CHECK(settings.music_volume == 0);
+
+    /* And an empty file is the defaults, not a crash. */
+    Settings empty;
+    settings_defaults(&empty);
+    settings_parse(&empty, "");
+    settings_parse(&empty, NULL);
+    CHECK(empty.music_volume == 100);
+    CHECK(empty.crt_filter);
+}
+
 int main(void)
 {
     test_camera_axis_target();
@@ -5658,6 +5791,10 @@ int main(void)
     test_crew_traffic_fits_the_plate();
     test_no_radio_checks_while_the_alarm_is_up();
     test_chase_cordon_thickens_toward_the_building();
+    test_settings_cursor_only_lands_on_rows();
+    test_settings_sliders_step_and_stop();
+    test_settings_survive_the_file();
+    test_settings_file_damage_is_not_a_reset();
 
     if (failures != 0)
     {

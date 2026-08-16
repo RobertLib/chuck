@@ -62,6 +62,16 @@ typedef struct
     int next_voice;
     int current_music;
     int previous_music;
+    /*
+     * The player's two levels, 0 to 1, sitting on top of the mix rather than
+     * inside it: every effect and every score is still built and balanced at
+     * the gain it was written with, and these only scale what leaves. They are
+     * separate buses because a score under a conversation and a shot that
+     * still has to be heard are two different decisions, and one knob cannot
+     * make both of them.
+     */
+    float music_volume;
+    float sfx_volume;
     bool subsystem_initialized;
     bool ready;
     bool muted;
@@ -79,6 +89,15 @@ void audio_play_music(AudioSystem *audio, MusicTrack track);
 void audio_stop_music(AudioSystem *audio);
 void audio_stop_effects(AudioSystem *audio);
 void audio_update_music(AudioSystem *audio);
+
+/* The two levels the options sheet owns, each 0 to 1. Applied immediately, so
+ * a slider is heard while it is being moved rather than at the next track. */
+void audio_set_volumes(AudioSystem *audio, float music, float sfx);
+
+/* The one key that silences everything at once, on top of both levels. It is
+ * deliberately not saved: a kill switch is a thing you reach for during a
+ * phone call, and a game that starts silent with nothing on screen explaining
+ * why is a game the player thinks is broken. */
 void audio_toggle_mute(AudioSystem *audio);
 
 #endif /* CHUCK_AUDIO_H */

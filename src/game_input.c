@@ -169,13 +169,12 @@ static bool state_accepts_pause(GameState state)
          state == STATE_CHASE;
 }
 
+/* F, from anywhere. It goes through the same function the options sheet's own
+ * row does, so the window and the saved setting can never disagree about which
+ * one the player asked for. */
 static void toggle_fullscreen(Game *game)
 {
-  bool target = !game->platform.fullscreen;
-  if (SDL_SetWindowFullscreen(game->platform.window, target))
-    game->platform.fullscreen = target;
-  else
-    SDL_Log("Could not toggle fullscreen: %s", SDL_GetError());
+  game_set_fullscreen(game, !game->platform.fullscreen);
 }
 
 #ifdef CHUCK_DEBUG
@@ -249,35 +248,69 @@ static bool handle_manual_gamepad(Game *game, SDL_GamepadButton button,
   return false;
 }
 
-/* The assist sheet's pad bindings: up/down walk the rows, A flips the row,
- * and everything that means "done" puts the sheet away. It closes through
- * game_close_assist and never through the route out below, because the sheet
- * opens from the pause screen as well and has to hand that run back rather
- * than drop it on the title screen. */
-static bool handle_assist_gamepad(Game *game, SDL_GamepadButton button,
-                                  PadFace face)
+/*
+ * The options sheet's pad bindings: up and down walk the rows, left and right
+ * change the one under the cursor, and everything that means "done" puts the
+ * sheet away.
+ *
+ * A is a change input as well as the two directions, and that is deliberate
+ * rather than a shortcut: a two-state row has no "more" and no "less", so on a
+ * switch all three do the same thing, and on a level A steps it up. What
+ * matters is that the footer names exactly these and nothing else — a sheet
+ * that answers a button it never mentions is the same bug as a prompt naming a
+ * button that does nothing.
+ *
+ * It closes through game_close_settings and never through the route out below,
+ * because the sheet opens from the pause screen as well and has to hand that
+ * run back rather than drop it on the title screen.
+ */
+static bool handle_settings_gamepad(Game *game, SDL_GamepadButton button,
+                                    PadFace face)
 {
   if (button == SDL_GAMEPAD_BUTTON_DPAD_UP)
   {
-    game_assist_move_cursor(game, -1);
+    game_settings_move_cursor(game, -1);
     return true;
   }
   if (button == SDL_GAMEPAD_BUTTON_DPAD_DOWN)
   {
-    game_assist_move_cursor(game, 1);
+    game_settings_move_cursor(game, 1);
     return true;
   }
-  if (face == PAD_FACE_CONFIRM || button == SDL_GAMEPAD_BUTTON_DPAD_LEFT ||
-      button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT)
+  if (button == SDL_GAMEPAD_BUTTON_DPAD_LEFT)
   {
-    game_assist_toggle_selected(game);
+    game_settings_adjust(game, -1);
+    return true;
+  }
+  if (button == SDL_GAMEPAD_BUTTON_DPAD_RIGHT || face == PAD_FACE_CONFIRM)
+  {
+    game_settings_adjust(game, 1);
     return true;
   }
   if (button == SDL_GAMEPAD_BUTTON_START ||
       button == SDL_GAMEPAD_BUTTON_BACK || face == PAD_FACE_CANCEL ||
       face == PAD_FACE_ATTACK || face == PAD_FACE_DOOR)
   {
-    game_close_assist(game);
+    game_close_settings(game);
+    return true;
+  }
+  return false;
+}
+
+/* The pause menu's own bindings. Up and down walk the three items and A
+ * answers the one under the cursor; B and START still resume outright, because
+ * the button that opened the sheet and the button that backs out of one are
+ * both faster than walking to RESUME and pressing it. */
+static bool handle_pause_gamepad(Game *game, SDL_GamepadButton button)
+{
+  if (button == SDL_GAMEPAD_BUTTON_DPAD_UP)
+  {
+    game_pause_move_cursor(game, -1);
+    return true;
+  }
+  if (button == SDL_GAMEPAD_BUTTON_DPAD_DOWN)
+  {
+    game_pause_move_cursor(game, 1);
     return true;
   }
   return false;
@@ -352,7 +385,10 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
 
   if (game->state == STATE_MANUAL && handle_manual_gamepad(game, button, face))
     return;
-  if (game->state == STATE_ASSIST && handle_assist_gamepad(game, button, face))
+  if (game->state == STATE_SETTINGS &&
+      handle_settings_gamepad(game, button, face))
+    return;
+  if (game->state == STATE_PAUSED && handle_pause_gamepad(game, button))
     return;
 
   switch (face)
@@ -376,8 +412,8 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
       game->input.shoot = true;
     else
       /* The sheet opens from the title screen and from pause and returns to
-       * whichever opened it; game_open_assist ignores every other state. */
-      game_open_assist(game);
+       * whichever opened it; game_open_settings ignores every other state. */
+      game_open_settings(game);
     return;
   case PAD_FACE_DOOR:
     /* The drive reads use_door as its skip: A and B are the pedals there, so
@@ -386,12 +422,10 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
       game->input.use_door = true;
     else if (game->state == STATE_INTRO)
       game_open_manual(game);
-    else if (game->state == STATE_PAUSED)
-      /* Sound is a setting, and settings live behind the pause button. It
-       * used to sit on the left bumper, where nothing in any platform's
-       * guidance would look for it and where a thumb reaching for a weapon
-       * found it instead. */
-      audio_toggle_mute(&game->platform.audio);
+    /* Y used to mute from the pause screen, which was the only sound control a
+     * pad had. It is gone because the options sheet is two presses away and
+     * carries two real levels: a pad muting to silence while the sheet beside
+     * it still read 100 was two answers to the same question. */
     return;
   case PAD_FACE_NONE:
   case PAD_FACE_COUNT:
@@ -495,9 +529,9 @@ void game_handle_event(Game *game, const SDL_Event *event)
     {
       game_open_manual(game);
     }
-    else if (intro_hit_assist_button(&game->presentation.intro, mx, my))
+    else if (intro_hit_options_button(&game->presentation.intro, mx, my))
     {
-      game_open_assist(game);
+      game_open_settings(game);
     }
     return;
   }
@@ -541,26 +575,25 @@ void game_handle_event(Game *game, const SDL_Event *event)
       return;
     }
 
-    /* The assist sheet owns the keyboard while it is open, like the manual. */
-    if (game->state == STATE_ASSIST)
+    /* The options sheet owns the keyboard while it is open, like the manual.
+     * Up and down walk the rows and left and right change the one under the
+     * cursor; ENTER is a change input too, so a switch can be flipped without
+     * the hand leaving the row it is on. */
+    if (game->state == STATE_SETTINGS)
     {
       if (sc == SDL_SCANCODE_UP || sc == SDL_SCANCODE_W)
-        game_assist_move_cursor(game, -1);
+        game_settings_move_cursor(game, -1);
       else if (sc == SDL_SCANCODE_DOWN || sc == SDL_SCANCODE_S)
-        game_assist_move_cursor(game, 1);
-      else if (key == SDLK_SPACE || key == SDLK_RETURN ||
-               key == SDLK_KP_ENTER || sc == SDL_SCANCODE_LEFT ||
-               sc == SDL_SCANCODE_RIGHT)
-        game_assist_toggle_selected(game);
-      else if (sc == SDL_SCANCODE_1)
-        game_assist_toggle(game, 0);
-      else if (sc == SDL_SCANCODE_2)
-        game_assist_toggle(game, 1);
-      else if (sc == SDL_SCANCODE_3)
-        game_assist_toggle(game, 2);
+        game_settings_move_cursor(game, 1);
+      else if (sc == SDL_SCANCODE_LEFT || sc == SDL_SCANCODE_A)
+        game_settings_adjust(game, -1);
+      else if (sc == SDL_SCANCODE_RIGHT || sc == SDL_SCANCODE_D ||
+               key == SDLK_SPACE || key == SDLK_RETURN ||
+               key == SDLK_KP_ENTER)
+        game_settings_adjust(game, 1);
       else if (sc == SDL_SCANCODE_J || sc == SDL_SCANCODE_H ||
                sc == SDL_SCANCODE_BACKSPACE)
-        game_close_assist(game);
+        game_close_settings(game);
       else if (sc == SDL_SCANCODE_M)
         audio_toggle_mute(&game->platform.audio);
       return;
@@ -576,7 +609,22 @@ void game_handle_event(Game *game, const SDL_Event *event)
     if (sc == SDL_SCANCODE_J &&
         (game->state == STATE_INTRO || game->state == STATE_PAUSED))
     {
-      game_open_assist(game);
+      game_open_settings(game);
+      return;
+    }
+
+    /* The pause menu is walked, not just read. Its three items are answered by
+     * the confirm below, which every state on that list already reports. */
+    if (game->state == STATE_PAUSED &&
+        (sc == SDL_SCANCODE_UP || sc == SDL_SCANCODE_W))
+    {
+      game_pause_move_cursor(game, -1);
+      return;
+    }
+    if (game->state == STATE_PAUSED &&
+        (sc == SDL_SCANCODE_DOWN || sc == SDL_SCANCODE_S))
+    {
+      game_pause_move_cursor(game, 1);
       return;
     }
 

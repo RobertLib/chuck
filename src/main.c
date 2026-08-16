@@ -76,9 +76,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
             game_toggle_pause(game);
             return SDL_APP_CONTINUE;
         }
-        if (game->state == STATE_ASSIST)
+        if (game->state == STATE_SETTINGS)
         {
-            game_close_assist(game);
+            game_close_settings(game);
             return SDL_APP_CONTINUE;
         }
         /* The report between sectors is mid-campaign and has nothing to close,

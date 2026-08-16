@@ -176,10 +176,17 @@ Two screens hang off the title screen. The **field manual** (`H`, or `Y` on a
 pad) is eight illustrated sheets covering who is in the building and why, who
 the twelve of them are, what
 the floor plan allows, what the guards do, how the wall is climbed and how to
-read the HUD. **Assist options** (`J`, or `X` on a pad, and also reachable from
-the pause screen) offer five hearts a life, guards and dogs at 80% speed, and
-deaths that never cost a life. They can be turned on and off mid-run and take
-effect on the next frame.
+read the HUD. **Options** (`J`, or `X` on a pad, and also reachable from the
+pause screen) is one sheet in three sections: separate levels for the music and
+the sound effects, fullscreen and the CRT filter, and the three assist switches
+— five hearts a life, guards and dogs at 80% speed, and deaths that never cost
+a life. Everything on it takes effect on the frame it is changed, and the sheet
+writes the lot to disk when it is closed, so the next launch opens the way the
+last one was left.
+
+Pausing (`Esc`, or `Start` on a pad) is a menu of three: resume, the options
+sheet, and abandoning the run. The cursor always opens on resume, because the
+one item that cannot be taken back must never be the one under the thumb.
 
 ## Controls
 
@@ -201,10 +208,10 @@ whatever is actually in your hands.
 - Use a door, or hold to hack the active terminal: `Y`
 - Cycle weapons: right shoulder for the next, left shoulder for the one before
 - Pause and resume: `Start`. Nothing else pauses.
-- Back out of the manual, the assist sheet, or the pause screen: `B`
+- Back out of the manual, the options sheet, or the pause menu: `B`
+- Choose the item under the pause cursor, or change the selected option: `A`
 - Field manual, from the title screen: `Y`
-- Assist options, from the title screen or from pause: `X`
-- Mute or unmute, from the pause screen: `Y`
+- Options, from the title screen or from pause: `X`
 - Abandon the run, from the pause screen only: `Back`
 - Turn a sheet of the manual: the shoulder buttons or the D-pad
 
@@ -240,11 +247,11 @@ still free. `Start` still pauses.
 - Hack the active terminal: hold `E` while standing nearby
 - Use a door: press `E` while standing in the doorway
 - Pause and resume: `Esc`
-- Back out of the manual, the assist sheet, or the pause screen: `Backspace`
+- Back out of the manual, the options sheet, or the pause menu: `Backspace`
 - Quit to the title screen, from the pause screen only: `Q`
 - Field manual, from the title screen: `H` or `F1`
-- Assist options, from the title screen or from pause: `J`
-- Mute or unmute sound and music: `M`
+- Options, from the title screen or from pause: `J`
+- Mute or unmute everything at once: `M` (the options sheet has the levels)
 - Toggle fullscreen: `F` or `Alt+Enter`
 - Skip a cinematic to its next screen: `Space` or `Enter`
 - Replay after the ending: `R`

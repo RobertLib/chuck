@@ -5554,111 +5554,291 @@ static void draw_continue_overlay(Game *game)
                      COL_SUBTITLE.b, remaining);
 }
 
-static void draw_pause_overlay(Game *game)
+/*
+ * The one plate both sheets are drawn on: the pause menu and the options.
+ * They are the same object seen twice, so they are lit the same way — a steel
+ * face falling into shade, a lit top edge, a dark base and the cyan spine that
+ * marks every interface surface in the game.
+ */
+static void draw_sheet_plate(SDL_Renderer *r, float x, float y, float w,
+                             float h)
 {
-  char hint[64];
-  draw_overlay_panel(game, 225.0f, FX_CYAN,
-                     "PAUSED",
-                     pad_hint(game_pad_hints(game), hint, sizeof(hint),
-                              "$B: RESUME   $X: ASSIST   $Y: MUTE   "
-                              "$SELECT: TITLE",
-                              "ESC: RESUME   J: ASSIST   M: MUTE   Q: TITLE"));
+  fx_vgrad(r, x, y, w, h,
+           (SDL_Color){30, 40, 56, 255}, 255,
+           (SDL_Color){13, 19, 30, 255}, 255);
+  color_rect(r, (SDL_Color){60, 76, 98, 255}, x, y, w, 1.0f);
+  color_rect(r, FX_INK, x, y + h - 1.0f, w, 1.0f);
+  color_rect(r, FX_CYAN, x, y, 3.0f, h);
 }
 
-/* The assist sheet: three switches on a plate, drawn with the same console
- * vocabulary as the HUD. Options, not apologies. */
-static void draw_assist_overlay(Game *game)
+/* The cursor's own row: a wash the width of the plate and the caret that says
+ * which line the next press lands on. The caret's height is given rather than
+ * derived from the band, because a row is a label with a sentence under it and
+ * the caret belongs beside the label — centring it in the band puts it in the
+ * gap between the two, pointing at neither. */
+static void draw_sheet_cursor(SDL_Renderer *r, float x, float y, float w,
+                              float h, float caret_y)
+{
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+  set_rgba(r, FX_CYAN.r, FX_CYAN.g, FX_CYAN.b, 26);
+  fill_rect(r, x + 12.0f, y, w - 24.0f, h);
+  SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+  draw_text(r, x + 16.0f, caret_y, 1.0f,
+            FX_CYAN.r, FX_CYAN.g, FX_CYAN.b, ">");
+}
+
+static void dim_whole_frame(Game *game, Uint8 alpha)
 {
   SDL_Renderer *r = game->platform.renderer;
   int win_w = 0, win_h = 0;
   game_get_view_size(game, &win_w, &win_h);
 
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-  set_rgba(r, 4, 6, 11, 205);
+  set_rgba(r, 4, 6, 11, alpha);
   fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
 
-  float panel_w = 460.0f;
-  float panel_h = 268.0f;
+/*
+ * The pause menu. Three items, because a paused run has exactly three things
+ * the player can want from it, and the one that cannot be taken back is last
+ * and set in the danger red — a list where ABANDON RUN looks like RESUME is a
+ * list somebody eventually loses a run to.
+ */
+static void draw_pause_menu(Game *game)
+{
+  SDL_Renderer *r = game->platform.renderer;
+  int win_w = 0, win_h = 0;
+  game_get_view_size(game, &win_w, &win_h);
+
+  dim_whole_frame(game, 205);
+
+  static const char *labels[PAUSE_ITEM_COUNT] = {
+      "RESUME", "OPTIONS", "ABANDON RUN"};
+  static const char *details[PAUSE_ITEM_COUNT] = {
+      "BACK TO THE SECTOR",
+      "SOUND, DISPLAY AND ASSIST",
+      "GIVE UP THIS RUN AND RETURN TO THE TITLE"};
+
+  const float row_h = 44.0f;
+  const float panel_w = 420.0f;
+  const float rows_top = 78.0f;
+  float panel_h = rows_top + row_h * (float)PAUSE_ITEM_COUNT + 40.0f;
   float panel_x = ((float)win_w - panel_w) * 0.5f;
-  float panel_y = ((float)win_h - panel_h) * 0.5f - 12.0f;
+  float panel_y = ((float)win_h - panel_h) * 0.5f - 10.0f;
 
-  fx_vgrad(r, panel_x, panel_y, panel_w, panel_h,
-           (SDL_Color){30, 40, 56, 255}, 255,
-           (SDL_Color){13, 19, 30, 255}, 255);
-  color_rect(r, (SDL_Color){60, 76, 98, 255},
-             panel_x, panel_y, panel_w, 1.0f);
-  color_rect(r, FX_INK,
-             panel_x, panel_y + panel_h - 1.0f, panel_w, 1.0f);
-  color_rect(r, FX_CYAN,
-             panel_x, panel_y, 3.0f, panel_h);
+  draw_sheet_plate(r, panel_x, panel_y, panel_w, panel_h);
+  fx_glow(r, panel_x + panel_w * 0.5f, panel_y + 26.0f, 200.0f, FX_CYAN, 26);
 
-  draw_text(r, panel_x + 22.0f, panel_y + 18.0f, 2.0f,
-            FX_CREAM.r, FX_CREAM.g, FX_CREAM.b, "ASSIST MODE");
-  draw_text(r, panel_x + 22.0f, panel_y + 42.0f, 1.0f,
+  draw_text(r, panel_x + 22.0f, panel_y + 20.0f, 2.0f,
+            FX_CREAM.r, FX_CREAM.g, FX_CREAM.b, "PAUSED");
+  draw_text(r, panel_x + 22.0f, panel_y + 46.0f, 1.0f,
             FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
-            "THE GAME IS TUNED WITHOUT THESE. TAKE WHAT HELPS.");
+            "THE BUILDING WAITS.");
 
-  static const char *labels[3] = {
-      "MORE HEARTS", "SLOWER GUARDS", "INFINITE LIVES"};
-  static const char *details[3] = {
-      "FIVE HEARTS PER LIFE INSTEAD OF THREE",
-      "GUARDS AND DOGS MOVE AT 80% SPEED",
-      "A DEATH NEVER COSTS A LIFE"};
-  bool values[3] = {game->assist.more_hearts,
-                    game->assist.slower_guards,
-                    game->assist.infinite_lives};
-  for (int i = 0; i < 3; ++i)
+  for (int i = 0; i < PAUSE_ITEM_COUNT; ++i)
   {
-    float row_y = panel_y + 66.0f + (float)i * 48.0f;
-    bool selected = game->assist_cursor == i;
+    float row_y = panel_y + rows_top + (float)i * row_h;
+    bool selected = game->pause_cursor == i;
     if (selected)
-    {
-      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-      set_rgba(r, FX_CYAN.r, FX_CYAN.g, FX_CYAN.b, 26);
-      fill_rect(r, panel_x + 12.0f, row_y - 7.0f, panel_w - 24.0f, 42.0f);
-      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-      draw_text(r, panel_x + 16.0f, row_y + 2.0f, 1.0f,
-                FX_CYAN.r, FX_CYAN.g, FX_CYAN.b, ">");
-    }
-    char key_buf[4];
-    SDL_snprintf(key_buf, sizeof(key_buf), "%d", i + 1);
-    draw_text(r, panel_x + 34.0f, row_y + 2.0f, 1.0f,
-              FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, key_buf);
-    draw_text(r, panel_x + 56.0f, row_y, 1.0f,
-              selected ? 236 : 200, selected ? 238 : 208,
-              selected ? 224 : 196, labels[i]);
-    draw_text(r, panel_x + 56.0f, row_y + 17.0f, 1.0f,
-              FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, details[i]);
+      draw_sheet_cursor(r, panel_x, row_y - 6.0f, panel_w, 38.0f,
+                        row_y + 4.0f);
 
-    /* The switch itself: a lit chip when on, a dark socket when off. */
-    float chip_x = panel_x + panel_w - 84.0f;
-    if (values[i])
-    {
-      color_rect(r, (SDL_Color){16, 52, 40, 255}, chip_x, row_y, 56.0f, 15.0f);
-      color_rect(r, (SDL_Color){40, 132, 96, 255}, chip_x, row_y, 56.0f, 1.0f);
-      color_rect(r, FX_GREEN,
-                 chip_x + 5.0f, row_y + 6.0f, 3.0f, 3.0f);
-      draw_text(r, chip_x + 15.0f, row_y + 4.0f, 1.0f,
-                FX_GREEN.r, FX_GREEN.g, FX_GREEN.b, "ON");
-    }
-    else
-    {
-      color_rect(r, (SDL_Color){36, 38, 42, 255}, chip_x, row_y, 56.0f, 15.0f);
-      color_rect(r, (SDL_Color){96, 102, 108, 255}, chip_x, row_y, 56.0f, 1.0f);
-      color_rect(r, (SDL_Color){80, 86, 94, 255},
-                 chip_x + 5.0f, row_y + 6.0f, 3.0f, 3.0f);
-      draw_text(r, chip_x + 15.0f, row_y + 4.0f, 1.0f,
-                FX_PALE.r, FX_PALE.g, FX_PALE.b, "OFF");
-    }
+    SDL_Color tint = i == PAUSE_ITEM_ABANDON ? FX_RED : FX_CREAM;
+    draw_text(r, panel_x + 40.0f, row_y, 2.0f,
+              tint.r, tint.g, tint.b, labels[i]);
+    draw_text(r, panel_x + 40.0f, row_y + 20.0f, 1.0f,
+              FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, details[i]);
   }
 
-  char hint[64];
+  char hint[80];
   draw_text(r, panel_x + 22.0f, panel_y + panel_h - 26.0f, 1.0f,
             FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
             pad_hint(game_pad_hints(game), hint, sizeof(hint),
-                     "D-PAD: SELECT   $A: TOGGLE   $START: DONE",
-                     "ARROWS: SELECT   ENTER: TOGGLE   ESC: DONE"));
+                     "D-PAD: SELECT   $A: CHOOSE   $B: RESUME",
+                     "ARROWS: SELECT   ENTER: CHOOSE   ESC: RESUME"));
+}
+
+/* From the end of the bar to the sheet's right margin: the widest reading the
+ * row can print ("100%", four cells of the 8x8 font) plus a gap that keeps it
+ * off the bar. */
+#define SETTING_VALUE_GUTTER 46.0f
+
+/* The level a slider is set to, drawn as a bar rather than only as a number:
+ * a number says what it is, a bar says how far along it is, and moving one is
+ * a thing the player does by eye. */
+static void draw_setting_slider(SDL_Renderer *r, float x, float y, float w,
+                                int percent, bool selected)
+{
+  const float h = 9.0f;
+  color_rect(r, (SDL_Color){16, 22, 32, 255}, x, y, w, h);
+  color_rect(r, FX_INK, x, y, w, 1.0f);
+
+  float filled = w * (float)percent / 100.0f;
+  if (filled > 0.0f)
+  {
+    SDL_Color body = selected ? FX_CYAN : fx_dim(FX_CYAN, 0.66f);
+    color_rect(r, fx_dim(body, 0.55f), x, y, filled, h);
+    color_rect(r, body, x, y, filled, 2.0f);
+    if (selected)
+      fx_glow(r, x + filled, y + h * 0.5f, 16.0f, FX_CYAN, 70);
+  }
+
+  /* The ten notches the row actually moves in, so the bar reads as a control
+   * with stops rather than as a continuous fill the player is nudging. */
+  for (int notch = 1; notch < 100 / SETTING_VOLUME_STEP; ++notch)
+  {
+    float nx = x + w * (float)notch * (float)SETTING_VOLUME_STEP / 100.0f;
+    color_rect(r, (SDL_Color){8, 12, 18, 255}, nx, y + 1.0f, 1.0f, h - 2.0f);
+  }
+
+  char value[8];
+  SDL_snprintf(value, sizeof(value), "%d%%", percent);
+  /* Right-aligned against the sheet's own margin, so the digits do not shuffle
+   * sideways as the level walks between 90 and 100 — and clear of the bar by
+   * more than the one pixel that "wide enough for 100%" turns out to leave. */
+  float value_w = draw_text_width(value, 1.0f);
+  draw_text(r, x + w + SETTING_VALUE_GUTTER - value_w, y, 1.0f,
+            selected ? FX_CREAM.r : FX_PALE.r,
+            selected ? FX_CREAM.g : FX_PALE.g,
+            selected ? FX_CREAM.b : FX_PALE.b, value);
+}
+
+/* A switch: a lit chip when on, a dark socket when off. Unchanged from the
+ * assist sheet this grew out of, because it is the same object. */
+static void draw_setting_toggle(SDL_Renderer *r, float x, float y, bool on)
+{
+  if (on)
+  {
+    color_rect(r, (SDL_Color){16, 52, 40, 255}, x, y, 56.0f, 15.0f);
+    color_rect(r, (SDL_Color){40, 132, 96, 255}, x, y, 56.0f, 1.0f);
+    color_rect(r, FX_GREEN, x + 5.0f, y + 6.0f, 3.0f, 3.0f);
+    draw_text(r, x + 15.0f, y + 4.0f, 1.0f,
+              FX_GREEN.r, FX_GREEN.g, FX_GREEN.b, "ON");
+  }
+  else
+  {
+    color_rect(r, (SDL_Color){36, 38, 42, 255}, x, y, 56.0f, 15.0f);
+    color_rect(r, (SDL_Color){96, 102, 108, 255}, x, y, 56.0f, 1.0f);
+    color_rect(r, (SDL_Color){80, 86, 94, 255}, x + 5.0f, y + 6.0f, 3.0f, 3.0f);
+    draw_text(r, x + 15.0f, y + 4.0f, 1.0f,
+              FX_PALE.r, FX_PALE.g, FX_PALE.b, "OFF");
+  }
+}
+
+/*
+ * The options sheet. Its rows come straight out of the table in
+ * [settings.c](settings.c) and it draws whatever it finds there: adding a
+ * setting is a line in that table and nothing here. The two kinds of control
+ * are the whole layout language, which is the same bargain the manual's
+ * `ManualLine` makes.
+ */
+static void draw_settings_sheet(Game *game)
+{
+  SDL_Renderer *r = game->platform.renderer;
+  int win_w = 0, win_h = 0;
+  game_get_view_size(game, &win_w, &win_h);
+
+  dim_whole_frame(game, 205);
+
+  int row_count = 0;
+  const SettingRow *rows = settings_rows(&row_count);
+
+  /* A heading is a rule with a name in it; one that carries a sentence as well
+   * needs the room for it, or the sentence lands on the first row of its own
+   * section. The height is asked per row rather than assumed, which is also
+   * what lets the sheet grow a section without any of this being retuned. */
+  const float heading_h = 26.0f;
+  const float heading_detail_h = 40.0f;
+  const float value_h = 40.0f;
+  const float rows_top = 66.0f;
+  const float panel_w = 512.0f;
+
+  float rows_h = 0.0f;
+  for (int i = 0; i < row_count; ++i)
+  {
+    if (rows[i].kind != SETTING_ROW_HEADING)
+      rows_h += value_h;
+    else
+      rows_h += rows[i].detail != NULL ? heading_detail_h : heading_h;
+  }
+
+  float panel_h = rows_top + rows_h + 38.0f;
+  float panel_x = ((float)win_w - panel_w) * 0.5f;
+  float panel_y = ((float)win_h - panel_h) * 0.5f;
+
+  draw_sheet_plate(r, panel_x, panel_y, panel_w, panel_h);
+
+  draw_text(r, panel_x + 22.0f, panel_y + 18.0f, 2.0f,
+            FX_CREAM.r, FX_CREAM.g, FX_CREAM.b, "OPTIONS");
+  draw_text(r, panel_x + 22.0f, panel_y + 42.0f, 1.0f,
+            FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+            "EVERY CHANGE IS KEPT WHEN THIS SHEET IS CLOSED.");
+
+  float y = panel_y + rows_top;
+  for (int i = 0; i < row_count; ++i)
+  {
+    const SettingRow *row = &rows[i];
+
+    if (row->kind == SETTING_ROW_HEADING)
+    {
+      /* A section rule: the name, and the hairline that carries it across the
+       * plate so the three groups read as three groups. */
+      float label_w = draw_text_width(row->label, 1.0f);
+      draw_text(r, panel_x + 22.0f, y + 11.0f, 1.0f,
+                FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, row->label);
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+      set_rgba(r, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, 46);
+      fill_rect(r, panel_x + 30.0f + label_w, y + 14.0f,
+                panel_w - 52.0f - label_w, 1.0f);
+      SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+      if (row->detail != NULL)
+      {
+        draw_text(r, panel_x + 22.0f, y + 24.0f, 1.0f,
+                  FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, row->detail);
+        y += heading_detail_h;
+      }
+      else
+      {
+        y += heading_h;
+      }
+      continue;
+    }
+
+    bool selected = game->settings_cursor == i;
+    if (selected)
+      draw_sheet_cursor(r, panel_x, y - 6.0f, panel_w, 36.0f, y);
+
+    draw_text(r, panel_x + 34.0f, y, 1.0f,
+              selected ? 236 : 200, selected ? 238 : 208,
+              selected ? 224 : 196, row->label);
+    if (row->detail != NULL)
+      draw_text(r, panel_x + 34.0f, y + 15.0f, 1.0f,
+                FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, row->detail);
+
+    /* Both controls end on the same right margin, so the column of switches
+     * and the ends of the bars line up down the sheet. */
+    float control_right = panel_x + panel_w - 28.0f;
+    if (row->kind == SETTING_ROW_SLIDER)
+      draw_setting_slider(r, control_right - SETTING_VALUE_GUTTER - 140.0f,
+                          y + 1.0f, 140.0f,
+                          settings_value_percent(&game->settings, row->id),
+                          selected);
+    else
+      draw_setting_toggle(r, control_right - 56.0f, y,
+                          settings_value_bool(&game->settings, row->id));
+
+    y += value_h;
+  }
+
+  /* Named exactly as bound: up and down walk, left and right change, and the
+   * way out is whatever the player already reached for to open this. */
+  char hint[96];
+  draw_text(r, panel_x + 22.0f, panel_y + panel_h - 24.0f, 1.0f,
+            FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+            pad_hint(game_pad_hints(game), hint, sizeof(hint),
+                     "D-PAD: SELECT AND CHANGE   $A: CHANGE   $B: DONE",
+                     "ARROWS: SELECT AND CHANGE   ENTER: CHANGE   ESC: DONE"));
 }
 
 #ifdef CHUCK_DEBUG
@@ -5718,9 +5898,9 @@ void game_render(Game *game)
                  game->presentation.camera_shake_y,
                  game_pad_hints(game));
     if (game->state == STATE_PAUSED)
-      draw_pause_overlay(game);
+      draw_pause_menu(game);
   }
-  else if (game->state == STATE_ASSIST)
+  else if (game->state == STATE_SETTINGS)
   {
     /* Over the title the sheet floats on the night; over the pause screen it
      * floats on the held frame — and "the held frame" has to mean whatever was
@@ -5728,7 +5908,7 @@ void game_render(Game *game)
      * whether the sheet came from the title screen put the frozen first sector
      * behind a sheet opened from a paused drive, which is a road the player
      * has not reached yet. */
-    if (game->assist_return_state == STATE_INTRO)
+    if (game->settings_return_state == STATE_INTRO)
     {
       intro_render(r, &game->presentation.intro, win_w, win_h,
                    game_pad_hints(game));
@@ -5746,7 +5926,7 @@ void game_render(Game *game)
       render_world(game);
       render_hud(game);
     }
-    draw_assist_overlay(game);
+    draw_settings_sheet(game);
   }
   else if (game->state == STATE_ABDUCTION)
   {
@@ -5824,11 +6004,18 @@ void game_render(Game *game)
       draw_overlay_panel(game, 225.0f, FX_RED,
                          "GAME OVER", "RETURNING TO MAIN MENU");
     else if (game->state == STATE_PAUSED)
-      draw_pause_overlay(game);
+      draw_pause_menu(game);
   }
 
-  fx_vignette(r, win_w, win_h, vignette);
-  fx_scanlines(r, win_w, win_h, FX_SCANLINE_ALPHA);
+  /* The one finishing pass, and the one switch that turns it off. It is the
+   * game's look and it stays on unless the player says otherwise, but it is a
+   * filter over every pixel of every screen, so leaving it unremovable is the
+   * one decision about it that is not ours to make. */
+  if (game->settings.crt_filter)
+  {
+    fx_vignette(r, win_w, win_h, vignette);
+    fx_scanlines(r, win_w, win_h, FX_SCANLINE_ALPHA);
+  }
 
   SDL_RenderPresent(r);
 }

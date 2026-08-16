@@ -22,6 +22,7 @@ TEST_SOURCES := tests/test_main.c \
 	src/camera.c src/chase.c src/crew.c src/enemy.c src/game_event.c src/gameplay_ai.c src/gameplay_combat.c \
 	src/gameplay_climb.c src/gameplay_interaction.c src/gameplay_physics.c src/gameplay_world.c \
 	src/gameplay_state.c src/level.c src/level_route.c src/player.c src/rng.c \
+	src/settings.c \
 	editor/editor_doc.c editor/editor_legend.c editor/editor_validate.c
 
 SOURCES := $(wildcard $(SRC_DIR)/*.c)

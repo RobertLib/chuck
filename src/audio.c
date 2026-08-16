@@ -1881,6 +1881,11 @@ bool audio_init(AudioSystem *audio)
     SDL_zerop(audio);
     audio->current_music = -1;
     audio->previous_music = -1;
+    /* Full until the shell says otherwise. Audio init runs before the saved
+     * settings are applied, and a zeroed struct would mean the title theme
+     * played silently on every launch that got the order slightly wrong. */
+    audio->music_volume = 1.0f;
+    audio->sfx_volume = 1.0f;
 
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO))
     {
@@ -1993,6 +1998,10 @@ static void play_scaled(AudioSystem *audio, SoundEffect effect, float scale)
 {
     if (!audio->ready || audio->muted || effect < 0 || effect >= SFX_COUNT)
         return;
+    /* A voice queued at zero gain still occupies one of sixteen and still
+     * ducks the music, so silence is a return rather than a multiply. */
+    if (audio->sfx_volume <= 0.0f)
+        return;
 
     CachedSound *sound = &audio->sounds[effect];
     Uint64 now = SDL_GetTicksNS();
@@ -2039,7 +2048,8 @@ static void play_scaled(AudioSystem *audio, SoundEffect effect, float scale)
     float mix_headroom = 1.0f / sqrtf(1.0f + active_voices * 0.22f);
     SDL_SetAudioStreamGain(stream, sound->gain *
                                       clampf(scale, 0.0f, 1.0f) *
-                                      mix_headroom);
+                                      mix_headroom *
+                                      audio->sfx_volume);
     if (!SDL_PutAudioStreamData(stream, sound->samples,
                                 sound->frame_count * (int)sizeof(float)))
     {
@@ -2123,6 +2133,24 @@ static bool queue_music_loop(AudioSystem *audio)
     return true;
 }
 
+/*
+ * What the music stream is actually set to: the loop's own gain, the ducking
+ * that makes room for a busy scene, and the player's level. It is one function
+ * because three callers need the answer — starting a track, the per-frame
+ * update, and a slider being moved — and a level that only took effect at the
+ * next track change would read as a slider that does nothing.
+ */
+static void apply_music_gain(AudioSystem *audio, float duck)
+{
+    if (audio->music_stream == NULL || audio->current_music < 0 ||
+        audio->current_music >= MUSIC_TRACK_COUNT)
+        return;
+
+    SDL_SetAudioStreamGain(audio->music_stream,
+                           audio->music_tracks[audio->current_music].gain *
+                               duck * audio->music_volume);
+}
+
 void audio_play_music(AudioSystem *audio, MusicTrack track)
 {
     int track_index = (int)track;
@@ -2138,8 +2166,7 @@ void audio_play_music(AudioSystem *audio, MusicTrack track)
     audio->previous_music = audio->current_music;
     audio->current_music = track_index;
     release_stale_music(audio);
-    SDL_SetAudioStreamGain(audio->music_stream,
-                           audio->music_tracks[track_index].gain);
+    apply_music_gain(audio, 1.0f);
     queue_music_loop(audio);
 }
 
@@ -2182,7 +2209,17 @@ void audio_update_music(AudioSystem *audio)
             ++active_voices;
     }
     float duck = 1.0f / (1.0f + 0.10f * (float)active_voices);
-    SDL_SetAudioStreamGain(audio->music_stream, track->gain * duck);
+    apply_music_gain(audio, duck);
+}
+
+void audio_set_volumes(AudioSystem *audio, float music, float sfx)
+{
+    audio->music_volume = clampf(music, 0.0f, 1.0f);
+    audio->sfx_volume = clampf(sfx, 0.0f, 1.0f);
+    /* Unducked: the next frame's audio_update_music puts the ducking back, and
+     * a slider moved during a firefight must not sound quieter than the level
+     * it was set to. */
+    apply_music_gain(audio, 1.0f);
 }
 
 void audio_toggle_mute(AudioSystem *audio)

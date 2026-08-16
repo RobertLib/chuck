@@ -10,6 +10,7 @@
 #include "manual.h"
 #include "pad_hint.h"
 #include "particle.h"
+#include "settings.h"
 
 typedef enum
 {
@@ -18,7 +19,7 @@ typedef enum
     STATE_OPENING_CUTSCENE,
     STATE_INTRO,
     STATE_MANUAL,
-    STATE_ASSIST,
+    STATE_SETTINGS,
     STATE_LEVEL_START,
     STATE_SHOW_KEYCARD,
     STATE_PLAYING,
@@ -30,16 +31,14 @@ typedef enum
     STATE_GAME_OVER
 } GameState;
 
-/* Optional help, chosen by the player and free to leave off. The options are
- * shell state: they survive campaign resets and are handed to the gameplay
- * core as plain numbers at level load, so the simulation stays deterministic
- * and knows nothing about menus. */
-typedef struct
+/* What the pause menu offers, in the order it lists them. */
+typedef enum
 {
-    bool more_hearts;    /* 5 hearts per life instead of 3 */
-    bool slower_guards;  /* guards and dogs move at 80% speed */
-    bool infinite_lives; /* a death never costs a life */
-} AssistOptions;
+    PAUSE_ITEM_RESUME,
+    PAUSE_ITEM_SETTINGS,
+    PAUSE_ITEM_ABANDON,
+    PAUSE_ITEM_COUNT
+} PauseItem;
 
 typedef struct
 {
@@ -152,9 +151,14 @@ typedef struct
      * exact state it interrupted (re-entering STATE_LEVEL_START would replay
      * the reveal), so the return path is a stored state, not a transition. */
     GameState pause_return_state;
-    GameState assist_return_state;
-    AssistOptions assist;
-    int assist_cursor;
+    GameState settings_return_state;
+    /* Everything the player has decided, and where each sheet's cursor is
+     * standing. The settings survive a campaign reset and are written back to
+     * disk when the sheet is closed, so a run is never what a preference
+     * belongs to. */
+    Settings settings;
+    int settings_cursor;
+    int pause_cursor;
 #ifdef CHUCK_DEBUG
     int debug_selected_level;
 #endif
@@ -174,14 +178,28 @@ void game_return_to_intro(Game *game);
  * same route back as anything else: game_return_to_intro. */
 void game_open_manual(Game *game);
 
-/* Pause toggling and the assist sheet. The assist sheet opens from the title
- * screen or from pause and returns to whichever opened it. */
+/* The pause menu: three items, walked with the cursor and answered with
+ * confirm. Pausing resumes the exact state it interrupted. */
 void game_toggle_pause(Game *game);
-void game_open_assist(Game *game);
-void game_close_assist(Game *game);
-void game_assist_move_cursor(Game *game, int delta);
-void game_assist_toggle_selected(Game *game);
-void game_assist_toggle(Game *game, int option);
+void game_pause_move_cursor(Game *game, int delta);
+void game_pause_activate(Game *game);
+
+/* The options sheet. It opens from the title screen or from pause and returns
+ * to whichever opened it, and every change it makes is felt at once: a volume
+ * reaches the mixer, fullscreen reaches the window, an assist switch reaches
+ * whatever is running. Closing it writes the file. */
+void game_open_settings(Game *game);
+void game_close_settings(Game *game);
+void game_settings_move_cursor(Game *game, int delta);
+void game_settings_adjust(Game *game, int delta);
+
+/* Fullscreen, from the sheet or from F. One function, because the window and
+ * the saved setting must never disagree about which the player asked for. */
+void game_set_fullscreen(Game *game, bool on);
+
+/* Write the settings file. The sheet does it on the way out; so does shutdown,
+ * which is what catches a fullscreen toggled with F mid-run. */
+void game_save_settings(const Game *game);
 
 /* Start a clean campaign directly in one embedded level, skipping the title
  * screen and the prologue. The debug level picker uses it, and so does the

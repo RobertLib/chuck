@@ -102,13 +102,13 @@ static const SDL_Color COL_TYPE = {206, 212, 202, 255};
 #define MANUAL_ROW_W (MANUAL_KEY_W + MANUAL_KEY_GAP + MANUAL_LABEL_W + \
                       MANUAL_HIT_PAD * 2.0f)
 
-/* The assist options share the manual's line and its hint weight: the pair is
+/* The options sheet shares the manual's line and its hint weight: the pair is
  * still one quiet line of things to know about, not a menu. */
-#define ASSIST_LABEL "ASSIST"
-#define ASSIST_LABEL_W ((float)(sizeof(ASSIST_LABEL) - 1) * \
+#define OPTIONS_LABEL "OPTIONS"
+#define OPTIONS_LABEL_W ((float)(sizeof(OPTIONS_LABEL) - 1) * \
                         ((float)SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE + MANUAL_TRACK) - \
                         MANUAL_TRACK)
-#define ASSIST_ROW_W (MANUAL_KEY_W + MANUAL_KEY_GAP + ASSIST_LABEL_W + \
+#define OPTIONS_ROW_W (MANUAL_KEY_W + MANUAL_KEY_GAP + OPTIONS_LABEL_W + \
                       MANUAL_HIT_PAD * 2.0f)
 #define PROMPT_ROW_GAP 18.0f
 
@@ -286,14 +286,14 @@ static void place_buttons(Intro *intro, int w, int h)
 {
     intro->start_button.x = ((float)w - intro->start_button.w) * 0.5f;
     intro->start_button.y = (float)h - 78.0f;
-    /* The manual and assist chips are centred as one line. */
+    /* The manual and options chips are centred as one line. */
     float line_w = intro->manual_button.w + PROMPT_ROW_GAP +
-                   intro->assist_button.w;
+                   intro->options_button.w;
     intro->manual_button.x = ((float)w - line_w) * 0.5f;
     intro->manual_button.y = (float)h - 30.0f;
-    intro->assist_button.x = intro->manual_button.x +
+    intro->options_button.x = intro->manual_button.x +
                              intro->manual_button.w + PROMPT_ROW_GAP;
-    intro->assist_button.y = intro->manual_button.y;
+    intro->options_button.y = intro->manual_button.y;
 }
 
 void intro_init(Intro *intro, int win_w, int win_h)
@@ -317,8 +317,8 @@ void intro_init(Intro *intro, int win_w, int win_h)
     intro->start_button.h = 34.0f;
     intro->manual_button.w = MANUAL_ROW_W;
     intro->manual_button.h = MANUAL_ROW_H;
-    intro->assist_button.w = ASSIST_ROW_W;
-    intro->assist_button.h = MANUAL_ROW_H;
+    intro->options_button.w = OPTIONS_ROW_W;
+    intro->options_button.h = MANUAL_ROW_H;
     place_buttons(intro, w, h);
 }
 
@@ -341,7 +341,7 @@ void intro_update(Intro *intro, float dt, int win_w, int win_h,
 
     intro->start_hovered = intro_hit_start_button(intro, mouse_x, mouse_y);
     intro->manual_hovered = intro_hit_manual_button(intro, mouse_x, mouse_y);
-    intro->assist_hovered = intro_hit_assist_button(intro, mouse_x, mouse_y);
+    intro->options_hovered = intro_hit_options_button(intro, mouse_x, mouse_y);
 }
 
 static bool hit_plate(const SDL_FRect *button, float x, float y)
@@ -360,9 +360,9 @@ bool intro_hit_manual_button(const Intro *intro, float x, float y)
     return hit_plate(&intro->manual_button, x, y);
 }
 
-bool intro_hit_assist_button(const Intro *intro, float x, float y)
+bool intro_hit_options_button(const Intro *intro, float x, float y)
 {
-    return hit_plate(&intro->assist_button, x, y);
+    return hit_plate(&intro->options_button, x, y);
 }
 
 /* ---- Sky ------------------------------------------------------------ */
@@ -1819,21 +1819,21 @@ static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
     if (appear <= 0.0f)
         return;
 
-    if (intro->manual_hovered || intro->assist_hovered)
+    if (intro->manual_hovered || intro->options_hovered)
         fx_glow(r, s->w * 0.5f,
                 intro->manual_button.y + MANUAL_ROW_H * 0.5f, 116.0f,
                 (SDL_Color){226, 104, 78, 255}, 26);
 
     char manual_key[8];
-    char assist_key[8];
+    char options_key[8];
     render_prompt_chip(r, &intro->manual_button, appear,
                        intro->manual_hovered,
                        pad_hint(pad, manual_key, sizeof(manual_key), "$Y", "H"),
                        MANUAL_LABEL);
-    render_prompt_chip(r, &intro->assist_button, appear,
-                       intro->assist_hovered,
-                       pad_hint(pad, assist_key, sizeof(assist_key), "$X", "J"),
-                       ASSIST_LABEL);
+    render_prompt_chip(r, &intro->options_button, appear,
+                       intro->options_hovered,
+                       pad_hint(pad, options_key, sizeof(options_key), "$X", "J"),
+                       OPTIONS_LABEL);
 }
 
 void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,

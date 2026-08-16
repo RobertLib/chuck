@@ -10,5 +10,9 @@
 #define CHUCK_VERSION "1.0.0"
 #define CHUCK_APP_ID "cz.rob.chuck"
 #define CHUCK_APP_NAME "Chuck"
+/* The middle word of the bundle identifier, and the only other thing the app
+ * is known by: SDL_GetPrefPath asks for an organisation as well as an app when
+ * it works out where this player's settings belong. */
+#define CHUCK_APP_ORG "rob"
 
 #endif /* CHUCK_VERSION_H */

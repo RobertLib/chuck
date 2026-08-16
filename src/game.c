@@ -8,6 +8,7 @@
 #include "gameplay_physics.h"
 #include "gameplay_world.h"
 #include "level_art.h"
+#include "version.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -15,6 +16,11 @@
 #include <time.h>
 
 static void game_enter_state(Game *game, GameState next_state);
+/* Defined with the rest of the options sheet, below, but needed by game_init:
+ * the window and the audio device are both opened to match a file that has to
+ * have been read first. */
+static void game_load_settings(Game *game);
+static void game_apply_volumes(Game *game);
 
 static void update_camera_shake(Game *game, float dt)
 {
@@ -172,8 +178,8 @@ static void transfer_player_loadout(Player *destination,
  * gameplay core stays deterministic and never knows a menu exists. */
 static void apply_assist_to_state(Game *game, GameplayState *state)
 {
-    state->assist_slow_enemies = game->assist.slower_guards;
-    state->assist_more_hearts = game->assist.more_hearts;
+    state->assist_slow_enemies = game->settings.assist.slower_guards;
+    state->assist_more_hearts = game->settings.assist.more_hearts;
     if (state->player.hp > gameplay_player_max_hp(state))
         state->player.hp = gameplay_player_max_hp(state);
 }
@@ -380,6 +386,9 @@ bool game_init_seeded(Game *game, uint64_t seed)
 {
     SDL_zerop(game);
     rng_seed(&game->gameplay.rng, seed);
+    /* Before the window and before the audio device, because both of them are
+     * opened to match what the player last chose. */
+    game_load_settings(game);
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
@@ -418,7 +427,17 @@ bool game_init_seeded(Game *game, uint64_t seed)
 
     /* Sound is optional. If no playback device exists, gameplay stays intact. */
     audio_init(&game->platform.audio);
+    /* The saved levels reach the mixer before the first note does, so a player
+     * who turned the score down does not get one bar of it at full on every
+     * launch. */
+    game_apply_volumes(game);
     audio_play_music(&game->platform.audio, MUSIC_INTRO);
+
+    /* The window was created windowed; if the file says otherwise this is
+     * where it is put right, once the renderer's logical presentation is set
+     * so the first fullscreen frame is already letterboxed correctly. */
+    if (game->settings.fullscreen)
+        game_set_fullscreen(game, true);
 
     /* Initialise particle system */
     particle_system_init(&game->presentation.particles);
@@ -488,7 +507,7 @@ static void finish_player_death(Game *game)
     game->campaign.level_deaths++;
 
     bool out_of_lives = false;
-    if (!game->assist.infinite_lives)
+    if (!game->settings.assist.infinite_lives)
         out_of_lives = campaign_lose_life(&game->campaign);
     game->gameplay.invuln_timer = INVULN_TIME;
 
@@ -545,11 +564,47 @@ void game_toggle_pause(Game *game)
         return;
 
     game->pause_return_state = game->state;
+    /* The cursor always opens on RESUME. A menu that remembers where it was
+     * left is a menu where the next press of confirm might abandon the run,
+     * and the one item on this list that cannot be undone must never be the
+     * one sitting under the thumb. */
+    game->pause_cursor = PAUSE_ITEM_RESUME;
     audio_play(&game->platform.audio, SFX_MENU_PAGE);
     game_enter_state(game, STATE_PAUSED);
 }
 
-/* Assist changes take effect immediately in whatever is running, so a toggle
+void game_pause_move_cursor(Game *game, int delta)
+{
+    if (game->state != STATE_PAUSED || delta == 0)
+        return;
+    game->pause_cursor = (game->pause_cursor + delta + PAUSE_ITEM_COUNT) %
+                         PAUSE_ITEM_COUNT;
+    audio_play(&game->platform.audio, SFX_MENU_PAGE);
+}
+
+void game_pause_activate(Game *game)
+{
+    if (game->state != STATE_PAUSED)
+        return;
+
+    switch (game->pause_cursor)
+    {
+    case PAUSE_ITEM_SETTINGS:
+        game_open_settings(game);
+        return;
+    case PAUSE_ITEM_ABANDON:
+        game_return_to_intro(game);
+        return;
+    case PAUSE_ITEM_RESUME:
+    case PAUSE_ITEM_COUNT:
+        break;
+    }
+    game_toggle_pause(game);
+}
+
+/* ---- The options sheet ---------------------------------------------- */
+
+/* Assist changes take effect immediately in whatever is running, so a switch
  * flipped from the pause screen is felt on the very next frame. */
 static void game_apply_assist_everywhere(Game *game)
 {
@@ -558,62 +613,161 @@ static void game_apply_assist_everywhere(Game *game)
         apply_assist_to_state(game, &game->inactive_gameplay);
 }
 
-void game_open_assist(Game *game)
+static void game_apply_volumes(Game *game)
+{
+    audio_set_volumes(&game->platform.audio,
+                      (float)game->settings.music_volume / 100.0f,
+                      (float)game->settings.sfx_volume / 100.0f);
+}
+
+void game_set_fullscreen(Game *game, bool on)
+{
+    if (game->platform.window != NULL &&
+        !SDL_SetWindowFullscreen(game->platform.window, on))
+    {
+        /* The window refused, so the setting must not claim otherwise: a sheet
+         * reading FULLSCREEN ON over a windowed game is worse than the failure
+         * it is reporting. */
+        SDL_Log("Could not toggle fullscreen: %s", SDL_GetError());
+        game->settings.fullscreen = game->platform.fullscreen;
+        return;
+    }
+    game->platform.fullscreen = on;
+    game->settings.fullscreen = on;
+}
+
+/*
+ * Where the settings file lives. SDL answers this per platform — Application
+ * Support on macOS, AppData on Windows, XDG on Linux — and it is the only part
+ * of the settings that needs a platform at all, which is why it is here and not
+ * in [settings.c](settings.c).
+ */
+static bool settings_file_path(char *out, size_t cap)
+{
+    char *dir = SDL_GetPrefPath(CHUCK_APP_ORG, CHUCK_APP_NAME);
+    if (dir == NULL)
+        return false;
+    int written = SDL_snprintf(out, cap, "%ssettings.cfg", dir);
+    SDL_free(dir);
+    return written > 0 && (size_t)written < cap;
+}
+
+static void game_load_settings(Game *game)
+{
+    settings_defaults(&game->settings);
+
+    char path[1024];
+    if (!settings_file_path(path, sizeof(path)))
+        return;
+
+    size_t size = 0;
+    void *data = SDL_LoadFile(path, &size);
+    if (data == NULL)
+        return; /* No file yet: the defaults are the answer, not an error. */
+
+    /* SDL_LoadFile terminates what it returns, so the text is already a
+     * string; the size is only worth checking for the empty file. */
+    if (size > 0)
+        settings_parse(&game->settings, (const char *)data);
+    SDL_free(data);
+}
+
+void game_save_settings(const Game *game)
+{
+    char path[1024];
+    if (!settings_file_path(path, sizeof(path)))
+        return;
+
+    char text[512];
+    size_t len = settings_serialize(&game->settings, text, sizeof(text));
+    if (len == 0)
+        return;
+    if (!SDL_SaveFile(path, text, len))
+        SDL_Log("Could not save settings: %s", SDL_GetError());
+}
+
+void game_open_settings(Game *game)
 {
     if (game->state != STATE_INTRO && game->state != STATE_PAUSED)
         return;
-    game->assist_return_state = game->state;
-    game->assist_cursor = 0;
+    game->settings_return_state = game->state;
+    game->settings_cursor = settings_first_row();
     audio_play(&game->platform.audio, SFX_MENU_PAGE);
-    game_enter_state(game, STATE_ASSIST);
+    game_enter_state(game, STATE_SETTINGS);
 }
 
-void game_close_assist(Game *game)
+void game_close_settings(Game *game)
 {
-    if (game->state != STATE_ASSIST)
+    if (game->state != STATE_SETTINGS)
         return;
     audio_play(&game->platform.audio, SFX_MENU_BACK);
-    if (game->assist_return_state == STATE_PAUSED)
+    game_save_settings(game);
+    if (game->settings_return_state == STATE_PAUSED)
         game->state = STATE_PAUSED;
     else
         game_enter_state(game, STATE_INTRO);
 }
 
-void game_assist_move_cursor(Game *game, int delta)
+void game_settings_move_cursor(Game *game, int delta)
 {
-    game->assist_cursor = (game->assist_cursor + delta + 3) % 3;
+    if (game->state != STATE_SETTINGS || delta == 0)
+        return;
+    game->settings_cursor = settings_move_cursor(game->settings_cursor, delta);
     audio_play(&game->platform.audio, SFX_MENU_PAGE);
 }
 
-void game_assist_toggle(Game *game, int option)
+void game_settings_adjust(Game *game, int delta)
 {
-    switch (option)
-    {
-    case 0:
-        game->assist.more_hearts = !game->assist.more_hearts;
-        break;
-    case 1:
-        game->assist.slower_guards = !game->assist.slower_guards;
-        break;
-    case 2:
-        game->assist.infinite_lives = !game->assist.infinite_lives;
-        break;
-    default:
+    if (game->state != STATE_SETTINGS)
         return;
-    }
-    game->assist_cursor = option;
-    game_apply_assist_everywhere(game);
-    /* Turning the bigger pool on fills it: an assist that arrives as two
-     * empty sockets would read as a penalty. */
-    if (option == 0 && game->assist.more_hearts &&
-        !game->gameplay.player.dying)
-        game->gameplay.player.hp = gameplay_player_max_hp(&game->gameplay);
-    audio_play(&game->platform.audio, SFX_CARD_TARGET);
-}
 
-void game_assist_toggle_selected(Game *game)
-{
-    game_assist_toggle(game, game->assist_cursor);
+    int row_count = 0;
+    const SettingRow *rows = settings_rows(&row_count);
+    if (game->settings_cursor < 0 || game->settings_cursor >= row_count)
+        return;
+
+    SettingId id = rows[game->settings_cursor].id;
+    if (!settings_adjust(&game->settings, id, delta))
+        return; /* A slider already at either end: nothing moved, nothing clicks. */
+
+    /*
+     * A setting is not a stored preference until something has actually done
+     * what it says. Each one reaches its own system here, in the one place that
+     * knows a value has just changed.
+     */
+    switch (id)
+    {
+    case SETTING_MUSIC_VOLUME:
+    case SETTING_SFX_VOLUME:
+        game_apply_volumes(game);
+        break;
+    case SETTING_FULLSCREEN:
+        game_set_fullscreen(game, game->settings.fullscreen);
+        break;
+    case SETTING_MORE_HEARTS:
+        game_apply_assist_everywhere(game);
+        /* Turning the bigger pool on fills it: an assist that arrives as two
+         * empty sockets would read as a penalty. */
+        if (game->settings.assist.more_hearts && !game->gameplay.player.dying)
+            game->gameplay.player.hp = gameplay_player_max_hp(&game->gameplay);
+        break;
+    case SETTING_SLOWER_GUARDS:
+        game_apply_assist_everywhere(game);
+        break;
+    case SETTING_CRT_FILTER:
+    case SETTING_INFINITE_LIVES:
+    case SETTING_NONE:
+        /* Read where they are used: the finishing pass at the bottom of
+         * game_render, and the death that would have cost a life. */
+        break;
+    }
+
+    /* A level slides and a switch clicks: the two rows do different things and
+     * must not answer with the same noise. */
+    audio_play(&game->platform.audio,
+               rows[game->settings_cursor].kind == SETTING_ROW_SLIDER
+                   ? SFX_MENU_PAGE
+                   : SFX_CARD_TARGET);
 }
 
 static void game_enter_state(Game *game, GameState next_state)
@@ -678,7 +832,7 @@ static void game_enter_state(Game *game, GameState next_state)
     case STATE_SHOW_KEYCARD:
     case STATE_PLAYING:
     case STATE_PAUSED:
-    case STATE_ASSIST:
+    case STATE_SETTINGS:
     case STATE_LEVEL_TRANSITION:
     case STATE_CONTINUE:
         break;
@@ -789,7 +943,7 @@ static bool update_scene(Game *game, float dt)
         return true;
     }
 
-    if (game->state == STATE_ASSIST)
+    if (game->state == STATE_SETTINGS)
     {
         /* All interaction happens in the input layer; the sheet just holds. */
         clear_edge_input(game);
@@ -798,10 +952,11 @@ static bool update_scene(Game *game, float dt)
 
     if (game->state == STATE_PAUSED)
     {
-        /* Time stands still; confirm resumes, everything else is handled by
-         * the input layer (Q or BACK abandons the run, J opens assist). */
+        /* Time stands still; confirm answers whichever item the cursor is on,
+         * and everything else is handled by the input layer (ESC or B resumes,
+         * SELECT abandons the run). */
         if (game->input.confirm)
-            game_toggle_pause(game);
+            game_pause_activate(game);
         clear_edge_input(game);
         return true;
     }
@@ -1401,6 +1556,9 @@ void game_update(Game *game, float dt)
 
 void game_shutdown(Game *game)
 {
+    /* The sheet already saved on the way out; this is what catches a
+     * fullscreen toggled with F and never gone back to the sheet. */
+    game_save_settings(game);
     game_input_shutdown(game);
     audio_shutdown(&game->platform.audio);
     if (game->platform.renderer)

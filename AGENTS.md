@@ -372,16 +372,66 @@ level one uninvited. The score itself now pays out: every
 ESC (or START on a pad) pauses — `STATE_PAUSED` holds the interrupted state
 in `Game.pause_return_state` and resumes it directly, never through
 `game_enter_state`, which would replay `STATE_LEVEL_START`'s reveal.
-Abandoning the run is a deliberate second step (`Q`/BACK from pause). The
-reveal, the key-card sweep and the game-over hold all accept confirm to
-skip. Assist options (`AssistOptions` in [game.h](src/game.h): five hearts,
-80% guard speed, infinite lives) live in the shell, survive campaign resets,
-and reach the simulation only as two flags applied at level load
-(`assist_more_hearts`, `assist_slow_enemies` — read through
-`gameplay_player_max_hp` / `gameplay_enemy_speed_scale`), so the gameplay
-core stays deterministic and menu-free. The sheet opens from the title
-screen or from pause (`J`, or X on a pad) and returns to whichever opened
-it.
+Pause is a menu of three (`PauseItem`): resume, the options sheet, and
+abandoning the run. **The cursor opens on RESUME every time**, and that is a
+rule rather than a default — a menu that remembers where it was left is a menu
+where the next press of confirm might be the one item on it that cannot be
+taken back, so ABANDON RUN is last, set in the danger red, and never under the
+thumb on arrival. `Q`/BACK still abandons directly, which is the deliberate
+second step it always was. The reveal, the key-card sweep and the game-over
+hold all accept confirm to skip.
+
+### The options sheet
+
+Everything the player is allowed to decide is one struct and one table, both in
+[settings.c](src/settings.c) / [settings.h](src/settings.h): two audio levels,
+fullscreen and the CRT filter, and the three assist switches. The sheet opens
+from the title screen or from pause (`J`, or X on a pad) and returns to
+whichever opened it. It replaced a three-switch assist sheet, an `M` key and a
+fullscreen key that were the whole of the game's settings, and four decisions
+carry it.
+
+**The table is the sheet.** A `SettingRow` names a value, says one sentence
+about it and says whether it is a level or a switch, and `draw_settings_sheet`
+in [game_render.c](src/game_render.c) draws whatever it finds there — including
+sizing the plate from the rows, so a new section costs no layout. A setting in
+the struct and not in the table is one nobody can reach; a row naming a value
+the struct does not hold will not compile. The cursor steps over headings, and
+`test_settings_cursor_only_lands_on_rows` walks two laps each way to prove it
+and to prove every reachable row explains itself.
+
+**The module links no SDL**, the way [crew.c](src/crew.c) does not, so the test
+suite holds it to the round trip through a file and to the rules the cursor
+obeys. The shell owns the file itself, because `SDL_GetPrefPath` is the only
+part of this that needs a platform. **A damaged or older file is not a reset**:
+`settings_parse` applies what it recognises and leaves everything else at what
+it already was, so a key from a build that knew more, a line with no value or a
+level outside the bar costs the player nothing.
+
+**A setting is not a setting until something has done what it says.**
+`game_settings_adjust` is the one place a value changes, and each one reaches
+its own system from there on the same frame — a level to `audio_set_volumes`,
+fullscreen to the window, an assist switch to whatever is running. `F` goes
+through the same `game_set_fullscreen` the sheet's row does, and if the window
+refuses, the setting is put back to what the window actually is: a sheet
+reading FULLSCREEN ON over a windowed game is worse than the failure it is
+reporting.
+
+**Assist reaches the simulation as it always did.** The three switches live in
+`Settings.assist` and are handed to the gameplay core as two flags applied at
+level load (`assist_more_hearts`, `assist_slow_enemies` — read through
+`gameplay_player_max_hp` / `gameplay_enemy_speed_scale`), so the gameplay core
+stays deterministic and menu-free.
+
+**Music and effects are separate buses**, in `AudioSystem.music_volume` and
+`sfx_volume`, sitting on top of the mix rather than inside it: every effect and
+every score is still built at the gain it was written with. Both default to
+full, so a fresh install hears the mix everything was balanced at. `M` survives
+as a kill switch on top of both and is deliberately **not** saved — a game that
+starts silent with nothing on screen explaining why is a game the player thinks
+is broken. The pad's old mute (Y from pause) is gone: a pad muting to silence
+while the sheet beside it still read 100 was two answers to the same question,
+and a pad now reaches both levels in two presses.
 
 ### The letter on the button
 

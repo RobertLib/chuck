@@ -1567,9 +1567,12 @@ static const ManualLine PAGE_CONTROLS[] = {
      * TEXT_RIGHT, which leaves 24 cells of the 8x8 font. This row was the one
      * that spent 25 of them and hung out past the rules under every heading. */
     {LINE_KEY, "Q|$SELECT|QUIT TO TITLE FROM PAUSE"},
-    {LINE_KEY, "J|$X|ASSIST, TITLE OR PAUSE"},
-    {LINE_KEY, "M|$Y|MUTE (PAD: FROM PAUSE)"},
+    {LINE_KEY, "J|$X|OPTIONS, TITLE OR PAUSE"},
     {LINE_KEY, "F|-|FULLSCREEN"},
+    /* The pad has no row here on purpose: a pad reaches every sound setting
+     * through the options sheet, which holds two real levels. This is the
+     * keyboard's kill switch and nothing else. */
+    {LINE_KEY, "M|-|MUTE EVERYTHING"},
     /* No gap before the last heading on this one sheet: it is the tightest of
      * the seven, the heading's own lead already separates it, and the third
      * bullet below is worth more than the seven pixels. */
