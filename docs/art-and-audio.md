@@ -270,9 +270,9 @@
   and the drone, and a last one that pushes hardest. Only the hand-written
   title theme is built during `audio_init`; a level's loop is built the first
   time it is asked for, and only the title theme, the current track and the one
-  before it stay resident (eighteen forty-second loops would not). That is why
+  before it stay resident (twenty forty-second loops would not). That is why
   the restroom can be scored as its own room — the door switches away and
   straight back without rebuilding the sector's music.
-  `level_theme_music` ([level_art.c](../src/level_art.c)) owns the theme-to-track
+  `level_theme_music` ([level.c](../src/level.c)) owns the theme-to-track
   mapping; because it is one to one, `test_campaign_themes_keep_changing`
   already pins that no two consecutive sectors share a score.

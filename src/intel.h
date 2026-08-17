@@ -40,15 +40,34 @@
  * Indexed by finished sector, but only a sector that leaves by a **stair
  * door** shows a report at all — a window is a continuous physical route onto
  * the facade and cuts straight to the next sector. In the campaign as shipped
- * that is six reports, after sectors 1, 4, 5, 8, 9 and 14, and those six carry
+ * that is six reports, after sectors 1, 4, 5, 8, 9 and 16, and those six carry
  * the arc on their own. The other rows are written anyway, because the table
  * is indexed by sector and a sector that later gains a stair door must not
  * gain a blank line with it.
+ *
+ * **What that rule was never an argument for is the scoreboard going with it.**
+ * The report carries the stopwatch, the record, the two bonuses and the tally
+ * as well as the line above, and for as long as the window rule existed the
+ * other eleven clears paid a bonus and banked a record in silence. The
+ * objection is to the *cut*, not to the numbers, so the numbers now travel on
+ * their own — see [sector_tally.h](sector_tally.h).
  */
 const char *intel_line(int completed_level);
 
 /* How many rows the table has, so the suite can walk all of them rather than
  * only the six the shipped layout happens to show. */
 int intel_line_count(void);
+
+/*
+ * Which sectors the arc is told on, 1-based, and how many there are.
+ *
+ * Exported so the suite can hold this decision against the maps that have to
+ * honour it: a sector leaves by a window or by a stair door, only the second
+ * kind reaches a report, and a `Y` added to a map has therefore already moved
+ * the plot once without anybody noticing. See the note on the array in
+ * [intel.c](intel.c) for which line that cost and how.
+ */
+extern const int INTEL_ARC_SECTORS[];
+extern const int INTEL_ARC_SECTOR_COUNT;
 
 #endif /* CHUCK_INTEL_H */

@@ -37,6 +37,27 @@ static const SettingRow ROWS[] = {
      "GUARDS AND DOGS MOVE AT 80% SPEED"},
     {SETTING_ROW_TOGGLE, SETTING_INFINITE_LIVES, "INFINITE LIVES",
      "A DEATH NEVER COSTS A LIFE"},
+
+    {SETTING_ROW_HEADING, SETTING_NONE, "CHALLENGE",
+     "FOR THE CLIMB YOU ALREADY KNOW BY HEART."},
+    {SETTING_ROW_TOGGLE, SETTING_VETERAN, "VETERAN",
+     "FASTER CREW, ONE LIFE, NO CONTINUES. NEXT RUN."},
+
+    /*
+     * And the section that exists because of what the three switches above do
+     * to the two figures the game keeps.
+     *
+     * A run with any assist on banks no score, no sector time and no docket
+     * (`campaign_records_count`), which is the only arrangement under which the
+     * per-sector times mean anything at all — a par set with infinite lives is a
+     * par nobody can beat honestly, and the player who set it was never told.
+     * The heading says so, and the row is how somebody who found that out too
+     * late gets their sheet back.
+     */
+    {SETTING_ROW_HEADING, SETTING_NONE, "RECORDS",
+     "AN ASSIST RUN BANKS NO SCORE, NO TIME AND NO SHEETS."},
+    {SETTING_ROW_ACTION, SETTING_RECORDS_RESET, "RESET RECORDS",
+     "CLEARS THE BEST SCORE, EVERY SECTOR TIME AND THE DOCKET"},
 };
 
 /*
@@ -115,8 +136,30 @@ BindAction settings_row_action(SettingId id)
     return action < BIND_COUNT ? (BindAction)action : BIND_COUNT;
 }
 
+bool settings_assist_any(const Settings *settings)
+{
+    if (settings == NULL)
+        return false;
+    return settings->assist.more_hearts || settings->assist.slower_guards ||
+           settings->assist.infinite_lives;
+}
+
 void settings_defaults(Settings *settings)
 {
+    /*
+     * Cleared whole before any field is named, so two `Settings` given the same
+     * defaults compare equal byte for byte.
+     *
+     * Setting the fields one at a time leaves the struct's padding holding
+     * whatever the caller's stack held — three bools at offsets 8, 9 and 10 are
+     * followed by a byte nothing writes — so `memcmp` on two sheets that agree
+     * about every setting could still report a difference. Nothing shipped read
+     * it that way, because the file is written as text; the test that walks
+     * every row and asks which field moved does, and a check that answers
+     * differently depending on the stack under it is not a check.
+     */
+    memset(settings, 0, sizeof(*settings));
+
     /* Both levels start at the top, so a fresh install sounds exactly like the
      * mix the effects and the scores were written against: the sliders scale
      * that mix down and never up. */
@@ -131,6 +174,7 @@ void settings_defaults(Settings *settings)
     settings->assist.more_hearts = false;
     settings->assist.slower_guards = false;
     settings->assist.infinite_lives = false;
+    settings->challenge.veteran = false;
 }
 
 int settings_first_row(SettingsPage page)
@@ -213,6 +257,8 @@ bool settings_adjust(Settings *settings, SettingId id, int delta)
         return flip(&settings->assist.slower_guards);
     case SETTING_INFINITE_LIVES:
         return flip(&settings->assist.infinite_lives);
+    case SETTING_VETERAN:
+        return flip(&settings->challenge.veteran);
     /* None of these hold a value that "less" and "more" mean anything to. A
      * binding is taken rather than adjusted — left and right walk its two
      * slots, which is the shell's cursor and not a value at all — and the
@@ -221,6 +267,7 @@ bool settings_adjust(Settings *settings, SettingId id, int delta)
      * clicking at a row nothing happened to. */
     case SETTING_OPEN_CONTROLS:
     case SETTING_BINDINGS_RESET:
+    case SETTING_RECORDS_RESET:
     case SETTING_BIND_FIRST:
     case SETTING_NONE:
         break;
@@ -257,6 +304,8 @@ bool settings_value_bool(const Settings *settings, SettingId id)
         return settings->assist.slower_guards;
     case SETTING_INFINITE_LIVES:
         return settings->assist.infinite_lives;
+    case SETTING_VETERAN:
+        return settings->challenge.veteran;
     default:
         return false;
     }
@@ -278,6 +327,7 @@ bool settings_value_bool(const Settings *settings, SettingId id)
 #define KEY_HEARTS "assist_hearts"
 #define KEY_GUARDS "assist_guards"
 #define KEY_LIVES "assist_lives"
+#define KEY_VETERAN "challenge_veteran"
 
 size_t settings_serialize(const Settings *settings, char *out, size_t cap)
 {
@@ -294,7 +344,8 @@ size_t settings_serialize(const Settings *settings, char *out, size_t cap)
         KEY_MOTION " %d\n"
         KEY_HEARTS " %d\n"
         KEY_GUARDS " %d\n"
-        KEY_LIVES " %d\n",
+        KEY_LIVES " %d\n"
+        KEY_VETERAN " %d\n",
         clamp_percent(settings->music_volume),
         clamp_percent(settings->sfx_volume),
         settings->fullscreen ? 1 : 0,
@@ -302,7 +353,8 @@ size_t settings_serialize(const Settings *settings, char *out, size_t cap)
         settings->reduced_motion ? 1 : 0,
         settings->assist.more_hearts ? 1 : 0,
         settings->assist.slower_guards ? 1 : 0,
-        settings->assist.infinite_lives ? 1 : 0);
+        settings->assist.infinite_lives ? 1 : 0,
+        settings->challenge.veteran ? 1 : 0);
 
     if (written < 0)
     {
@@ -564,6 +616,11 @@ static void apply_line(Settings *settings, const char *line)
     {
         if (read_int(value, &number))
             settings->assist.infinite_lives = number != 0;
+    }
+    else if (line_key_is(line, KEY_VETERAN, &value))
+    {
+        if (read_int(value, &number))
+            settings->challenge.veteran = number != 0;
     }
     /* Anything else is a line from a build that knew something this one does
      * not. Ignoring it is deliberate: a settings file must never be the reason

@@ -16,9 +16,9 @@ static int parse_start_level(int argc, char *argv[])
             continue;
         /* A switch with nothing after it is a typo, not a request for the title
          * screen. Every other bad input on this command line says so — a
-         * sector outside the campaign, a scene nobody knows, a level number
-         * below one — and silence here was the one case that let a mistyped
-         * playtest look like a deliberate boot to the title. */
+         * sector outside the campaign, a level number below one — and silence
+         * here was the one case that let a mistyped playtest look like a
+         * deliberate boot to the title. */
         if (i + 1 >= argc)
         {
             SDL_Log("--level needs a sector number after it");
@@ -32,20 +32,55 @@ static int parse_start_level(int argc, char *argv[])
     return -1;
 }
 
-/* `--scene NAME` opens one screen directly. It is what lets `make smoke` reach
- * the presentation code that is otherwise only arrived at by playing; see
- * `game_start_at_scene`. Read after `--level`, so `--level 9 --scene report`
- * draws the report sector nine would have handed over. */
-static const char *parse_start_scene(int argc, char *argv[])
+/*
+ * `--soak N` closes the window by itself after N seconds.
+ *
+ * It is not a play mode and nothing in the game reads it. Its one caller is
+ * [../tools/soak.sh](../tools/soak.sh), which walks the sanitized build across
+ * every sector so that ASan and UBSan reach the renderers, the level art and
+ * the audio synth — see `PlatformState.soaking` for why that needed a switch of
+ * its own rather than a `kill` from the script.
+ *
+ * Nought and below are refused for the reason `--level 0` is: a soak of no
+ * seconds is a typo, and honouring it would exit before the first frame and
+ * report a pass for a build nothing had drawn.
+ */
+static float parse_soak_seconds(int argc, char *argv[])
 {
     for (int i = 1; i < argc; ++i)
     {
-        if (SDL_strcmp(argv[i], "--scene") != 0)
+        if (SDL_strcmp(argv[i], "--soak") != 0)
             continue;
         if (i + 1 >= argc)
         {
-            /* Same rule as `--level` above. */
-            SDL_Log("--scene needs a screen name after it");
+            SDL_Log("--soak needs a number of seconds after it");
+            continue;
+        }
+        double seconds = SDL_atof(argv[i + 1]);
+        if (seconds > 0.0)
+            return (float)seconds;
+        SDL_Log("--soak expects a positive number of seconds");
+    }
+    return 0.0f;
+}
+
+/*
+ * `--screen NAME` opens one named screen and stays on it.
+ *
+ * The soak's own switch, exactly as `--soak` is, and it exists for the same
+ * reason: the sweep was reporting coverage of screens no headless run had ever
+ * drawn. See `game_soak_screen` for the list and for why this is a switch
+ * rather than synthesised keypresses.
+ */
+static const char *parse_screen(int argc, char *argv[])
+{
+    for (int i = 1; i < argc; ++i)
+    {
+        if (SDL_strcmp(argv[i], "--screen") != 0)
+            continue;
+        if (i + 1 >= argc)
+        {
+            SDL_Log("--screen needs a screen name after it");
             continue;
         }
         return argv[i + 1];
@@ -53,12 +88,22 @@ static const char *parse_start_scene(int argc, char *argv[])
     return NULL;
 }
 
-/* `--page N` opens the manual on one sheet (1-based, like `--level`). The book
- * is the one screen `--scene` cannot cover on its own: a sheet is only ever
- * turned by a hand, so a run that presses no keys draws the first of the eight
- * and none of the other seven. Read after `--scene`, and only the manual reads
- * it; see `game_show_manual_page`. */
-static int parse_manual_page(int argc, char *argv[])
+/*
+ * `--page N` picks which sheet `--screen manual` opens on, 1-based — and which
+ * half of `--screen settings`, and which of `--screen aftermath`'s four poses.
+ *
+ * The manual is ten sheets behind one screen name, and nothing turns a sheet but
+ * a hand: a headless run receives no events, so the sweep drew sheet one and the
+ * nine illustrations behind it were compiled under the sanitizers and never
+ * executed by them. That is the same defect `--screen` itself was written for,
+ * one level further in — and the sheaf is where it costs most, since the
+ * illustrations are some six hundred lines of drawing that no test reaches.
+ *
+ * Nought and below are refused the way `--level 0` is: a page number that is not
+ * a page is a typo, and honouring it by opening sheet one would report coverage
+ * of a sheet nobody asked for.
+ */
+static int parse_screen_page(int argc, char *argv[])
 {
     for (int i = 1; i < argc; ++i)
     {
@@ -66,62 +111,58 @@ static int parse_manual_page(int argc, char *argv[])
             continue;
         if (i + 1 >= argc)
         {
-            /* Same rule as the two above. */
             SDL_Log("--page needs a sheet number after it");
             continue;
         }
         int page = SDL_atoi(argv[i + 1]);
         if (page >= 1)
-            return page - 1;
+            return page;
         SDL_Log("--page expects a sheet number of 1 or more");
     }
-    return -1;
-}
-
-/* `--demo` hands the sector to a scripted hand instead of a player's. It takes
- * no value, and it is read last because what it drives is whatever `--level`
- * and `--scene` have already opened. See `game_start_demo`. */
-static bool parse_demo(int argc, char *argv[])
-{
-    for (int i = 1; i < argc; ++i)
-    {
-        if (SDL_strcmp(argv[i], "--demo") == 0)
-            return true;
-    }
-    return false;
+    return 0;
 }
 
 /*
- * Anything on the command line that is none of the switches above.
+ * Anything on the command line that is not one of the switches above.
  *
- * The parsers each walk the whole line looking for their own switch and ignore
+ * The parser walks the whole line looking for its own switch and ignores
  * everything else, which is what let `./chuck --wat` and a misspelt
  * `--sector 9` boot the title screen without a word. A flag that does nothing
  * at all is the same bug as a prompt naming a button the state does not
  * accept — the player, or here the author, is told their input was accepted
  * when it was not. It is a note rather than a refusal, because the game itself
  * is perfectly able to run.
+ *
+ * The switches are listed from one table rather than as a branch each, because
+ * that is the copy that goes stale: one added to the parsers above and
+ * forgotten here is a flag the game accepts and this function reports as
+ * unknown, and the message it prints would still name only the older ones.
+ * `--screen` is the third and arrived exactly that way.
  */
 static void warn_about_unknown_arguments(int argc, char *argv[])
 {
+    /* Every switch that takes a value after it, which is all of them so far. */
+    static const char *const SWITCHES[] = {"--level", "--soak", "--screen",
+                                          "--page"};
+    const int switch_count = (int)(sizeof(SWITCHES) / sizeof(SWITCHES[0]));
+
     for (int i = 1; i < argc; ++i)
     {
-        /* The one switch with no value after it, so it is stepped over on its
-         * own rather than taking the next argument with it. */
-        if (SDL_strcmp(argv[i], "--demo") == 0)
-            continue;
-        if (SDL_strcmp(argv[i], "--level") == 0 ||
-            SDL_strcmp(argv[i], "--scene") == 0 ||
-            SDL_strcmp(argv[i], "--page") == 0)
+        bool known = false;
+        for (int s = 0; s < switch_count && !known; ++s)
         {
-            /* Step over the value the switch consumed, so `--scene report` does
-             * not report `report` as an unknown argument of its own. */
+            if (SDL_strcmp(argv[i], SWITCHES[s]) != 0)
+                continue;
+            known = true;
+            /* Step over the value the switch consumed, so `--level 9` does not
+             * report `9` as an unknown argument of its own. */
             if (i + 1 < argc)
                 ++i;
-            continue;
         }
+        if (known)
+            continue;
         SDL_Log("Ignoring unknown argument '%s'; this build knows "
-                "--level N, --scene NAME, --page N and --demo",
+                "--level N, --soak SECONDS and --screen NAME",
                 argv[i]);
     }
 }
@@ -146,6 +187,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
+    /* Handed over before anything below can refuse the command line, because
+     * SDL calls `SDL_AppQuit` on an init that fails and hands it whatever this
+     * has been set to. Left until the end, a bad `--screen` walked out through
+     * a teardown holding NULL and the whole `Game` was still allocated — a
+     * leak on the one path the sanitizers exist to walk. */
+    *appstate = game;
+
     warn_about_unknown_arguments(argc, argv);
 
     int start_level = parse_start_level(argc, argv);
@@ -154,30 +202,33 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         game_start_at_level(game, start_level);
     }
 
-    /* After the level, because the screens that report on a sector are drawn
-     * from whatever `--level` has just loaded. */
-    const char *start_scene = parse_start_scene(argc, argv);
-    if (start_scene != NULL)
+    /* After `--level`, because a screen that needs a sector behind it loads its
+     * own and must be the last word on where the game ends up — and the sector
+     * it loads is now the one `--level` named, which is what lets
+     * `--screen restroom --level 5` reach a room other than the lobby's. A
+     * negative `start_level` is "none given" and leaves the choice to the
+     * screen. */
+    const char *screen = parse_screen(argc, argv);
+    if (screen != NULL &&
+        !game_soak_screen(game, screen, parse_screen_page(argc, argv),
+                          start_level))
     {
-        game_start_at_scene(game, start_scene);
+        SDL_Log("--screen expects one of: abduction, chase, opening, manual, "
+                "settings, pause, report, cleared, continue, gameover, outro, "
+                "credits, restroom, aftermath");
+        return SDL_APP_FAILURE;
     }
 
-    /* And after the scene, because the sheet it names is a sheet of whatever
-     * the switch above has just opened. */
-    int manual_page = parse_manual_page(argc, argv);
-    if (manual_page >= 0)
+    float soak = parse_soak_seconds(argc, argv);
+    if (soak > 0.0f)
     {
-        game_show_manual_page(game, manual_page);
+        game->platform.soaking = true;
+        game->platform.soak_seconds_left = soak;
+        /* Said out loud, because a soak that quits on its own and a soak that
+         * crashed on its own look identical in a log otherwise. */
+        SDL_Log("Soaking for %.1f seconds, then closing", (double)soak);
     }
 
-    /* Last of the four, because it drives whatever the three above have
-     * opened. */
-    if (parse_demo(argc, argv))
-    {
-        game_start_demo(game);
-    }
-
-    *appstate = game;
     return SDL_APP_CONTINUE;
 }
 
@@ -254,6 +305,25 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     Uint64 now = SDL_GetTicksNS();
     float elapsed = (float)(now - game->platform.last_tick) / 1.0e9f;
     game->platform.last_tick = now;
+
+    /*
+     * The soak budget, spent before the clamp below rather than after it. See
+     * `PlatformState.soaking`: a sanitized frame can outlast MAX_FRAME_DT, and
+     * a budget paid in clamped time would turn `--soak 2` into two minutes.
+     *
+     * Returning SDL_APP_SUCCESS is what makes this worth a switch at all — the
+     * process walks out through `SDL_AppQuit` and `game_shutdown`, so the
+     * teardown is sanitized too. A killed process never reaches either.
+     */
+    if (game->platform.soaking)
+    {
+        game->platform.soak_seconds_left -= elapsed;
+        if (game->platform.soak_seconds_left <= 0.0f)
+        {
+            SDL_Log("Soak finished; closing");
+            return SDL_APP_SUCCESS;
+        }
+    }
     /* Nothing downstream ever sees a longer step: MAX_FRAME_DT is what the
      * projectile collision is proved against, not just a stutter guard. It is
      * also what bounds the loop below — a frame this long can queue at most

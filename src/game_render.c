@@ -6,11 +6,13 @@
 #include "chase_render.h"
 #include "crew.h"
 #include "fx.h"
+#include "gameplay_ai.h"
 #include "gameplay_interaction.h"
 #include "gameplay_world.h"
 #include "level_art.h"
 #include "render_figures.h"
 #include "render_sprite.h"
+#include "run_tally.h"
 
 #ifdef CHUCK_DEBUG
 #include "embedded_levels.h"
@@ -939,6 +941,84 @@ static void draw_terminal(SDL_Renderer *r, float x, float y,
             active ? (hacked ? (route_blocked ? "NO" : "OK") : "ON") : "--");
 }
 
+/*
+ * A ceiling camera, its beam, and what the beam is currently doing.
+ *
+ * **The beam is the mechanic, so the beam is the drawing.** Everything else
+ * that watches Chuck in this building is a figure whose facing the player reads
+ * off the sprite; a camera is a fitting the size of a fist, and if the cone it
+ * sweeps is not on screen then the one thing the player has to time is
+ * invisible. It is drawn as a light cone rather than as an outline for the same
+ * reason the alarm's is: it is a lamp in a dark room, not a diagram.
+ *
+ * Three states, and each has to be told apart at a glance while running. Idle
+ * is the theme's own lamp colour, dim. `alerted` is the beat between the lens
+ * finding Chuck and the alarm going up, and it is the palette's danger red at
+ * full strength, because that beat is the whole warning the player gets.
+ * `suspicious` is the fade after it has lost him — amber, so "it nearly had
+ * you" and "it has you" can never be confused.
+ *
+ * A dead camera keeps its housing and loses its beam, which is what makes
+ * shooting one legible from across the room.
+ *
+ * `steady` is the reduced-motion switch, and it does here what it does
+ * everywhere else: the beam still sweeps, because the sweep is gameplay rather
+ * than decoration and holding it still would leave a fixed cone nobody could
+ * cross. What stops is the *flashing* of the lens while it is alerted, which is
+ * the part that is only there to catch the eye.
+ */
+static void draw_security_camera(SDL_Renderer *r, float x, float y,
+                                 float angle, bool working, bool alerted,
+                                 bool suspicious, SDL_Color lamp,
+                                 float world_t, bool steady)
+{
+  float cx = x + TILE_SIZE * 0.5f;
+  float cy = y + 7.0f;
+
+  if (working)
+  {
+    bool flash = !steady && ((int)(world_t * 6.0f) & 1) == 0;
+    SDL_Color beam = alerted ? (SDL_Color){255, 62, 48, 255}
+                             : (suspicious ? FX_AMBER : lamp);
+    Uint8 alpha = alerted ? (Uint8)(steady ? 64 : (flash ? 78 : 46))
+                          : (suspicious ? 44 : 26);
+    /* `fx_light_cone` takes a direction in degrees measured off straight down,
+       which is the same nought the simulation's sweep is measured from — so the
+       picture and `camera_angle` cannot drift apart by a sign. */
+    fx_light_cone(r, cx, cy + 4.0f, 4.0f,
+                  CAMERA_RANGE * 0.82f,
+                  angle * 57.2958f, beam, alpha);
+    fx_glow(r, cx, cy + 2.0f, alerted ? 13.0f : 8.0f, beam,
+            (Uint8)(alerted ? 120 : 60));
+  }
+
+  /* The housing: a bracket off the slab and a stubby body that points where the
+     beam points, so the fitting reads as aimed even with the cone switched off
+     by a blast. Two pixels of travel is enough at this size. */
+  float lean = sinf(angle) * 3.0f;
+  color_rect(r, FX_INK, cx - 2.0f, y, 4.0f, 4.0f);
+  color_rect(r, FX_STEEL_DK, cx - 1.0f, y, 2.0f, 4.0f);
+  color_rect(r, FX_INK, cx - CAMERA_W * 0.5f + lean, y + 3.0f,
+             (float)CAMERA_W, (float)CAMERA_H);
+  color_rect(r, working ? FX_STEEL : FX_STEEL_DK,
+             cx - CAMERA_W * 0.5f + 1.0f + lean, y + 4.0f,
+             (float)CAMERA_W - 2.0f, (float)CAMERA_H - 2.0f);
+  color_rect(r, working ? FX_STEEL_LT : FX_STEEL,
+             cx - CAMERA_W * 0.5f + 1.0f + lean, y + 4.0f,
+             (float)CAMERA_W - 2.0f, 1.0f);
+  /* The lens, and the tell-tale beside it. A dead camera's lamp is out — the
+     one piece of state the player checks from a distance. */
+  color_rect(r, FX_INK, cx - 2.0f + lean * 1.4f, y + 9.0f, 5.0f, 4.0f);
+  if (working)
+  {
+    SDL_Color lamp_col = alerted ? FX_RED : (suspicious ? FX_AMBER : FX_GREEN);
+    bool lit = steady || !alerted || ((int)(world_t * 6.0f) & 1) == 0;
+    if (lit)
+      color_rect(r, lamp_col, cx + CAMERA_W * 0.5f - 3.0f + lean, y + 5.0f,
+                 2.0f, 2.0f);
+  }
+}
+
 /* `steady` is the player's reduced-motion switch: a raised alarm still lights
  * this call point and still throws its cone across the wall, it simply stops
  * blinking at 5Hz to do it. The lamp takes the mean of the two states it would
@@ -1602,6 +1682,155 @@ static void draw_restroom_stall_closed(SDL_Renderer *r, float x, float y)
 }
 
 /*
+ * The plant set: four props for the five rooms the office and foyer sets had
+ * nothing to say about. See `DecorationType` in [level.h](level.h) for why they
+ * exist; the rules they are drawn under are the ones in
+ * [docs/art-and-audio.md](../docs/art-and-audio.md) — a base, a lit top edge, a
+ * contact shadow, and every colour out of fx.h.
+ *
+ * All four are 32 wide and stand on the tile below, so they read as objects on a
+ * floor rather than as texture on a wall, and each is varied off `tile_hash` so
+ * a run of them is not a run of the same object.
+ */
+static void draw_plant_pallet(SDL_Renderer *r, float x, float y,
+                              unsigned variant)
+{
+  SDL_Color timber = {96, 74, 48, 255};
+  SDL_Color timber_lt = {132, 104, 68, 255};
+  SDL_Color drum = fx_mix(FX_STEEL_DK, FX_STEEL_LT, 0.35f);
+
+  fx_contact_shadow(r, x + 16.0f, y + 32.0f, 26.0f * 0.5f, 0.0f, 120);
+
+  /* The pallet: two bearers and the boards across them. */
+  color_rect(r, FX_INK, x + 2.0f, y + 25.0f, 28.0f, 7.0f);
+  color_rect(r, timber, x + 3.0f, y + 26.0f, 26.0f, 5.0f);
+  color_rect(r, timber_lt, x + 3.0f, y + 26.0f, 26.0f, 1.0f);
+  for (int gap = 0; gap < 3; ++gap)
+    color_rect(r, FX_INK, x + 8.0f + (float)gap * 7.0f, y + 27.0f, 1.0f, 4.0f);
+
+  /* What is on it. Half the pallets carry drums and half carry sacks, chosen
+     from the tile so the same wall is not the same load twice. */
+  if ((variant & 1u) == 0u)
+  {
+    for (int i = 0; i < 2; ++i)
+    {
+      float dx = x + 5.0f + (float)i * 12.0f;
+      color_rect(r, FX_INK, dx, y + 11.0f, 11.0f, 14.0f);
+      fx_vgrad(r, dx + 1.0f, y + 12.0f, 9.0f, 12.0f,
+               fx_mix(drum, FX_PALE, 0.20f), 255, fx_dim(drum, 0.55f), 255);
+      /* Two hoops, the way a drum is pressed. */
+      color_rect(r, fx_dim(FX_STEEL_DK, 0.8f), dx + 1.0f, y + 15.0f, 9.0f,
+                 1.0f);
+      color_rect(r, fx_dim(FX_STEEL_DK, 0.8f), dx + 1.0f, y + 20.0f, 9.0f,
+                 1.0f);
+      /* The hazard band every drum in a plant room carries. */
+      color_rect(r, fx_dim(FX_AMBER, 0.75f), dx + 1.0f, y + 17.0f, 9.0f, 2.0f);
+    }
+  }
+  else
+  {
+    for (int i = 0; i < 3; ++i)
+    {
+      float sx = x + 4.0f + (float)i * 8.0f;
+      float sh = 9.0f + (float)((variant >> (unsigned)(i + 1)) & 3u);
+      color_rect(r, FX_INK, sx, y + 25.0f - sh, 8.0f, sh);
+      fx_vgrad(r, sx + 1.0f, y + 26.0f - sh, 6.0f, sh - 1.0f,
+               (SDL_Color){126, 122, 104, 255}, 255,
+               (SDL_Color){78, 76, 64, 255}, 255);
+    }
+  }
+}
+
+static void draw_plant_cable_reel(SDL_Renderer *r, float x, float y,
+                                  unsigned variant)
+{
+  SDL_Color cheek = {104, 80, 52, 255};
+  SDL_Color cheek_lt = {140, 110, 74, 255};
+  SDL_Color cable = {28, 32, 38, 255};
+
+  fx_contact_shadow(r, x + 16.0f, y + 32.0f, 22.0f * 0.5f, 0.0f, 120);
+
+  /* Stood on its edge, which is how a reel is left: a disc seen face on, so it
+     is drawn as stacked bands rather than as a circle. */
+  float cy = y + 20.0f;
+  for (int row = -11; row <= 11; ++row)
+  {
+    float half = 11.0f - (float)(row * row) / 11.0f;
+    if (half < 1.0f)
+      continue;
+    float t = ((float)row + 11.0f) / 22.0f;
+    color_rect(r, fx_mix(cheek_lt, cheek, t), x + 16.0f - half, cy + (float)row,
+               half * 2.0f, 1.0f);
+  }
+  /* The wound cable, a darker core inside the cheeks. */
+  for (int row = -6; row <= 6; ++row)
+  {
+    float half = 6.0f - (float)(row * row) / 8.0f;
+    if (half < 1.0f)
+      continue;
+    color_rect(r, cable, x + 16.0f - half, cy + (float)row, half * 2.0f, 1.0f);
+  }
+  color_rect(r, fx_dim(cable, 1.6f), x + 14.0f, cy - 4.0f, 4.0f, 1.0f);
+  /* The tail, run off to one side and pinned under its own weight. */
+  float dir = (variant & 2u) ? 1.0f : -1.0f;
+  color_rect(r, cable, x + 16.0f + dir * 6.0f, cy + 8.0f, 8.0f, 2.0f);
+  color_rect(r, cable, x + 16.0f + dir * 12.0f, cy + 10.0f, 4.0f, 2.0f);
+}
+
+static void draw_plant_pipe_rail(SDL_Renderer *r, float x, float y,
+                                 unsigned variant, float world_t)
+{
+  SDL_Color pipe = fx_mix(FX_STEEL_DK, FX_STEEL_LT, 0.5f);
+  SDL_Color pipe_lt = fx_mix(FX_STEEL_LT, FX_PALE, 0.4f);
+
+  fx_contact_shadow(r, x + 16.0f, y + 32.0f, 20.0f * 0.5f, 0.0f, 120);
+
+  /* A pair of risers off the floor with a horizontal run across them, and a
+     hand wheel on the valve: the plumbing a machine hall is made of. */
+  color_rect(r, FX_INK, x + 5.0f, y + 12.0f, 22.0f, 20.0f);
+  fx_vgrad(r, x + 6.0f, y + 13.0f, 5.0f, 19.0f, pipe_lt, 255,
+           fx_dim(pipe, 0.6f), 255);
+  fx_vgrad(r, x + 21.0f, y + 13.0f, 5.0f, 19.0f, pipe_lt, 255,
+           fx_dim(pipe, 0.6f), 255);
+  color_rect(r, pipe, x + 6.0f, y + 13.0f, 20.0f, 4.0f);
+  color_rect(r, pipe_lt, x + 6.0f, y + 13.0f, 20.0f, 1.0f);
+  /* Flanges where the run meets the risers. */
+  color_rect(r, FX_STEEL_LT, x + 10.0f, y + 12.0f, 3.0f, 6.0f);
+  color_rect(r, FX_STEEL_LT, x + 19.0f, y + 12.0f, 3.0f, 6.0f);
+
+  /* The wheel, turned a little differently on every one of them. */
+  float spin = (float)(variant % 8u) * 0.4f + world_t * 0.05f;
+  float wheel_x = x + 16.0f;
+  float wheel_y = y + 22.0f;
+  color_rect(r, FX_RUST, wheel_x - 5.0f, wheel_y - 1.0f, 10.0f, 2.0f);
+  color_rect(r, fx_dim(FX_RUST, 0.75f), wheel_x - 1.0f, wheel_y - 5.0f, 2.0f,
+             10.0f);
+  float tilt = SDL_sinf(spin) * 3.0f;
+  color_rect(r, fx_dim(FX_RUST, 1.1f), wheel_x - 4.0f, wheel_y + tilt, 8.0f,
+             1.0f);
+}
+
+static void draw_plant_bollard(SDL_Renderer *r, float x, float y,
+                               unsigned variant)
+{
+  fx_contact_shadow(r, x + 16.0f, y + 32.0f, 14.0f * 0.5f, 0.0f, 120);
+
+  /* A short post with a reflective band, leaning a pixel or two where it has
+     been clipped by something with a pallet on it. */
+  float lean = (variant & 4u) ? 1.0f : 0.0f;
+  color_rect(r, FX_INK, x + 12.0f + lean, y + 14.0f, 8.0f, 18.0f);
+  fx_vgrad(r, x + 13.0f + lean, y + 15.0f, 6.0f, 17.0f,
+           fx_mix(FX_STEEL_LT, FX_PALE, 0.3f), 255, FX_STEEL_DK, 255);
+  color_rect(r, fx_dim(FX_AMBER, 0.9f), x + 13.0f + lean, y + 19.0f, 6.0f,
+             3.0f);
+  color_rect(r, fx_dim(FX_AMBER, 0.55f), x + 13.0f + lean, y + 24.0f, 6.0f,
+             2.0f);
+  /* The base plate, bolted down. */
+  color_rect(r, FX_STEEL_DK, x + 9.0f, y + 30.0f, 14.0f, 2.0f);
+  color_rect(r, FX_STEEL_LT, x + 9.0f, y + 30.0f, 14.0f, 1.0f);
+}
+
+/*
  * A switch with no `default:`, deliberately. This used to be an if/else chain
  * ending in a bare `else` that drew the turnstile, which meant a decoration
  * added to `DecorType` tomorrow was drawn as a turnstile rather than reported:
@@ -1667,6 +1896,20 @@ static void draw_decoration(SDL_Renderer *r, const Decoration *decoration,
     break;
   case DECOR_LOBBY_TURNSTILE:
     draw_lobby_turnstile(r, x, y, world_t);
+    break;
+  case DECOR_PLANT_PALLET:
+    draw_plant_pallet(r, x, y, tile_hash(decoration->col, decoration->row));
+    break;
+  case DECOR_PLANT_CABLE_REEL:
+    draw_plant_cable_reel(r, x, y,
+                          tile_hash(decoration->col, decoration->row));
+    break;
+  case DECOR_PLANT_PIPE_RAIL:
+    draw_plant_pipe_rail(r, x, y, tile_hash(decoration->col, decoration->row),
+                         world_t);
+    break;
+  case DECOR_PLANT_BOLLARD:
+    draw_plant_bollard(r, x, y, tile_hash(decoration->col, decoration->row));
     break;
   }
 }
@@ -2154,6 +2397,10 @@ static void render_facade_world(Game *game, int win_w, int win_h)
       draw_medkit(r, x, y);
     else if (item->type == ITEM_BAZOOKA)
       draw_bazooka_pickup(r, x - 4.0f, y + 1.0f);
+    else if (item->type == ITEM_EVIDENCE)
+      draw_evidence_pickup(r, x, y);
+    else if (item->type == ITEM_FLASHBANG)
+      draw_flashbang(r, x + 3.0f, y + 4.0f, 0.0f);
     else
       draw_card(r, x, y, 255, true);
   }
@@ -2478,6 +2725,21 @@ static void render_world(Game *game)
                       game->gameplay.active_alarm_switch == i,
                       being_used, world_t, game->settings.reduced_motion);
   }
+  for (int i = 0; i < lvl->map.camera_count; ++i)
+  {
+    const CameraState *cam = &game->gameplay.cameras[i];
+    float x = lvl->map.cameras[i].col * (float)TILE_SIZE - cam_x;
+    float y = lvl->map.cameras[i].row * (float)TILE_SIZE + oy;
+    /* Alerted means the lens has Chuck *now* and the alarm is coming;
+       suspicious is the fade after it lost him. The two must never look alike,
+       because one of them is a warning the player can still act on. */
+    draw_security_camera(r, x, y,
+                         gameplay_camera_angle(cam->sweep), cam->working,
+                         cam->notice > 0.0f,
+                         cam->notice <= 0.0f && cam->suspicion > 0.0f,
+                         level_art(lvl->map.theme)->lamp, world_t,
+                         game->settings.reduced_motion);
+  }
 
   /* Ambient staff remain subdued, but correctly stand in front of the back
    * wall and its fixtures. Floor props and gameplay actors render later. */
@@ -2540,6 +2802,10 @@ static void render_world(Game *game)
       draw_medkit(r, x, y);
     else if (it->type == ITEM_BAZOOKA)
       draw_bazooka_pickup(r, x - 4.0f, y + 1.0f);
+    else if (it->type == ITEM_EVIDENCE)
+      draw_evidence_pickup(r, x, y);
+    else if (it->type == ITEM_FLASHBANG)
+      draw_flashbang(r, x + 3.0f, y + 4.0f, 0.0f);
   }
 
   /* Dropped magazines: the HUD's cartridge pictogram laid on the floor, so
@@ -2609,6 +2875,20 @@ static void render_world(Game *game)
     const Grenade *g = &game->gameplay.grenades[i];
     if (g->active)
       draw_grenade(r, g->x - cam_x, g->y + oy, g->timer);
+  }
+
+  for (int i = 0; i < MAX_FLASHBANGS; ++i)
+  {
+    const Grenade *f = &game->gameplay.flashbangs[i];
+    if (f->active)
+      draw_flashbang(r, f->x - cam_x, f->y + oy, f->timer);
+  }
+
+  for (int i = 0; i < MAX_DECOYS; ++i)
+  {
+    const Decoy *d = &game->gameplay.decoys[i];
+    if (d->active)
+      draw_decoy(r, d->x - cam_x, d->y + oy);
   }
 
   /* Fast projectiles get a one-pixel trail and hot core for impact/readability. */
@@ -2753,6 +3033,12 @@ static const char *player_weapon_label(PlayerWeapon weapon)
     return "GRENADE";
   case PLAYER_WEAPON_BAZOOKA:
     return "BAZOOKA";
+  case PLAYER_WEAPON_FLASH:
+    return "FLASH";
+  case PLAYER_WEAPON_DECOY:
+    /* Plural, because there is no count beside it and never will be. The other
+       four labels name a thing in the hand; this one names a pocketful. */
+    return "BOLTS";
   case PLAYER_WEAPON_COUNT:
     return "NONE";
   }
@@ -2884,6 +3170,8 @@ static void render_facade_hud(Game *game, int win_w)
                 i < game->gameplay.player.bullets);
   if (game->gameplay.player.grenades > 0)
     draw_grenade(r, 724.0f, 19.0f, 0.0f);
+  if (game->gameplay.player.flashbangs > 0)
+    draw_flashbang(r, 706.0f, 19.0f, 0.0f);
   if (game->gameplay.player.bazooka_rockets > 0)
     draw_rocket_sprite(r, 742.0f, 22.0f, 1, false);
 }
@@ -3174,8 +3462,19 @@ static void render_interaction_prompt(Game *game, int win_w, int win_h)
   SublevelDoorAction sublevel_action =
       gameplay_player_sublevel_door_action(&game->gameplay);
   bool sublevel_door_available = sublevel_action != SUBLEVEL_DOOR_NONE;
+  /*
+   * A body at Chuck's feet, which is the one line here that teaches a mechanic
+   * rather than naming a door. Nothing else on screen says a corpse can be
+   * moved: there is no icon on it, the HUD has no field for it, and a player
+   * who never happens to hold USE while standing on one would finish the
+   * campaign without discovering that the rule the guards have been punishing
+   * them with all night has an answer.
+   */
+  bool dragging = game->gameplay.player.dragging;
+  bool body_available = gameplay_body_within_reach(&game->gameplay);
   if (game->state != STATE_PLAYING ||
-      (!terminal_available && !door_available && !sublevel_door_available))
+      (!terminal_available && !door_available && !sublevel_door_available &&
+       !body_available && !dragging))
   {
     return;
   }
@@ -3223,6 +3522,21 @@ static void render_interaction_prompt(Game *game, int win_w, int win_h)
                  "HOLD %s TO HACK ACTIVE TERMINAL", use_key);
     label = pad_hint(pad, buf, sizeof(buf), "HOLD $Y TO HACK ACTIVE TERMINAL",
                      key_form);
+  }
+  else if (dragging)
+  {
+    /* Named while it is happening as well as before it starts, because letting
+       go is a decision too: the body stays exactly where the button was
+       released, and that is the whole of how a corpse gets hidden. */
+    SDL_snprintf(key_form, sizeof(key_form), "RELEASE %s TO DROP BODY",
+                 use_key);
+    label = pad_hint(pad, buf, sizeof(buf), "RELEASE $Y TO DROP BODY",
+                     key_form);
+  }
+  else if (body_available)
+  {
+    SDL_snprintf(key_form, sizeof(key_form), "HOLD %s TO DRAG BODY", use_key);
+    label = pad_hint(pad, buf, sizeof(buf), "HOLD $Y TO DRAG BODY", key_form);
   }
   else if (sublevel_action == SUBLEVEL_DOOR_ENTER)
   {
@@ -3325,28 +3639,86 @@ static void draw_overlay_panel(Game *game, float y, SDL_Color accent,
 }
 
 /*
- * The end of a run, and the only screen a score is being looked at rather than
- * played for. Until the score outlived the process there was nothing to
- * compare this run to; now there is, so the card says both — what this run
- * made, and the best any run ever has. When they are the same number the run
- * that just ended is the best one, and the card says that outright instead of
- * printing the same figure twice.
+ * What a finished run made, on both of the screens a run can finish on.
+ *
+ * The words are [run_tally.c](run_tally.c) because they are read on two screens
+ * now rather than one, and the reason there are two is the defect this pair of
+ * functions was written for: the card below is reached by *losing*, and until
+ * this existed it was the only place either figure appeared. A won campaign
+ * banked its score and its sheets on the way into `STATE_OUTRO` and then said
+ * nothing about either, so the ending the whole game is played for was the
+ * ending that reported least — and a player who found all twelve sheets was told
+ * less than one who died on sector three.
+ */
+static void draw_run_tally_lines(Game *game, float score_y, float score_scale,
+                                 float docket_y, SDL_Color score_colour,
+                                 SDL_Color docket_colour, float reveal)
+{
+  /* Faded by multiplying the colour rather than by an alpha, which is how the
+   * outro's own cards fade: `draw_text` sets the draw colour opaque, and both
+   * screens this is drawn on sit over ink. */
+  char line[RUN_TALLY_MAX];
+  bool assisted = !campaign_records_count(&game->campaign);
+  if (run_tally_format_score(game->campaign.score, game_best_score(game),
+                             assisted, line, sizeof(line)) > 0)
+  {
+    draw_text_centered(game, score_y, score_scale,
+                       (Uint8)((float)score_colour.r * reveal),
+                       (Uint8)((float)score_colour.g * reveal),
+                       (Uint8)((float)score_colour.b * reveal), line);
+  }
+  if (run_tally_format_docket(game->campaign.evidence_collected,
+                              game_best_evidence(game), assisted, line,
+                              sizeof(line)) > 0)
+  {
+    draw_text_centered(game, docket_y, 1.0f,
+                       (Uint8)((float)docket_colour.r * reveal),
+                       (Uint8)((float)docket_colour.g * reveal),
+                       (Uint8)((float)docket_colour.b * reveal), line);
+  }
+}
+
+/*
+ * The same two lines over the outro's thank-you card.
+ *
+ * Drawn here rather than inside `outro_cutscene_render` because the cutscene
+ * takes a time and a frame and knows nothing about a campaign — the same split
+ * that keeps the sector tally in this file. It waits for the final reveal the
+ * card itself waits for and fades in with it, so it arrives as part of that card
+ * rather than over the shooting.
+ */
+static void draw_run_tally(Game *game, int win_w)
+{
+  (void)win_w;
+  float time = game->presentation.outro_cutscene.time;
+  if (time < OUTRO_FINAL_REVEAL_TIME)
+    return;
+  float reveal = (time - OUTRO_FINAL_REVEAL_TIME) / 1.6f;
+  if (reveal > 1.0f)
+    reveal = 1.0f;
+  /* Under THE BONDS BURNED. SHE DID NOT. at 151, and well above the replay
+   * prompt at 505: the two lines read as the last paragraph of that card. */
+  draw_run_tally_lines(game, 182.0f, 1.0f, 200.0f, FX_CREAM, FX_LABEL, reveal);
+}
+
+/*
+ * The end of a run by losing it. Until the score outlived the process there was
+ * nothing to compare this run to; now there is, so the card says both — what
+ * this run made, and the best any run ever has.
+ *
+ * The docket line is a line here rather than a chip on the title screen, and
+ * that is a composition decision the manual already argues: the shot up there
+ * holds a wordmark, START and one quiet line of four chips that already come to
+ * about 650 of the 800 the frame is laid out in. A fifth would be the band that
+ * has to earn itself. Here there is room, and the number means something in the
+ * same breath the score does.
  */
 static void draw_game_over_panel(Game *game)
 {
   draw_overlay_panel(game, 225.0f, FX_RED, "GAME OVER",
                      "RETURNING TO MAIN MENU");
-
-  char tally[64];
-  int best = game_best_score(game);
-  if (game->campaign.score >= best && game->campaign.score > 0)
-    SDL_snprintf(tally, sizeof(tally), "SCORE %d - YOUR BEST YET",
-                 game->campaign.score);
-  else
-    SDL_snprintf(tally, sizeof(tally), "SCORE %d - BEST %d",
-                 game->campaign.score, best);
-  draw_text_centered(game, 305.0f, 2.0f, COL_SUBTITLE.r, COL_SUBTITLE.g,
-                     COL_SUBTITLE.b, tally);
+  draw_run_tally_lines(game, 305.0f, 2.0f, 323.0f, COL_SUBTITLE, FX_LABEL,
+                       1.0f);
 }
 
 static void draw_continue_overlay(Game *game)
@@ -3423,7 +3795,21 @@ static void dim_whole_frame(Game *game, Uint8 alpha)
  * the player can want from it, and the one that cannot be taken back is last
  * and set in the danger red — a list where ABANDON RUN looks like RESUME is a
  * list somebody eventually loses a run to.
+ *
+ * The words and the plate's own numbers are in [pause_sheet.h](pause_sheet.h)
+ * rather than here, which is the rule every other sheet in the game already
+ * keeps: this one held its three labels, its three details and its width as
+ * literals inside this function, so `make test` could not measure the one
+ * against the other. See the note in that header.
  */
+/* The pause sheet has no SDL under it and so cannot ask SDL how wide a glyph
+ * is; it is the same 8x8 cell either way, and this is what says so. Same
+ * assertion the manual's page module carries, for the same reason: the fit check
+ * must measure the cell the renderer draws. */
+_Static_assert(SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE == (int)PAUSE_GLYPH_W,
+               "the pause sheet's fit check measures a different glyph than "
+               "the renderer draws");
+
 static void draw_pause_menu(Game *game)
 {
   SDL_Renderer *r = game->platform.renderer;
@@ -3432,50 +3818,49 @@ static void draw_pause_menu(Game *game)
 
   dim_whole_frame(game, 205);
 
-  static const char *labels[PAUSE_ITEM_COUNT] = {
-      "RESUME", "OPTIONS", "ABANDON RUN"};
-  static const char *details[PAUSE_ITEM_COUNT] = {
-      "BACK TO THE SECTOR",
-      "SOUND, DISPLAY AND ASSIST",
-      "GIVE UP THIS RUN AND RETURN TO THE TITLE"};
-
-  const float row_h = 44.0f;
-  const float panel_w = 420.0f;
-  const float rows_top = 78.0f;
-  float panel_h = rows_top + row_h * (float)PAUSE_ITEM_COUNT + 40.0f;
-  float panel_x = ((float)win_w - panel_w) * 0.5f;
+  float panel_h = PAUSE_ROWS_TOP +
+                  PAUSE_ROW_H * (float)PAUSE_ITEM_COUNT + PAUSE_ROW_FOOT;
+  float panel_x = ((float)win_w - PAUSE_PANEL_W) * 0.5f;
   float panel_y = ((float)win_h - panel_h) * 0.5f - 10.0f;
 
-  draw_sheet_plate(r, panel_x, panel_y, panel_w, panel_h);
-  fx_glow(r, panel_x + panel_w * 0.5f, panel_y + 26.0f, 200.0f, FX_CYAN, 26);
+  draw_sheet_plate(r, panel_x, panel_y, PAUSE_PANEL_W, panel_h);
+  fx_glow(r, panel_x + PAUSE_PANEL_W * 0.5f, panel_y + 26.0f, 200.0f,
+          FX_CYAN, 26);
 
-  draw_text(r, panel_x + 22.0f, panel_y + 20.0f, 2.0f,
-            FX_CREAM.r, FX_CREAM.g, FX_CREAM.b, "PAUSED");
-  draw_text(r, panel_x + 22.0f, panel_y + 46.0f, 1.0f,
-            FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
-            "THE BUILDING WAITS.");
+  draw_text(r, panel_x + PAUSE_LABEL_X, panel_y + 20.0f, PAUSE_LABEL_SCALE,
+            FX_CREAM.r, FX_CREAM.g, FX_CREAM.b, PAUSE_TITLE);
+  draw_text(r, panel_x + PAUSE_LABEL_X, panel_y + 46.0f, PAUSE_DETAIL_SCALE,
+            FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, PAUSE_STRAP);
 
   for (int i = 0; i < PAUSE_ITEM_COUNT; ++i)
   {
-    float row_y = panel_y + rows_top + (float)i * row_h;
+    const PauseRow *row = &PAUSE_SHEET_ROWS[i];
+    float row_y = panel_y + PAUSE_ROWS_TOP + (float)i * PAUSE_ROW_H;
     bool selected = game->pause_cursor == i;
     if (selected)
-      draw_sheet_cursor(r, panel_x, row_y - 6.0f, panel_w, 38.0f,
+      draw_sheet_cursor(r, panel_x, row_y - 6.0f, PAUSE_PANEL_W, 38.0f,
                         row_y + 4.0f);
 
     SDL_Color tint = i == PAUSE_ITEM_ABANDON ? FX_RED : FX_CREAM;
-    draw_text(r, panel_x + 40.0f, row_y, 2.0f,
-              tint.r, tint.g, tint.b, labels[i]);
-    draw_text(r, panel_x + 40.0f, row_y + 20.0f, 1.0f,
-              FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, details[i]);
+    draw_text(r, panel_x + PAUSE_ROW_TEXT_X, row_y, PAUSE_LABEL_SCALE,
+              tint.r, tint.g, tint.b, row->label);
+    /* The armed row says what a second press will do, in the same red the label
+     * is drawn in: a warning printed in the ordinary label grey is a warning
+     * that reads as a description. `settings.c`'s RESET RECORDS row does the
+     * same thing for the same reason. */
+    bool armed = i == PAUSE_ITEM_ABANDON && game->pause_abandon_armed;
+    const char *detail = armed ? PAUSE_ABANDON_ARMED : row->detail;
+    SDL_Color detail_tint = armed ? FX_RED : FX_LABEL;
+    draw_text(r, panel_x + PAUSE_ROW_TEXT_X, row_y + 20.0f,
+              PAUSE_DETAIL_SCALE, detail_tint.r, detail_tint.g,
+              detail_tint.b, detail);
   }
 
   char hint[80];
-  draw_text(r, panel_x + 22.0f, panel_y + panel_h - 26.0f, 1.0f,
-            FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
+  draw_text(r, panel_x + PAUSE_LABEL_X, panel_y + panel_h - 26.0f,
+            PAUSE_DETAIL_SCALE, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
             pad_hint(game_pad_hints(game), hint, sizeof(hint),
-                     "LS/DPAD: SELECT   $A: CHOOSE   $B: RESUME",
-                     "ARROWS: SELECT   ENTER: CHOOSE   ESC: RESUME"));
+                     PAUSE_HINT_PAD, PAUSE_HINT_KEYS));
 }
 
 /* From the end of the bar to the sheet's right margin: the widest reading the
@@ -3787,7 +4172,20 @@ static void draw_settings_sheet(Game *game)
     draw_text(r, panel_x + 34.0f, y, 1.0f,
               selected ? 236 : 200, selected ? 238 : 208,
               selected ? 224 : 196, row->label);
-    if (row->detail != NULL)
+    /*
+     * The records row swaps its own detail line for the confirmation once it has
+     * been armed, in the danger red the muted-levels correction uses, and for the
+     * same reason it is red there: this is not a description of the row any more,
+     * it is what the next press will do. Both lines are strings in
+     * [settings.h](settings.h) and [settings.c](settings.c) so the fit check
+     * measures the one the player is actually reading.
+     */
+    bool armed_records =
+        row->id == SETTING_RECORDS_RESET && game->settings_records_armed;
+    if (armed_records)
+      draw_text(r, panel_x + 34.0f, y + 15.0f, 1.0f, FX_RED.r, FX_RED.g,
+                FX_RED.b, SETTINGS_RECORDS_ARMED_DETAIL);
+    else if (row->detail != NULL)
       draw_text(r, panel_x + 34.0f, y + 15.0f, 1.0f,
                 FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, row->detail);
 
@@ -3824,8 +4222,10 @@ static void draw_settings_sheet(Game *game)
    * different things: a keyboard press into a key cap, a button into a pad
    * one. One line for both would name the wrong escape half the time — and
    * naming a way out the state does not accept is the thing this codebase
-   * refuses everywhere else. Both are measured by
-   * `test_every_word_on_the_options_sheet_fits_the_plate`. */
+   * refuses everywhere else. All four of these lines are measured by
+   * `test_every_word_on_the_options_sheet_fits_the_plate`, the footer included:
+   * it lived here as a literal while every other word on the sheet had been
+   * moved out to be measured, and it is the widest line the plate carries. */
   const char *footer;
   if (game->settings_capturing)
     footer = game_settings_slot_is_pad(game)
@@ -3833,10 +4233,10 @@ static void draw_settings_sheet(Game *game)
                  : SETTINGS_CAPTURE_KEY_LINE;
   else
     footer = pad_hint(game_pad_hints(game), hint, sizeof(hint),
-                      "LS/DPAD: SELECT AND CHANGE   $A: CHANGE   $B: DONE",
-                      "ARROWS: SELECT AND CHANGE   ENTER: CHANGE   "
-                      "ESC: DONE");
-  draw_text(r, panel_x + 22.0f, panel_y + panel_h - 24.0f, 1.0f,
+                      SETTINGS_FOOTER_PAD_LINE, SETTINGS_FOOTER_KEY_LINE);
+  /* `SETTINGS_LABEL_X` rather than the 22 it used to repeat, so the indent the
+   * test measures from is the indent the line is drawn at. */
+  draw_text(r, panel_x + SETTINGS_LABEL_X, panel_y + panel_h - 24.0f, 1.0f,
             FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, footer);
 }
 
@@ -4112,8 +4512,16 @@ void game_render(Game *game)
   }
   else if (game->state == STATE_MANUAL)
   {
+    /* The four figures the last sheet is about, read out of the file the shell
+     * owns: the manual links no `Progress` and must not gain one. */
+    ManualRecords records = {
+        .best_score = game_best_score(game),
+        .best_evidence = game_best_evidence(game),
+        .sector_count = CAMPAIGN_SECTORS,
+        .sector_time = game_sector_records(game),
+    };
     manual_render(r, &game->presentation.manual, win_w, win_h,
-                  game_pad_hints(game));
+                  game_pad_hints(game), &records);
     vignette = FX_VIGNETTE_SCENE;
   }
   else if (game->state == STATE_LEVEL_TRANSITION)
@@ -4126,6 +4534,7 @@ void game_render(Game *game)
   {
     outro_cutscene_render(r, &game->presentation.outro_cutscene,
                           win_w, win_h, game_pad_hints(game));
+    draw_run_tally(game, win_w);
     vignette = FX_VIGNETTE_SCENE;
   }
   else if (game->state == STATE_CREDITS)
@@ -4161,15 +4570,66 @@ void game_render(Game *game)
         draw_text(r, 393.0f, 61.0f, 2.0f, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, "v");
     }
 
+    /*
+     * The card that ends the campaign, and it is the only thing this state is.
+     *
+     * `try_finish_current_level` enters `STATE_LEVEL_CLEARED` in exactly one
+     * branch: the one where there is no sector above. A window hands straight
+     * over and a stair door draws the report, so every other clear in the game
+     * goes somewhere else — which made "THE TRAIL LEADS UP" a line the player
+     * reads once, on the roof, at the top of the building, with nothing above it
+     * and Ellen twenty feet away. It was right when every clear drew this card
+     * and became wrong the day the two other routes were added, which is the
+     * shape of drift no fit check can see: the words fitted perfectly.
+     */
     if (game->state == STATE_LEVEL_CLEARED)
       draw_overlay_panel(game, 240.0f, FX_GREEN,
-                         "THE TRAIL LEADS UP", NULL);
+                         "THE ROOF IS HIS", "SHE IS TWENTY FEET AWAY");
     else if (game->state == STATE_CONTINUE)
       draw_continue_overlay(game);
     else if (game->state == STATE_GAME_OVER)
       draw_game_over_panel(game);
     else if (game->state == STATE_PAUSED)
       draw_pause_menu(game);
+
+    /*
+     * What the sector just cleared paid, on the two screens that reach a
+     * player who never sees a report — the reveal of the sector above a
+     * window, and the card that ends the campaign. See
+     * [sector_tally.h](sector_tally.h) for why eleven of the seventeen clears
+     * needed one.
+     *
+     * Drawn at scale 1.0 and centred, which is what the constants in that
+     * header measure and what `SDL_RenderDebugText`'s 8x8 bitmap is sharp at.
+     * It sits low in the frame during a reveal, under the map coming up rather
+     * than over it, and just under the panel on the cleared card.
+     *
+     * **After the panel above rather than before it**, because
+     * `draw_overlay_panel` opens by dimming the whole frame so the verdict owns
+     * it. Drawn first, the line would have been the one thing on the cleared
+     * card printed through a 150-alpha wash — legible on the machine it was
+     * written on and not on a dim display, which is the way this kind of
+     * mistake is usually found.
+     */
+    if (game->presentation.sector_tally.pending &&
+        (game->state == STATE_LEVEL_START ||
+         game->state == STATE_LEVEL_CLEARED))
+    {
+      char tally_line[SECTOR_TALLY_MAX];
+      if (sector_tally_format(&game->presentation.sector_tally, tally_line,
+                              sizeof(tally_line)) > 0)
+      {
+        float tally_y = game->state == STATE_LEVEL_CLEARED ? 292.0f : 522.0f;
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        set_rgba(r, 5, 9, 15, 205);
+        fill_rect(r, 0.0f, tally_y - 7.0f, (float)win_w, 23.0f);
+        set_rgba(r, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, 90);
+        fill_rect(r, 0.0f, tally_y - 7.0f, (float)win_w, 1.0f);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        draw_text_centered(game, tally_y, 1.0f, FX_AMBER.r, FX_AMBER.g,
+                           FX_AMBER.b, tally_line);
+      }
+    }
   }
 
   /* The one finishing pass, and the one switch that turns it off. It is the

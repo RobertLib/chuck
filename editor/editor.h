@@ -140,6 +140,24 @@ typedef struct
     char status[192]; /* what the last action did */
     float status_timer;
     bool status_bad;
+
+    /*
+     * How long this process has left before it closes itself, and whether it
+     * was ever asked to. `--soak N`, and the game's own switch of the same
+     * name is where the reasoning is written down: a killed process never
+     * reaches `SDL_AppQuit`, and teardown is the half of the lifecycle a
+     * sanitizer is most likely to have something to say about.
+     *
+     * The editor needed one of its own because nothing has ever run it.
+     * `make sanitize` builds `all test soak` and `all` is the game, so
+     * `editor_app.c`, `editor_render.c` and `editor_ui.c` were not merely
+     * unexecuted under the sanitizers — they were never compiled under them.
+     * The parts of the editor the suite does cover, `editor_validate.c` and
+     * `editor_doc.c`, are exactly the parts that link no SDL, which is what
+     * made the gap invisible.
+     */
+    bool soaking;
+    float soak_seconds_left;
 } EditorApp;
 
 /* ---- editor_app.c ------------------------------------------------------ */

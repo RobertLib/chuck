@@ -34,6 +34,55 @@ CHUCK_PAD_LIST(CHUCK_PAD_ASSERT)
 _Static_assert(PADBIND_NONE == SDL_GAMEPAD_BUTTON_INVALID,
                "keybind.h disagrees with SDL about the absent button");
 
+/*
+ * And [pad_hint.h](pad_hint.h)'s two tables, for the third time and the same
+ * reason.
+ *
+ * That file used to link SDL and use these enumerators directly, which needed
+ * no assertion and cost something worse: it put the four functions that decide
+ * which letter goes on which button on the side of the SDL boundary no test can
+ * reach, and `make coverage` duly reported them as never executed. They are
+ * plain numbers over there now, so they are checked here — where every other
+ * copy of somebody else's constants in this tree is checked.
+ */
+#define CHUCK_PAD_LABEL_ASSERT(ident, value)                                  \
+    _Static_assert((value) == SDL_GAMEPAD_BUTTON_LABEL_##ident,               \
+                   "pad_hint.h disagrees with SDL about label " #ident);
+CHUCK_PAD_LABEL_LIST(CHUCK_PAD_LABEL_ASSERT)
+#undef CHUCK_PAD_LABEL_ASSERT
+
+#define CHUCK_PAD_TYPE_ASSERT(ident, value)                                   \
+    _Static_assert((value) == SDL_GAMEPAD_TYPE_##ident,                       \
+                   "pad_hint.h disagrees with SDL about pad type " #ident);
+CHUCK_PAD_TYPE_LIST(CHUCK_PAD_TYPE_ASSERT)
+#undef CHUCK_PAD_TYPE_ASSERT
+
+/*
+ * Ask an open pad the two questions `pad_hints_apply` needs answered, and let
+ * it decide the rest.
+ *
+ * This is the whole of what needed a gamepad, and it is why the decision is no
+ * longer in here with it: a label per face position and one type number is all
+ * that crosses the boundary. A NULL pad asks nothing and gets the Xbox set,
+ * which is what an unplugged pad and a fresh launch both want.
+ */
+static void read_pad_hints(PadHints *hints, SDL_Gamepad *gamepad)
+{
+  if (gamepad == NULL)
+  {
+    pad_hints_apply(hints, PAD_TYPE_UNKNOWN, NULL, 0);
+    return;
+  }
+
+  PadButtonLabel labels[PAD_FACE_COUNT];
+  for (int i = 0; i < PAD_FACE_COUNT; ++i)
+    labels[i] = (PadButtonLabel)SDL_GetGamepadButtonLabel(
+        gamepad, (SDL_GamepadButton)PAD_FACE_POSITIONS[i]);
+
+  pad_hints_apply(hints, (PadType)SDL_GetGamepadType(gamepad), labels,
+                  PAD_FACE_COUNT);
+}
+
 /* Whether a bound key is down, for the controls read every frame rather than
  * delivered as presses. */
 static bool key_bound_down(const Game *game, const bool *ks, BindAction action)
@@ -72,7 +121,7 @@ static void open_gamepad(Game *game, SDL_JoystickID id)
   game->platform.pad_menu_direction = SDL_GAMEPAD_BUTTON_INVALID;
   /* Everything downstream — which button jumps, which letter the title screen
    * asks for — is decided here, once, from what this pad says it is. */
-  pad_hints_read(&game->platform.pad, game->platform.gamepad);
+  read_pad_hints(&game->platform.pad, game->platform.gamepad);
   const char *name = SDL_GetGamepadName(game->platform.gamepad);
   SDL_Log("Gamepad connected: %s (%s = confirm)", name != NULL ? name : "unknown",
           game->platform.pad.face[PAD_FACE_CONFIRM]);
@@ -80,7 +129,7 @@ static void open_gamepad(Game *game, SDL_JoystickID id)
 
 void game_input_init(Game *game)
 {
-  pad_hints_read(&game->platform.pad, NULL);
+  read_pad_hints(&game->platform.pad, NULL);
 
   int count = 0;
   SDL_JoystickID *ids = SDL_GetGamepads(&count);
@@ -96,7 +145,7 @@ void game_input_shutdown(Game *game)
     SDL_CloseGamepad(game->platform.gamepad);
     game->platform.gamepad = NULL;
     game->platform.gamepad_id = 0;
-    pad_hints_read(&game->platform.pad, NULL);
+    read_pad_hints(&game->platform.pad, NULL);
   }
 }
 
@@ -364,7 +413,7 @@ static bool handle_manual_gamepad(Game *game, SDL_GamepadButton button,
       button == SDL_GAMEPAD_BUTTON_BACK || face == PAD_FACE_CONFIRM ||
       face == PAD_FACE_CANCEL || face == PAD_FACE_DOOR)
   {
-    game_return_to_intro(game);
+    game_close_manual(game);
     return true;
   }
   return false;
@@ -476,7 +525,7 @@ static void confirm_with_gamepad(Game *game, bool allow_jump)
     return;
 
   if (game->state == STATE_OUTRO &&
-      game->presentation.outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)
+      game->presentation.outro_cutscene.time >= OUTRO_REPLAY_PROMPT_TIME)
   {
     game->input.restart = true;
   }
@@ -515,8 +564,12 @@ static void back_out_with_gamepad(Game *game, bool abandons_run)
 {
   if (game->state == STATE_PAUSED)
   {
+    /* SELECT arms the row; it does not spend it. The rule above — "dropping a
+     * run on one press of the button players use to say 'not that' is the same
+     * bug wearing a hat" — was written about B and was just as true of the
+     * button beside START, which is the one this branch is. */
     if (abandons_run)
-      game_return_to_intro(game);
+      game_pause_arm_abandon(game);
     else
       game_toggle_pause(game);
     return;
@@ -683,7 +736,7 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button)
      * the way past the prologue moved to the one letter still free. */
     if (game->state == STATE_CHASE)
       game->input.use_door = true;
-    else if (game->state == STATE_INTRO)
+    else if (game->state == STATE_INTRO || game->state == STATE_PAUSED)
       game_open_manual(game);
     /* Y used to mute from the pause screen, which was the only sound control a
      * pad had. It is gone because the options sheet is two presses away and
@@ -785,7 +838,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
         turn_manual_page(game, 1);
         break;
       case MANUAL_HOT_BACK:
-        game_return_to_intro(game);
+        game_close_manual(game);
         break;
       case MANUAL_HOT_NONE:
         break;
@@ -851,7 +904,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
       else if (key == SDLK_RETURN || key == SDLK_KP_ENTER ||
                key == SDLK_SPACE || sc == SDL_SCANCODE_H ||
                sc == SDL_SCANCODE_F1 || sc == SDL_SCANCODE_BACKSPACE)
-        game_return_to_intro(game);
+        game_close_manual(game);
       /* J crosses to the options sheet, as X does on the pad: the two sheets
        * are siblings hanging off the title screen, not a hierarchy. */
       else if (sc == SDL_SCANCODE_J)
@@ -910,7 +963,10 @@ void game_handle_event(Game *game, const SDL_Event *event)
       return;
     }
 
-    if (game->state == STATE_INTRO &&
+    /* From a paused run as well as from the title screen: the manual is most
+     * wanted on the floor it describes. `game_open_manual` remembers which of
+     * the two it was opened over. */
+    if ((game->state == STATE_INTRO || game->state == STATE_PAUSED) &&
         (sc == SDL_SCANCODE_H || sc == SDL_SCANCODE_F1))
     {
       game_open_manual(game);
@@ -939,9 +995,14 @@ void game_handle_event(Game *game, const SDL_Event *event)
       return;
     }
 
+    /* Q lands on ABANDON RUN and arms it rather than taking it. It used to
+     * abandon outright, and Q is the default `BIND_WEAPON_NEXT` — the key a hand
+     * cycling weapons already knows — so pausing and reaching for it out of habit
+     * ended the night with no confirmation and nothing on the sheet naming the
+     * key. See `PAUSE_ABANDON_ARMED` in pause_sheet.h. */
     if (game->state == STATE_PAUSED && sc == SDL_SCANCODE_Q)
     {
-      game_return_to_intro(game);
+      game_pause_arm_abandon(game);
       return;
     }
 
@@ -1029,7 +1090,7 @@ void game_handle_event(Game *game, const SDL_Event *event)
       game->input.use_door = true;
     }
     if (key == SDLK_R && game->state == STATE_OUTRO &&
-        game->presentation.outro_cutscene.time >= OUTRO_FINAL_REVEAL_TIME)
+        game->presentation.outro_cutscene.time >= OUTRO_REPLAY_PROMPT_TIME)
     {
       game->input.restart = true;
     }

@@ -5,7 +5,7 @@
  * Per-level art direction.
  *
  * The campaign is one building, but a player who sees the same riveted wall
- * and the same machine hall for fifteen sectors stops reading the levels as
+ * and the same machine hall for seventeen sectors stops reading the levels as
  * places. A LevelTheme picks a wall material, a backdrop composition and a
  * palette; everything here is presentation only and reads nothing but the
  * immutable LevelMap, so no gameplay behaviour depends on it.
@@ -18,7 +18,6 @@
  * for the whole building would say they were.
  */
 
-#include "audio.h"
 #include "fx.h"
 #include "level.h"
 
@@ -71,7 +70,12 @@ typedef enum
     BACKDROP_PENTHOUSE,
     BACKDROP_ROOF,
     BACKDROP_RESTROOM,      /* drawn by game_render.c from the room's own walls */
-    BACKDROP_FACADE_NIGHT,  /* the four exterior climbs */
+    /* Four backdrops for five climbs: FACADE_SLEET borrows the storm's,
+     * because it is the same weather at a later hour. Anything that wants
+     * one answer per *climb* — the cordon's height fade below — has to ask
+     * the theme rather than this enum, or the fifth climb silently answers
+     * as the second. */
+    BACKDROP_FACADE_NIGHT,
     BACKDROP_FACADE_STORM,
     BACKDROP_FACADE_MOON,
     BACKDROP_FACADE_HIGH
@@ -108,9 +112,6 @@ typedef struct
 /* Art for a theme. Never NULL: an out-of-range theme falls back to the
  * interior default, so a renderer never has to branch on validity. */
 const LevelThemeArt *level_art(LevelTheme theme);
-
-/* The music the sector is scored with. One track per theme. */
-MusicTrack level_theme_music(LevelTheme theme);
 
 /* Everything a themed layer needs to place itself on screen. */
 typedef struct

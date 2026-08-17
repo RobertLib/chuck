@@ -14,6 +14,14 @@ bool player_weapon_available(const Player *player, PlayerWeapon weapon)
         return player->grenades > 0;
     case PLAYER_WEAPON_BAZOOKA:
         return player->bazooka_rockets > 0;
+    case PLAYER_WEAPON_FLASH:
+        return player->flashbangs > 0;
+    case PLAYER_WEAPON_DECOY:
+        /* Never carried, so never out. The cooldown is checked where the throw
+         * happens rather than here, because a weapon that vanishes off the ring
+         * for a second after being used would step the bumpers onto something
+         * else under the player's thumb. */
+        return true;
     case PLAYER_WEAPON_COUNT:
         return false;
     }
@@ -21,21 +29,46 @@ bool player_weapon_available(const Player *player, PlayerWeapon weapon)
 }
 
 /* This order makes one press after a temporary pickup return to the ordinary
- * sidearm, while still keeping the always-available knife in the cycle. */
+ * sidearm, while still keeping the always-available knife in the cycle. The
+ * bolts sit after the sidearm — the two things that never run out are adjacent,
+ * so the pair the player falls back on is one step apart, and the step out of a
+ * spent explosive still lands on the pistol. */
 static const PlayerWeapon WEAPON_CYCLE[] = {
     PLAYER_WEAPON_KNIFE,
     PLAYER_WEAPON_BAZOOKA,
     PLAYER_WEAPON_GRENADE,
-    PLAYER_WEAPON_PISTOL};
+    /* Beside the grenade, because they are thrown the same way and the player
+     * choosing between them is choosing what the next few seconds are for. */
+    PLAYER_WEAPON_FLASH,
+    PLAYER_WEAPON_PISTOL,
+    PLAYER_WEAPON_DECOY};
 
-/* The ring and the enum are two lists of the same weapons, and
+/*
+ * The ring and the enum are two lists of the same weapons, and
  * `select_weapon_step` walks the ring modulo the *enum's* count — so a weapon
  * added to the enum and not to the ring is an index past the end of this
  * array, on the bumpers, in every sector. The same guard `PAGE_ILLUSTRATIONS`
- * keeps against the manual's page count. */
+ * keeps against the manual's page count — and **it only keeps it because both
+ * arrays are written `[]`**, which is worth saying here because for a long time
+ * only this one was. `PAGE_ILLUSTRATIONS` was declared `[MANUAL_PAGE_COUNT]`, so
+ * its `sizeof` was the count by construction and its assertion could not fail:
+ * the sentence above was true of the ring and false of the thing it pointed at.
+ * A length assertion measures an initializer against a count, so the count must
+ * not also be the size.
+ *
+ * **A length is all this can ask, and it used to claim more than that.** The
+ * message read "every weapon exactly once", which is the rule; what an
+ * assertion over `sizeof` can see is the count, and one weapon written twice
+ * with another left out satisfies it exactly. That costs a weapon the bumpers
+ * can never reach, mid-fight, with nothing anywhere to say so — and a reader
+ * who took the message at its word had no reason to go looking.
+ * `test_the_weapon_ring_names_every_weapon_exactly_once` is the half that
+ * needs a running player to ask, so it lives in the suite and this says only
+ * what it actually holds.
+ */
 _Static_assert(sizeof(WEAPON_CYCLE) / sizeof(WEAPON_CYCLE[0]) ==
                    (size_t)PLAYER_WEAPON_COUNT,
-               "the weapon ring has to name every weapon exactly once");
+               "the weapon ring has to be as long as the weapon enum");
 
 /* One step through the cycle in either direction, skipping whatever is out of
  * ammo. `step` is +1 for the next weapon and PLAYER_WEAPON_COUNT - 1 for the
@@ -111,6 +144,12 @@ void player_reset(Player *player, const Level *level)
     player->bullets = MAX_AMMO;
     player->grenades = 0;
     player->bazooka_rockets = 0;
+    player->flashbangs = 0;
+    player->decoy_cooldown = 0.0f;
+    player->dragging = false;
+    player->dragging_body = 0;
+    player->dragging_is_dog = false;
+    player->drag_side = 0;
     player->active_weapon = PLAYER_WEAPON_PISTOL;
     player->dying = false;
     player->death_timer = 0.0f;
@@ -131,7 +170,7 @@ void player_reset(Player *player, const Level *level)
  * facade is what settles it: nothing on a climb can be thrown or fired at all
  * — the shell clears `shoot` for the whole of `update_facade_playing` and
  * [gameplay_climb.c](gameplay_climb.c) has no notion of a weapon — so the `N`
- * standing mid-wall on every one of the four climbs is a pickup whose entire
+ * standing mid-wall on every one of the five climbs is a pickup whose entire
  * value is in the sector above it. Wiped at the doorway, it was a detour paid
  * for in wind and thrown bricks that bought nothing whatever, and the
  * campaign's own count of the explosive it lays out was counting four grenades
@@ -152,6 +191,10 @@ void player_begin_sector(Player *player, const Level *level,
         return;
     player->grenades = previous->grenades;
     player->bazooka_rockets = previous->bazooka_rockets;
+    /* And the flash travels with them, for the same reason: it cannot be
+     * thrown on a climb either, so one picked up mid-wall would be a detour
+     * that bought nothing. */
+    player->flashbangs = previous->flashbangs;
 }
 
 /* True when the player box overlaps a ladder near its center or feet. */
@@ -251,8 +294,15 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
         }
     }
 
+    /* Hauling a body is slower than crawling, deliberately: crawling is the
+     * other way to be hard to see, and if dragging were the quicker of the two
+     * it would be the fastest careful way across a floor. Crawling still wins
+     * where both are true, because a man on his elbows has let go of whatever
+     * he was pulling — `gameplay_update_body_drag` drops it. */
     if (player->crawling)
         player->vx = move * PLAYER_CRAWL_SPEED;
+    else if (player->dragging)
+        player->vx = move * PLAYER_DRAG_SPEED;
     else
         player->vx = move * PLAYER_WALK_SPEED;
 

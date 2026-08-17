@@ -43,6 +43,43 @@ has to be added there as well, or it is a character the editor cannot paint.
 - `K` : Medkit item (`ITEM_MEDKIT`). Refills the hearts, or adds a life if they
   are already full. Does not respawn.
 - `Z` : Bazooka item (`ITEM_BAZOOKA`). Contains one explosive rocket and does not respawn.
+- `!` : Flash charge (`ITEM_FLASHBANG`). One at a time, spent on the throw, and
+  it crosses a sector boundary with the grenade and the rocket. **It is not a
+  weapon**: it kills nobody, breaks nothing, opens no `%` and chains with no
+  other explosive. What it does is take a room's attention away for
+  `FLASH_BLIND_TIME` — everything in the room with eyes. Every guard inside
+  `FLASH_RADIUS` stops seeing, stops aiming, stops walking and stops on his way
+  to an alarm switch; **every dog** stops seeing, stops where it stands and loses
+  the bite it was winding up; and every camera in reach forgets what it had. Then
+  everyone comes back **exactly as they were**: still provoked, still hunting,
+  still remembering where Chuck was.
+  The charge buys seconds and never the encounter, which is what makes it the
+  one answer in the game to having already been seen. Place one where a sector
+  can go wrong rather than beside the door — it is the escape, not the entry.
+  **It also has to be somewhere the player can stand**, which is the rule the
+  docket sheet already states two entries down and this one was quietly failing:
+  sector 14's charge sat on top of a partition five rows above the floor of the
+  storey it belonged to, so the busiest floor in the building — twelve men, two
+  cameras, three consoles — laid out the one answer to being seen and no player
+  could ever take it. The editor's route check calls an unreachable pickup a
+  **warning** now rather than a note, and `make test` requires nought of those.
+  Optional to take is never optional to reach.
+  And what a blast opens, a charge does not: the flash is stopped by a slab, a
+  crate or an unopened `%` exactly as a guard's own eyes are, so a wall between
+  the throw and a man is a man who keeps looking. Place it in the room it is
+  meant to blind.
+- `*` : A sheet off Meridian's own docket (`ITEM_EVIDENCE`) — the one pickup in
+  the game that is worth nothing to the man carrying it. It pays
+  `EVIDENCE_SCORE`, counts on the **run** rather than on the sector
+  (`CampaignState.evidence_collected`, banked into `Progress.best_evidence` on
+  every way a run ends), and does nothing else: no checkpoint, no counter the
+  simulation reads, no respawn. **Exactly one belongs in every interior sector
+  and none on a climb**, which `test_every_interior_lays_out_exactly_one_docket_sheet`
+  pins — a collection the player can complete is the whole point, and one sheet
+  short of twelve has to mean a floor they can name. Put it somewhere that costs
+  a detour rather than on the route to the door, and keep it inside what the
+  route model can walk: it is optional, so nothing in an ordinary run would ever
+  reveal one placed where the player cannot stand.
 
 **None of the three above is spent on a counter that is already full**, and
 that rule is what makes it safe to put two of one kind on a floor. Walking over
@@ -59,14 +96,26 @@ halves.
 does — the sidearm is refilled anyway and the weapon in the hand is reset to it
 — and the rule is `player_begin_sector` in [../src/player.c](../src/player.c).
 The climbs are why it exists: nothing on a facade can be thrown or fired at
-all, so the `N` on each of the four is a pickup whose entire value is in the
+all, so the `N` on each of the five is a pickup whose entire value is in the
 sector above it.
 - `M` : Enemy spawn (enemy is placed here).
 - `W` : Enemy spawn with a guard dog.
+- `Q` : Heavy guard. The same man in a plate carrier and a full helmet:
+  `ENEMY_HEAVY_HP` rounds from the front instead of `ENEMY_HP`, `ENEMY_HEAVY_SPEED`
+  of the ordinary pace, and — the reason he exists — **he cannot be stomped**.
+  The stomp is the free answer, costing no ammunition, no position and no
+  noise, and it is what a player reaches for the moment a floor gets busy; a
+  heavy is where a sector takes it away. The blade behind him is deliberately
+  unchanged, because a takedown is a knife across a throat rather than damage,
+  which makes him a floor's clearest argument for the quiet route. Worth
+  `ENEMY_HEAVY_HAZARD_WEIGHT` of the budget below rather than a guard's three.
+  Reinforcements out of a door are never heavies: he is a fixture of a plan,
+  placed where the author wanted the stomp denied, and one arriving at random
+  would be a spike nobody drew.
 - `J` : Ambient janitor with a cleaning cart and mop (visual-only NPC). Unlike
   the receptionist below, he is **not** confined to the lobby, and the
   difference is worth writing down because the two look like the same
-  objection. A staffed counter is a post: somebody standing at it at 00:55 is
+  objection. A staffed counter is a post: somebody standing at it at 00:51 is
   being *served by the building*, which is why `k` belongs to sector 1 and to
   nothing above it. A janitor is one man alone on a floor with a cart, and the
   building never told him anything — the crew took the lobby, not the whole
@@ -99,8 +148,37 @@ sector above it.
   to cause an explosion that can kill nearby enemies. Any other blast in range
   sets it off too — a grenade, a rocket, a mine or another canister — so a pair
   placed within `GAS_CANISTER_RADIUS` of each other will chain.
-- `T` : Access terminal. One randomly selected terminal is active; the rest are decorative.
+- `T` : Access terminal. One randomly selected terminal is active; the rest are
+  decorative. **A console is also a way of putting more men on the floor**: one
+  hacked while the alarm is up sends for up to
+  `TERMINAL_REINFORCEMENT_MAX_COUNT` guards out of a `D`, once per console, and
+  they need somewhere to stand alongside the men already drawn and the corpses of
+  the ones that have gone down. So a floor's real guard count is the `M`, `W` and
+  `Q` on it plus two per `T` — and only if it has a door at all, since that is
+  where an arrival comes from. Over `MAX_ENEMIES` nothing fails, which is why the
+  editor warns rather than refuses: `find_enemy_slot` hands the arrival the
+  corpse furthest from Chuck, so the floor deletes a body and with it the thing
+  the next calm guard was walking over to look at. The quiet route rests on
+  bodies being readable, so that is the one thing a floor plan must not spend.
+  `test_every_sector_can_seat_the_reinforcements_it_can_call` holds the shipped
+  maps to it.
 - `A` : Wall-mounted alarm switch. A guard may run to it after spotting the player.
+- `I` : Ceiling security camera. It sweeps a beam across the floor below and
+  raises the building alarm after `CAMERA_NOTICE_TIME` of holding the player in
+  it — pointed at the *player*, not at the camera, so being seen by one costs
+  exactly what being seen by a guard costs. **It is the one watcher in the
+  building that none of the quiet answers work on**: it has no facing to get
+  behind, no ears for a bolt, and crawling does nothing because it is looking
+  down at the floor the crawl is on. What it has is a sweep, so the answer is
+  timing — or a round, which destroys it permanently for the visit, scores
+  `CAMERA_SCORE`, and is the loudest thing in the game. Any blast takes one out
+  as well. **It hangs**, so like the wall clock `w` it needs a solid tile
+  directly *above* it and the loader drops it if there is none. Interiors only,
+  and worth two of the hazard budget below.
+  Place one where the beam crosses ground the player has to walk, not over a
+  dead end: a camera nobody has to pass is a fitting rather than an obstacle.
+  `CAMERA_RANGE` is five and a half tiles, so a mounting more than five storeys
+  above the floor it is meant to watch is watching nothing.
 - `c` : Decorative office chair (non-solid).
 - `d` : Decorative office desk with a computer (non-solid).
 - `i` : Decorative office equipment; its visual variant is selected from a filing cabinet, printer, or server rack (non-solid).
@@ -117,12 +195,43 @@ sector above it.
   them is not a run of the same box. Interiors only, and worth putting near an
   explosive: the case the bazooka came out of, two tiles from the bazooka, is
   the whole plot said without a line of text.
+  **That was advice nothing acted on, and two floors were not taking it.** Nine
+  interiors put their case within two tiles of an `N` or a `Z`; sector 8 had its
+  nineteen tiles away and sector 14 eleven, so on the two busiest floors below
+  the roof the box was just a box. Both have been moved and the editor notes a
+  sector whose nearest case is more than six tiles from an explosive.
+  The note is asked of **the sector, not of each case**, which is the same
+  distinction the sentence above already draws: a run is sanctioned, so the roof's
+  four cases along the service deck are right to be a run and only one of them has
+  to be making the point. One case saying it is the point; four saying it is the
+  same sentence four times. A flash charge does not count — `!` is not a weapon
+  and a case it came out of is a case with nothing in it worth the sentence — and
+  a sector carrying no explosive at all is not asked, which is what keeps the note
+  off sectors 1 and 5.
+- `a` : Decorative pallet, loaded with drums or with sacks chosen from the tile
+  position (non-solid). The first of the **plant set** — `a` `e` `j` `l` — which
+  exists because the campaign had two vocabularies and five rooms neither of them
+  described; see the note on sparsely dressed sectors below. A pallet is the
+  stacked thing a machine hall, a duct run or a strongroom is actually full of,
+  and it is the one to reach for when a floor needs to look worked in rather than
+  furnished.
+- `e` : Decorative cable reel, stood on its edge with the tail run off to one
+  side (non-solid). Plant rooms, the roof deck, anywhere cable was pulled and the
+  drum was left where it emptied.
+- `j` : Decorative pipe rail: two risers, a run across them and a hand wheel on
+  the valve (non-solid). The plumbing a machine hall is made of, and the only
+  prop in the set with a moving part — the wheel sits at a different angle on
+  every one of them.
+- `l` : Decorative bollard with a reflective band (non-solid). What keeps
+  something with a pallet on it off a wall, so it belongs on a service route
+  rather than in a room: a goods deck, a loading bay, the strip of roof a
+  helicopter is loaded from.
 - `w` : Decorative wall clock (non-solid). **The one prop that hangs rather
   than stands**: it needs a solid tile directly *above* it, and the loader
   drops it if there is none, exactly as it drops a desk with no floor. The
   dial reads the campaign sector it is standing in — the night runs from the
   broadcast to the bonds leaving the roof at 01:00, so the minute hand climbs
-  toward the top of the face across the fifteen sectors. Presentation only:
+  toward the top of the face across the seventeen sectors. Presentation only:
   nothing in the simulation reads the time.
 - `S` : Player start position.
 - `E` : Normal security-door exit. When the map also contains `Y`, this door
@@ -161,6 +270,32 @@ Notes:
   reads as an office floor whatever its walls are made of, so keep desks and
   server racks to the staff side of a lobby and counters, seating and planting
   to the visitor side.
+- **The plant set is what this page used to be asking for, and it is the answer
+  to five sectors that were bare for want of a vocabulary rather than for want of
+  work.** Counted by prop, the campaign used to split clean in two: the office and
+  front-of-house themes carried sixteen to twenty-three apiece and PLANT, LAB,
+  DUCTS, VAULT and ROOF carried 5, 9, 3, 6 and 6. It read at a glance like the top
+  of the building running out of attention, and it was not: PLANT is sector 5, and
+  was as bare as DUCTS at 12. What those five have in common is a *room*, not a
+  position — a machine hall, a clean room, a duct run, a strongroom and an open
+  roof deck — and the decoration vocabulary had no set for any of them. `c` `d`
+  `i` is an office and `n` `s` `t` `g` is a foyer.
+  The wrong answer, and the one a reader is most likely to reach for while
+  believing they are tidying up, is the nearest set: a desk and a filing cabinet
+  in a strongroom, a swivel chair on a roof. That is the rule directly above. Nor
+  is it another `m` — the roof already runs the sanctioned four, and a fifth is
+  the same sentence a fifth time. The right answer was a third vocabulary, and
+  `a` `e` `j` `l` are it: a pallet, a cable reel, a pipe rail and a bollard, in
+  [level.h](../src/level.h), [level.c](../src/level.c),
+  [game_render.c](../src/game_render.c) and
+  [editor_legend.c](../editor/editor_legend.c), which is a change to the
+  vocabulary rather than to a map. All twelve interiors now carry fifteen to
+  twenty-three props apiece, and `check_docs.py` derives that range from the maps
+  so a sixth bare room cannot open without this page saying so.
+  **What the set is not is a licence to dress every floor out of it.** A pallet on
+  a lobby carpet is the same mistake as a swivel chair on a roof, one set over: the
+  three vocabularies answer to the room, and a floor that is an office is furnished
+  as one.
 - Fleeing civilians (`f`) run for the player's own start tile — in the lobby
   that is the street entrance he came in through — and dissolve about four
   tiles short of it, so plant them further into the room than that or they fade
@@ -173,6 +308,17 @@ Notes:
   with: an errand walks out along the same storey and stops at the first ledge
   or wall, so a post with two tiles of room in neither direction just stands
   there. Being boxed in is not a fault, only a waste of the part.
+- **A sector's checkpoints are the things it lays out, so lay one on the route.**
+  A death costs a life and puts Chuck back on the last banked checkpoint, and
+  only four things bank one: a card, a finished hack, a step through a door pair
+  and a medkit. A floor that puts all four somewhere the player has no reason to
+  walk is a floor that replays whole, however carefully its hazards were spent —
+  and the sectors that leave by a window are the ones this catches out, because a
+  welded stair door means they carry no card and no terminal at all.
+  `test_no_sector_asks_for_a_long_walk_with_nothing_banked` floods the route from
+  both ends and requires at least one bank on the line, no further than
+  `CHECKPOINT_MAX_STRETCH` steps from the last. A bank more than a few steps off
+  the way out does not count: a detour nobody takes banks nothing.
 - Hold `E` near the visibly active terminal to hack it and unlock the exit.
 - Alarm switches are operated by guards. An active alarm alerts every guard
   and dog, then shuts itself off after nobody has seen the player for a short time.
@@ -190,9 +336,10 @@ Notes:
   that is the grenade and the rocket: `player_begin_sector` carries those two and
   nothing else, because `player_reset` hands the next sector a full clip either
   way. So every climb carries an `N` and a `K`, and none of them carries a `G`.
-  All four used to, on the stated grounds that sector 7's climb otherwise handed
-  into the LAB "with whatever ammunition was left" — which was never true of any
-  sector, since the clip is refilled at every doorway. A magazine on a wall
+  All four of the climbs there were then did, on the stated grounds that sector
+  7's climb otherwise handed into the LAB "with whatever ammunition was left" —
+  which was never true of any sector, since the clip is refilled at every
+  doorway. A magazine on a wall
   cannot be spent up there, changes no counter when it is walked over, pays no
   score, and plays the sound of a pickup that worked.
   `test_no_climb_lays_out_a_pickup_it_cannot_use` is what keeps one from coming
@@ -247,12 +394,14 @@ says which floor of the building he is standing on.
 | `SECURITY` | dark plate | carpet tile | monitor wall and console desks | 128 bpm F minor; a march — four on the floor and a snare into the bar line |
 | `DUCTS` | dark plate | treadplate | galvanised trunking; the darkest sector | 84 bpm B♭ minor; a fan pedal that never stops and air past the plating |
 | `PENTHOUSE` | hardwood panelling | parquet | panelled hall, sconces, cabinets | 100 bpm B♭ minor; the widest chords in the building, and punched |
+| `VAULT` | riveted steel plate | raised access panel | strongroom core, open grilles, empty boxes | 66 bpm C minor; no kit at all — the only score in the building with no pulse, because every other floor has somebody working on it |
 | `ROOF` | raw concrete | screed | curtain wall over the night city | 96 bpm F♯ minor; the lead finally carries the loop, over open wind |
 | `RESTROOM` | tile | ceramic | implied by restroom fittings; sublevel only | 72 bpm E♭ minor; tiled and dripping, no kit — the sector's score waits outside |
 | `FACADE_NIGHT` | — | — | clear night, city lights below | 90 bpm E minor; wide, slow and exposed, the city glittering under it |
 | `FACADE_STORM` | — | — | rain, lightning, wet stone | 116 bpm C minor; the only climb in a hurry, rain on the cornices |
 | `FACADE_MOON` | — | — | a low moon off the corner, silver stone, haze bands, distant birds | 82 bpm A major; the storm has blown through and the sky is clear — a breath, not a sunrise |
-| `FACADE_HIGH` | — | — | above the cloud layer, neon signage | 70 bpm B minor; thin air — barely a bass note, a long way between phrases |
+| `FACADE_SLEET` | — | — | the storm's weather at a later hour, a step colder and paler | 96 bpm A minor; the hat carries the whole of the time, because that is what sleet on stone sounds like |
+| `FACADE_HIGH` | — | — | the thinnest air of the climb, the city a violet glow between torn cloud far below, neon signage | 70 bpm B minor; thin air — barely a bass note, a long way between phrases |
 
 Two rules the campaign keeps, both pinned by
 `test_campaign_themes_keep_changing`: no two consecutive levels share a theme,
@@ -260,16 +409,35 @@ and a facade level uses a `FACADE_*` theme while an interior never does. The
 second rule is what keeps the scores changing too, since the theme-to-track
 mapping is one to one.
 
-**The four climbs differ by weather and height, never by hour**, and that is a
+**The five climbs differ by weather and height, never by hour**, and that is a
 constraint rather than a preference. The night is thirty-eight minutes long —
 00:22 to 01:00, `NIGHT_CLOCK_*` in [../src/game_config.h](../src/game_config.h)
 — and the wall clock `w` hanging in every interior sector reads it out, so a
 climb between two of them is pinned to the minute on both sides. `FACADE_MOON`
 was a sunrise until it was measured against the sectors either side of it,
-which read a few minutes before and after 00:47: the player looked up in
+whose dials read 00:42 and 00:46: the player looked up in
 sector 10, climbed through a dawn, and looked up again in sector 12 to be told
 the sun had risen and set inside five minutes. A fifth climb owes the same
 check before it is painted.
+
+**And the hour is not the only thing a climb can contradict; the weather is the
+other, and the fifth climb was contradicting it.** `FACADE_HIGH` at sector 13
+described itself as *above the weather, a sea of cloud below* — and sector 15,
+which is higher, is sleet. So the player climbed out of the weather two floors
+under the roof and back into it on the way to the roof, which is the `FACADE_DAWN`
+mistake with the clock swapped for the sky. The picture did not have to move: the
+backdrop draws seven drifting puffs and a violet city glow coming up between
+them, which reads as **broken cloud a long way below** rather than as a floor of
+it, and that is what it says now. What makes the beat is one purple sky and a
+city that has stopped being a street; a continuous deck was never load-bearing.
+**A climb owes the sector above it a look as well as the two dials either side.**
+
+**Those two minutes are derived rather than remembered**, and they were `00:47`
+on both sides of this sentence until somebody divided the same thirty-eight
+minutes seventeen ways instead of fifteen. The dial moved and the paragraph
+describing it did not, which is the whole reason
+[tools/check_docs.py](../tools/check_docs.py) computes every reading it quotes
+from `NIGHT_CLOCK_*` now.
 
 ## Sector plans
 
@@ -291,12 +459,14 @@ or a storey rhythm.
 | 7 | `FACADE_STORM` | short balconies instead of courses, so cover for the wind is sparse |
 | 8 | `LAB` | a spine corridor with sealed clean-room bays combed off it above — each an airlock reached by its own ladder — and basement chambers and a deep-storage crawl below; the rocket vault opens only through a paired door |
 | 9 | `ARCHIVE` | a grid of canyons between blocks of shelving, linked only where an aisle was cut through; the route weaves up, across the reading room, and back down before the exit stair |
-| 10 | `SECURITY` | a patrol ring around the control bunker; both corridors are bricked up, so the bunker's lower floor is the only way across, and the airlock doors flanking it are where the reinforcements come out |
+| 10 | `SECURITY` | a patrol ring around the control bunker; both corridors are bricked up, so the bunker's lower floor is the only way across, and the airlock doors flanking it are where the reinforcements come out. A single lens has been overhead since sector 5, but **sector 10 is the first with a pair of them**, which is the floor the monitor wall belongs to |
 | 11 | `FACADE_MOON` | two breaches that braid, swapping sides as the climb rises and merging where the lines cross |
-| 12 | `DUCTS` | six crawl levels chopped into runs, one riser each; climb, drop through a missing panel, climb again. The rocket pocket hides behind a blocked-up bulkhead |
+| 12 | `DUCTS` | six crawl levels chopped into runs, one riser each; climb, drop through a missing panel, climb again. The rocket pocket hides behind a blocked-up bulkhead. Two cameras, and the crawl that gets a player past a guard's cone does nothing at all about them |
 | 13 | `FACADE_HIGH` | offset stubs laid like brickwork: every band is a lateral detour |
-| 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall crossed by balcony stubs. The far bay keeps the medkit and the rocket behind a paired door whose other end is the one guards come out of; the `%` in the bay's end wall is a second way in, for anyone who can spare a blast |
-| 15 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, a gondola strung between the two towers, and a fan-choked service level beneath the deck that is the only way past the two breaches in it. **The last stretch is where the crew is**: the roof of the final plant room is mined under its own guard, the run out of the service level past the second breach is mined at both ends under a fan, and the helicopter pad is held by a man standing on it — Voss's remaining crew between Chuck and the ride, which is the one thing the finale has to say |
+| 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall crossed by balcony stubs. The far bay keeps the medkit and the rocket behind a paired door whose other end is the one guards come out of; the `%` in the bay's end wall is a second way in, for anyone who can spare a blast. Two cameras over the middle storey. **It leaves by the window and its stair core is therefore welded** — sector 15 is a climb and a climb is entered from a window — which makes it the fifth of the welded sectors and the only one of them that still lays out cards and a terminal, since both score and bank a checkpoint whatever the door is doing. It is also the reason it shows no report: see [intel.c](../src/intel.c) |
+| 15 | `FACADE_SLEET` | paired courses with the breach swapping side every band, so no two are left by the column they were entered on — the tallest climb in the game and the only one that ends at a roof rather than a window |
+| 16 | `VAULT` | four storeys of unequal depth around the strongroom core: the trolley run they emptied it onto at the bottom, the boxes themselves above it, the handling floor where they were still working, and the way out over the top. The risers are staggered end to end, so every floor is crossed the full width. Two cameras, and the report after it is the one that answers sector 8 |
+| 17 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, a gondola strung between the two towers, and a fan-choked service level beneath the deck that is the only way past the two breaches in it. **The last stretch is where the crew is**: the roof of the final plant room is mined under its own guard, the run out of the service level past the second breach is mined at both ends under a fan and three more times along its length, and the helicopter pad is held by a **heavy** standing on it — the last man in the campaign is the one a boot bounces off, so the free answer is gone exactly where the player most wants it. Voss's remaining crew between Chuck and the ride, which is the one thing the finale has to say |
 
 ### Restrooms
 
@@ -308,7 +478,7 @@ twenty-nine tiles with the same guard standing in the same place.
 
 **What they pay is deliberately identical**: one magazine on the floor, one
 grenade and one medkit up top. The campaign is balanced on four grenades coming
-out of these doors on top of the fourteen it lays out itself, and a room that
+out of these doors on top of the sixteen it lays out itself, and a room that
 paid differently would move that line. What changes is the plan, the climb and
 what is waiting — which is what was actually repeating.
 
@@ -326,26 +496,55 @@ requires that no two share a footprint;
 against the files actually embedded, because a renamed map would otherwise be a
 `U` that silently falls back to the lobby's washroom.
 
+**And no two may share a storey rhythm either**, which is the campaign's own
+distinctness rule (`test_campaign_levels_are_distinct_and_solvable`) asked of the
+rooms — and it had never been asked, so two of the four were the same room. A
+footprint is the outline; the rhythm is the run of open rows between slabs, which
+is the part the player actually walks. The plant's washroom and the penthouse's
+both ran a two-row gallery over a slab broken twice over a three-row floor, so
+what told them apart was the tiling, the fittings and nothing else. The plant's
+gallery is three rows deep now and its lower room two, which is the same plan the
+table above describes at a different pitch.
+`test_the_restrooms_are_four_rooms_rather_than_one` measures both halves — the
+shape, and the payout being identical on purpose.
+
 Two campaign-wide rules go with it, both pinned by the same test:
 
 - **Pressure only rises.** A sector's hazard budget —
-  `3·guards + 2·dogs + 2·mines + spikes + fans` — must exceed the previous
-  interior's; a climb's budget (`3·throwers + 2·birds`) and its height must
-  exceed the previous climb's. The campaign runs 6, 14, 20, 24, 29, 37, 48, 53,
-  59, 64, 79 inside and 20, 25, 30, 35 on the walls. **The last number is the
-  largest step in the run on purpose**: it was 67 against sector 14's 64, which
-  cleared the rule by three and made the finale the flattest beat in the back
-  half — the sector the whole night is climbing toward, playing a shade easier
-  than the floor below it.
+  `3·guards + 4·heavies + 2·dogs + 2·mines + 2·cameras + spikes + fans` — must exceed the
+  previous interior's; a climb's budget (`3·throwers + 2·birds`) and its height
+  must exceed the previous climb's. The campaign runs 6, 14, 20, 26, 31, 39, 48,
+  58, 65, 70, 77, 89 inside and 20, 25, 30, 35, 43 on the walls, which are steps of
+  8, 6, 6, 5, 8, 9, 10, 7, 5, 7 and 12.
+  **These are measured rather than written down, and the paragraph they replace is
+  the argument for measuring.** It quoted 57, 63, 68 and 79 for the back four, all
+  four of them wrong, while claiming the last number was the largest step in the
+  run — and by then it was the *smallest*, tied at two. What happened is worth
+  knowing because nothing in the suite could have said so: the `pressure only
+  rises` test only asks that each interior beat the one below it, so inserting the
+  vault at 77 between sector 14 and the roof satisfied every check while squeezing
+  the finale's step from eleven down to two. The rule held and the intent behind it
+  did not.
+  **The last number is the largest step in the run on purpose**, and getting it
+  back cost the finale a heavy and three charges: the man holding the helicopter
+  pad is now the kind a boot bounces off, which is the sector taking away the free
+  answer on the last tiles of the campaign, and the service run beneath the deck
+  carries three more mines along its length. 89 against the vault's 77 is a step of
+  twelve, one clear of sector 9's nine. Left at 82 the sector the whole night
+  climbs toward played a shade easier than the floor below it.
   **Sector 12 was the same complaint one floor lower**, and clearing the rule is
-  not the same as keeping it: at 55 against sector 10's 53 it beat the floor
-  below by two, the smallest step anywhere in the campaign, while dropping from
-  ten guards to seven. Fewer men in a crawl duct is the right instinct and the
-  arithmetic still has to hold, so the two it was short went where the sector
+  not the same as keeping it: it once beat the floor below it by two, the
+  smallest step anywhere in the campaign at the time, while dropping from ten
+  guards to seven. Fewer men in a crawl duct is the right instinct and the
+  arithmetic still has to hold, so what it was short went where the sector
   already speaks — a charge on the approach to the blocked-up bulkhead, so
   opening it with the rocket is not free, and one out on the bottom service run
-  between the last guard and the exit ladder. 59 is a step of six, which is the
-  middle of the campaign's own range rather than the bottom of it. Sector 1
+  between the last guard and the exit ladder. It stands at 65 against sector
+  10's 58 now, a step of seven. **The figures in this paragraph used to be
+  absolute and are deliberately not any more**: quoted as `55 against 53` they
+  went on describing a campaign two edits old, and a reader checking them
+  against the maps found neither number. The sequence above is the one place
+  the numbers live, and it is measured. Sector 1
   spends its whole
   budget on two guards and carries no hazard at all: it is where the player
   finds out what the controls do — including, since it gained a medkit on the
@@ -425,7 +624,13 @@ a hall. These rules come from the tuning in
   **laying `F` into a hole a sector already has the safest placement there
   is**: the model's answer cannot change, and the player gets one crossing of a
   gap that was never crossable. That is where the campaign's panels are, in
-  sectors 2, 4, 9, 12 and 15.
+  sectors 2, 4, 9, 12 and 17.
+  **This list said 15 for a while, and 15 is a facade** — a climb has no slab to
+  cut a panel into, so the claim was not merely stale but impossible, in the same
+  edit that turned the old sector 15 into a wall and moved the last interior to
+  17. It is derived from the maps by
+  [tools/check_docs.py](../tools/check_docs.py) now, which is what
+  `docs/gameplay.md`'s sector lists already had and this page did not.
 - **`%` patches are the same bargain from the other side.** The route model
   counts one as wall, so a sector is judged in the state it is authored in and a
   blocked-up opening can never be the way out, a key card's only approach or a

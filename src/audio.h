@@ -2,38 +2,10 @@
 #define CHUCK_AUDIO_H
 
 #include "common.h"
+#include "music_id.h"
 #include "sound_id.h"
 
 #define AUDIO_VOICE_COUNT 16
-
-/*
- * One score per level theme, so a sector sounds like the floor it is on.
- * `level_theme_music` in level_art.c owns the theme-to-track mapping; because
- * it is one to one, two consecutive sectors can never share a score — the
- * themes already never repeat back to back.
- */
-typedef enum
-{
-    MUSIC_INTRO = 0, /* title screen, cutscenes and the game-over card */
-    MUSIC_PURSUIT,   /* the prologue drive */
-    MUSIC_LOBBY,
-    MUSIC_OFFICE,
-    MUSIC_SERVER,
-    MUSIC_PLANT,
-    MUSIC_CANTEEN,
-    MUSIC_LAB,
-    MUSIC_ARCHIVE,
-    MUSIC_SECURITY,
-    MUSIC_DUCTS,
-    MUSIC_PENTHOUSE,
-    MUSIC_ROOF,
-    MUSIC_RESTROOM,
-    MUSIC_FACADE_NIGHT,
-    MUSIC_FACADE_STORM,
-    MUSIC_FACADE_MOON,
-    MUSIC_FACADE_HIGH,
-    MUSIC_TRACK_COUNT
-} MusicTrack;
 
 typedef struct
 {
@@ -53,7 +25,7 @@ typedef struct
     /*
      * Music uses the same cached PCM representation as effects, but is
      * streamed and looped independently so it never consumes an SFX voice.
-     * Eighteen forty-second loops resident at once would be most of the
+     * Twenty forty-second loops resident at once would be most of the
      * process's memory, so a track is built when it is first asked for and
      * only the title theme, the current one and the one before it are kept.
      */

@@ -373,9 +373,19 @@ int level_hazard_budget(const Level *level)
     }
 
     int dogs = 0;
+    /* A heavy is counted at his own weight rather than as another guard: he
+     * denies the free kill outright, which is worth more of a floor's pressure
+     * than one more man with the same three answers to him. */
+    int men = 0;
     for (int i = 0; i < level->map.enemy_count; ++i)
+    {
         dogs += level->map.enemy_spawns[i].has_dog;
-    return 3 * level->map.enemy_count + 2 * dogs +
+        men += level->map.enemy_spawns[i].kind == ENEMY_KIND_HEAVY
+                   ? ENEMY_HEAVY_HAZARD_WEIGHT
+                   : 3;
+    }
+    return men + 2 * dogs +
            2 * level->map.mine_count + level->map.spike_count +
+           CAMERA_HAZARD_WEIGHT * level->map.camera_count +
            level->map.ceiling_fan_count;
 }

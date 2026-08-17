@@ -2,6 +2,7 @@
 #define CHUCK_LEVEL_H
 
 #include "game_config.h"
+#include "music_id.h"
 #include "rng.h"
 
 #include <stdbool.h>
@@ -71,6 +72,21 @@ typedef struct
     int col, row;
 } AlarmSwitch;
 
+/*
+ * A ceiling camera. Like the terminal and the switch it is a map position and
+ * nothing else — the sweep, what it has seen and whether it is still working
+ * are simulation and live in `GameplayState`, because a camera is a thing that
+ * is *happening* rather than a thing the map says.
+ *
+ * It hangs, so it asks the tile above it for support the way the wall clock
+ * does; a camera bolted to thin air is the same mistake as a desk with no floor
+ * under it, and the loader and the editor both refuse it.
+ */
+typedef struct
+{
+    int col, row;
+} SecurityCamera;
+
 /* Background props are visual only and never participate in collision. */
 typedef enum
 {
@@ -94,7 +110,31 @@ typedef enum
      * clock is the deadline they are working to, and it is the only one of
      * the two that hangs rather than stands. */
     DECOR_FLIGHT_CASE,
-    DECOR_WALL_CLOCK
+    DECOR_WALL_CLOCK,
+    /*
+     * The plant set, and why the building needed a third vocabulary.
+     *
+     * Counted by prop, the campaign used to split clean in two: the office and
+     * front-of-house themes carried sixteen to twenty-three apiece and PLANT,
+     * LAB, DUCTS, VAULT and ROOF carried three to nine. It read like the top of
+     * the tower running out of attention and it was not — sector 5 is as bare as
+     * sector 12 — because what those five have in common is a *room* rather than
+     * a position: a machine hall, a clean room, a duct run, a strongroom and an
+     * open service deck. There was no prop for any of them. `c d i` is an office
+     * and `n s t g` is a foyer, so the only way to dress a strongroom was to put
+     * a swivel chair in it, which [levels/LEGEND.md](../levels/LEGEND.md)
+     * explicitly forbids and explicitly asked for this instead.
+     *
+     * Four, because four is what the page named and what those five rooms
+     * actually contain: something stacked, something spooled, something plumbed
+     * and something that keeps a vehicle off a wall. All of them stand on the
+     * slab below like every prop but the clock, none of them collides, and none
+     * is read by the simulation.
+     */
+    DECOR_PLANT_PALLET,
+    DECOR_PLANT_CABLE_REEL,
+    DECOR_PLANT_PIPE_RAIL,
+    DECOR_PLANT_BOLLARD
 } DecorationType;
 
 /* A clock is fixed to the slab above it, every other prop stands on the one
@@ -117,7 +157,24 @@ typedef enum
     ITEM_GUN,
     ITEM_GRENADE,
     ITEM_MEDKIT,
-    ITEM_BAZOOKA
+    ITEM_BAZOOKA,
+    /*
+     * A sheet off Meridian's own docket, and the only pickup in the game that
+     * is worth nothing to the man carrying it.
+     *
+     * Everything else on this list is ammunition, hearts or a door. This is
+     * paper: it costs a detour, it changes no counter the simulation reads, and
+     * what it buys is entirely outside the sector. The fiction is why it is
+     * here at all — the 00:04 broadcast has the whole city believing this is a
+     * political siege, and the one thing nobody outside the building has is
+     * proof that twelve men badged in as a maintenance contractor came for six
+     * hundred and forty million in bearer bonds. Chuck picking that up as he
+     * climbs is the only way the night is ever explained to anybody but him.
+     */
+    ITEM_EVIDENCE,
+    /* A flash charge: one at a time, and the only thing Chuck throws that is
+     * meant to be survived by everybody in the room. See MAX_FLASHBANGS. */
+    ITEM_FLASHBANG
 } ItemType;
 
 typedef struct
@@ -128,10 +185,50 @@ typedef struct
     float respawn_timer; /* seconds until this item reappears (if collected) */
 } Item;
 
+/*
+ * Which kind of man this is.
+ *
+ * Kept as an enum on the guard rather than as a second array, because
+ * everything about him except three numbers is identical — he patrols with the
+ * same code, sees with the same cone, investigates the same bodies and runs for
+ * the same switch. A separate `HeavyGuard` type would be a second copy of
+ * eleven hundred lines of AI to keep in step with the first, and the whole
+ * lesson of `apply_blast` is what happens to two copies of one rule.
+ */
+typedef enum
+{
+    ENEMY_KIND_GUARD = 0,
+    /* Plate carrier and a full helmet: more rounds from the front, slower on
+     * his feet, and **not stompable** — which is the answer he is here to take
+     * away. The blade behind him still works, because that is a knife across a
+     * throat rather than damage. */
+    ENEMY_KIND_HEAVY
+} EnemyKind;
+
+/* The three numbers that differ, asked once so no call site has to branch. */
+static inline int enemy_kind_hp(EnemyKind kind)
+{
+    return kind == ENEMY_KIND_HEAVY ? ENEMY_HEAVY_HP : ENEMY_HP;
+}
+
+static inline float enemy_kind_speed(EnemyKind kind)
+{
+    return kind == ENEMY_KIND_HEAVY ? ENEMY_HEAVY_SPEED : 1.0f;
+}
+
+static inline bool enemy_kind_can_be_stomped(EnemyKind kind)
+{
+    return kind != ENEMY_KIND_HEAVY;
+}
+
 typedef struct
 {
     float x, y; /* spawn position (top-left of entity box) */
     bool has_dog;
+    /* Which kind of man stands here. A field on the spawn rather than a second
+     * array, for the reason `EnemyKind` itself is a field on the guard: they
+     * are the same entity with three numbers different. */
+    EnemyKind kind;
 } EnemySpawn;
 
 typedef struct
@@ -191,8 +288,8 @@ typedef enum
 /*
  * Art direction for one level. The theme changes nothing about the simulation
  * — it only tells the renderer which masonry, backdrop and lighting to use, so
- * that fifteen sectors of the same building read as a journey through it
- * instead of fifteen runs down the same corridor. Themes are authored with a
+ * that seventeen sectors of the same building read as a journey through it
+ * instead of seventeen runs down the same corridor. Themes are authored with a
  * `THEME <name>` metadata line; a map that omits one keeps the default look
  * for its mode.
  */
@@ -209,11 +306,18 @@ typedef enum
     LEVEL_THEME_DUCTS,
     LEVEL_THEME_PENTHOUSE,
     LEVEL_THEME_ROOF,
+    /* The sub-vault: the room the whole night is about, and the one the player
+     * had never seen. Steel boxes, open grilles and the trolley rails they
+     * emptied it onto. */
+    LEVEL_THEME_VAULT,
     LEVEL_THEME_RESTROOM, /* implied by restroom fittings in the map */
     LEVEL_THEME_FACADE_NIGHT, /* facade default */
     LEVEL_THEME_FACADE_STORM,
     LEVEL_THEME_FACADE_MOON,
     LEVEL_THEME_FACADE_HIGH,
+    /* The fifth climb, between the penthouse and the roof: the weather has
+     * come back in off the sea and the last stretch is wet again. */
+    LEVEL_THEME_FACADE_SLEET,
     LEVEL_THEME_COUNT
 } LevelTheme;
 
@@ -251,6 +355,8 @@ typedef struct
     int terminal_count;
     AlarmSwitch alarm_switches[MAX_ALARM_SWITCHES];
     int alarm_switch_count;
+    SecurityCamera cameras[MAX_CAMERAS];
+    int camera_count;
     Decoration decorations[MAX_DECORATIONS];
     int decoration_count;
     EnemySpawn enemy_spawns[MAX_ENEMIES];
@@ -283,7 +389,6 @@ typedef struct
     int item_count;
     int card_count;
     int active_card_index;
-    int items_remaining;
     int active_terminal_index;
     bool terminal_hacked;
     Crate crates[MAX_CRATES];
@@ -331,6 +436,28 @@ const char *level_theme_name(LevelTheme theme);
  * that opens on nothing is worse than one that opens on a familiar room. */
 #define LEVEL_FALLBACK_SUBLEVEL "restroom_lobby"
 const char *level_theme_sublevel(LevelTheme theme);
+
+/* The score a sector is played under. One track per theme, never the title's:
+ * see the note on the table in level.c and the twin one in music_id.h. */
+MusicTrack level_theme_music(LevelTheme theme);
+
+/*
+ * How much of the police cordon still reaches this wall, 1.0 on the first and
+ * lowest climb and 0.0 once the street has stopped reading at all.
+ *
+ * Presentation — `facade_cordon` in level_art.c is the only caller — but it
+ * lives here for the reason `THEME_MUSIC` does, and it is the same shape of
+ * near miss. It was a `switch` inside that renderer keyed on the *backdrop*,
+ * and there are four backdrops for five climbs because `FACADE_SLEET` borrows
+ * the storm's: the highest wall in the game answered as the second one and
+ * washed its face with more street than the two climbs below it. A value per
+ * climb has to be asked of the thing there is one of per climb, and on this
+ * side of the SDL line the suite can say so — a sixth climb added with no row
+ * zero-fills to "no cordon", which is at least the honest end of the range,
+ * and `test_the_cordon_fades_as_the_climb_rises` fails rather than shipping it.
+ * Zero for every interior: there is no wall to wash.
+ */
+float level_theme_cordon(LevelTheme theme);
 
 /* True when an embedded sublevel path is the file that stem names. */
 bool level_sublevel_name_is(const char *path, const char *stem);

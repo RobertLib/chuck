@@ -16,6 +16,7 @@
 
 #include "fx.h"
 #include "intel.h"
+#include "manual_pages.h"
 
 static const float TRANSITION_DOOR_TOP = 358.0f;
 static const float TRANSITION_DOOR_INNER_TOP = 368.0f;
@@ -1443,7 +1444,9 @@ void level_transition_init(LevelTransition *transition,
                            int completed_level, int next_level,
                            float elapsed_seconds, int level_score,
                            int hostiles_neutralized, int deaths,
-                           int time_bonus, int clean_bonus)
+                           int time_bonus, int clean_bonus,
+                           float best_seconds, bool best_is_new,
+                           int docket_sheets)
 {
     SDL_zerop(transition);
     transition->completed_level = completed_level;
@@ -1452,8 +1455,17 @@ void level_transition_init(LevelTransition *transition,
     transition->level_score = level_score;
     transition->hostiles_neutralized = hostiles_neutralized;
     transition->deaths = deaths;
+    transition->best_seconds = best_seconds;
+    transition->best_is_new = best_is_new;
     transition->time_bonus = time_bonus;
     transition->clean_bonus = clean_bonus;
+    transition->docket_sheets = docket_sheets < 0 ? 0 : docket_sheets;
+    /* Derived off the campaign's shape, exactly as `sector_tally_set` does it,
+     * so the two screens cannot come to disagree about how big the collection
+     * is. One sheet to an interior, none on a climb. */
+    transition->docket_total = CAMPAIGN_SECTORS - CAMPAIGN_CLIMB_SECTOR_COUNT;
+    if (transition->docket_sheets > transition->docket_total)
+        transition->docket_sheets = transition->docket_total;
 }
 
 bool level_transition_update(LevelTransition *transition, float dt,
@@ -1548,6 +1560,41 @@ static void render_transition_report(SDL_Renderer *r,
     draw_text(r, 27.0f, 88.0f, 1.0f, muted, "TIME");
     SDL_snprintf(buffer, sizeof(buffer), "%02d:%02d", minutes, seconds);
     draw_text(r, 27.0f, 106.0f, 1.0f, value, buffer);
+
+    /*
+     * And what there is to beat, in the same field rather than in one of its
+     * own.
+     *
+     * The clock and the par bonus under it have been asking the player to go
+     * fast since they existed, and giving them nothing to be fast against: 134
+     * seconds is what the *night* allows, not what this player has
+     * ever managed. A record next to the run is the smallest thing that turns
+     * the stopwatch into something worth reading twice.
+     *
+     * A run that just set it shows its own time in the credit colour rather
+     * than the record it beat, because printing the old number under the word
+     * BEST on the very screen that replaced it is the field disagreeing with
+     * itself. That also covers a first clear, which has nothing to compare
+     * against and is a record by definition.
+     */
+    draw_text(r, 75.0f, 88.0f, 1.0f, muted, "BEST");
+    float record = transition->best_is_new ? transition->elapsed_seconds
+                                           : transition->best_seconds;
+    if (record > 0.0f)
+    {
+        int best_total = (int)record;
+        SDL_snprintf(buffer, sizeof(buffer), "%02d:%02d", best_total / 60,
+                     best_total % 60);
+        draw_text(r, 75.0f, 106.0f, 1.0f,
+                  transition->best_is_new ? credit : muted, buffer);
+    }
+    else
+    {
+        /* Nothing banked: the authoring entry points bank nothing at all, and
+         * a blank here would read as the field having failed rather than as
+         * there being no record yet. */
+        draw_text(r, 75.0f, 106.0f, 1.0f, muted, "--:--");
+    }
     /* A floor that ran over its slot on the night clock is told so rather than
      * left with a blank line: nothing there reads as a field that sometimes
      * pays for no reason, and the words are what teach the par exists. */
@@ -1566,6 +1613,14 @@ static void render_transition_report(SDL_Renderer *r,
     draw_text(r, 151.0f, 88.0f, 1.0f, muted, "SCORE");
     SDL_snprintf(buffer, sizeof(buffer), "+%06d", transition->level_score);
     draw_text(r, 151.0f, 106.0f, 1.0f, value, buffer);
+
+    /* Under the score, in the credit colour, because a sheet is worth
+     * `EVIDENCE_SCORE` and this is the row that says where points came from.
+     * The whole cell is twelve cells of 8px from x=151, so it stops well short
+     * of the divider at 282. */
+    SDL_snprintf(buffer, sizeof(buffer), "DOCKET %02d/%02d",
+                 transition->docket_sheets, transition->docket_total);
+    draw_text(r, 151.0f, 122.0f, 1.0f, credit, buffer);
 
     color_rect(r, (SDL_Color){31, 47, 52, 255},
                282.0f, 85.0f, 1.0f, 43.0f);
@@ -2400,7 +2455,7 @@ static void render_outro_ui(SDL_Renderer *r, float time,
     /*
      * The last caption, and the only one that is not a readout.
      *
-     * Voss's men spent fifteen sectors calling him a cowboy — off the net, and
+     * Voss's men spent seventeen sectors calling him a cowboy — off the net, and
      * shouted down at him off the wall — because a man alone in a building
      * doing this is the only thing they could file him as. It is the wrong
      * word, and this is the line that says so: he came up forty floors for one
@@ -2649,7 +2704,7 @@ void outro_cutscene_render(SDL_Renderer *r,
                         (Uint8)((float)FX_LABEL.b * reveal), 255},
             "THE BONDS BURNED. SHE DID NOT.");
 
-        if (time >= 21.0f)
+        if (time >= OUTRO_REPLAY_PROMPT_TIME)
         {
             float pulse = 0.55f + 0.45f * sinf(time * 2.4f);
             char hint[40];

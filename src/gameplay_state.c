@@ -2,12 +2,25 @@
 
 #include <string.h>
 
-void campaign_reset(CampaignState *campaign)
+void campaign_reset(CampaignState *campaign, bool veteran)
 {
     memset(campaign, 0, sizeof(*campaign));
-    campaign->lives = PLAYER_LIVES;
-    campaign->continues_remaining = PLAYER_CONTINUES;
+    campaign->lives = veteran ? VETERAN_LIVES : PLAYER_LIVES;
+    campaign->continues_remaining =
+        veteran ? VETERAN_CONTINUES : PLAYER_CONTINUES;
     campaign->next_extra_life_score = EXTRA_LIFE_SCORE_STEP;
+}
+
+void campaign_note_assist(CampaignState *campaign, bool assist_on)
+{
+    if (campaign == NULL || !assist_on)
+        return;
+    campaign->assisted = true;
+}
+
+bool campaign_records_count(const CampaignState *campaign)
+{
+    return campaign != NULL && !campaign->assisted;
 }
 
 bool campaign_lose_life(CampaignState *campaign)
@@ -146,5 +159,11 @@ int gameplay_player_max_hp(const GameplayState *state)
 
 float gameplay_enemy_speed_scale(const GameplayState *state)
 {
-    return state->assist_slow_enemies ? ASSIST_ENEMY_SPEED : 1.0f;
+    /* Assist wins where both are set, and that is the right way round: one of
+     * the two switches is somebody asking the game to be easier and the other
+     * is somebody asking for a harder run they have not had to turn off. A
+     * player who has both on is a player who wants the help. */
+    if (state->assist_slow_enemies)
+        return ASSIST_ENEMY_SPEED;
+    return state->veteran ? VETERAN_ENEMY_SPEED : 1.0f;
 }

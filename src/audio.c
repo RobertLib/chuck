@@ -386,8 +386,8 @@ static bool synth_music_intro(CachedSound *track)
 /* ---- Themed level scores -------------------------------------------- */
 
 /*
- * Every level theme names its own score, and eighteen hand-sequenced synth
- * routines would be eighteen places to keep in tune with one another. A track
+ * Every level theme names its own score, and twenty hand-sequenced synth
+ * routines would be twenty places to keep in tune with one another. A track
  * is therefore described rather than written out: a key, a tempo, a set of
  * 1/16 rhythms and a colour, which `synth_music_plan` turns into PCM. A new
  * sector's music is a table row beside its palette, not another function.
@@ -520,6 +520,35 @@ static const int ARCHIVE_LEAD_A[16] = {
     -1, -1, -1, -1, 12, -1, -1, -1, -1, -1, 15, -1, -1, -1, -1, -1};
 static const int ARCHIVE_LEAD_B[16] = {
     -1, -1, 10, -1, -1, -1, -1, -1, 12, -1, -1, -1, -1, -1, -1, -1};
+
+/*
+ * The sub-vault: the room the whole night was for, and it is empty.
+ *
+ * The one score in the building with no pulse at all — no kick, no hat, and a
+ * bass that lands once a bar and is left to ring. What a player hears in here
+ * is mostly their own footsteps, which is the point: every other floor has
+ * somebody working on it and this one is finished. The progression falls and
+ * never resolves, because nothing about this room is going to be put right.
+ */
+static const int VAULT_BARS[8] = {0, -3, -5, -3, 0, -5, -7, -5};
+static const int VAULT_LEAD_A[16] = {
+    -1, -1, -1, -1, -1, -1, 7, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+static const int VAULT_LEAD_B[16] = {
+    -1, -1, -1, 3, -1, -1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1};
+
+/*
+ * The fifth climb: the weather has come back in, and this time it is sleet.
+ *
+ * `FACADE_STORM` is a climb in a hurry and this is a climb that has stopped
+ * being able to hurry — the last stretch, wet again, with the roof in sight.
+ * Slower than the storm, colder than the moon, and the hat is the only thing
+ * keeping time because that is what sleet on stone sounds like.
+ */
+static const int FACADE_SLEET_BARS[8] = {0, 0, -4, -2, 0, 3, -4, -2};
+static const int FACADE_SLEET_LEAD_A[16] = {
+    -1, -1, 12, -1, -1, -1, 10, -1, -1, -1, -1, -1, 7, -1, -1, -1};
+static const int FACADE_SLEET_LEAD_B[16] = {
+    -1, -1, -1, -1, 15, -1, -1, -1, 12, -1, -1, -1, -1, -1, 10, -1};
 
 /* The ring around the bunker: a march. Four on the floor, a snare that rolls
  * into the bar line and a static tonic pushed by one chromatic step. */
@@ -787,6 +816,25 @@ static const MusicPlan MUSIC_PLANS[MUSIC_TRACK_COUNT] = {
         .colours = MUSIC_COLOUR_DRIP | MUSIC_COLOUR_SPARKLE,
         .seed = 0x7800u},
 
+    [MUSIC_VAULT] = {
+        .bpm = 66.0f, .bars = 8, .gain = 0.175f,
+        .root = 36, .progression = VAULT_BARS, .minor = true,
+        .bass_wave = WAVE_SINE, .bass_gain = 0.12f, .bass_length = 4.0f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x0, 0x0)},
+        .sub_gain = 0.055f,
+        .pad_gain = 0.034f, .pad_offset = 12,
+        /* No kit at all. The restroom is the only other score in the game with
+         * none, and for the opposite reason: that room is small and this one is
+         * empty. */
+        .kick_gain = 0.0f, .hat_gain = 0.0f,
+        .lead_a = VAULT_LEAD_A, .lead_b = VAULT_LEAD_B,
+        .lead_bars = MUSIC_BAR(1) | MUSIC_BAR(3) | MUSIC_BAR(5) |
+                     MUSIC_BAR(7),
+        .lead_gain = 0.036f, .lead_length = 4.2f, .lead_wave = WAVE_SINE,
+        .colours = MUSIC_COLOUR_DRIP,
+        .seed = 0x5a17u},
+
     [MUSIC_SECURITY] = {
         .bpm = 128.0f, .bars = 16, .gain = 0.235f,
         .root = 41, .progression = SECURITY_BARS, .minor = true,
@@ -969,6 +1017,28 @@ static const MusicPlan MUSIC_PLANS[MUSIC_TRACK_COUNT] = {
         .arp_gain = 0.030f,
         .colours = MUSIC_COLOUR_WIND | MUSIC_COLOUR_SPARKLE,
         .seed = 0x11b00u},
+
+    [MUSIC_FACADE_SLEET] = {
+        .bpm = 96.0f, .bars = 8, .gain = 0.195f,
+        .root = 45, .progression = FACADE_SLEET_BARS, .minor = true,
+        .bass_wave = WAVE_TRIANGLE, .bass_gain = 0.12f, .bass_length = 2.6f,
+        .bass_steps = {MUSIC_BEATS(0x1, 0x0, 0x1, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x0, 0x0)},
+        .sub_gain = 0.046f,
+        .pad_gain = 0.032f, .pad_offset = 12,
+        .kick_steps = {MUSIC_BEATS(0x1, 0x0, 0x0, 0x0),
+                       MUSIC_BEATS(0x1, 0x0, 0x0, 0x0)},
+        /* The hat carries the whole of the time, which is what sleet on stone
+         * sounds like and what this climb has instead of a snare. */
+        .hat_steps = {MUSIC_BEATS(0x5, 0x5, 0x5, 0x5),
+                      MUSIC_BEATS(0x5, 0x5, 0x5, 0x7)},
+        .kick_gain = 0.12f, .hat_gain = 0.034f,
+        .lead_a = FACADE_SLEET_LEAD_A, .lead_b = FACADE_SLEET_LEAD_B,
+        .lead_bars = MUSIC_BAR(2) | MUSIC_BAR(3) | MUSIC_BAR(6) |
+                     MUSIC_BAR(7),
+        .lead_gain = 0.042f, .lead_length = 2.2f, .lead_wave = WAVE_SINE,
+        .colours = MUSIC_COLOUR_WIND | MUSIC_COLOUR_DRIP,
+        .seed = 0x3ee1u},
 
     [MUSIC_FACADE_HIGH] = {
         .bpm = 70.0f, .bars = 8, .gain = 0.180f,

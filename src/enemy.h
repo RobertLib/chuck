@@ -12,6 +12,7 @@ typedef struct
 {
     float x, y; /* top-left of the enemy box */
     float vx, vy;
+    EnemyKind kind;
     int dir; /* horizontal patrol direction: -1 or +1 */
     bool on_ground;
     int on_elevator; /* runtime elevator index while riding, otherwise -1 */
@@ -70,7 +71,7 @@ typedef struct
      * Bits 0..MAX_ENEMIES-1 are guards; MAX_ENEMIES..MAX_ENEMIES+MAX_DOGS-1 are
      * dogs. `enemy_body_bit` is the one place that mapping is written down.
      */
-    uint32_t bodies_investigated;
+    uint64_t bodies_investigated;
     /* How long this guard has held an unbroken line of sight on Chuck. A
      * fresh sighting is noticed for ENEMY_NOTICE_TIME before the aim starts,
      * so detection around a corner never fires below reaction time. */
@@ -81,12 +82,27 @@ typedef struct
     bool talking;        /* true while chatting with another enemy */
     float talk_timer;    /* seconds remaining while talking */
     float talk_cooldown; /* seconds remaining before eligible to talk again */
-    int talk_partner;    /* index of partner enemy, -1 if none */
+    /* Index of the partner he is talking to, -1 if none — and only meaningful
+     * while `talking` is set, which is what `enemy_has_talk_partner` exists to
+     * say. Nought is a valid slot, so a zeroed `Enemy` reads as a man in
+     * conversation with slot nought if this field is asked on its own; the same
+     * trap `Player.dragging` is a flag rather than an index to avoid. Every
+     * spawn path clears it and `test_a_zeroed_guard_is_nobody_s_partner` pins
+     * that, but a caller still has to ask the pair rather than the number. */
+    int talk_partner;
     /* Counts down to this guard's next call in on the crew's own net. Only a
      * clock is needed: whether the call happens is decided by the same
      * conditions the chat uses, and the pose and the sound follow from
      * talking with no partner. */
     float radio_timer;
+    /*
+     * Seconds left of a flash charge. While it runs the man sees nothing, aims
+     * at nothing and walks nowhere — and then comes back exactly as he was,
+     * still provoked, still hunting, still remembering where he last saw Chuck.
+     * That is the whole difference between this and killing him: the flash buys
+     * seconds, never the encounter.
+     */
+    float blind_timer;
     float anim_time;     /* local procedural animation clock */
     float recoil_timer;  /* brief muzzle flash / firing follow-through */
 } Enemy;
@@ -116,6 +132,21 @@ typedef struct
      * holds; bite_ready marks the beat where the teeth actually land. */
     float bite_windup;
     bool bite_ready;
+    /*
+     * Seconds left of a flash charge, and the animal has one for the same
+     * reason the man does: it has eyes. `detonate_flashbang` already reasons
+     * that a camera is "glass and a sensor, and a charge this bright in front
+     * of one is the same event it is for a pair of eyes" — and then skipped the
+     * one thing in the room that has an actual pair. So the charge stopped the
+     * guards and the lenses and left the dog coming, with nothing on screen to
+     * say why, which is the failure `apply_blast` exists to refuse: a blast
+     * that picks which of the things beside it are real.
+     *
+     * It blinds and stops him and it cancels a bite already being wound up —
+     * the animal's `aim_timer`. It does not drop the chase, because the guard's
+     * does not either: the charge buys seconds, never the encounter.
+     */
+    float blind_timer;
     float lost_timer;
     /* Dogs keep running to the last visible/alarm position, not to the
      * player's live position after line of sight has been lost. */
@@ -141,19 +172,37 @@ static inline bool enemy_on_radio(const Enemy *enemy)
 }
 
 /*
+ * Whether this man is in a conversation with somebody, asked as the pair rather
+ * than as the index.
+ *
+ * `talk_partner` alone cannot answer it: nought is a real slot, so a struct that
+ * has been zeroed rather than spawned reads as a man mid-conversation with the
+ * first guard on the floor — which in the three places this replaced was a
+ * *disqualifier*, so the effect was to silently take him out of the running for
+ * every chat and every net check for the rest of the sector. Nothing shipped
+ * that way, because every spawn path initialises the field; it is the shape of
+ * the thing that is wrong, and the fix is to make the safe reading the only one
+ * available.
+ */
+static inline bool enemy_has_talk_partner(const Enemy *enemy)
+{
+    return enemy->talking && enemy->talk_partner >= 0;
+}
+
+/*
  * Which bit of `Enemy.bodies_investigated` stands for a given corpse. Guards
  * are filed under their own slot and dogs after them, so one mask covers both
  * kinds and the two arrays can never be read as each other.
  */
-_Static_assert(MAX_ENEMIES + MAX_DOGS <= 32,
+_Static_assert(MAX_ENEMIES + MAX_DOGS <= 64,
                "the body-discovery mask has one bit per corpse");
 
-static inline uint32_t enemy_body_bit(int slot, bool is_dog)
+static inline uint64_t enemy_body_bit(int slot, bool is_dog)
 {
-    return 1u << (unsigned)(is_dog ? MAX_ENEMIES + slot : slot);
+    return UINT64_C(1) << (unsigned)(is_dog ? MAX_ENEMIES + slot : slot);
 }
 
-void enemy_init(Enemy *enemy, float x, float y, Rng *rng);
+void enemy_init(Enemy *enemy, float x, float y, EnemyKind kind, Rng *rng);
 /* speed_scale multiplies the guard's ground speed; 1.0 is the authored pace
  * and the assist option is the only caller that passes anything else. */
 void enemy_update(Enemy *enemy, Level *level, float dt,

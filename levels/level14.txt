@@ -4,20 +4,20 @@
 #      #      #                          #      #      #
 #      #  O   #                          #   O  #      #
 #                                               %      #
-# C ^    d cM   X t   dcM  E   Mdc   tAX    M i %XZK D #
+# C*^    d cM   X t   dcM  E   Mdc   tAX !  M i %XZKYD #
 ###################H################H###################
-#  w      #        H #            # H        #         #
+#  w      #        H #   I        # H        #         #
 #         #        H #            # H        #         #
 #     O   #        H #            # H        #   O     #
 #                  H                H                  #
-# i  TM A    ^ T  MHi  X        X  iH T  M  C  dcM i   #
-###H#####################      #####################H###
-#  H        #        #            #        #        H  #
+# i  TM A    ^ T  QHi  X        X  iH T  Q  C  dcM i   #
+###H#####################  P   #####################H###
+#  H        #        #            #     I  #        H  #
 #  H        #        #            #        #        H  #
 #  H        #        #            #        #        H  #
 #  H  O     #        #            #        #O       H  #
 #  H                                                H  #
-# UH  W  ^    S  i  X t nnn  WAD M X t  M m G   ^   HN #
+# UH     ^    S  i  X t nnn  WAD M X t  M W G   ^  mHN #
 ########################################################
 
 SPAWNS 0 3

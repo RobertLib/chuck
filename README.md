@@ -49,7 +49,7 @@ bonds — and its seventh and last lock runs on a two-key rule: the bank's key,
 and the building's duty controller, alive and present. That is why they needed Ellen, and it is the
 only reason she still is. At 01:00 the bonds leave the roof.
 
-So the campaign is a climb with a deadline. Fifteen sectors between the lobby
+So the campaign is a climb with a deadline. Seventeen sectors between the lobby
 and the roof, every route locked down, and a line of what Chuck has worked out
 waiting on the report between them. It ends where their helicopter does.
 
@@ -103,6 +103,62 @@ bypassed by crawling, timing movement, and using cover. Landing on a guard's
 head while falling bounces Chuck off unharmed and costs the guard a hit,
 unlike touching one any other way, which costs a heart.
 
+The options sheet has one switch that runs the other way from the assists. Turn
+`VETERAN` on and the crew moves faster than the campaign was tuned for, you get
+one life instead of three, and no continue is coming. It is not locked behind
+finishing — every row on that sheet is something you may choose — and the faster
+pace takes hold in the sector you are already standing in, while the lives wait
+for the next run so nothing on that screen can take something you already had.
+
+And there is one answer to having already been seen. A flash charge is thrown
+like a grenade and kills nobody: every guard near it stops seeing, aiming and
+walking for a few seconds, a guard on his way to an alarm switch stops there,
+and any camera in reach forgets what it had. Then all of them carry on exactly
+as they were — still hunting, still knowing where you went. It buys seconds, not
+the encounter, and the seconds are for leaving. It is safe to use in the room
+you are standing in, which is the whole of what separates it from the grenade it
+looks like.
+
+Every interior sector hides one sheet off Meridian's own docket — twelve across
+the campaign, and the only thing you pick up all night that is worth nothing to
+you. The city thinks this is a political siege, because that is what was
+broadcast at 00:04, and nobody outside the building has a scrap of paper saying
+it was a robbery. The sheets score, and they are counted for the run rather than
+the floor: the game-over card says how many this run came away with and the most
+any run ever has. Assembling the case is a thing you do in one night, not across
+a dozen abandoned ones.
+
+The back half of the building also has men in plate carriers. A heavy guard
+takes twice the rounds from the front and moves slower for carrying it, and he
+cannot be stomped at all — which is the point of him, because the stomp is the
+free answer that costs no ammunition and no position. The knife behind him works
+exactly as it does on anybody else, so he is the floor's clearest argument for
+going quietly rather than a wall to unload into.
+
+Seven sectors also watch the ceiling. A security camera sweeps a beam across the
+floor below it, and holding you in that beam for about a second puts the alarm
+up on your own position. It is deliberately the one watcher none of the quiet
+answers below work on — it has no back to get behind, no ears to throw a bolt
+past, and crawling does nothing to something that is looking down at the floor
+you are crawling on. What it has instead is the sweep, so the answer is to cross
+while it points elsewhere, or to shoot it out and accept that a gunshot is the
+loudest thing you can do. Any blast takes one out as well, and a dead camera
+stays dead for the visit.
+
+There is a quiet way through all of it, and it is three things rather than one.
+The knife takes a man down in a single stroke from behind, provided he has not
+seen you, nobody has shot him and the alarm is down — and because he never
+raises it, the guard he was talking to hears nothing. Facing you it is still
+three swings while he shoots through all of them, and a dog cannot be taken this
+way at all: it has no back, it hears you. Chuck also carries a pocketful of
+bolts that never runs out. Thrown, a bolt makes a noise where it lands, and calm
+guards walk over to the noise instead of to you — quieter than a shot, and it
+does not carry as far. And a body can be dragged out of the room it fell in:
+hold the use button beside one and haul it, at half speed, with no ladders and
+no jumping, and it stays wherever you let go. Since a guard who finds a body
+goes looking and often for an alarm switch, where you leave it is a decision as
+real as where you fought.
+
 Chuck has three hearts a life, and the rule is one sentence: what hits you
 costs hearts, what crushes you or breaks your fall kills you. A guard, a
 bullet, a bite, a spike, a fan, a thrown brick and a bird all cost one heart
@@ -111,10 +167,14 @@ elevator crush are immediate. Medkits refill the hearts, and add a spare life
 once they are already full. Every 10,000 points is an extra life.
 
 Finishing a sector pays for the two things the report between floors has always
-printed. The night clock gives each floor two and a half minutes, and every
+printed. The night clock gives each floor 134 seconds, and every
 second of that you hand back is worth points; clear one without dying and it
 pays again. Both are shown under the field that earned them, so the report says
-where the score came from rather than only that it arrived.
+where the score came from rather than only that it arrived. A sector left by a
+window shows no report — the climb outside is a continuous route and cutting to
+an ops screen would contradict what you are looking at — so those, and the last
+sector of the campaign, print the same figures as one line over the sector
+coming up instead. They were paying both bonuses in silence before that.
 
 Progress inside a sector is banked and a death resumes at it rather than at the
 start: any key card, a finished hack, a passed door and a medkit all bank, and
@@ -124,9 +184,13 @@ Running out of lives always offers a retry of the same sector; the campaign
 never sends anyone back to the lobby uninvited. Continues are the score
 insurance: while one is left the retry keeps the score, after that it costs it.
 
-Fifteen sectors is more than one sitting, and the game remembers two things
-across them: the furthest sector any run has reached, and the best score any
-run has finished on. The furthest sector is offered back on the title screen as
+Seventeen sectors is more than one sitting, and the game remembers three things
+across them: the furthest sector any run has reached, the best score any run has
+finished on, and the quickest each sector has ever been cleared. That last one
+is printed beside the clock on the report between floors, and on the tally line
+for the eleven clears that never reach a report, so the par the score has always
+paid for is something you can measure yourself against wherever you are — and a
+run that beats it says so instead of printing the number it replaced. The furthest sector is offered back on the title screen as
 a third chip beside the manual and the options — `R`, or SELECT on a pad — and
 taking it is a clean run of that sector with the floors below it and the
 prologue already behind you. Nothing about the sector itself is saved, so a
@@ -134,9 +198,11 @@ resume is a fresh attempt at it rather than a restored one. The best score is
 shown where a score is actually being looked at: the game-over card.
 
 The game rewards careful movement as much as combat. A sector locked behind a
-stair door carries one to three terminals — the eight that leave by a window
-carry none, because a window has no lock to pick — but only the brightly lit
-active terminal can be hacked.
+stair door carries one or two terminals, and nine of the ten that leave by a
+window carry none, because a window has no lock to pick. Sector 14 is the one
+exception and keeps three: it gained its window when sector 15 became a climb,
+and a terminal still scores and still banks a checkpoint whatever the door is
+doing. Only the brightly lit active terminal can be hacked.
 Holding position while breaching it takes several seconds and leaves Chuck
 exposed; the noise alerts guards and dogs, who pursue Chuck during the hack
 and for a short time afterward. In a sector with doors it also brings one or
@@ -158,7 +224,7 @@ means Chuck must crawl before firing to hit one. Some walls are only bricked-up
 openings: any blast opens one for the rest of the run, which can turn a sealed
 bay into a shortcut — but never into the way out of a sector.
 
-Four sectors are not walked at all. Levels 3, 7, 11 and 13 are climbed: the
+Five sectors are not walked at all. Levels 3, 7, 11, 13 and 15 are climbed: the
 stair door below is welded shut, the way on is an open window onto the facade,
 and out there gravity and ladders are replaced by four-way movement across the
 brickwork. Stone cornices are both the obstacle and the only cover, a
@@ -193,14 +259,21 @@ them are still answering all get said out loud by the people doing it, and none
 of it is repeated anywhere the player has to stop playing to read.
 
 Two screens hang off the title screen. The **field manual** (`H`, or `Y` on a
-pad) is eight illustrated sheets: who is in the building and why, who the twelve
+pad) is ten illustrated sheets: who is in the building and why, who the twelve
 of them are, what the building is and what the night costs, what every button
-does, what the floor plan allows, what the guards do, how the wall is climbed,
-and how to read the HUD. **Options** (`J`, or `X` on a pad, and also reachable from the
-pause screen) is one sheet in three sections: separate levels for the music and
-the sound effects; fullscreen, the CRT filter and reduced motion; and the three
+does, what the floor plan allows, what the guards do, how to get through a floor
+of them without firing, how the wall is climbed, how to read the HUD, and — on
+the last sheet — every record the game has kept, which is the only place the
+seventeen per-sector times can all be read at once. **Options** (`J`, or `X` on a pad, and also reachable from the
+pause screen) is one sheet in five sections: separate levels for the music and
+the sound effects; fullscreen, the CRT filter and reduced motion; the three
 assist switches — five hearts a life, guards and dogs at 80% speed, and deaths
-that never cost a life. **Reduced motion** takes the screen shake out and holds
+that never cost a life; the **veteran** run, which is the same lever the other
+way (a faster crew, one life, no continues); and **records**, which says out
+loud that a run with any assist switch on banks no score, no sector time and no
+sheets, and carries the row that clears the lot. That row asks twice before it
+does it — it is the only thing on either page that cannot be undone — and it
+leaves the sector you are resuming from alone. **Reduced motion** takes the screen shake out and holds
 every warning light — the alarm call points, a mine's fuse, the police cordon
 on the drive — at a steady glow instead of a strobe, without changing what any
 of them is telling you. A row on the same sheet opens a second page where
@@ -234,7 +307,7 @@ whatever is actually in your hands.
 - Move, climb, crawl, steer, accelerate, and brake: left stick or D-pad
 - Jump, confirm, or skip a cinematic: `A`
 - Attack — rocket, grenade, shot, or knife: `X` or `B`
-- Use a door, or hold to hack the active terminal: `Y`
+- Use a door, or hold to hack the active terminal or drag a body: `Y`
 - Cycle weapons: right shoulder for the next, left shoulder for the one before
 - Pause and resume: `Start`. Nothing else pauses.
 - Back out of the manual, the options sheet, or the pause menu: `B`
@@ -296,6 +369,8 @@ axis, and it always moves you. What follows is what the game ships with.
 - Launch a carried rocket, throw a grenade, shoot, or use the knife: `Space`
 - Cycle weapons: `Tab` or `Q` for the next, `Z` for the one before
 - Hack the active terminal: hold `E` while standing nearby
+- Drag a body: hold `E` while standing over one (the terminal takes the key
+  where both are in reach)
 - Use a door: press `E` while standing in the doorway
 - Pause and resume: `Esc`
 - Back out of the manual, the options sheet, or the pause menu: `Backspace`
@@ -358,6 +433,22 @@ make test
 It needs no SDL at all — the gameplay core links none, which is the boundary
 the whole architecture is built on — and it runs in well under a second.
 
+What that suite never executes is countable rather than a matter of faith:
+
+```sh
+make coverage
+```
+
+It prints the functions the tests never call, by name. The first time it was
+run the answer was fourteen — both platform updaters, most of how a dog reads a
+hole in the floor, the fallback that keeps a reinforcement from deleting a
+corpse — and the two platform ones are the shape worth knowing about: they live
+on the core side of the boundary but their only caller is on the shell side, so
+a suite that links every gameplay module and drives it directly still never
+reached them. A function is not covered because its file is compiled in. It is
+not a gate — `make test` is — because the thing worth reading is the list and
+not the percentage.
+
 Build the complete game and run the core tests with AddressSanitizer and
 UndefinedBehaviorSanitizer enabled:
 
@@ -366,39 +457,31 @@ make sanitize
 ```
 
 The core suite cannot reach the renderers, the level art or the audio synthesis,
-because those are the half of the tree that links SDL. `make smoke` runs them:
-it boots the instrumented binary through the title screen, all fifteen sectors,
-every screen that is otherwise only reached by playing — both prologue
-cutscenes, the drive, the manual, the options sheet, the report between sectors,
-the continue prompt, the game-over card, the outro and the credits — and all
-eight sheets of the field manual, against a dummy video and audio driver, so it
-needs neither a display nor a sound card and works the same in CI.
-
-Then it plays all fifteen again. Booting a sector executes a sector standing
-still, so everything behind the player *acting* — the bodies on the floor, the
-crawl, the hacking pose, the bazooka, the rocket, the alarm lighting — was run
-by nothing at all; measured, that was twelve drawing functions flat at zero.
-`--demo` puts a scripted hand on the controls, so those states are reached by
-being played into rather than assembled.
-
-Each screen is held for as long as it actually lasts rather than a flat few
-seconds. A sector or a sheet is a still and a couple of seconds is hundreds of
-frames of it; the outro runs twenty-seven seconds and the drive over a minute,
-and cutting those short executes the frame they open on and calls the screen
-covered.
+because those are the half of the tree that links SDL. So `make sanitize` ends by
+running the sanitized game itself, headless, across the title screen, every
+sector, every screen reached by a choice rather than by play — the prologue, the
+manual, the options sheet, the report, the ending, the restroom — and the level
+editor:
 
 ```sh
-make smoke
+make soak
 ```
 
-Any build can be sent straight to one of those screens the same way it can be
-sent to a sector, which is what that last group is driven with:
+This paragraph used to end *"`make sanitize` builds them under the sanitizers, but
+nothing in the suite executes them"* — which was true, and was the whole of the
+problem written down and left there. Half the tree was compiled with ASan and
+UBSan under a target named `sanitize` and never once run by it. It runs on SDL's
+dummy video driver, which falls back to the software renderer and really does
+rasterize, and the game closes itself with `--soak N` rather than being killed, so
+the teardown is sanitized too.
+
+Any build can be sent straight to a campaign sector, which is what the level
+editor's playtest button does, or to one named screen, which is what the sweep
+above uses:
 
 ```sh
-./chuck --scene credits
-./chuck --level 9 --scene report
-./chuck --scene manual --page 6
-./chuck --level 4 --demo
+./chuck --level 4
+./chuck --screen manual
 ```
 
 All of it runs on every push — see [.github/workflows/ci.yml](.github/workflows/ci.yml).

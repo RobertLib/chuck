@@ -62,19 +62,14 @@ typedef struct
 /*
  * The longest the whole roll may take, closing hold included.
  *
- * It is a ceiling rather than a measurement because something outside this file
- * has to wait for it: `make smoke` dwells on each screen for a fixed few
- * seconds, and a screen that is a *clock* rather than a still is only covered
- * for the beats that fit inside the dwell. The roll opens on a skyline and ends
- * on a card thirty-odd seconds later, so a three-second dwell executed the
- * skyline — which is where the one undefined-behaviour bug this whole target
- * was written to catch was sitting — and never once reached the card.
+ * It is a ceiling rather than a measurement because the roll's own length is a
+ * property of its table: every name added lengthens the climb, and nothing in
+ * the drawing code notices. The screen a finished campaign always ends on is
+ * one nobody sits through twice, so a roll that quietly grew to twice its
+ * length would be found by a player rather than by us.
  *
- * [../tools/smoke.sh](../tools/smoke.sh) reads this number out of this header
- * rather than keeping a copy of it, the way CI reads the pinned SDL version out
- * of the script that owns it, and `test_credits_fit_the_frame` holds the table
- * under it. A roll that outgrows the dwell therefore fails the build instead of
- * quietly outliving the only thing that runs it.
+ * `test_credits_fit_the_frame` holds the table under this, so a roll that
+ * outgrows it fails the build.
  */
 #define CREDITS_MAX_DURATION 45.0f
 

@@ -25,6 +25,15 @@ typedef enum
     ED_GROUP_OFFICE,
     ED_GROUP_LOBBY,
     ED_GROUP_RESTROOM,
+    /*
+     * Pallets, reels, plumbing and posts: the set the machine hall, the clean
+     * room, the duct run, the strongroom and the roof deck are dressed out of.
+     * Its own bin rather than a corner of the office set, because an author
+     * reaching for a desk to fill a strongroom is the mistake
+     * levels/LEGEND.md spends a paragraph forbidding — the bin is what makes
+     * the right prop the nearest one.
+     */
+    ED_GROUP_PLANT,
     /* Props that belong to this night rather than to the building: the crew's
      * flight case and the clock the job is running to. They are dressing like
      * any other prop, but they are the dressing that carries the story, so
@@ -50,7 +59,19 @@ typedef struct
 extern const EdSymbol ED_SYMBOLS[];
 extern const int ED_SYMBOL_COUNT;
 
-extern const char *const ED_GROUP_NAMES[ED_GROUP_COUNT];
+/*
+ * Declared without its length on purpose, so that the definition's own
+ * `_Static_assert` measures the initializer instead of measuring the size this
+ * line would otherwise hand it.
+ *
+ * `extern T x[ED_GROUP_COUNT]` completes the type, and a `sizeof` in the
+ * defining translation unit then reports the *declared* length however many
+ * rows were actually written — so the assertion beside the table read
+ * "the count equals the count" and a missing group name stayed a null
+ * `char *`. Nothing outside editor_legend.c takes the array's size; the count
+ * is `ED_GROUP_COUNT` and callers use that.
+ */
+extern const char *const ED_GROUP_NAMES[];
 
 /* NULL when the character is not in the legend at all. */
 const EdSymbol *editor_symbol(char symbol);

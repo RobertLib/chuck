@@ -43,6 +43,13 @@ typedef enum
     PLAYER_WEAPON_KNIFE,
     PLAYER_WEAPON_GRENADE,
     PLAYER_WEAPON_BAZOOKA,
+    /* A handful of bolts, and the only thing on this list that is not a weapon:
+     * it is thrown to be *heard* somewhere Chuck is not. See MAX_DECOYS. */
+    PLAYER_WEAPON_DECOY,
+    /* The flash charge. Carried like the grenade — one at a time, spent on the
+     * throw — and unlike it, it is the weapon that is used *after* being seen
+     * rather than instead of being seen. */
+    PLAYER_WEAPON_FLASH,
     PLAYER_WEAPON_COUNT
 } PlayerWeapon;
 
@@ -75,15 +82,41 @@ typedef struct
      * The campaign never hands over more than one: `item_would_be_wasted`
      * refuses an `N` to a player already holding one, so the pickup cannot
      * raise it and `player_begin_sector` cannot carry more than it was given.
-     * The demo hand does hold two, deliberately — a grenade is thrown once on
-     * the floor and once from a rung, and the vertical throw is its own drawing
-     * (`render_figures.c`) rather than the horizontal one rotated. Clearing the
-     * count on the first throw is why that drawing was reached by nothing at
-     * all, in the file written to reach it.
+     * Which is why the bug survived so long — it only shows on the second
+     * grenade, and nobody playing ever had one.
      */
     int grenades;
     int bazooka_rockets;        /* one-shot bazooka carried when non-zero */
+    int flashbangs;             /* flash charges carried, spent one at a time */
+    /* Counts down between bolts. The bolts themselves are not carried and
+     * cannot run out, so this timer is the only thing that limits them, and it
+     * is what keeps the decoy a plan rather than a stream. */
+    float decoy_cooldown;
     PlayerWeapon active_weapon;
+    /*
+     * The body in his hands.
+     *
+     * `dragging_body` indexes `GameplayState.enemies` or `.dogs` —
+     * `dragging_is_dog` says which — and `drag_side` is the shoulder it was
+     * picked up on, latched at the grab. Deriving the side from `facing`
+     * instead would teleport the body straight through Chuck every time he
+     * turned round, and turning round while hauling something is most of what
+     * hauling something is.
+     *
+     * **`dragging` is a flag rather than a -1 in the index**, and that is the
+     * same rule the assist switches keep: a zeroed `GameplayState` has to be a
+     * simulation nobody is dragging anything in, because that is what every
+     * test and every fresh sector starts from. An index sentinel would make
+     * slot nought a body in Chuck's hands the moment anybody wrote `{0}`.
+     *
+     * It lives on `Player` rather than in the interaction module because
+     * `player_update` has to read it: a man dragging a corpse walks at
+     * `PLAYER_DRAG_SPEED`, and the walk speed is decided there.
+     */
+    bool dragging;
+    int dragging_body;
+    bool dragging_is_dog;
+    int drag_side;
     bool dying; /* true while death animation plays */
     float death_timer;
     bool crawling;         /* true while player is crawling (lower) */

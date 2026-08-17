@@ -28,7 +28,16 @@
 
 #include "crew.h"
 #include "fx.h"
+/* For `PROGRESS_NO_TIME`, which is the difference between a sector nobody has
+ * finished and one finished in no time at all. The manual reads the constant and
+ * never the file. */
+#include "progress.h"
+#include "run_tally.h"
 #include "manual_pages.h"
+/* For `draw_decoy`: the bolt on the GOING QUIET sheet is the game's own object
+ * rather than a sketch of one, which is the rule every other illustration on
+ * this screen already keeps. */
+#include "render_figures.h"
 
 /* ---- Palette ---------------------------------------------------------- */
 
@@ -621,8 +630,10 @@ static void draw_access_chip(SDL_Renderer *r, float x, float y, float w,
  * drawn from above, and this game has exactly one camera.
  */
 static void illus_night(SDL_Renderer *r, SDL_FRect p, float time,
-                        const PadHints *pad)
+                        const PadHints *pad,
+                        const ManualRecords *records)
 {
+    (void)records;
     (void)pad;
     (void)time;
     float cx = p.x + p.w * 0.5f;
@@ -775,7 +786,7 @@ static void illus_night(SDL_Renderer *r, SDL_FRect p, float time,
  * as a document, which is the difference between being told there are twelve
  * of them and counting twelve of them. It is drawn off `crew_callsign`
  * (see [crew.h](crew.h)) rather than out of a list of its own, so the man who
- * answers to KARL on the strip while a sector is being played is the man on
+ * answers to LENZ on the strip while a sector is being played is the man on
  * line one of the log — a manual that named a thirteenth would be a manual for
  * a different building.
  *
@@ -783,8 +794,10 @@ static void illus_night(SDL_Renderer *r, SDL_FRect p, float time,
  * in, twelve accounted for, and a signature block nobody ever checked.
  */
 static void illus_crew(SDL_Renderer *r, SDL_FRect p, float time,
-                       const PadHints *pad)
+                       const PadHints *pad,
+                       const ManualRecords *records)
 {
+    (void)records;
     (void)pad;
     (void)time;
     float cx = p.x + p.w * 0.5f;
@@ -867,10 +880,12 @@ static void illus_crew(SDL_Renderer *r, SDL_FRect p, float time,
     draw_text(r, px + pw - 68.0f, foot + 9.0f, 1.0f, FX_INK, "A. VOSS");
 }
 
-/* Sector one to the roof, and where the four climbs fall in it. */
+/* Sector one to the roof, and where the climbs fall in it. */
 static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time,
-                          const PadHints *pad)
+                          const PadHints *pad,
+                          const ManualRecords *records)
 {
+    (void)records;
     (void)pad;
     float street = p.y + p.h - 22.0f;
     float roof = p.y + 26.0f;
@@ -943,17 +958,32 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time,
         draw_brackets(r, fx_dim(FX_RUST, pulse), mark, 5.0f, 1.0f);
     }
 
-    /* The route: fifteen sectors bottom to top, the four climbs called out in
-     * amber. It is the only place the campaign's shape is drawn rather than
-     * described. */
+    /*
+     * The route: a tick a sector bottom to top, the climbs called out in amber.
+     * It is the only place the campaign's shape is drawn rather than described.
+     *
+     * **Both numbers are read rather than written here**, and that is the whole
+     * of what this loop got wrong. It counted to a literal 15 and tested against
+     * four literal climb numbers, so the day the vault and the fifth climb
+     * arrived it went on drawing the old campaign — two ticks short, one of them
+     * the wrong colour — on the one sheet whose job is to show the player the
+     * shape of the night. Nothing could have caught it: a strap is measured
+     * against its column, and a picture is measured against nothing.
+     * `CAMPAIGN_SECTORS` is the count the night clock is already checked
+     * against, and `CAMPAIGN_CLIMB_SECTORS` is the list the strap on `THE CLIMB`
+     * spells out, both held against the embedded maps by the suite.
+     */
     float route_x = cx - base_half - 14.0f;
     dash_v(r, fx_dim(FX_STEEL, 0.7f), route_x, roof + 4.0f, street - roof - 8.0f,
            3.0f, 4.0f);
-    for (int sector = 1; sector <= 15; ++sector)
+    for (int sector = 1; sector <= CAMPAIGN_SECTORS; ++sector)
     {
-        float t = (float)(sector - 1) / 14.0f;
+        float t = (float)(sector - 1) / (float)(CAMPAIGN_SECTORS - 1);
         float y = street - 8.0f - t * (street - roof - 16.0f);
-        bool climb = sector == 3 || sector == 7 || sector == 11 || sector == 13;
+        bool climb = false;
+        for (int i = 0; i < CAMPAIGN_CLIMB_SECTOR_COUNT; ++i)
+            if (CAMPAIGN_CLIMB_SECTORS[i] == sector)
+                climb = true;
         color_rect(r, climb ? FX_AMBER : FX_CYAN, route_x - 3.0f, y, 8.0f, 2.0f);
     }
     draw_text(r, route_x - 34.0f, roof - 2.0f, 1.0f, FX_LABEL, "ROOF");
@@ -1032,8 +1062,10 @@ static void face_offset(SDL_GamepadButton at, float *ox, float *oy)
  * on the pad it was drawn for.
  */
 static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time,
-                           const PadHints *pad)
+                          const PadHints *pad,
+                          const ManualRecords *records)
 {
+    (void)records;
     (void)time;
     fx_vgrad(r, p.x, p.y, p.w, p.h, FX_SHADOW, 255,
              (SDL_Color){11, 15, 24, 255}, 255);
@@ -1106,11 +1138,13 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time,
     float by = gy + 32.0f;
     /* Filed by what the button does, so the colours stay with the action while
      * the letter and the corner follow the hardware. */
-    static const SDL_Color FACE_TINT[PAD_FACE_COUNT] = {
+    static const SDL_Color FACE_TINT[] = {
         {110, 214, 130, 255}, /* confirm */
         {228, 96, 86, 255},   /* cancel  */
         {104, 158, 226, 255}, /* attack  */
         {236, 200, 96, 255}}; /* door    */
+    _Static_assert(SDL_arraysize(FACE_TINT) == (size_t)PAD_FACE_COUNT,
+                   "every face needs a tint");
     for (int i = 0; i < PAD_FACE_COUNT; ++i)
     {
         float ox = 0.0f;
@@ -1144,8 +1178,10 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time,
 
 /* What the floor plan will and will not let a pair of boots do. */
 static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time,
-                           const PadHints *pad)
+                          const PadHints *pad,
+                          const ManualRecords *records)
 {
+    (void)records;
     (void)pad;
     (void)time;
     fx_vgrad(r, p.x, p.y, p.w, p.h, (SDL_Color){20, 26, 38, 255}, 255,
@@ -1194,8 +1230,10 @@ static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time,
 /* The two things worth knowing about a guard: where he is looking, and what
  * happens if you arrive from above. */
 static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time,
-                         const PadHints *pad)
+                         const PadHints *pad,
+                         const ManualRecords *records)
 {
+    (void)records;
     (void)pad;
     fx_vgrad(r, p.x, p.y, p.w, p.h, (SDL_Color){20, 26, 38, 255}, 255,
              (SDL_Color){12, 16, 25, 255}, 255);
@@ -1244,10 +1282,106 @@ static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time,
            chuck_x - guard_x - 30.0f, 5.0f, 4.0f);
 }
 
+/*
+ * A body on the floor, drawn the way the sector draws one: the same garment
+ * mass laid on its side, no visor lit and no pips over it. Local to this file
+ * because `draw_downed_enemy` takes an `Enemy` and a `Level`, neither of which
+ * a sheet has, and because the plate's figures are twelve pixels across rather
+ * than twenty-six.
+ */
+static void draw_downed_figure(SDL_Renderer *r, float x, float floor_y,
+                               int dir, FigureLook look)
+{
+    FxRamp coat = fx_ramp(look.garment);
+    float body_w = FIG_H * 0.72f;
+    float body_h = 7.0f;
+    float y = floor_y - body_h;
+    ink_block(r, x, y, body_w, body_h);
+    color_rect(r, coat.base, x, y, body_w, body_h);
+    color_rect(r, coat.lit, x, y, body_w, 2.0f);
+
+    /* The head at the trailing end, so the figure reads as having been dragged
+       feet first — which is how it is actually being carried. */
+    float head = dir > 0 ? x + body_w - 1.0f : x - 5.0f;
+    ink_block(r, head, y - 3.0f, 6.0f, 6.0f);
+    color_rect(r, fx_ramp(FX_SKIN).base, head, y - 3.0f, 6.0f, 6.0f);
+    if (look.helmet)
+        color_rect(r, fx_ramp(look.cap).base, head, y - 3.0f, 6.0f, 3.0f);
+}
+
+/*
+ * The sheet for the three quiet answers, and it is two vignettes because the
+ * three of them are two ideas: put the noise somewhere else, and put the body
+ * somewhere else. The blade shares the top with the bolt, since "behind him" is
+ * the same sentence the bolt is thrown to create.
+ */
+static void illus_quiet(SDL_Renderer *r, SDL_FRect p, float time,
+                        const PadHints *pad,
+                        const ManualRecords *records)
+{
+    (void)records;
+    (void)pad;
+    fx_vgrad(r, p.x, p.y, p.w, p.h, (SDL_Color){19, 25, 36, 255}, 255,
+             (SDL_Color){11, 15, 24, 255}, 255);
+
+    /* Upper: the bolt in the air, and the man turning to where it will land. */
+    float upper_floor = p.y + p.h * 0.44f;
+    draw_slab(r, p.x, upper_floor, p.w, 14.0f);
+    fx_vgrad(r, p.x, upper_floor + 14.0f, p.w, 14.0f, FX_INK, 120, FX_INK, 0);
+    draw_text(r, p.x + 8.0f, p.y + 8.0f, 1.0f, FX_LABEL, "THROW IT PAST HIM");
+
+    float thrower_x = p.x + 26.0f;
+    float landing_x = p.x + p.w - 30.0f;
+    draw_figure(r, thrower_x, upper_floor, 1, POSE_AIM, look_chuck(), time);
+
+    /* The arc, and the bolt riding it. `dash_arc` takes the height the curve
+       actually reaches rather than the handle's, which is the revision the
+       climb sheet already paid for once. */
+    float flight = fmodf(time * 0.55f, 1.0f);
+    dash_arc(r, fx_dim(FX_STEEL_LT, 0.75f), thrower_x + 10.0f,
+             upper_floor - 20.0f, landing_x, upper_floor - 4.0f, 22.0f,
+             5.0f, 4.0f);
+    float bolt_x = thrower_x + 10.0f + (landing_x - thrower_x - 10.0f) * flight;
+    float bolt_y = upper_floor - 20.0f - 4.0f * 22.0f * flight * (1.0f - flight) +
+                   16.0f * flight;
+    draw_decoy(r, bolt_x, bolt_y);
+
+    /* The guard between them, looking the way the noise went rather than at the
+       man who made it — which is the entire mechanic in one figure. */
+    float guard_x = p.x + p.w * 0.56f;
+    draw_figure(r, guard_x, upper_floor, 1, POSE_STAND, look_guard(), time);
+    draw_sight_cone(r, guard_x + 11.0f, upper_floor - 22.0f, 1, 62.0f, 22.0f,
+                    FX_AMBER, 46);
+    float ring = 0.4f + 0.6f * fabsf(sinf(time * 3.0f));
+    fx_glow(r, landing_x + 3.0f, upper_floor - 2.0f, 13.0f * ring, FX_AMBER,
+            (Uint8)(90.0f * ring));
+
+    /* Lower: the body going out of the room it fell in. */
+    float floor_y = p.y + p.h - 30.0f;
+    draw_slab(r, p.x, floor_y, p.w, 18.0f);
+    fx_vgrad(r, p.x, floor_y - 14.0f, p.w, 14.0f, FX_INK, 0, FX_INK, 90);
+    draw_text(r, p.x + 8.0f, upper_floor + 34.0f, 1.0f, FX_LABEL,
+              "AND MOVE WHAT IS LEFT");
+
+    float haul = sinf(time * 1.1f) * 5.0f;
+    float chuck_x = p.x + 40.0f + haul;
+    fx_contact_shadow(r, chuck_x + 6.0f, floor_y, 9.0f, 0.0f, 150);
+    draw_figure(r, chuck_x, floor_y, -1, POSE_STAND, look_chuck(), time);
+    draw_downed_figure(r, chuck_x + 16.0f, floor_y, 1, look_guard());
+
+    /* The trail it left, from where it fell to where it is now. */
+    dash_h(r, fx_dim(FX_CYAN, 0.55f), chuck_x + 38.0f, floor_y - 3.0f,
+           p.w - (chuck_x - p.x) - 52.0f, 5.0f, 5.0f);
+    draw_chevron(r, fx_dim(FX_CYAN, 0.85f), chuck_x + 2.0f, floor_y - 30.0f,
+                 -1, 0);
+}
+
 /* The wall: no gravity, no ladders, and everything trying to take you off it. */
 static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time,
-                        const PadHints *pad)
+                        const PadHints *pad,
+                        const ManualRecords *records)
 {
+    (void)records;
     (void)pad;
     draw_brickwork(r, p);
 
@@ -1321,8 +1455,10 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time,
 
 /* The strip along the top of the screen, and what is worth picking up. */
 static void illus_console(SDL_Renderer *r, SDL_FRect p, float time,
-                          const PadHints *pad)
+                          const PadHints *pad,
+                          const ManualRecords *records)
 {
+    (void)records;
     (void)pad;
     fx_vgrad(r, p.x, p.y, p.w, p.h, FX_SHADOW, 255,
              (SDL_Color){11, 15, 24, 255}, 255);
@@ -1432,6 +1568,100 @@ static void illus_console(SDL_Renderer *r, SDL_FRect p, float time,
     draw_text(r, p.x + 142.0f, alert_y + 16.0f, 1.0f, COL_TEXT, "LOOKING FOR YOU");
 }
 
+/*
+ * The record sheet: a printed sector-time card with the run figures over it.
+ *
+ * It is the only illustration in the book that draws a number the player earned
+ * rather than a thing in the building, and it is why `ManualRecords` is handed
+ * through `manual_render`: the manual links no `Progress` and must not gain one.
+ *
+ * The grid steps by `RUN_TALLY_SECTOR_CELL_W` and the cells are spelled by
+ * `run_tally_format_sector_time`, both of which the suite measures — so a
+ * seventeenth sector, or an eighteenth, lands in the column rather than over the
+ * one beside it. A NULL `records` draws the same card with every cell reading
+ * `--:--`, which is what a fresh install actually has and what `--screen manual`
+ * shows on a machine that has never played.
+ */
+static void illus_record(SDL_Renderer *r, SDL_FRect p, float time,
+                         const PadHints *pad,
+                         const ManualRecords *records)
+{
+    (void)pad;
+    fx_vgrad(r, p.x, p.y, p.w, p.h, FX_SHADOW, 255,
+             (SDL_Color){11, 15, 24, 255}, 255);
+
+    /* The card itself, lit from the lamp above the desk like every other prop
+     * on this sheet. */
+    SDL_FRect card = {p.x + 10.0f, p.y + 12.0f, p.w - 20.0f, p.h - 24.0f};
+    color_rect(r, COL_SHEET, card.x, card.y, card.w, card.h);
+    color_rect(r, fx_dim(COL_SHEET_LIT, 0.8f), card.x, card.y, card.w, 1.0f);
+    color_rect(r, FX_INK, card.x, card.y + card.h - 1.0f, card.w, 1.0f);
+
+    draw_text(r, card.x + 12.0f, card.y + 10.0f, 1.0f, FX_CREAM,
+              "SECTOR TIMES");
+    dash_h(r, fx_dim(FX_RUST, 0.8f), card.x + 12.0f, card.y + 22.0f,
+           card.w - 24.0f, 3.0f, 3.0f);
+
+    /*
+     * Two columns, filled down the first before the second, because that is how
+     * a list of seventeen is read — and the campaign's own order is the thing
+     * being looked up.
+     */
+    int count = records != NULL ? records->sector_count : CAMPAIGN_SECTORS;
+    if (count < 1)
+        count = CAMPAIGN_SECTORS;
+    if (count > CAMPAIGN_SECTORS)
+        count = CAMPAIGN_SECTORS;
+    int per_column = (count + 1) / 2;
+    float row_pitch = 14.0f;
+    float grid_y = card.y + 32.0f;
+
+    for (int i = 0; i < count; ++i)
+    {
+        int column = i / per_column;
+        int row = i % per_column;
+        float x = card.x + 14.0f + (float)column * RUN_TALLY_SECTOR_CELL_W;
+        float y = grid_y + (float)row * row_pitch;
+
+        float seconds = PROGRESS_NO_TIME;
+        if (records != NULL && records->sector_time != NULL &&
+            i < records->sector_count)
+        {
+            seconds = records->sector_time[i];
+        }
+
+        char cell[RUN_TALLY_SECTOR_MAX];
+        if (run_tally_format_sector_time(i, seconds, cell, sizeof(cell)) <= 0)
+            continue;
+        /* A sector nobody has finished is set in the label grey rather than the
+         * paper white the finished ones get: the card reads at a glance as how
+         * much of the night has been measured. */
+        bool have = seconds > PROGRESS_NO_TIME;
+        draw_text(r, x, y, 1.0f, have ? COL_TEXT : fx_dim(FX_LABEL, 0.7f),
+                  cell);
+    }
+
+    /* The two run figures, under a rule at the foot of the card. */
+    float foot = card.y + card.h - 30.0f;
+    dash_h(r, fx_dim(FX_STEEL_DK, 0.9f), card.x + 12.0f, foot - 8.0f,
+           card.w - 24.0f, 3.0f, 3.0f);
+
+    char line[RUN_TALLY_MAX];
+    int best_score = records != NULL ? records->best_score : 0;
+    int best_sheets = records != NULL ? records->best_evidence : 0;
+    snprintf(line, sizeof(line), "BEST SCORE %d", best_score);
+    draw_text(r, card.x + 12.0f, foot, 1.0f, COL_COLD, line);
+    snprintf(line, sizeof(line), "DOCKET %d", best_sheets);
+    draw_text(r, card.x + 12.0f, foot + 13.0f, 1.0f,
+              fx_dim(FX_AMBER, 0.85f), line);
+
+    /* The lamp's own flicker, so the card sits under the same light as the rest
+     * of the desk rather than reading as a screen. */
+    float flicker = 0.86f + 0.14f * sinf(time * 1.3f);
+    fx_glow(r, card.x + card.w * 0.5f, card.y - 6.0f, 120.0f,
+            fx_dim(FX_WARM, flicker), 18);
+}
+
 /* ---- The sheets ------------------------------------------------------- */
 
 /*
@@ -1446,27 +1676,40 @@ static void illus_console(SDL_Renderer *r, SDL_FRect p, float time,
  * Indexed the same way `MANUAL_PAGES` is, and the assertion below is what keeps
  * the two arrays the same length — a sheet added to one and not the other would
  * otherwise be a page with somebody else's picture on it.
+ *
+ * **The array is deliberately unsized, and that is the whole of what makes the
+ * assertion below real.** Written `[MANUAL_PAGE_COUNT]`, as it was, the size is
+ * the count by declaration and `SDL_arraysize(PAGE_ILLUSTRATIONS) ==
+ * MANUAL_PAGE_COUNT` is a tautology no missing row can fail: a short initializer
+ * zero-fills the tail, so a sheet added to `MANUAL_PAGES` and not to this table
+ * is a **null function pointer** called at `PAGE_ILLUSTRATIONS[index](...)`
+ * below. It was exactly that for as long as the assertion existed, and three
+ * places said otherwise — this paragraph, the note on `WEAPON_CYCLE` in
+ * [player.c](player.c), and [docs/screens.md](../docs/screens.md). Removing
+ * `illus_record` from the list built clean, passed `make lint` and all of
+ * `make test`, and killed `--screen manual --page 10` with a segmentation
+ * fault; only the soak sweep, which walks every sheet, had anything to say. An
+ * array whose length is a claim has to be measured against its initializer, not
+ * against itself, which is why `WEAPON_CYCLE` next door is written `[]` too.
  */
-static void (*const PAGE_ILLUSTRATIONS[MANUAL_PAGE_COUNT])(
-    SDL_Renderer *r, SDL_FRect panel, float time, const PadHints *pad) = {
+static void (*const PAGE_ILLUSTRATIONS[])(
+    SDL_Renderer *r, SDL_FRect panel, float time, const PadHints *pad,
+    const ManualRecords *records) = {
     illus_night,
     illus_crew,
     illus_mission,
     illus_controls,
     illus_movement,
     illus_combat,
+    illus_quiet,
     illus_climb,
     illus_console,
+    illus_record,
 };
 
-_Static_assert(SDL_arraysize(PAGE_ILLUSTRATIONS) == MANUAL_PAGE_COUNT,
+_Static_assert(SDL_arraysize(PAGE_ILLUSTRATIONS) == (size_t)MANUAL_PAGE_COUNT,
                "every sheet needs exactly one illustration");
 
-
-int manual_page_count(void)
-{
-    return MANUAL_PAGE_COUNT;
-}
 
 /* ---- Control rows ---------------------------------------------------- */
 
@@ -1754,7 +1997,7 @@ static void render_text_column(SDL_Renderer *r, const ManualPageText *page,
 
 static void render_panel(SDL_Renderer *r, const ManualPageText *page,
                          int index, float time, float slide, float appear,
-                         const PadHints *pad)
+                         const PadHints *pad, const ManualRecords *records)
 {
     SDL_FRect frame = {PANEL_X + slide, PANEL_Y, PANEL_W, PANEL_H};
     SDL_FRect inner = {frame.x + PANEL_FRAME, frame.y + PANEL_FRAME,
@@ -1766,7 +2009,7 @@ static void render_panel(SDL_Renderer *r, const ManualPageText *page,
     color_rect(r, fx_dim(FX_INK, appear), inner.x - 1.0f, inner.y - 1.0f,
                inner.w + 2.0f, inner.h + 2.0f);
 
-    PAGE_ILLUSTRATIONS[index](r, inner, time, pad);
+    PAGE_ILLUSTRATIONS[index](r, inner, time, pad, records);
 
     /* The wash a turning sheet passes under. The illustrations do not know
      * about the page turn, so the veil is what carries them through it. */
@@ -1830,7 +2073,7 @@ static void render_footer(SDL_Renderer *r, const Manual *manual, float appear)
 }
 
 void manual_render(SDL_Renderer *r, const Manual *manual, int win_w, int win_h,
-                   const PadHints *pad)
+                   const PadHints *pad, const ManualRecords *records)
 {
     float w = win_w > 0 ? (float)win_w : 800.0f;
     float h = win_h > 0 ? (float)win_h : 552.0f;
@@ -1846,7 +2089,8 @@ void manual_render(SDL_Renderer *r, const Manual *manual, int win_w, int win_h,
     render_sheet(r, sheet_rect(w, h), appear);
     render_header(r, page, w, content);
     render_text_column(r, page, pad, slide, content);
-    render_panel(r, page, manual->page, manual->time, slide, content, pad);
+    render_panel(r, page, manual->page, manual->time, slide, content, pad,
+                 records);
     render_footer(r, manual, appear);
 
     /* The frame is finished (vignette, scanlines) by game_render's one

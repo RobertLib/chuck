@@ -2,8 +2,9 @@
 
 #include <math.h>
 
-void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
+void enemy_init(Enemy *enemy, float x, float y, EnemyKind kind, Rng *rng)
 {
+    enemy->kind = kind;
     enemy->x = x;
     enemy->y = y;
     enemy->vx = 0.0f;
@@ -18,7 +19,7 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->climb_cooldown = ENEMY_CLIMB_COOLDOWN;
     enemy->mounting_crate = false;
     enemy->obstacle_avoid_timer = 0.0f;
-    enemy->hp = ENEMY_HP;
+    enemy->hp = enemy_kind_hp(kind);
     enemy->dead = false;
     /* Stagger initial shoot time so enemies don't all fire at once */
     enemy->shoot_cooldown = 1.0f + rng_range(rng, 250) * 0.01f;
@@ -49,6 +50,7 @@ void enemy_init(Enemy *enemy, float x, float y, Rng *rng)
     enemy->radio_timer =
         ENEMY_RADIO_GAP_MIN +
         (ENEMY_RADIO_GAP_MAX - ENEMY_RADIO_GAP_MIN) * rng_unit(rng);
+    enemy->blind_timer = 0.0f;
     enemy->anim_time = (float)rng_range(rng, 628) * 0.01f;
     enemy->recoil_timer = 0.0f;
 }
@@ -68,6 +70,7 @@ void dog_init(Dog *dog, float x, float y, int owner, Rng *rng)
     dog->state_timer = 0.4f + rng_range(rng, 120) * 0.01f;
     dog->turn_cooldown = 0.0f;
     dog->bite_cooldown = 0.0f;
+    dog->blind_timer = 0.0f;
     dog->lost_timer = 0.0f;
     dog->chase_target_x = x + DOG_W * 0.5f;
     dog->has_chase_target = false;

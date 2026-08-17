@@ -12,7 +12,7 @@
  * remembering it as a corpse they have already dealt with. Cheaper than it
  * looks and only ever runs when the array is full — see `find_enemy_slot`.
  */
-static void release_body_bit(GameplayState *state, uint32_t bit)
+static void release_body_bit(GameplayState *state, uint64_t bit)
 {
     for (int i = 0; i < state->enemy_count; ++i)
         state->enemies[i].bodies_investigated &= ~bit;
@@ -120,9 +120,16 @@ static int find_dog_slot(GameplayState *state)
  * could ever stand. Passing `climbing` makes the rungs transparent to a body
  * and nothing else: solid tiles, falling panels and moving platforms all still
  * catch it, so it comes to rest on the floor of the shaft.
+ *
+ * **A dragged body falls through here too, and that is why the drag does not do
+ * it itself.** `gameplay_update_body_drag` only ever writes a body's `x`; every
+ * corpse on the floor, hauled or not, meets the ground exactly once a frame and
+ * in one place. A drag that applied its own gravity would give the body in
+ * Chuck's hands two helpings of it per step and drop it visibly faster than the
+ * one lying beside it.
  */
-static void settle_body(GameplayState *state, float *x, float *y, float *vy,
-                        float w, float h, float dt)
+static void gameplay_settle_body(GameplayState *state, float *x, float *y,
+                                 float *vy, float w, float h, float dt)
 {
     bool on_ground = false;
     float vx = 0.0f;
@@ -177,58 +184,29 @@ static bool horizontal_los_clear(const GameplayState *state,
     return !gameplay_crate_blocks_row(state, ax, bx, row);
 }
 
-static bool point_in_active_crate(const GameplayState *state,
-                                  float px, float py)
-{
-    for (int i = 0; i < state->level.runtime.crate_count; ++i)
-    {
-        const Crate *crate = &state->level.runtime.crates[i];
-        if (crate->active &&
-            px >= crate->x && px < crate->x + CRATE_W &&
-            py >= crate->y && py < crate->y + CRATE_H)
-            return true;
-    }
-    return false;
-}
-
-/* Sample the segment between two world points and report whether solid tiles
- * or crates block the sight line. Ladders and elevator shafts are transparent
- * (level_is_solid already treats them as non-solid), so a guard can see through
- * a ladder but not through a floor. Endpoints are skipped: both entity centres
- * sit inside empty tiles and must not count as self-occlusion. */
-static bool los_clear(const GameplayState *state,
-                      float ax, float ay, float bx, float by)
-{
-    float dx = bx - ax;
-    float dy = by - ay;
-    float dist = sqrtf(dx * dx + dy * dy);
-    int steps = (int)(dist / ENEMY_LOS_STEP) + 1;
-    for (int s = 1; s < steps; ++s)
-    {
-        float t = (float)s / (float)steps;
-        float px = ax + dx * t;
-        float py = ay + dy * t;
-        if (level_is_solid(&state->level, (int)floorf(px / TILE_SIZE),
-                           (int)floorf(py / TILE_SIZE)))
-            return false;
-        if (point_in_active_crate(state, px, py))
-            return false;
-    }
-    return true;
-}
+/* The full ray-cast sight line lives in gameplay_world.c as
+ * `gameplay_sight_line_clear`, because a third caller turned up that is not a
+ * pair of eyes at all: the flash charge, which was reaching every man inside
+ * `FLASH_RADIUS` through the masonry. `horizontal_los_clear` above stays here —
+ * it is a single-row scan the pursuit uses, not the general segment. */
 
 /* Can the guard see the given world point? Combines a range limit, a forward
  * vision cone, a close-range peripheral radius, and a ray-cast line of sight. */
 static bool enemy_sees_point(const GameplayState *state, const Enemy *enemy,
                              float tx, float ty, float range, float peripheral)
 {
+    /* And the same for anything else he might have noticed — a body on the
+     * floor most of all. A guard who cannot see Chuck but can still spot a
+     * corpse and run for a switch would be a flash that did half its job. */
+    if (enemy->blind_timer > 0.0f)
+        return false;
     float ex = enemy->x + ENEMY_W * 0.5f;
     float ey = enemy->y + ENEMY_H * 0.5f;
     float dx = tx - ex;
     float dy = ty - ey;
     float dist2 = dx * dx + dy * dy;
     if (dist2 <= peripheral * peripheral)
-        return los_clear(state, ex, ey, tx, ty);
+        return gameplay_sight_line_clear(state, ex, ey, tx, ty);
     if (dist2 > range * range)
         return false;
     float dist = sqrtf(dist2);
@@ -236,11 +214,17 @@ static bool enemy_sees_point(const GameplayState *state, const Enemy *enemy,
      * direction to the target is the cosine of the angle between them. */
     if (dx * (float)enemy->dir / dist < ENEMY_VIEW_CONE_COS)
         return false;
-    return los_clear(state, ex, ey, tx, ty);
+    return gameplay_sight_line_clear(state, ex, ey, tx, ty);
 }
 
 static bool enemy_has_los(const GameplayState *state, const Enemy *enemy)
 {
+    /* A man with a flash charge still burning in his eyes sees nothing at all,
+     * and this is the one place that has to be said: everything downstream —
+     * the sight timer, the encounter, the shot solution, the body discovery —
+     * asks this function rather than asking the world. */
+    if (enemy->blind_timer > 0.0f)
+        return false;
     float player_x = state->player.x + PLAYER_W * 0.5f;
     float player_h = state->player.crawling
                          ? (float)PLAYER_CRAWL_H
@@ -272,7 +256,7 @@ static bool enemy_has_los(const GameplayState *state, const Enemy *enemy)
     float ey = enemy->y + ENEMY_H * 0.5f;
     return fabsf(player_x - ex) <= ENEMY_VERTICAL_SHOOT_HALF_W &&
            fabsf(player_y - ey) <= ENEMY_VERTICAL_SHOOT_RANGE &&
-           los_clear(state, ex, ey, player_x, player_y);
+           gameplay_sight_line_clear(state, ex, ey, player_x, player_y);
 }
 
 /* Decide whether a guard that can see Chuck also has a clean firing solution,
@@ -1032,7 +1016,11 @@ static bool spawn_enemy_from_door(GameplayState *state, int door_index)
     int slot = find_enemy_slot(state);
     if (slot < 0)
         return false;
-    enemy_init(&state->enemies[slot], x, y, &state->rng);
+    /* Reinforcements out of a door are always the ordinary kind. A heavy is a
+     * fixture of a floor plan — he is placed where the author wanted the stomp
+     * taken away — and one arriving at random out of a doorway would be a
+     * difficulty spike nobody drew and the alarm could hand out twice. */
+    enemy_init(&state->enemies[slot], x, y, ENEMY_KIND_GUARD, &state->rng);
     if (rng_range(&state->rng, 100) < DOG_DOOR_HANDLER_CHANCE)
         spawn_dog_for_enemy(state, slot);
     gameplay_world_sound(state, SFX_DOOR,
@@ -1048,7 +1036,8 @@ void gameplay_ai_spawn_level_entities(GameplayState *state)
     {
         enemy_init(&state->enemies[i],
                    state->level.map.enemy_spawns[i].x,
-                   state->level.map.enemy_spawns[i].y, &state->rng);
+                   state->level.map.enemy_spawns[i].y,
+                   state->level.map.enemy_spawns[i].kind, &state->rng);
         if (state->level.map.enemy_spawns[i].has_dog)
             spawn_dog_for_enemy(state, i);
     }
@@ -1230,6 +1219,11 @@ static bool dog_can_advance(const GameplayState *state, const Dog *dog,
 
 static bool dog_sees_player(const GameplayState *state, const Dog *dog)
 {
+    /* One field covers the chase, the bite and the alarm refresh, for the
+     * reason `Enemy.blind_timer` is read in `enemy_has_los` rather than at each
+     * call site: everything downstream asks this rather than asking the world. */
+    if (dog->blind_timer > 0.0f)
+        return false;
     float dog_x = dog->x + DOG_W * 0.5f;
     float dog_y = dog->y + DOG_H * 0.5f;
     float player_x = state->player.x + PLAYER_W * 0.5f;
@@ -1298,6 +1292,12 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
         dog->bite_cooldown -= dt;
         if (dog->bite_cooldown < 0.0f)
             dog->bite_cooldown = 0.0f;
+    }
+    if (dog->blind_timer > 0.0f)
+    {
+        dog->blind_timer -= dt;
+        if (dog->blind_timer < 0.0f)
+            dog->blind_timer = 0.0f;
     }
     /* The announced bite: the crouch counts down only while the contact
      * holds. Stepping or jumping clear cancels the lunge entirely — that is
@@ -1432,6 +1432,13 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
         }
     }
 
+    /* Stopped where he stands, exactly as the man is: an animal trotting its
+     * patrol with its eyes shut would read as the charge having done nothing.
+     * Only the walk goes — gravity above still applies, so a dog flashed in
+     * mid-air still lands. */
+    if (dog->blind_timer > 0.0f)
+        wants_move = false;
+
     dog->vx = 0.0f;
     if (wants_move)
     {
@@ -1499,7 +1506,7 @@ static void update_radio_checks(GameplayState *state, float dt)
          * a guard hunting Chuck is not filing a routine report. */
         if (gameplay_alarm_active(state) || enemy->provoked ||
             enemy->raising_alarm || enemy->talking || enemy->climbing ||
-            !enemy->on_ground || enemy->talk_partner != -1 ||
+            !enemy->on_ground || enemy_has_talk_partner(enemy) ||
             enemy->talk_cooldown > 0.0f || enemy->investigate_timer > 0.0f ||
             enemy->aim_timer > 0.0f)
         {
@@ -1536,7 +1543,7 @@ static void update_conversations(GameplayState *state, float dt)
             if (first->dead || first->provoked || first->raising_alarm ||
                 first->talking ||
                 first->climbing || !first->on_ground ||
-                first->talk_partner != -1 || first->talk_cooldown > 0.0f)
+                enemy_has_talk_partner(first) || first->talk_cooldown > 0.0f)
                 continue;
             for (int j = i + 1; j < state->enemy_count; ++j)
             {
@@ -1544,7 +1551,7 @@ static void update_conversations(GameplayState *state, float dt)
                 if (second->dead || second->provoked ||
                     second->raising_alarm || second->talking ||
                     second->climbing || !second->on_ground ||
-                    second->talk_partner != -1 ||
+                    enemy_has_talk_partner(second) ||
                     second->talk_cooldown > 0.0f ||
                     fabsf(first->y - second->y) > TILE_SIZE * 0.5f)
                     continue;
@@ -1640,8 +1647,35 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
         Enemy *enemy = &state->enemies[i];
         if (enemy->dead)
         {
-            settle_body(state, &enemy->x, &enemy->y, &enemy->vy,
-                        ENEMY_W, ENEMY_H, dt);
+            gameplay_settle_body(state, &enemy->x, &enemy->y, &enemy->vy,
+                                 ENEMY_W, ENEMY_H, dt);
+            continue;
+        }
+        /*
+         * Flashed: he stops where he is until it wears off.
+         *
+         * The timer is ticked here rather than in the combat pass because this
+         * is the update every live guard passes through, blinded or not — and a
+         * man who went on walking his patrol with his eyes shut would read as
+         * the charge having done nothing. He keeps everything else: still
+         * provoked, still holding his pursuit target, still remembering where
+         * Chuck was. The flash buys seconds, never the encounter.
+         */
+        if (enemy->blind_timer > 0.0f)
+        {
+            enemy->blind_timer -= dt;
+            enemy->vx = 0.0f;
+            enemy->aim_timer = 0.0f;
+            enemy->sight_timer = 0.0f;
+            bool grounded = enemy->on_ground;
+            float vy = enemy->vy + GRAVITY * dt;
+            if (vy > MAX_FALL_SPEED)
+                vy = MAX_FALL_SPEED;
+            float vx = 0.0f;
+            level_move(&state->level, &enemy->x, &enemy->y, &vx, &vy,
+                       ENEMY_W, ENEMY_H, dt, false, &grounded, false);
+            enemy->vy = grounded ? 0.0f : vy;
+            enemy->on_ground = grounded;
             continue;
         }
         float previous_y = enemy->y;
@@ -1821,7 +1855,9 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
             actor_or_tile_blocks_side(state, i, 1);
         enemy_update(enemy, &state->level, dt, pursuing, alarm_pursuit,
                      enemy->pursuit_target_x, enemy->pursuit_target_y,
-                     hemmed_in, gameplay_enemy_speed_scale(state),
+                     hemmed_in,
+                     gameplay_enemy_speed_scale(state) *
+                         enemy_kind_speed(enemy->kind),
                      &state->rng);
         gameplay_resolve_enemy_crates(state, enemy, previous_y);
     }
@@ -1831,7 +1867,8 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
         Dog *dog = &state->dogs[i];
         if (dog->dead)
         {
-            settle_body(state, &dog->x, &dog->y, &dog->vy, DOG_W, DOG_H, dt);
+            gameplay_settle_body(state, &dog->x, &dog->y, &dog->vy,
+                                DOG_W, DOG_H, dt);
             continue;
         }
         float previous_x = dog->x;
@@ -1876,7 +1913,13 @@ static void update_enemy_reactions(GameplayState *state)
     for (int i = 0; i < state->enemy_count; ++i)
     {
         Enemy *enemy = &state->enemies[i];
-        if (enemy->dead || enemy->climbing || enemy->raising_alarm)
+        /* A blinded man is out of this one too, and it is the one path that
+         * would have got past the perception layer: retaliation never asks
+         * `enemy_has_los` — it is the beat where somebody walks up behind a
+         * guard and he *turns* — so without this a flash charge left him
+         * spinning round and aiming at a room he could not see. */
+        if (enemy->dead || enemy->climbing || enemy->raising_alarm ||
+            enemy->blind_timer > 0.0f)
             continue;
         float enemy_x = enemy->x + ENEMY_W * 0.5f;
         float dx = player_x - enemy_x;
@@ -2003,7 +2046,7 @@ static void update_body_discovery(GameplayState *state)
 
         float bx = 0.0f;
         float by = 0.0f;
-        uint32_t bit = 0;
+        uint64_t bit = 0;
         bool found = false;
         for (int j = 0; j < state->enemy_count && !found; ++j)
         {
@@ -2061,6 +2104,153 @@ static void update_body_discovery(GameplayState *state)
     }
 }
 
+/*
+ * Where a camera is looking this instant.
+ *
+ * Straight down is nought and the sweep is a triangle wave either side of it,
+ * so the beam spends the same time on each half of its arc and turns at a
+ * constant rate. A sine would loiter at the ends, which reads as the mounting
+ * hesitating — and the whole value of a camera is that its timing can be
+ * learned, so the one thing the motion must not be is coy about where it is
+ * going next.
+ */
+float gameplay_camera_angle(float sweep)
+{
+    float phase = fmodf(sweep / CAMERA_SWEEP_PERIOD, 1.0f);
+    if (phase < 0.0f)
+        phase += 1.0f;
+    /* 0 -> +1 -> 0 -> -1 -> 0 across the period. */
+    float triangle = phase < 0.5f ? (phase * 4.0f - 1.0f)
+                                  : (3.0f - phase * 4.0f);
+    return triangle * CAMERA_SWEEP_ARC;
+}
+
+/*
+ * The lens, and everything it can and cannot do.
+ *
+ * It sees down a cone like a guard does and through the same sight line, so a
+ * slab, a crate or an unopened weak wall stops it exactly as it stops a guard —
+ * one solidity rule, and a camera that could see through a wall a guard cannot
+ * would be the kind of special case nothing on screen explains.
+ *
+ * **Crawling does not help, and that is the point of the fitting.** A guard is
+ * beaten by getting low or getting behind him; this thing is on the ceiling
+ * looking at the floor, so the crouch that shortens a man's cone does nothing
+ * at all here. Nor do the bolts — a camera has no ears. What it does have is a
+ * sweep, and being somewhere else while it looks is the answer it is asking
+ * for.
+ */
+static bool camera_sees_player(const GameplayState *state,
+                               const SecurityCamera *camera, float angle)
+{
+    float cx = (camera->col + 0.5f) * (float)TILE_SIZE;
+    float cy = (camera->row + 0.5f) * (float)TILE_SIZE;
+    float player_h = state->player.crawling ? (float)PLAYER_CRAWL_H
+                                            : (float)PLAYER_H;
+    float px = state->player.x + PLAYER_W * 0.5f;
+    float py = state->player.y + player_h * 0.5f;
+
+    float dx = px - cx;
+    float dy = py - cy;
+    /* Nothing above the mounting is ever in shot, which also keeps the beam out
+     * of the storey overhead when a camera hangs under a thin slab. */
+    if (dy <= 0.0f)
+        return false;
+    float distance = sqrtf(dx * dx + dy * dy);
+    if (distance > CAMERA_RANGE)
+        return false;
+
+    /* The beam's own direction, as a unit vector: straight down rotated by the
+     * sweep. The dot product with the direction to Chuck is the cosine of the
+     * angle between them, the same test `enemy_sees_point` makes. */
+    float beam_x = sinf(angle);
+    float beam_y = cosf(angle);
+    if ((dx * beam_x + dy * beam_y) / distance < cosf(CAMERA_CONE_HALF_ANGLE))
+        return false;
+
+    return gameplay_sight_line_clear(state, cx, cy, px, py);
+}
+
+/*
+ * The cameras, once a frame.
+ *
+ * A camera never shoots and never chases: what it does is *tell everybody*,
+ * through the same `gameplay_trigger_alarm` a guard reaching a wall switch
+ * calls, with the alarm pointed at Chuck's own position rather than at the
+ * camera. That is deliberate — an alarm that sent the floor to the fitting on
+ * the ceiling would be an alarm that helped, and the whole cost of being seen
+ * by one is that the room now knows where you are.
+ */
+static void update_security_cameras(GameplayState *state, float dt)
+{
+    if (!state->cameras_initialized)
+    {
+        /*
+         * Staggered by index rather than started together, so a corridor with
+         * two of them in it is a pair of beams the player can thread instead of
+         * one beam drawn twice.
+         *
+         * **The period is divided by the cameras this map actually has, not by
+         * `MAX_CAMERAS`**, and getting that wrong is why the paragraph above
+         * was a promise rather than a description. Every sector in the campaign
+         * that carries cameras carries exactly two, so dividing the 5.2s sweep
+         * eight ways put them 0.65s apart — an average of 21 degrees between two
+         * beams whose cone is 60 wide, which is two fittings moving in step.
+         * Divided by the count, two cameras sit half a period apart, and because
+         * the sweep is a triangle wave that is the exact mirror: one goes left
+         * while the other goes right, which is the pair of beams the sector plan
+         * was drawn for. A ceiling holding one is unaffected either way.
+         */
+        int count = state->level.map.camera_count;
+        for (int i = 0; i < MAX_CAMERAS; ++i)
+        {
+            state->cameras[i].working = true;
+            state->cameras[i].notice = 0.0f;
+            state->cameras[i].suspicion = 0.0f;
+            /* Wrapped, so the slots past this map's count — which nothing
+             * reads — still hold a phase inside the period rather than a
+             * multiple of it. */
+            state->cameras[i].sweep =
+                count > 0 ? fmodf((float)i * CAMERA_SWEEP_PERIOD / (float)count,
+                                  CAMERA_SWEEP_PERIOD)
+                          : 0.0f;
+        }
+        state->cameras_initialized = true;
+    }
+
+    for (int i = 0; i < state->level.map.camera_count; ++i)
+    {
+        CameraState *cam = &state->cameras[i];
+        if (!cam->working)
+            continue;
+        cam->sweep += dt;
+        if (cam->sweep > CAMERA_SWEEP_PERIOD)
+            cam->sweep -= CAMERA_SWEEP_PERIOD;
+
+        if (cam->suspicion > 0.0f)
+            cam->suspicion -= dt;
+
+        if (state->player.dying ||
+            !camera_sees_player(state, &state->level.map.cameras[i],
+                                gameplay_camera_angle(cam->sweep)))
+        {
+            cam->notice = 0.0f;
+            continue;
+        }
+
+        cam->suspicion = CAMERA_SUSPICION_FADE;
+        cam->notice += dt;
+        if (cam->notice < CAMERA_NOTICE_TIME)
+            continue;
+
+        cam->notice = 0.0f;
+        float player_h = state->player.crawling ? (float)PLAYER_CRAWL_H
+                                                : (float)PLAYER_H;
+        gameplay_trigger_alarm(state, state->player.x + PLAYER_W * 0.5f,
+                               state->player.y + player_h * 0.5f, -1);
+    }
+}
+
 static void fire_enemy_bullet(GameplayState *state, Enemy *enemy)
 {
     for (int i = 0; i < MAX_ENEMY_BULLETS; ++i)
@@ -2112,6 +2302,7 @@ void gameplay_ai_update_combat(GameplayState *state, float dt)
     update_guard_encounters(state, dt);
     update_body_discovery(state);
     update_enemy_reactions(state);
+    update_security_cameras(state, dt);
     for (int i = 0; i < state->enemy_count; ++i)
     {
         Enemy *enemy = &state->enemies[i];

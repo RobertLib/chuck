@@ -24,16 +24,63 @@ What the *campaign* needs of it is a longer list, and `make test` is where it
 is written down: a size no other sector already has, a storey rhythm no other
 sector already has, a hazard budget above the sector before it, a theme
 different from its neighbour's, and a route the conservative model can walk. A
-sixteenth sector is therefore an interior — sector 15 has no `Y`, so the
+eighteenth sector is therefore an interior — sector 17 has no `Y`, so the
 alternation puts an interior next, and `test_all_embedded_levels_parse` pins
-`facade_levels == 4` outright.
+`facade_levels == 5` outright. That sentence read "a sixteenth", "sector 15" and
+"== 4" until the vault and the fifth climb arrived: the shape of the argument
+survived the campaign growing and every number in it did not.
 
-**A fifth climb is not a map away, it is a constant away.** The test also
-requires each climb to be taller than the last, and the four run 40, 44, 46 and
-48 rows — level 13 is standing on `MAX_LEVEL_HEIGHT` itself. Another facade
-sector means raising that cap first (it sizes `LevelMap`, so it is a memory
-decision as much as an authoring one) and then relaxing the two rules above.
-The editor already says so, as a note on level 13.
+**And one more thing, which is the only item on that list that is not about the
+map.** Every rule above is a property of the text file — a size, a rhythm, a
+budget, a theme, a route — and none of them asks what the floor *does to a player
+who has just been handed the controls*. The reveal freezes the simulation until
+it has finished, so a sector's first seconds are the player's own, and that
+window is where the choice between the quiet route and the loud one is made. Six
+of the seventeen were spending it: sector 6 opened two seconds from a rifle,
+sector 14 put a guard dog eight tiles away on an open floor, and 5, 8, 9 and 10
+were all inside four seconds. Nothing was wrong with any of those maps by any
+rule then written down, and every check passed.
+`test_a_sector_gives_the_player_a_moment_to_read_it` drives every sector for
+`SPAWN_GRACE_SECONDS` with nothing pressed and over sixteen seeds, because which
+way a patrol faces when a sector loads is a seeded choice. Four of the six were
+over the line it draws and each was fixed by moving one character — **the nearest
+guard on the spawn floor wants to be about twelve tiles off rather than eight**,
+which is `ENEMY_VIEW_RANGE` plus the walk in. The campaign's tightest opening is
+3.8s now against a floor of 3.0, and every sector's hazard budget is unchanged,
+because a guard moved is a guard still counted.
+
+Its counterpart is `test_the_grace_period_is_not_an_empty_building`, because
+"move the guard further away" keeps working all the way to "delete the guard" —
+and while the rising hazard budget forbids the deletion, it cannot see a man
+parked somewhere his patrol never comes back from. One sector is allowed to open
+on a pocket nothing watches and it is sector 5, whose spawn sits at the bottom of
+the lift-shaft tower with a crate splitting the corridor: the man on that floor
+patrols the far half and is meant to be seen before he is met. One is a design;
+three would be a campaign of empty rooms.
+
+**A fifth climb was not a map away, it was a constant away**, and that is what
+`MAX_LEVEL_HEIGHT` going from 48 to 56 bought. The four climbs ran 40, 44, 46
+and 48 rows against a cap of 48, so level 13 was standing on it; sector 15 is 52
+and there is room for one more after that. It sizes `LevelMap` and `Game` holds
+two of them, which came to about eight kilobytes — a memory decision, but a
+small one.
+
+**And a sixteenth sector turned out to be a clock decision.** The campaign is
+seventeen now (the vault and the fifth climb), and the thing that made that one
+edit rather than fifteen is that `NIGHT_CLOCK_MINUTES_PER_SECTOR` is derived
+from `NIGHT_CLOCK_TOTAL_MINUTES / NIGHT_CLOCK_SECTORS` instead of being written
+down. The night is still 00:22 to 01:00 in both cutscenes, the manual, the intel
+table and every wall dial; each floor simply gets a shade under two and a half
+minutes. `test_the_night_clock_fills_the_night` holds the arithmetic, because a
+sector added without touching that count is a campaign whose last dial no longer
+reads one o'clock and nothing on screen would say so.
+
+**The other thing a new sector moves is the parity of every one above it.** A
+sector's bazooka is decided by whether its number is even, and a climb may never
+carry one — so a facade sector has to sit on an odd index, and inserting a
+single interior below one would make that impossible. That is why the vault and
+the fifth climb arrived together: 15 is the climb, 16 is the vault, and 17 is
+the roof the campaign has always ended on.
 
 ## Walls that open
 
@@ -90,8 +137,10 @@ a spine of sealed bays, shelving canyons, a ring around a bunker, branching
 crawl ducts, a symmetrical suite, a rooftop skyline — and
 `test_campaign_levels_are_distinct_and_solvable`
 ([tests/test_main.c](../tests/test_main.c)) pins three things the parser cannot
-see: no two sectors share a size or a storey rhythm, the hazard budget rises
-strictly from sector to sector (and from climb to climb, along with the climb's
+see: no two sectors share a size or a storey rhythm, the hazard budget — which
+counts a ceiling camera at `CAMERA_HAZARD_WEIGHT`, the same as a dog or a mine,
+and a heavy guard at `ENEMY_HEAVY_HAZARD_WEIGHT` rather than an ordinary man's
+three — rises strictly from sector to sector (and from climb to climb, along with the climb's
 height), and a conservative model of the player can reach the way out, every
 key card, every terminal and the restroom door without ever being stranded by a
 one-way drop. That model never stands on a falling panel, so a sector has to
@@ -100,18 +149,19 @@ sector has to work before any `%` has been opened. [levels/LEGEND.md](../levels/
 tabulates the plans, the budgets and what the model will and will not do.
 
 **"Rises strictly" is a floor, not a shape, and the finale is where that
-mattered.** The rule only asks each interior to beat the one before it, and
-sector 15 was clearing it by three — 67 against sector 14's 64 — which passed
-the test and made the last sector of the campaign the flattest step in the back
-half, a shade easier than the floor below it and the one the whole night is
-climbing toward. It is 79 now, and the difference is spent where the story
-needs it rather than sprinkled: the roof of the last plant room is mined under
-its own guard, the run out of the service level past the second breach is mined
-at both ends under a fan, and the helicopter pad is held by a man standing on
-it. Voss himself is never fought — the ending is his ride being taken away, not
-a duel — so what the finale has to say is *how many of them are left between
-Chuck and the roof*, and it has to say it in the map, because nothing else on
-that screen can.
+mattered.** The rule only asks each interior to beat the one before it, and the
+then-last sector was clearing it by three — 67 against the floor below's 64 —
+which passed the test and made the end of the campaign the flattest step in the
+back half, a shade easier than the floor under it and the one the whole night
+is climbing toward. The campaign is seventeen sectors now and the finale is the
+roof: **89 against the vault's 77**, which is the largest step in the back half
+rather than the smallest. The difference is spent where the story needs it
+rather than sprinkled — fifteen men hold that roof, more than any other floor
+in the building, four of them heavies, and a ladder onto the helicopter pad is
+the last thing between them and Chuck. Voss himself is never fought — the
+ending is his ride being taken away, not a duel — so what the finale has to say
+is *how many of them are left between Chuck and the roof*, and it has to say it
+in the map, because nothing else on that screen can.
 
 That route model lives in [level_route.c](../src/level_route.c) rather than in the
 test file, because the editor asks it the same question about a map that is
@@ -140,10 +190,10 @@ cap is not `route_landing`'s.
 A `THEME <name>` metadata line picks the level's art direction and its score;
 the palettes, wall materials and parallax backdrops all live in
 [level_art.c](../src/level_art.c), which reads nothing but the immutable
-`LevelMap` and so can never change how a level plays. Fifteen sectors of one
-building would otherwise be fifteen runs down the same corridor, so every
+`LevelMap` and so can never change how a level plays. Seventeen sectors of one
+building would otherwise be seventeen runs down the same corridor, so every
 campaign level names a different theme — a lobby, an office floor, a server
-hall, an archive, a plenum, and four exterior climbs that differ by **weather
+hall, an archive, a plenum, and five exterior climbs that differ by **weather
 and height, never by hour**. Every theme name, what it draws and what it sounds
 like is tabulated in [levels/LEGEND.md](../levels/LEGEND.md).
 
@@ -152,16 +202,28 @@ without noticing. The night is thirty-eight minutes long and the wall clock `w`
 hangs in every interior sector reading it out, so a climb is pinned to the
 minute by the sectors on both sides of it. `FACADE_MOON` was `FACADE_DAWN` for
 a long time and drew an actual sunrise — sun off the corner of the building,
-warm stone, birds — in sector 11, which sits at 00:47 between two dials reading
-a few minutes either side of it: the player looked up in sector 10, climbed
+warm stone, birds — in sector 11, which sits at 00:44 between dials reading
+00:42 and 00:46: the player looked up in sector 10, climbed
 through a dawn, and looked up again in sector 12 to be told the sun had risen
 and set inside five minutes. The composition survived the fix intact, because
 what the beat was for is *one climb lit from the side by a single round source*
 against three that are not; only the light changed, from warm to cold and from
-haze to a disc with a hard edge. A fifth climb owes the same check. A server aisle and a rooftop are not the
-same place; one loop for the whole building would say they were, so the same
-table that gives a sector its palette gives it its music
-(`level_theme_music`).
+haze to a disc with a hard edge. A fifth climb owes the same check.
+**And the hour is not the only thing a climb can contradict; the weather is the
+other, and the fifth climb was contradicting it.** `FACADE_HIGH` at sector 13
+described itself as *above the weather, a sea of cloud below* — and sector 15,
+which is higher, is sleet. So the player climbed out of the weather two floors
+under the roof and back into it on the way to the roof, which is the `FACADE_DAWN`
+mistake with the clock swapped for the sky. The picture did not have to move: the
+backdrop draws seven drifting puffs and a violet city glow coming up between
+them, which reads as **broken cloud a long way below** rather than as a floor of
+it, and that is what it says now. What makes the beat is one purple sky and a
+city that has stopped being a street; a continuous deck was never load-bearing.
+**A climb owes the sector above it a look as well as the two dials either side.**
+
+A server aisle and a rooftop are not the same place; one loop for the whole
+building would say they were, so the same table that gives a sector its palette
+gives it its music (`level_theme_music`).
 
 Two properties are pinned by `test_campaign_themes_keep_changing`: no two
 consecutive levels wear the same theme, and facade levels use the `FACADE_*`
@@ -169,15 +231,20 @@ themes while interiors never do. A map with no `THEME` line still loads with
 its mode's default, so a new sector works before it has a look of its own;
 a misspelt name is a parse error. **New tuning belongs in the theme table, not
 in `game_render.c`** — a colour hard-coded in a draw function is a colour the
-other fourteen sectors cannot change.
+other sixteen sectors cannot change.
 
-The campaign is fifteen levels that alternate interior sectors with exterior
-climbs: levels 3, 7, 11 and 13 are `MODE FACADE`, and each is entered through
-the `Y` window of the sector below it, whose `E` stair door is welded shut.
+The campaign is seventeen levels that alternate interior sectors with exterior
+climbs: levels 3, 7, 11, 13 and 15 are `MODE FACADE`, and each is entered
+through the `Y` window of the sector below it, whose `E` stair door is welded
+shut. The last of them is the one that does not hand back into a corridor: it
+climbs off the penthouse and arrives at the sub-vault two floors under the
+roof.
 Every other level ends at a normal `E`. Four sectors (1, 5, 9 and 14) have a
-`U` into the restroom, and every **even-numbered sector** — 2, 4, 6, 8, 10, 12
-and 14, which is the odd-numbered *index* the test counts from zero — carries
-exactly one bazooka. Say it as the sector number wherever a player will read
+`U` into the restroom, and every **even-numbered sector** — 2, 4, 6, 8, 10, 12,
+14 and 16, which is the odd-numbered *index* the test counts from zero — carries
+exactly one bazooka. That parity is why a new sector never arrives alone: a
+climb may not carry a bazooka at all, so every facade has to sit on an odd
+number, and inserting one interior below one would make that impossible. Say it as the sector number wherever a player will read
 it: the manual spent a while telling them to look in the odd ones, which is the
 half of the campaign that has no `Z` in it at all.
 `test_all_embedded_levels_parse` pins that shape, so a new level has

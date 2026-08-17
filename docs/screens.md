@@ -4,7 +4,8 @@
 
 Everything the player is allowed to decide is one struct and one table, both in
 [settings.c](../src/settings.c) / [settings.h](../src/settings.h): two audio levels,
-fullscreen, the CRT filter, reduced motion, the three assist switches, and — on
+fullscreen, the CRT filter, reduced motion, the three assist switches, the
+veteran run, the row that throws the records away, and — on
 a second page — which key does what. The sheet opens
 from the title screen or from pause (`J`, or X on a pad) and returns to
 whichever opened it. It replaced a three-switch assist sheet, an `M` key and a
@@ -36,6 +37,35 @@ through the same `game_set_fullscreen` the sheet's row does, and if the window
 refuses, the setting is put back to what the window actually is: a sheet
 reading FULLSCREEN ON over a windowed game is worse than the failure it is
 reporting.
+
+**And the sheet's last section runs the other way.** `VETERAN` is one switch
+under a `CHALLENGE` heading, and it is the answer to a campaign somebody has
+already finished: the crew at `VETERAN_ENEMY_SPEED`, `VETERAN_LIVES` in hand and
+`VETERAN_CONTINUES` behind them. Three numbers, all read at the places the
+assist switches are already read, and deliberately not a second *tuning* —
+every map, hazard budget and jump in the tree is drawn against the pace in
+[game_config.h](../src/game_config.h), and a mode that moved several of those at
+once would be a set of sectors nobody had played. The pace is still under
+`PLAYER_WALK_SPEED`, because a crew that outran Chuck on open floor would mean
+there is no such thing as breaking off — which is a different game rather than a
+harder one.
+
+Two things about it are decisions.
+
+**It is not locked behind finishing.** Every row on this sheet is a thing the
+player may choose, and a row drawn but refusing to be chosen would be the first
+one in the table that is not: the cursor, the renderer and
+`test_settings_cursor_only_lands_on_rows` would all need teaching about a state
+no other row has. Somebody who wants the hard run on their first night can have
+it, and the heading says who it is for.
+
+**The pace reaches a sector already running and the lives do not.** A switch
+that only took effect at the next doorway would be a setting the player cannot
+see having changed anything; but the lives and the continues are handed out by
+`campaign_reset` at the start of a run, and reaching back into one in progress
+to take two lives off somebody would be the only thing on this sheet that costs
+a player something they already had. The row's detail line says `NEXT RUN` for
+exactly that reason.
 
 **Assist reaches the simulation as it always did.** The three switches live in
 `Settings.assist`, and only two of them ever reach the gameplay core: they are
@@ -151,12 +181,36 @@ against `SDL_SCANCODE_*` at compile time, generated from the same list, so a
 scancode that ever moves is a build failure and not a key that silently stops
 working. It is the rule CI already keeps for the pinned SDL version.
 
-**One key does one job.** `keybind_set` takes the key off whoever held it,
-including the same action's other slot. A binding that leaves the old owner in
-place is a key firing two actions, which on a keyboard is indistinguishable from
-the game being broken. That can leave an action with no key at all, and that is
-allowed — it is a thing the player did, the sheet draws it as an empty cap, and
-the reset row is on the same page.
+**One key does one job, and it is swapped rather than taken.** `keybind_set`
+moves the key off whoever held it — including the same action's other slot,
+since a binding that leaves the old owner in place is a key firing two actions,
+which on a keyboard is indistinguishable from the game being broken — and hands
+that action whatever the slot it went into was holding.
+
+**The swap is the half this got wrong for as long as it existed, and it cost a
+run.** Clearing the old owner could leave an action answering nothing, and the
+page said so approvingly: "a thing the player did, the sheet draws it as an
+empty cap, and the reset row is on the same page." Read against the single
+likeliest edit anybody makes on this sheet — jump onto SPACE, which is ATTACK's
+only key — that is a player walking out of the options screen unable to fire,
+told by a `-` on a prompt they may never read. Worse with `USE`, whose only key
+is `E`: sector 14's window is on the far side of a door pair, `gameplay_use_door`
+is the only thing that opens one, and an emptied `USE` is a sector that cannot be
+finished. Swapped, ATTACK inherits the LSHIFT the jump gave up and both actions
+still work, which is what the player asked for and all they asked for.
+
+**And a bind with nothing to hand back is refused.** Putting SPACE into the
+jump's *second* slot offers ATTACK nothing in exchange, so it would simply lose
+its only key; the sheet answers that the way it answers an unbindable key and
+nothing moves. The rule is the one this page already keeps one level in — ESC,
+ENTER and BACKSPACE are unbindable because a sheet that let them go could lock
+the player out of the sheet — applied to the game rather than to the screen.
+`test_no_sector_is_locked_behind_an_unbindable_action` sweeps every action, slot
+and key from the defaults and requires that no accepted bind ever leaves an
+action empty, and it holds the door-pair claim to the shipped maps so the reason
+cannot quietly stop being true. A file edited by hand can still arrive with an
+action empty, and the empty cap and the prompt's `-` still say so: emptiness is
+legal to hold and no longer possible to cause.
 
 **ESC, ENTER and BACKSPACE cannot be bound, and neither can the sheet's own
 cursor keys be rebound out from under it.** They are pause, confirm and back —
@@ -174,15 +228,16 @@ button the state does not accept is the thing this codebase refuses everywhere
 else. The manual's `CONTROLS` sheet still names the defaults and points at this
 page, and that is a limit rather than a preference: its movement row is four
 actions in one eleven-cell column, and no fixed table prints two six-character
-key names for each of them. The sheet is the tightest of the eight and has lost
+key names for each of them. The sheet is the tightest of them and has lost
 a line to exactly this once already.
 
 ## What outlives the process
 
-The campaign is fifteen sectors and a prologue, which is more than one sitting
-for most people, and none of it used to survive the game being closed. Two
-numbers now do, in [progress.c](../src/progress.c): the **best score** any run has
-finished on, and the **furthest sector** any run has reached. The module links
+The campaign is seventeen sectors and a prologue, which is more than one sitting
+for most people, and none of it used to survive the game being closed. Three
+things now do, in [progress.c](../src/progress.c): the **best score** any run has
+finished on, the **furthest sector** any run has reached, and the **quickest any
+sector has been cleared**. The module links
 no SDL for the same reason [settings.c](../src/settings.c) does not — the shell
 owns the file, `SDL_GetPrefPath` being the only part that needs a platform —
 and it is a second file rather than a section of the first, because the two
@@ -191,6 +246,79 @@ progress is what happened, and wiping a campaign must not cost somebody their
 volume levels.
 
 Three decisions carry it.
+
+**The times are the newest of the three, and they exist because the game had
+been asking for them all along.** The night clock gives every floor 134
+seconds and `campaign_award_sector_bonus` pays for each second handed back,
+so the report between sectors has printed a stopwatch and a par bonus since it
+existed — against a par that belongs to the *night* rather than to this player.
+There was nothing on screen a player could measure themselves against, which
+makes a stopwatch a number to glance at rather than one to play for. The record
+is drawn in the same TIME field on the report, and a run that has just set it
+shows **its own** time in the credit colour rather than the one it beat: the old
+number printed under the word BEST on the very screen that replaced it is a
+field disagreeing with itself. That also covers a first clear, which has nothing
+to compare against and is a record by definition.
+
+**Banking it and showing it are two arguments, and only the first was ever
+made.** The record is written for all seventeen sectors and the report that
+prints one is shown after six: the ten that leave by a window cut straight to
+the next sector, and the last one cuts to the outro. So eleven per-sector
+records were written to the player's disk, kept across sessions, and reachable
+by no screen in the game — while those same eleven clears went on paying a time
+bonus and a clean bonus with nothing on screen connecting the score to either,
+which is precisely what the paragraph above says a bonus must never do. The
+fiction's objection is to the *cut*: a window is a continuous physical route
+onto the facade and an ops-room report over it would contradict the display.
+None of that is an argument against a line. [sector_tally.c](../src/sector_tally.c)
+is that line — the sector, the clock, the record, and the two bonuses — drawn
+low over the reveal of the sector above, and under the card that ends the
+campaign. `test_every_sector_reports_or_tallies_and_none_does_neither` holds
+the two sets against the maps so that a `Y` added to a sector moves a clear
+from one to the other instead of off the end of both, and
+`test_the_sector_tally_fits_the_frame_it_is_drawn_in` measures the widest line
+any run can make against the frame in [sector_tally.h](../src/sector_tally.h).
+
+Two properties of it are the rest of this section's rules, restated for a value
+that is not an integer. It is **banked on every way out of a sector** — the
+stair door, the window onto a climb, and the last floor of all — because a
+record only the stair door could set would quietly exclude ten of the seventeen,
+which is the same argument the bonus above it already won. And
+`PROGRESS_NO_TIME` is nought meaning *nobody has cleared this*, never a perfect
+run: `progress_note_sector_time` refuses a figure below `PROGRESS_MIN_TIME`, so
+a damaged line cannot file an unbeatable record against a floor nobody played.
+The file writes one `sector_time N SECONDS` line per sector that has one, so it
+stays as short as the player's progress actually is and a build tracking more
+sectors reads an older file unchanged.
+
+**An assisted run banks none of it, and the sheet says so.** The three assist
+switches take effect on the frame they are flipped, which makes "was this run
+assisted" a question the finish cannot answer — so `CampaignState.assisted` is
+sticky (`campaign_note_assist`, set wherever the assists reach a simulation) and
+`campaign_records_count` is the one gate the shell's `progress_note_*` calls read.
+A run that spent one sector on infinite lives banks no score, no sector time and
+no docket. That is not tidiness: a par set with infinite lives is a par nobody can
+beat honestly, and the player who set it was never told they had stopped competing
+— which is the same complaint this section makes about a stopwatch nobody can
+measure themselves against, one turn further on. The RECORDS heading on the
+options sheet states the rule, the game-over card and the outro print `SCORE n -
+ASSIST, NOT RECORDED` instead of a best, and `THE RECORD` sheet in the manual says
+it a third time where the numbers themselves are read. **`furthest_sector` is
+deliberately outside the gate**: the resume chip is navigation rather than a
+record, and a player who took the assist to reach sector nine still has to start
+at sector nine.
+
+**And the sheet can throw the records away**, which is the answer for somebody who
+found that rule out too late. `RESET RECORDS` clears the best score, every sector
+time and the docket (`progress_clear_records`) and leaves `furthest_sector`
+standing, so it does not answer "my times are polluted" by also discarding the
+campaign the player is in the middle of. It is the only row on either page whose
+action cannot be undone, so it is the only one that is armed rather than taken:
+the first press swaps the row's own detail line for
+`SETTINGS_RECORDS_ARMED_DETAIL` in the danger red, the second press spends it, and
+anything else at all — a cursor move, a value change, closing the sheet — disarms
+it through `settings_disarm_records`. That is the pause menu's rule about
+ABANDON RUN, restated for the row that reaches the disk.
 
 **It is a record, not a save state.** Nothing about a sector is written down,
 so a resume is a fresh run of that sector rather than a restored one, and no
@@ -245,9 +373,24 @@ lobby is what START already is. Taking it is `R`, or **SELECT** on a pad — the
 one button still free on that screen, since A starts, X and Y open the two
 sheets and B is deliberately inert — and both are named on the manual's control
 sheet, because a screen answering a button nothing names is the same bug as a
-prompt naming a button that does nothing. The best score is drawn on the
-game-over card instead, which is the one screen a score is being looked at
-rather than played for.
+prompt naming a button that does nothing. The best score is drawn on the two
+screens a run *ends* on instead, which is where a score is being looked at
+rather than played for: the game-over card, and — since
+[run_tally.c](../src/run_tally.c) — the outro's own thank-you card. The second of
+those printed nothing for as long as it existed, so the ending the campaign is
+played for reported less than the ending that comes of dying on sector three, and
+the twelve-sheet docket was acknowledged only to the player who lost. Both draw
+the same two lines out of the same file now.
+
+**And the card that ends the campaign no longer points upward.** `STATE_LEVEL_CLEARED`
+is reached from exactly one branch of `try_finish_current_level` — the one where
+there is no sector above — because a window hands straight over and a stair door
+draws the report. Its panel read `THE TRAIL LEADS UP`, which was right when every
+clear drew this card and became wrong the day the other two routes were added:
+the one time a player ever saw it was on the roof, at the top of the building,
+with Ellen twenty feet away. It reads `THE ROOF IS HIS / SHE IS TWENTY FEET AWAY`
+now. No fit check could have found it — the words fitted perfectly — which is why
+a card reached by one branch is worth reading in that branch's own situation.
 
 ## The letter on the button
 
@@ -268,7 +411,8 @@ file never writes one down. See
 
 So the game binds by **letter**, in [pad_hint.c](../src/pad_hint.c). A pad is asked
 what it prints on each of its four faces the moment it is plugged in
-(`pad_hints_read` → `PlatformState.pad`), and the four letters are filed by what
+(`read_pad_hints` in [game_input.c](../src/game_input.c) → `pad_hints_apply` →
+`PlatformState.pad`), and the four letters are filed by what
 they say rather than by where they sit: **A confirms, jumps and skips; B backs
 out, and attacks inside a sector; X attacks and opens the assist sheet; Y uses
 a door and opens the manual.**
@@ -279,9 +423,57 @@ through `SDL_RenderDebugText`, whose 8x8 font is ASCII only, they are spelled
 change name (`+` and `-` on a Switch pad, OPTIONS on a PlayStation), so they are
 read off `SDL_GetGamepadType` instead.
 
+That call, and the four `SDL_GetGamepadButtonLabel` calls beside it, are the
+whole of what needs a gamepad — so they are the whole of what stayed on the SDL
+side. `pad_hint.c` itself links none of it: the labels and pad types are plain
+numbers in [pad_hint.h](../src/pad_hint.h), held to `SDL_GAMEPAD_BUTTON_LABEL_*`
+and `SDL_GAMEPAD_TYPE_*` by one compile-time assertion per row in
+`game_input.c`, exactly as [keybind.c](../src/keybind.c)'s scancodes are. It read
+as a file that needed hardware and did not: it needed what the hardware *said*.
+Which is why the decision above — the one whose failure put quit under the thumb
+the title screen asked for — is now driven by the suite against an Xbox, a Switch
+Pro, a PS3, a PS4, a PS5, an unlisted pad type, and the two half-lettered pads
+that have to fall back rather than commit a mixture.
+
 The rest of the pad is bound the way the platform holders' own guidance binds
 it, because a player arrives already knowing what these buttons do and every
 departure from that is a bug the player blames on themselves:
+
+**The pause sheet is a table of words like every other one**, and it was the
+last one that was not. Its rows — a label, a sentence under it — plus a title,
+a strap and a footer prompt were all string literals inside
+`draw_pause_menu` with the plate's width a local `const float` beside them:
+exactly the shape [settings.c](../src/settings.c) was found in, on the sheet a
+player opens more often than any other in the game. It lives in
+[pause_sheet.h](../src/pause_sheet.h) now with the geometry the renderer lays it
+out from, and `test_every_word_on_the_pause_sheet_fits_the_plate` measures every
+label, detail, title, strap and both forms of the footer against it. Measured on
+the way out, all of it already fitted — the widest line is `GIVE UP THIS RUN AND
+RETURN TO THE TITLE` at 320px inside a 420px plate, with 60px to spare — which
+makes this the one sheet in the game whose fit check was written *before* it had
+lost a line rather than after. The row enum comes off the same list as the words,
+so the count cannot drift from the table.
+
+**And then the fourth row arrived, which is what that check was for.** `FIELD
+MANUAL` is on the sheet because the book could not be opened from inside a run at
+all — see [The field manual](#the-field-manual) — and the row it needed was
+measured against the plate, and the plate against the rows it now has to be tall
+enough for, before either was drawn once. `PAUSE_ABANDON_ARMED` came with it:
+`ABANDON RUN` is **armed rather than taken**, so its first press replaces the
+sentence under it with `PRESS AGAIN TO GIVE UP THIS RUN` in the row's own red and
+the second press is what ends the night. That is the pattern the options sheet's
+RESET RECORDS row has always used, and this row is the more expensive of the two —
+a record can be set again and the run being stood in cannot be resumed. It exists
+because two shortcuts reached the row without touching it: `Q` on the keyboard and
+`SELECT` on the pad both abandoned outright, and `Q` is the default
+`BIND_WEAPON_NEXT`, the key a hand cycling weapons already knows. Both now land on
+the row and arm it, so the shortcut is a way of *reaching* the decision rather
+than a second way of making it, and moving the cursor off disarms.
+
+The plate itself is shared with the options sheet — one `draw_sheet_plate`, lit
+the same way, because they are the same object seen twice — but the two widths
+are separate constants on purpose: same object, not the same size, and the
+options sheet is wider because it carries key caps.
 
 - **START pauses. Nothing else does.** It is the pause button on every pad ever
   made. B carrying it as well is what this used to do, and it meant a stray
@@ -301,7 +493,9 @@ departure from that is a bug the player blames on themselves:
   between sectors, the continue prompt or the drive it does nothing at all:
   dropping a run on one press of the button players use to say "not that" is
   the same bug wearing a hat. The way out of a run is deliberate and from the
-  pause screen only (SELECT, `abandons_run`).
+  pause screen only (SELECT, `abandons_run`) — and **that press arms the row
+  rather than spending it**, because the sentence above was written about B and
+  was every bit as true of the button beside START.
 
   **Held on the title screen, it quits, and that is the exception the rule
   always needed.** Quitting used to be `ESC` or the window's close box, and a
@@ -315,7 +509,8 @@ departure from that is a bug the player blames on themselves:
   straight on into closing the game. The mouse needs no hold, because clicking
   the chip is the same act as clicking the close box.
 - **SELECT has exactly two jobs of its own, and they never overlap.** From the
-  pause sheet it is the deliberate second step out of a run; on the title
+  pause sheet it lands on ABANDON RUN and arms it — the deliberate second step
+  out of a run, and a third press is what actually takes it; on the title
   screen it takes the resume the third chip is offering, and does nothing when
   there is none. It is the only letter-free button left on that screen — A
   starts, X and Y open the two sheets, and B is inert until it is held — which
@@ -530,10 +725,20 @@ the car his wife is in.
 ## The field manual
 
 `H` on the title screen (`Y` on a pad, or a click on the line naming it) opens
-`STATE_MANUAL`: eight sheets in [manual.c](../src/manual.c) that say who is in
+`STATE_MANUAL`: ten sheets in [manual.c](../src/manual.c) that say who is in
 the building and why, who the twelve of them are, what the building is, what
-the buttons do, what the floor plan allows, what the guards do, how the wall is
-climbed and how to read the console. The first two sheets are the only place
+the buttons do, what the floor plan allows, what the guards do, **how to get
+through a floor without any of them noticing**, how the wall is climbed, how
+to read the console, and what the game keeps once the window is closed.
+`THE RECORD` is the last of them and is the only sheet about the player rather
+than the building: the best score, the most of the docket any one night has
+carried out, and the quickest each of the seventeen sectors has ever been
+cleared — the numbers `Progress` has always written to disk and, until that
+sheet existed, showed one at a time on the screen after the sector that set it.
+It also states the rule that decides whether a run joins them at all: any
+`ASSIST` switch on and the night banks nothing, the `VETERAN` run counts, and
+the options sheet can clear the lot without touching the sector being resumed
+from. The first two sheets are the only place
 the plot is stated outright, and they are the same night from either side.
 `THE NIGHT` is illustrated with the crew's own flight case — open,
 stencilled *Meridian Facility Services*, signed in on 14 March and never
@@ -546,25 +751,72 @@ man the strip quotes in a sector is line one of the log. Being *told* there
 are twelve of them and *counting* twelve of them are different sentences, and
 the second one is why the sheet is a document and not a paragraph. Arrow keys
 or the
-footer chips turn a sheet; anything that means "done" hands back to
-`game_return_to_intro`, which is also where `ESC` already went. It is a branch
-off the title screen and nothing else — there is no simulation to pause, so the
-manual cannot be opened mid-sector.
+footer chips turn a sheet; anything that means "done" hands back through
+`game_close_manual`, which is also where `ESC` already went.
+
+**It used to be a branch off the title screen and nothing else**, on the stated
+grounds that there is no simulation to pause. That reason did not survive the
+sheet beside it: `game_open_settings` has opened from `STATE_PAUSED` and handed
+back to it for as long as the pause sheet has had an OPTIONS row, so the
+machinery for a sheet over a paused run existed and was in use one row away. What
+the restriction cost was the one moment the book is for — a player stuck on a
+floor, wondering what a flash charge does or how a body is hauled, had to abandon
+the run to read the sheet that explains it. Ten sheets that exist to be read,
+unreachable from inside the thing they describe. `H`, `F1` and the pad's `Y` open
+it from a paused run now, `FIELD MANUAL` is a row on the pause sheet, and
+`game_close_manual` puts it back where it came from — which is the half that had
+to be written, because every "done" key went through `game_return_to_intro`, and
+that banks the run's score and ends it.
 
 **Every sheet draws an illustration of its own, and that is why the book has a
-switch.** `PAGE_ILLUSTRATIONS` in [manual.c](../src/manual.c) is eight drawing
-functions indexed the same way `MANUAL_PAGES` is, with a `_Static_assert`
-keeping the two arrays the same length — and for a long time the assertion was
-the only thing that reached seven of them. Nothing turns a sheet but a hand, so
-`make smoke` drew the first and no other; some six hundred lines of drawing,
-plus the figure helpers only the later sheets reach, were executed by nothing in
-this tree at all. What made it easy to miss is the half that *was* covered:
-`test_manual_sheets_fit_the_column` measures the words of all eight, so the
-sheet everybody checks was checked and the picture beside it was not — the same
-shape of gap, one layer in, that splitting the text out into
-[manual_pages.c](../src/manual_pages.c) was meant to close. `--page N` opens the
-book on a given sheet and the smoke run walks all eight; see
-[AGENTS.md](../AGENTS.md).
+switch.** `PAGE_ILLUSTRATIONS` in [manual.c](../src/manual.c) is one drawing
+function per sheet, indexed the same way `MANUAL_PAGES` is, with a
+`_Static_assert` keeping the two arrays the same length — and for a long time
+that assertion was not keeping anything, because the array it measures was
+declared `[MANUAL_PAGE_COUNT]`. A `sizeof` over an explicitly sized array is the
+declared size, so the check read "the count equals the count" and no missing row
+could fail it; a short initializer zero-fills, and a sheet listed in
+`MANUAL_PAGES` with no drawing beside it was a null function pointer called on
+the frame that sheet was opened. Deleting one entry built clean, passed
+`make lint` and every one of `make test`'s checks, and segfaulted on
+`--screen manual --page 10`. The array is written `[]` now, the way
+`WEAPON_CYCLE` in [player.c](../src/player.c) always was, so the initializer is
+measured against the count instead of against itself. Beside that, for a long
+time the assertion was the only thing that reached any but the first of them.
+Nothing turns a sheet but a hand, so a run that presses no key draws the first
+and no other; some six hundred lines of drawing, plus the figure helpers only
+the later sheets reach, are reached by no test at all. What made it easy to miss
+is the half that *was* covered:
+`test_manual_sheets_fit_the_column` measures the words of every one of them, so
+the sheet everybody checks was checked and the picture beside it was not — the
+same shape of gap, one layer in, that splitting the text out into
+[manual_pages.c](../src/manual_pages.c) was meant to close. Nothing but turning
+the pages reaches them, so an illustration is checked by looking at it.
+
+**`GOING QUIET` is the ninth, and it is the sheet the book was missing rather
+than the one it grew.** The blade behind an unaware man, a bolt thrown to be
+heard somewhere Chuck is not, and a body hauled out of the room it fell in are
+three answers to one rule — that this building's guards read what they see and
+hear — and none of the three is announced anywhere else on screen except the
+drag's own prompt. A mechanic nobody is told about is a mechanic that does not
+exist for most of the people playing. They are a sheet of their own rather than
+three more bullets on `FIGHTING` for an arithmetic reason as well: that sheet is
+the longest of them and has already lost a line to the column once. What the
+three actually do is [Going quiet](gameplay.md#going-quiet).
+
+**Its last heading is the ceiling camera, and it is on this sheet rather than a
+combat one deliberately.** A camera is not a fourth thing that fights; it is the
+thing none of the three above works on — no back to get behind, no ears for a
+bolt, and a crawl does nothing under a lens that is looking down at the floor.
+Reading that at the foot of the page that just taught all three is the point of
+where it sits: the sheet ends by naming its own exception. What it costs in
+column space came out of the three sections over it, which were written long and
+are now written short.
+
+The sheet's illustration stays at two vignettes — the bolt in the air and the
+body being hauled — because an illustration is a composition rather than a
+contents list, and a third panel would leave three small ones where two clear
+ones say the same thing.
 
 It **replaced the title screen's row of control hints** rather than joining it,
 and that is a composition decision as much as an editorial one: a plate, a

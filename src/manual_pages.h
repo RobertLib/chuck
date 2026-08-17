@@ -63,9 +63,34 @@ typedef struct
     int line_count;
 } ManualPageText;
 
-#define MANUAL_PAGE_COUNT 8
+#define MANUAL_PAGE_COUNT 10
 
-extern const ManualPageText MANUAL_PAGES[MANUAL_PAGE_COUNT];
+/*
+ * Declared without its length, so the definition's `_Static_assert` measures the
+ * sheaf rather than itself — see the same note on `ED_GROUP_NAMES` in
+ * editor/editor_legend.h. A sheet in the enum with no words here would otherwise
+ * be a row of null strings, and the count callers want is `MANUAL_PAGE_COUNT`.
+ */
+extern const ManualPageText MANUAL_PAGES[];
+
+/*
+ * Which sectors are climbed rather than walked, 1-based, and how many there are.
+ *
+ * The `THE MISSION` sheet is the one place in the game the campaign's shape is
+ * *drawn* — a tick a sector up the side of the tower, the climbs in amber —
+ * and the loop that draws it had the count and the climb numbers written into
+ * the renderer. So it kept drawing a fifteen-sector campaign with four climbs
+ * after the campaign was seventeen with five, and no check anywhere could have
+ * caught it: the fit tests measure words, and this is a picture.
+ *
+ * It lives here, beside the words that say the same thing on the same sheet, so
+ * the strap and the illustration read one list.
+ * `test_the_manual_draws_the_campaign_it_ships_with` holds that list against the
+ * `MODE FACADE` lines of the maps actually embedded, and the sector count with
+ * it. **A new climb owes this array an edit**, and the suite says so by name.
+ */
+extern const int CAMPAIGN_CLIMB_SECTORS[];
+extern const int CAMPAIGN_CLIMB_SECTOR_COUNT;
 
 /*
  * The geometry the renderer lays out against and the fit checks measure. Both

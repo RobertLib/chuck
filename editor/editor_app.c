@@ -1121,10 +1121,41 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
     }
 
+    /*
+     * `--soak N` closes the editor by itself after N seconds, for
+     * [../tools/soak.sh](../tools/soak.sh). See `EditorApp.soaking`.
+     *
+     * Read off the line before the argument below rather than folded into it,
+     * because the editor's one positional argument is a path and a switch is
+     * not one; a soak that opened a map called `--soak` is the kind of joke
+     * this would otherwise be.
+     */
+    float soak_seconds = 0.0f;
+    const char *positional = NULL;
+    for (int i = 1; i < argc; ++i)
+    {
+        if (SDL_strcmp(argv[i], "--soak") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                SDL_Log("--soak needs a number of seconds after it");
+                continue;
+            }
+            double parsed = SDL_atof(argv[++i]);
+            if (parsed > 0.0)
+                soak_seconds = (float)parsed;
+            else
+                SDL_Log("--soak expects a positive number of seconds");
+            continue;
+        }
+        if (positional == NULL)
+            positional = argv[i];
+    }
+
     /* An argument is either the repository to work in or the map to open in
      * it, because both are things you want to say when starting the editor
      * from a shell that is somewhere else. */
-    const char *argument = argc > 1 ? argv[1] : NULL;
+    const char *argument = positional;
     char open_directory[ED_MAX_PATH] = "";
     const char *open_file = NULL;
     if (argument != NULL && has_suffix(argument, ".txt"))
@@ -1197,6 +1228,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         ed_open_file(app, start);
     else
         ed_new_level(app, false);
+
+    if (soak_seconds > 0.0f)
+    {
+        app->soaking = true;
+        app->soak_seconds_left = soak_seconds;
+        /* Said out loud, because a soak that closed itself and one that
+         * crashed look identical in a log otherwise. */
+        SDL_Log("Soaking for %.1f seconds, then closing", (double)soak_seconds);
+    }
 
     *appstate = app;
     return SDL_APP_CONTINUE;
@@ -1346,6 +1386,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     Uint64 now = SDL_GetTicksNS();
     static Uint64 last = 0;
+    Uint64 previous = last == 0 ? now : last;
     float dt = last == 0 ? 0.0f : (float)(now - last) / 1.0e9f;
     last = now;
     if (dt > 0.1f)
@@ -1353,6 +1394,25 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     app->time += dt;
     if (app->status_timer > 0.0f)
         app->status_timer -= dt;
+
+    /*
+     * Spent before the frame is drawn, and out through `SDL_AppQuit` so the
+     * teardown is sanitized too.
+     *
+     * Paid in **raw** elapsed time rather than the `dt` clamped above, which is
+     * the same decision the game's loop makes and for the same reason: under a
+     * sanitizer a frame can outlast the clamp, and a budget paid in clamped
+     * time would turn `--soak 2` into minutes.
+     */
+    if (app->soaking)
+    {
+        app->soak_seconds_left -= (float)(now - previous) / 1.0e9f;
+        if (app->soak_seconds_left <= 0.0f)
+        {
+            SDL_Log("Soak finished; closing");
+            return SDL_APP_SUCCESS;
+        }
+    }
 
     /* A playtest build runs beside this loop rather than inside it, so the
      * window keeps answering while `make` works; this is where a finished one

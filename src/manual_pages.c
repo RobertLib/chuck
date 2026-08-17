@@ -7,30 +7,35 @@
 static const ManualLine PAGE_NIGHT[] = {
     {LINE_HEAD, "WHO YOU ARE"},
     {LINE_BODY, "Chuck Ross. Twelve years an Army sapper,"},
-    {LINE_BODY, "now a two-man strip-out crew. You know"},
-    {LINE_BODY, "charges, and you know which walls were"},
-    {LINE_BODY, "only ever bricked up."},
+    {LINE_BODY, "now a two-man strip-out crew: you know"},
+    {LINE_BODY, "charges, and which walls were bricked up."},
     {LINE_GAP, NULL},
     {LINE_HEAD, "WHO THEY TOOK"},
     {LINE_BODY, "Ellen Ross. Your wife, and the night duty"},
     {LINE_BODY, "controller of Kessler Tower - she wrote"},
     {LINE_BODY, "its access system."},
-    {LINE_BULLET, "They took her off the pavement three"},
-    {LINE_BODY, "blocks out and walked her in the front"},
-    {LINE_BODY, "door at 00:22, so the log read normal."},
+    {LINE_BULLET, "Taken three blocks out and walked in"},
+    {LINE_BODY, "the front door at 00:22, so it logged"},
+    {LINE_BODY, "as normal."},
     {LINE_GAP, NULL},
     {LINE_HEAD, "WHAT THIS ACTUALLY IS"},
     {LINE_BULLET, "Anton Voss and twelve men, badged in as"},
     {LINE_BODY, "the night maintenance contractor."},
-    {LINE_BULLET, "The demand they broadcast at 00:04 is"},
-    {LINE_BODY, "theatre. It puts every unit in the city"},
-    {LINE_BODY, "on the cordon and nobody in the building."},
+    {LINE_BULLET, "The 00:04 demand is theatre: every unit"},
+    {LINE_BODY, "on the cordon, nobody in the building."},
     {LINE_BULLET, "Six hundred and forty million in bearer"},
     {LINE_BODY, "bonds, and at 01:00 it leaves by air."},
     {LINE_BULLET, "The sub-vault runs on seven locks. The"},
     {LINE_BODY, "seventh needs the bank's key and the duty"},
     {LINE_BODY, "controller, alive and present. That is"},
     {LINE_BODY, "the only reason she still is."},
+    /* The docket is on this sheet rather than on THE JOB because it is not a
+     * rule of the sectors — it changes nothing about how one is played. It is
+     * the answer to the paragraph above it: the city believes the broadcast,
+     * and this is the only thing in the building that says otherwise. */
+    {LINE_BULLET, "Their own DOCKET is loose in the tower,"},
+    {LINE_BODY, "a sheet to a floor. Nobody outside has"},
+    {LINE_BODY, "any of it, and the city believes them."},
 };
 
 /*
@@ -67,7 +72,7 @@ static const ManualLine PAGE_CREW[] = {
 
 static const ManualLine PAGE_MISSION[] = {
     {LINE_HEAD, "THE JOB"},
-    {LINE_BODY, "Fifteen sectors, the lobby to the roof,"},
+    {LINE_BODY, "Seventeen sectors, the lobby to the roof,"},
     {LINE_BODY, "and nobody else coming up after her."},
     {LINE_GAP, NULL},
     {LINE_HEAD, "EVERY SECTOR IS THE SAME SHAPE"},
@@ -85,8 +90,15 @@ static const ManualLine PAGE_MISSION[] = {
      * there, welded, and the strip beside it reads BLOCKED rather than LOCKED
      * for exactly that reason. A player who goes looking for a door that the
      * manual says does not exist has been told the wrong thing about the room
-     * they are standing in. */
-    {LINE_BULLET, "In four sectors the stair door is"},
+     * they are standing in.
+     *
+     * The count is five and not four because sector 14 joined them when sector
+     * 15 became a climb: a climb is entered through a window, so the floor below
+     * one is a floor whose stair core is welded, whatever else it holds. It is
+     * the only one of the five that still lays out cards and terminals — they
+     * score and bank a checkpoint in any sector, which is what the "cards lie"
+     * bullet three rows up is already telling the player. */
+    {LINE_BULLET, "In five sectors the stair door is"},
     {LINE_BODY, "welded shut. The way on is the open"},
     {LINE_BODY, "WINDOW, out onto the wall itself."},
     {LINE_GAP, NULL},
@@ -131,7 +143,7 @@ static const ManualLine PAGE_CONTROLS[] = {
      * the thing that can.
      */
     /* No gap between the two sections either, for the reason the third heading
-     * has never had one: this sheet is the tightest of the eight and the
+     * has never had one: this sheet is the tightest in the book and the
      * heading's own lead already separates it. It went over the bottom of the
      * text column once — silently, because the layout loop stops at
      * BODY_BOTTOM rather than drawing past it, so the line that fell off was
@@ -143,7 +155,7 @@ static const ManualLine PAGE_CONTROLS[] = {
     /* The action column starts 230px in and the sheet's text column ends at
      * TEXT_RIGHT, which leaves 24 cells of the 8x8 font. This row was the one
      * that spent 25 of them and hung out past the rules under every heading. */
-    {LINE_KEY, "Q|$SELECT|QUIT TO TITLE FROM PAUSE"},
+    {LINE_KEY, "Q|$SELECT|ABANDON RUN, PRESS TWICE"},
     /* The other reading of the same button, and the two never overlap: one is
      * the way out of a paused run, this is the way back into an unpaused one.
      * A screen that answers a button nothing names is the same bug as a prompt
@@ -193,7 +205,7 @@ static const ManualLine PAGE_CONTROLS[] = {
 static const ManualLine PAGE_MOVEMENT[] = {
     {LINE_HEAD, "GROUND"},
     /* The two plentiful answers only. A moving platform is a third one on
-     * paper and twice in the building — sector 5 and sector 15, a tile each —
+     * paper and twice in the building — sector 5 and sector 17, a tile each —
      * so listing it beside the ladder and the lift shaft told the player to
      * look for something that is almost never there. It keeps its mention
      * under GOING UP, worded as the rarity it is. */
@@ -221,7 +233,7 @@ static const ManualLine PAGE_MOVEMENT[] = {
     {LINE_BODY, "press $Y to come out of the other."
                 "|press E to come out of the other."},
     /* The grenade is named because the campaign's own explosive budget counts
-     * on it: four of the eighteen a run can hold come out of these four doors.
+     * on it: four of the twenty a run can hold come out of these four doors.
      * Advertised as a medkit alone, the detour read as nothing at all to a
      * player whose hearts were full — which is most players most of the time,
      * and exactly the ones the balance assumes took it. */
@@ -240,8 +252,7 @@ static const ManualLine PAGE_COMBAT[] = {
     {LINE_BODY, "and it makes no noise."},
     {LINE_BULLET, "PISTOL: six rounds, and a shot carries"},
     {LINE_BODY, "until it hits something. Ammo lies"},
-    {LINE_BODY, "around, comes back seconds after it is"},
-    {LINE_BODY, "taken, and downed guards drop more."},
+    {LINE_BODY, "around, respawns, and the dead drop it."},
     {LINE_BULLET, "GRENADE: one at a time. Short fuse, it"},
     {LINE_BODY, "bounces, and it does not pick sides."},
     {LINE_BULLET, "BAZOOKA: one rocket, even sectors only."},
@@ -258,22 +269,82 @@ static const ManualLine PAGE_COMBAT[] = {
     {LINE_BODY, "his own column up and down, and what is"},
     {LINE_BODY, "right beside him. His back is the rest."},
     {LINE_BULLET, "Land on a guard's head to knock him"},
-    {LINE_BODY, "down and bounce clear. Touch him any"},
-    {LINE_BODY, "other way and it costs a heart."},
-    /* One line rather than two, and the line the sheet needed back: FIGHTING is
-     * the longest of the eight and its last row used to put ink three pixels
-     * under the column once the fit check started measuring ink instead of
-     * where a line starts. A rule about the animal is short enough to say in
-     * one row, so this is the row that pays for it. */
-    {LINE_BULLET, "DOGS are faster and lower. No stomping."},
+    {LINE_BODY, "down and bounce clear. Any other"},
+    {LINE_BODY, "contact costs a heart."},
+    /*
+     * One row for the two kinds a boot bounces off, and one for what the vest
+     * is actually worth.
+     *
+     * FIGHTING is the longest sheet in the book and its last row once put ink
+     * three pixels under the column, silently, because the layout loop stops at
+     * BODY_BOTTOM rather than drawing past it. So anything that joins it has to
+     * pay for itself out of the rows above — which is where the dogs' "faster
+     * and lower" went, and a line of the pistol's with it. The fit check is the
+     * only reason either edit is known to be enough.
+     */
+    {LINE_BULLET, "DOGS and HEAVIES cannot be stomped, and"},
+    {LINE_BODY, "a heavy takes twice the rounds."},
     {LINE_BULLET, "A guard who has seen you may run for a"},
-    {LINE_BODY, "wall ALARM and wake the whole floor."},
+    {LINE_BODY, "wall ALARM and wake the floor."},
     {LINE_GAP, NULL},
     {LINE_HEAD, "BLASTS"},
     {LINE_BULLET, "Crawl and shoot a GAS CANISTER. A"},
     {LINE_BODY, "standing shot goes straight over it."},
     {LINE_BULLET, "A blast opens a blocked-up patch of"},
     {LINE_BODY, "wall for good, and that can be a route."},
+};
+
+/*
+ * The ninth sheet, and the one the book was missing rather than the one it grew.
+ *
+ * Three things — the blade behind an unaware man, a bolt thrown to be heard
+ * somewhere Chuck is not, and a body hauled out of the room it fell in — are
+ * all answers to the *same* rule, which is that this building's guards read
+ * what they see and hear. None of the three is announced anywhere on screen
+ * except the drag's own prompt, and a mechanic nobody is told about is a
+ * mechanic that does not exist for most of the people playing.
+ *
+ * They are a sheet of their own rather than three more bullets on FIGHTING for
+ * an arithmetic reason as well as an editorial one: FIGHTING is the longest of
+ * the sheets and has already lost a line to the column once. See the note there.
+ */
+static const ManualLine PAGE_QUIET[] = {
+    {LINE_HEAD, "THE BLADE"},
+    {LINE_BULLET, "Behind a man who has not seen you, the"},
+    {LINE_BODY, "KNIFE takes him in one - and the man he"},
+    {LINE_BODY, "was talking to hears nothing of it."},
+    {LINE_BULLET, "Facing you it is three, and he shoots."},
+    {LINE_BULLET, "A DOG has no back. It hears you. A"},
+    {LINE_BODY, "HEAVY has one, and the vest is no help."},
+    {LINE_GAP, NULL},
+    {LINE_HEAD, "BOLTS"},
+    {LINE_BULLET, "A pocketful, and they never run out."},
+    {LINE_BULLET, "Thrown, one makes a noise where it lands"},
+    {LINE_BODY, "and calm guards walk to that, not you."},
+    {LINE_GAP, NULL},
+    {LINE_HEAD, "THE BODY"},
+    {LINE_BULLET, "Whoever finds one goes looking - often"},
+    {LINE_BODY, "for a wall ALARM."},
+    /* The one line on this sheet that names a rebindable key, and it takes the
+     * same bar the other prose does: the pad reader is told to hold the button
+     * the prompt in the sector is about to name at them. */
+    {LINE_BULLET, "Hold $Y to drag it off|Hold USE to drag it off"},
+    {LINE_BODY, "at half speed. No ladders, and where"},
+    {LINE_BODY, "you let go is where it stays."},
+    {LINE_GAP, NULL},
+    {LINE_GAP, NULL},
+    /* One heading for the two things that are not about staying unseen: the
+     * fitting none of the above works on, and the charge for when none of the
+     * above worked. They were two sections until the sheet ran out of column —
+     * `test_manual_sheets_fit_the_column` is what says so, and a heading is the
+     * most expensive row in the layout language. */
+    {LINE_HEAD, "WHEN IT GOES WRONG"},
+    {LINE_BULLET, "A CAMERA has no back and no ears, and"},
+    {LINE_BODY, "it looks down - crawling is no help."},
+    {LINE_BODY, "It sweeps: cross while it points away."},
+    {LINE_BULLET, "A FLASH kills nobody. Everyone near it"},
+    {LINE_BODY, "stops seeing for a few seconds, then"},
+    {LINE_BODY, "carries on knowing what they knew."},
 };
 
 static const ManualLine PAGE_CLIMB[] = {
@@ -340,9 +411,48 @@ static const ManualLine PAGE_CONSOLE[] = {
     {LINE_BODY, "amber mark on the bar is the last bank."},
 };
 
+/*
+ * The sheet the records are read on, and the reason it is a sheet at all.
+ *
+ * `Progress` keeps four things and the game showed three of them only on the
+ * card a *losing* run ends on, while the fourth — the per-sector best — was
+ * visible for the one screen after the sector that set it and nowhere else ever
+ * again. Seventeen numbers on the player's own disk, one readable at a time,
+ * under a fiction that will not stop talking about the clock. The words here are
+ * what the numbers mean; the grid of them is the illustration beside this text,
+ * which reads `Progress` through `ManualRecords`.
+ *
+ * It is the last sheet in the sheaf on purpose: it is the only one that is about
+ * the player rather than about the building, so it is what the book ends on
+ * rather than something in the way of the briefing.
+ */
+static const ManualLine PAGE_RECORD[] = {
+    {LINE_HEAD, "WHAT IS KEPT"},
+    {LINE_BULLET, "The best score any run has finished on,"},
+    {LINE_BODY, "and the most of the docket any single"},
+    {LINE_BODY, "night has come away with."},
+    {LINE_BULLET, "The quickest each sector has ever been"},
+    {LINE_BODY, "cleared. A sector nobody has finished"},
+    {LINE_BODY, "reads --:--."},
+    {LINE_GAP, NULL},
+    {LINE_HEAD, "WHAT THE CLOCK PAYS"},
+    {LINE_BULLET, "The night gives every sector the same"},
+    {LINE_BODY, "slot. Finish inside it and the seconds"},
+    {LINE_BODY, "handed back are paid as points."},
+    {LINE_BULLET, "Clearing one without dying pays again."},
+    {LINE_GAP, NULL},
+    {LINE_HEAD, "WHAT IS NOT KEPT"},
+    {LINE_BULLET, "A run with any ASSIST switch on banks"},
+    {LINE_BODY, "no score, no time and no sheets. It is"},
+    {LINE_BODY, "still your run; it is not a record."},
+    {LINE_BULLET, "The VETERAN run does count."},
+    {LINE_BULLET, "OPTIONS can clear all of it and keeps"},
+    {LINE_BODY, "the sector you are resuming from."},
+};
+
 #define PAGE(lines) lines, (int)(sizeof(lines) / sizeof((lines)[0]))
 
-const ManualPageText MANUAL_PAGES[MANUAL_PAGE_COUNT] = {
+const ManualPageText MANUAL_PAGES[] = {
     {"THE NIGHT", "KESSLER TOWER, 00:22, AND A CONTRACTOR NOBODY CHECKED",
      "WHAT THEY WHEELED IN AS TOOLS", PAGE(PAGE_NIGHT)},
     /* Straight after the night itself, because it is the same page seen from
@@ -350,19 +460,41 @@ const ManualPageText MANUAL_PAGES[MANUAL_PAGE_COUNT] = {
      * while the player is walking past them. */
     {"THE CREW", "TWELVE MEN ON ONE CONTRACTOR'S DOCKET",
      "NIGHT ACCESS LOG, SIGNED 14 MARCH", PAGE(PAGE_CREW)},
-    {"THE MISSION", "FIFTEEN SECTORS BETWEEN THE LOBBY AND THE ROOF",
-     "FOUR OF THEM ARE ON THE OUTSIDE", PAGE(PAGE_MISSION)},
+    {"THE MISSION", "SEVENTEEN SECTORS BETWEEN THE LOBBY AND THE ROOF",
+     "FIVE OF THEM ARE ON THE OUTSIDE", PAGE(PAGE_MISSION)},
     {"CONTROLS", "KEYBOARD AND GAMEPAD ARE BOTH ALWAYS LIVE",
      "PICK ONE UP AND THE HINTS FOLLOW", PAGE(PAGE_CONTROLS)},
     {"ON FOOT", "WHAT THE FLOOR PLAN WILL AND WILL NOT ALLOW",
      "ONE TILE IS A JUMP. TWO IS A LADDER", PAGE(PAGE_MOVEMENT)},
     {"FIGHTING", "NOTHING IN THIS BUILDING IS FRIGHTENED OF YOU",
      "BEHIND HIM IS THE SAFEST PLACE", PAGE(PAGE_COMBAT)},
-    {"THE CLIMB", "SECTORS 3, 7, 11 AND 13 ARE CLIMBED, NOT WALKED",
+    {"GOING QUIET", "THE OTHER WAY THROUGH A FLOOR FULL OF THEM",
+     "A ROOM THAT NEVER KNEW YOU WERE IN IT", PAGE(PAGE_QUIET)},
+    {"THE CLIMB", "SECTORS 3, 7, 11, 13 AND 15 ARE CLIMBED, NOT WALKED",
      "THE WIND ANNOUNCES ITSELF FIRST", PAGE(PAGE_CLIMB)},
     {"THE CONSOLE", "READING THE STRIP ALONG THE TOP OF THE SCREEN",
      "LOCKED, GRANTED, BLOCKED", PAGE(PAGE_CONSOLE)},
+    {"THE RECORD", "WHAT THE GAME REMEMBERS AFTER THE WINDOW CLOSES",
+     "EVERY SECTOR, AND THE BEST IT HAS SEEN", PAGE(PAGE_RECORD)},
 };
+
+_Static_assert(sizeof(MANUAL_PAGES) / sizeof(MANUAL_PAGES[0]) ==
+                   (size_t)MANUAL_PAGE_COUNT,
+               "every sheet in the enum needs its words here");
+
+/*
+ * The climbs, for the sheet that both says them and draws them.
+ *
+ * `THE CLIMB`'s strap spells these numbers out and `THE MISSION`'s illustration
+ * marks them in amber up the side of the tower. The drawing used to carry its own
+ * copy, hard-coded, and that copy went stale silently — a strap can be measured
+ * against its column and a picture cannot be measured against anything, so the
+ * list has to come from one place that a test can reach. See the note in
+ * [manual_pages.h](manual_pages.h).
+ */
+const int CAMPAIGN_CLIMB_SECTORS[] = {3, 7, 11, 13, 15};
+const int CAMPAIGN_CLIMB_SECTOR_COUNT =
+    (int)(sizeof(CAMPAIGN_CLIMB_SECTORS) / sizeof(CAMPAIGN_CLIMB_SECTORS[0]));
 
 /* ---- Does it fit? ----------------------------------------------------- */
 

@@ -5,6 +5,26 @@
 
 bool gameplay_boxes_overlap(float ax, float ay, float aw, float ah,
                             float bx, float by, float bw, float bh);
+/*
+ * Whether one world point can see another: sample the segment and report
+ * whether solid tiles or crates block it. Ladders and elevator shafts are
+ * transparent, because `level_is_solid` already treats them as non-solid, so a
+ * guard sees through a ladder and not through a floor. Endpoints are skipped —
+ * both entity centres sit inside empty tiles and must not count as
+ * self-occlusion.
+ *
+ * **It is here rather than in gameplay_ai.c because the third caller is not a
+ * pair of eyes.** It was a private helper of the perception model for as long as
+ * only the guards and the ceiling lens asked the question, and the flash charge
+ * — which is a claim about what a room can *see* — reached every man inside
+ * `FLASH_RADIUS` on a bare distance test. Five tiles is wider than any partition
+ * in the building and wider than a storey is tall, so one charge blinded the
+ * room next door and the floors above and below it, which is the opposite of
+ * what `FLASH_RADIUS` is written down as meaning. One sight line, or the game
+ * has two answers to "can this be seen from here".
+ */
+bool gameplay_sight_line_clear(const GameplayState *state,
+                               float ax, float ay, float bx, float by);
 void gameplay_world_sound(GameplayState *state, SoundEffect effect,
                           float x, float y);
 /* Somebody on the crew spoke. The simulation reports the kind, the man and the
@@ -45,6 +65,16 @@ void gameplay_alert_enemies_to_noise(GameplayState *state, float x, float y,
                                      float radius);
 void gameplay_destroy_crate(GameplayState *state, CampaignState *campaign,
                             Crate *crate);
+/* The box a camera occupies, for the two things that can hit one. Its own
+ * function because a camera is a map position rather than an entity with a
+ * rect, and three callers would otherwise each write the same arithmetic. */
+void gameplay_camera_box(const SecurityCamera *camera, float *x, float *y,
+                         float *w, float *h);
+/* Take a camera off the ceiling. Loud, permanent for the visit, and worth
+ * points — see the note in gameplay_world.c. Silently ignores an index that is
+ * out of range or a lens that has already gone. */
+void gameplay_destroy_camera(GameplayState *state, CampaignState *campaign,
+                             int index);
 /* Open every weak wall a blast reaches. Only explosions call this: a pistol
  * round or a knife leaves a blocked-up opening exactly where it was, so the
  * route through a wall always costs an explosive. Returns how many tiles went.

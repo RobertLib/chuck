@@ -8,10 +8,10 @@
 
 #define ED_FONT 8.0f
 
-static const char *const ED_TOOL_NAMES[ED_TOOL_COUNT] = {
+static const char *const ED_TOOL_NAMES[] = {
     "Brush", "Line", "Rect", "Box", "Fill", "Pick", "Select"};
 
-static const char *const ED_TOOL_HINTS[ED_TOOL_COUNT] = {
+static const char *const ED_TOOL_HINTS[] = {
     "1  paint single tiles; drag to draw freehand",
     "2  drag a straight run of tiles",
     "3  drag a hollow rectangle",
@@ -19,6 +19,16 @@ static const char *const ED_TOOL_HINTS[ED_TOOL_COUNT] = {
     "5  flood the connected run of one character",
     "6  pick up the character under the pointer",
     "7  drag out a selection to copy, mirror or clear"};
+
+/* Unsized above, so these measure the lists against the enum rather than
+ * against themselves; a missing row would be a null `char *` drawn as a tool
+ * name. See the note on `LEVEL_THEME_NAMES` in src/level.c. */
+_Static_assert(sizeof(ED_TOOL_NAMES) / sizeof(ED_TOOL_NAMES[0]) ==
+                   (size_t)ED_TOOL_COUNT,
+               "every tool needs a name");
+_Static_assert(sizeof(ED_TOOL_HINTS) / sizeof(ED_TOOL_HINTS[0]) ==
+                   (size_t)ED_TOOL_COUNT,
+               "every tool needs a hint");
 
 void ed_layout(EditorApp *app)
 {

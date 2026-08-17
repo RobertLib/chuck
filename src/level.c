@@ -6,11 +6,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Authoring names for the `THEME` metadata line, indexed by LevelTheme. */
-static const char *const LEVEL_THEME_NAMES[LEVEL_THEME_COUNT] = {
+/*
+ * Authoring names for the `THEME` metadata line, indexed by LevelTheme.
+ *
+ * Unsized, so the assertion below measures the list against the enum. Written
+ * `[LEVEL_THEME_COUNT]`, as it was, the size *is* the count and no assertion can
+ * see a missing name — the tail zero-fills, and the zero here is a null `char *`
+ * that `level_theme_from_name` hands to `strlen` on the first `THEME` line any
+ * map carries. That is the same defect `PAGE_ILLUSTRATIONS` had in
+ * [manual.c](manual.c); this is one of the tables it was found in.
+ */
+static const char *const LEVEL_THEME_NAMES[] = {
     "PLANT", "LOBBY", "OFFICE", "SERVER", "CANTEEN", "LAB",
-    "ARCHIVE", "SECURITY", "DUCTS", "PENTHOUSE", "ROOF", "RESTROOM",
-    "FACADE_NIGHT", "FACADE_STORM", "FACADE_MOON", "FACADE_HIGH"};
+    "ARCHIVE", "SECURITY", "DUCTS", "PENTHOUSE", "ROOF", "VAULT", "RESTROOM",
+    "FACADE_NIGHT", "FACADE_STORM", "FACADE_MOON", "FACADE_HIGH",
+    "FACADE_SLEET"};
+
+_Static_assert(sizeof(LEVEL_THEME_NAMES) / sizeof(LEVEL_THEME_NAMES[0]) ==
+                   (size_t)LEVEL_THEME_COUNT,
+               "every theme needs an authoring name");
 
 bool level_theme_from_name(const char *name, size_t length, LevelTheme *out)
 {
@@ -59,9 +73,11 @@ const char *level_theme_name(LevelTheme theme)
  * down in C and only safe because
  * `test_every_restroom_theme_names_a_room_that_exists` walks this table
  * against the embedded set and fails the build on a stem no file answers to.
- * It lives here rather than beside `level_theme_music` in level_art.c for the
- * same reason: which room a door opens on is level data, not art direction,
- * and level_art.c links SDL and so is reachable by no test at all.
+ * It lives here rather than in level_art.c for the reason the score below it
+ * now does: which room a door opens on is level data, not art direction, and
+ * level_art.c links SDL and so is reachable by no test at all. The score was
+ * still over there when this paragraph was written, which is how it came to be
+ * the one enum-indexed table in the tree with nothing holding it.
  */
 static const char *const THEME_SUBLEVEL[LEVEL_THEME_COUNT] = {
     [LEVEL_THEME_LOBBY] = "restroom_lobby",
@@ -75,6 +91,74 @@ const char *level_theme_sublevel(LevelTheme theme)
                             ? NULL
                             : THEME_SUBLEVEL[theme];
     return named != NULL ? named : LEVEL_FALLBACK_SUBLEVEL;
+}
+
+/*
+ * What the sector sounds like, decided by the same thing that decides what it
+ * looks like. One track per theme, so a floor is never scored by the corridor
+ * two sectors down and no two consecutive levels can share a loop — the themes
+ * already never repeat back to back (`test_campaign_themes_keep_changing`).
+ * The tracks themselves are described in the plan table in audio.c.
+ *
+ * **It lives here rather than in level_art.c for the reason the table above
+ * does, and it took a sweep to notice that the reason applied to it too.** The
+ * paragraph on `THEME_SUBLEVEL` says a stem written down in C is only safe
+ * because a test walks it; this one was the same shape and had no test at all,
+ * because `level_art.c` links SDL and the suite links none of it. A designated
+ * initializer indexed by an enum does not fail to build when a row is missing —
+ * it zero-fills, and the zero here is `MUSIC_INTRO`, so the eighteenth theme
+ * added without a line would have scored its sector with the title screen.
+ * Which score a floor gets is level data, exactly as which room its door opens
+ * on is. `test_every_theme_names_a_score_of_its_own` holds it now.
+ */
+static const MusicTrack THEME_MUSIC[LEVEL_THEME_COUNT] = {
+    [LEVEL_THEME_PLANT] = MUSIC_PLANT,
+    [LEVEL_THEME_LOBBY] = MUSIC_LOBBY,
+    [LEVEL_THEME_OFFICE] = MUSIC_OFFICE,
+    [LEVEL_THEME_SERVER] = MUSIC_SERVER,
+    [LEVEL_THEME_CANTEEN] = MUSIC_CANTEEN,
+    [LEVEL_THEME_LAB] = MUSIC_LAB,
+    [LEVEL_THEME_ARCHIVE] = MUSIC_ARCHIVE,
+    [LEVEL_THEME_SECURITY] = MUSIC_SECURITY,
+    [LEVEL_THEME_DUCTS] = MUSIC_DUCTS,
+    [LEVEL_THEME_PENTHOUSE] = MUSIC_PENTHOUSE,
+    [LEVEL_THEME_ROOF] = MUSIC_ROOF,
+    [LEVEL_THEME_VAULT] = MUSIC_VAULT,
+    [LEVEL_THEME_RESTROOM] = MUSIC_RESTROOM,
+    [LEVEL_THEME_FACADE_NIGHT] = MUSIC_FACADE_NIGHT,
+    [LEVEL_THEME_FACADE_STORM] = MUSIC_FACADE_STORM,
+    [LEVEL_THEME_FACADE_MOON] = MUSIC_FACADE_MOON,
+    [LEVEL_THEME_FACADE_HIGH] = MUSIC_FACADE_HIGH,
+    [LEVEL_THEME_FACADE_SLEET] = MUSIC_FACADE_SLEET};
+
+MusicTrack level_theme_music(LevelTheme theme)
+{
+    if (theme < 0 || theme >= LEVEL_THEME_COUNT)
+        return THEME_MUSIC[LEVEL_THEME_PLANT];
+    return THEME_MUSIC[theme];
+}
+
+/*
+ * How far down the wall the cordon still reaches, one row per climb.
+ *
+ * See the note on the declaration in level.h for why a renderer's number is
+ * kept over here. Written with designators like the two tables above, so it
+ * carries the same hazard and the same answer: a missing row zero-fills, and
+ * `test_the_cordon_fades_as_the_climb_rises` walks the campaign's own facade
+ * sectors in order and requires the value to fall every time.
+ */
+static const float THEME_CORDON[LEVEL_THEME_COUNT] = {
+    [LEVEL_THEME_FACADE_NIGHT] = 1.0f,
+    [LEVEL_THEME_FACADE_STORM] = 0.60f,
+    [LEVEL_THEME_FACADE_MOON] = 0.26f,
+    [LEVEL_THEME_FACADE_HIGH] = 0.0f,
+    [LEVEL_THEME_FACADE_SLEET] = 0.0f};
+
+float level_theme_cordon(LevelTheme theme)
+{
+    if (theme < 0 || theme >= LEVEL_THEME_COUNT)
+        return 0.0f;
+    return THEME_CORDON[theme];
 }
 
 /*
@@ -113,7 +197,8 @@ static void place_item(Level *level, int col, int row, ItemType type)
     it->type = type;
 }
 
-static void place_enemy(Level *level, int col, int row, bool has_dog)
+static void place_enemy(Level *level, int col, int row, bool has_dog,
+                        EnemyKind kind)
 {
     if (level->map.enemy_count >= MAX_ENEMIES)
     {
@@ -124,6 +209,7 @@ static void place_enemy(Level *level, int col, int row, bool has_dog)
     e->x = col * TILE_SIZE + (TILE_SIZE - ENEMY_W) * 0.5f;
     e->y = (row + 1) * TILE_SIZE - ENEMY_H;
     e->has_dog = has_dog;
+    e->kind = kind;
 }
 
 static void place_janitor(Level *level, int col, int row)
@@ -228,6 +314,15 @@ static void place_alarm_switch(Level *level, int col, int row)
         &level->map.alarm_switches[level->map.alarm_switch_count++];
     alarm_switch->col = col;
     alarm_switch->row = row;
+}
+
+static void place_camera(Level *level, int col, int row)
+{
+    if (level->map.camera_count >= MAX_CAMERAS)
+        return;
+    SecurityCamera *camera = &level->map.cameras[level->map.camera_count++];
+    camera->col = col;
+    camera->row = row;
 }
 
 static void place_decoration(Level *level, int col, int row,
@@ -349,11 +444,11 @@ bool level_load_data(Level *level, const char *name,
             break;
         case 'M':
             level->map.tiles[row][col] = TILE_EMPTY;
-            place_enemy(level, col, row, false);
+            place_enemy(level, col, row, false, ENEMY_KIND_GUARD);
             break;
         case 'W':
             level->map.tiles[row][col] = TILE_EMPTY;
-            place_enemy(level, col, row, true);
+            place_enemy(level, col, row, true, ENEMY_KIND_GUARD);
             break;
         case 'J':
             level->map.tiles[row][col] = TILE_EMPTY;
@@ -395,6 +490,22 @@ bool level_load_data(Level *level, const char *name,
             level->map.tiles[row][col] = TILE_EMPTY;
             place_alarm_switch(level, col, row);
             break;
+        case 'I':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_camera(level, col, row);
+            break;
+        case 'Q':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_enemy(level, col, row, false, ENEMY_KIND_HEAVY);
+            break;
+        case '*':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_item(level, col, row, ITEM_EVIDENCE);
+            break;
+        case '!':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_item(level, col, row, ITEM_FLASHBANG);
+            break;
         case 'c':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_OFFICE_CHAIR);
@@ -430,6 +541,24 @@ bool level_load_data(Level *level, const char *name,
         case 'w':
             level->map.tiles[row][col] = TILE_EMPTY;
             place_decoration(level, col, row, DECOR_WALL_CLOCK);
+            break;
+        /* The plant set. See `DecorationType`: these are the five rooms the
+         * office and foyer vocabularies had nothing to say about. */
+        case 'a':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_PLANT_PALLET);
+            break;
+        case 'e':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_PLANT_CABLE_REEL);
+            break;
+        case 'j':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_PLANT_PIPE_RAIL);
+            break;
+        case 'l':
+            level->map.tiles[row][col] = TILE_EMPTY;
+            place_decoration(level, col, row, DECOR_PLANT_BOLLARD);
             break;
         case 'q':
             level->map.tiles[row][col] = TILE_EMPTY;
@@ -629,6 +758,26 @@ bool level_load_data(Level *level, const char *name,
     }
     level->map.decoration_count = supported_decoration_count;
 
+    /* A camera is bolted to the slab above it and asks the same question the
+     * clock does, for the same reason: one hanging in open air is exactly as
+     * wrong as a desk standing on nothing, and it would sweep a beam out of
+     * thin air in the middle of a hall. Dropped rather than refused, the way an
+     * unsupported prop is — a map is not worth failing to load over a fitting
+     * nobody can mount, and the editor says so while it is being drawn. */
+    int mounted_camera_count = 0;
+    for (int i = 0; i < level->map.camera_count; ++i)
+    {
+        SecurityCamera *camera = &level->map.cameras[i];
+        int support_row = camera->row - 1;
+        if (support_row < 0 ||
+            level->map.tiles[support_row][camera->col] != TILE_WALL)
+        {
+            continue;
+        }
+        level->map.cameras[mounted_camera_count++] = *camera;
+    }
+    level->map.camera_count = mounted_camera_count;
+
     /* Find what each fan hangs from. Scanning up from its own tile keeps the
      * rod honest in a hall as well as in a corridor, and a fan in a shaft with
      * no ceiling at all still gets a plate at the top of the level. */
@@ -673,11 +822,6 @@ bool level_load_data(Level *level, const char *name,
                 found++;
             }
         }
-        level->runtime.items_remaining = 1;
-    }
-    else
-    {
-        level->runtime.items_remaining = 0;
     }
 
     /* Only one of the visually identical terminals is connected to security.

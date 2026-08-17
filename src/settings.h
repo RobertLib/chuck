@@ -35,6 +35,32 @@ typedef struct
     bool infinite_lives; /* a death never costs a life */
 } AssistOptions;
 
+/*
+ * The other direction, and it is one switch rather than a sheet of them.
+ *
+ * The campaign is seventeen sectors long, and once somebody has been through it
+ * they know where every guard stands — which is exactly the point at which the
+ * tuning the assist options apologise for stops being the tuning that matters.
+ * `veteran` is the run for that player: the crew moves at the pace they were
+ * always meant to be dangerous at, there is one life in hand instead of three,
+ * and no continue is coming.
+ *
+ * **It is not locked behind finishing**, and that is a decision rather than a
+ * shortcut. Every row on the options sheet is a thing the player may choose,
+ * and a row that is drawn but refuses to be chosen would be the first one in
+ * the table that is not — it would need the cursor, the renderer and
+ * `test_settings_cursor_only_lands_on_rows` all taught about a state no other
+ * row has. Somebody who wants the hard run on their first night can have it;
+ * the sheet says who it is for and the numbers do the rest.
+ *
+ * It reaches the simulation exactly the way the assist switches do — as plain
+ * flags applied at level load, never as a menu the gameplay core knows about.
+ */
+typedef struct
+{
+    bool veteran;
+} ChallengeOptions;
+
 typedef struct
 {
     /* Percent, 0 to 100, because that is what the sheet prints and a level the
@@ -66,6 +92,7 @@ typedef struct
      * not among the keys that may be put in them. */
     KeyBindings bindings;
     AssistOptions assist;
+    ChallengeOptions challenge;
 } Settings;
 
 /* What a row does when the player pushes at it. */
@@ -101,6 +128,7 @@ typedef enum
     SETTING_MORE_HEARTS,
     SETTING_SLOWER_GUARDS,
     SETTING_INFINITE_LIVES,
+    SETTING_VETERAN,
     /* The row on the main page that opens the controls page. It changes no
      * value of its own, which is why it has an id at all: the cursor test
      * refuses a reachable row whose id is SETTING_NONE. */
@@ -109,6 +137,10 @@ typedef enum
      * `SETTING_BIND_FIRST + action` is the id of an action's row, which is
      * what keeps nine near-identical enum values out of this list. */
     SETTING_BINDINGS_RESET,
+    /* Clears the three ratchets in [progress.h](progress.h) and leaves the
+     * resume chip alone; see `SETTINGS_RECORDS_ARMED_DETAIL` for why it takes
+     * two presses. */
+    SETTING_RECORDS_RESET,
     SETTING_BIND_FIRST
 } SettingId;
 
@@ -175,7 +207,7 @@ typedef struct
 #define SETTINGS_GLYPH_W 8.0f
 
 /*
- * The three lines the sheet draws that are not rows of the table.
+ * The four lines the sheet draws that are not rows of the table.
  *
  * Two of them tell an armed cap what it is waiting for, and they have to be
  * two: a key cap takes a keyboard press and cancels on ESC, a pad cap takes a
@@ -193,6 +225,29 @@ typedef struct
     "PRESS THE BUTTON TO BIND, OR START TO LEAVE IT ALONE"
 #define SETTINGS_MUTED_LINE \
     "MUTED BY M - CLOSE THIS SHEET AND PRESS M TO HEAR IT."
+
+/*
+ * And the fourth, which is the footer prompt — the line that names the way out.
+ *
+ * It was the last thing on this sheet living as a literal inside
+ * `draw_settings_menu`, and it was the widest line on the plate: 446px of a
+ * 490px column, 44px of air, less than anything else on it. Every other word
+ * here had been moved out and measured — the strap, the title, every label and
+ * detail, the two capture lines, the mute warning — and the comment beside this
+ * one said the capture lines were measured, which was true and read as though
+ * it covered all three. It did not, and the one it left out was the one with the
+ * least room.
+ *
+ * The pause sheet's footer has been measured in both alphabets since that table
+ * was split out, so the two sheets simply disagreed about whether a footer is
+ * words the player reads. It is. `test_every_word_on_the_options_sheet_fits_the_plate`
+ * walks both forms now, expanding `$A` and `$B` to the widest spelling any pad
+ * can produce.
+ */
+#define SETTINGS_FOOTER_PAD_LINE \
+    "LS/DPAD: SELECT AND CHANGE   $A: CHANGE   $B: DONE"
+#define SETTINGS_FOOTER_KEY_LINE \
+    "ARROWS: SELECT AND CHANGE   ENTER: CHANGE   ESC: DONE"
 
 /* One page of the sheet, in order. */
 const SettingRow *settings_rows(SettingsPage page, int *out_count);
@@ -221,6 +276,30 @@ const char *settings_page_strap(SettingsPage page);
  */
 bool settings_heading_governs_levels(const SettingRow *rows, int row_count,
                                      int index);
+
+/*
+ * What the records row says once it is armed.
+ *
+ * The only row on either sheet that cannot be undone, so it is the only one that
+ * asks twice — the same reasoning the pause menu's cursor uses for never opening
+ * on ABANDON RUN. It is a string here rather than in the renderer because it is
+ * a word the player reads, which means the fit check has to be able to reach it:
+ * `test_every_word_on_the_options_sheet_fits_the_plate` measures this line with
+ * the rest of the table.
+ */
+#define SETTINGS_RECORDS_ARMED_DETAIL \
+    "PRESS AGAIN TO CLEAR THEM. ANYTHING ELSE KEEPS THEM."
+
+/*
+ * Whether any assist switch is on.
+ *
+ * Asked once here rather than spelt as a three-way `||` wherever it is needed,
+ * because it is needed in two places that must never disagree: the run's
+ * `assisted` flag, which decides whether records are banked, and the sheet's own
+ * strap. A fourth assist switch is then one line in this file rather than a
+ * fourth term somebody has to remember twice.
+ */
+bool settings_assist_any(const Settings *settings);
 
 void settings_defaults(Settings *settings);
 

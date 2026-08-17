@@ -6,13 +6,14 @@
 #include "common.h"
 #include "credits.h"
 #include "cutscene.h"
-#include "demo.h"
 #include "gameplay_state.h"
 #include "intro.h"
 #include "manual.h"
 #include "pad_hint.h"
+#include "pause_sheet.h"
 #include "particle.h"
 #include "progress.h"
+#include "sector_tally.h"
 #include "settings.h"
 
 typedef enum
@@ -35,14 +36,10 @@ typedef enum
     STATE_GAME_OVER
 } GameState;
 
-/* What the pause menu offers, in the order it lists them. */
-typedef enum
-{
-    PAUSE_ITEM_RESUME,
-    PAUSE_ITEM_SETTINGS,
-    PAUSE_ITEM_ABANDON,
-    PAUSE_ITEM_COUNT
-} PauseItem;
+/* `PauseItem` and the rows it indexes are in [pause_sheet.h](pause_sheet.h),
+ * which this header includes: the enum, the words and the count are generated
+ * from one list so they cannot come to disagree, and the suite links no SDL and
+ * so cannot reach this file to measure them. */
 
 typedef struct
 {
@@ -84,6 +81,33 @@ typedef struct
      */
     bool vsync;
     Uint64 frame_min_ns;
+
+    /*
+     * How much wall-clock time this process has left before it closes itself,
+     * and whether it was ever asked to.
+     *
+     * `--soak N` exists for one caller: `tools/soak.sh`, which runs the
+     * **sanitized** build across every sector so that ASan and UBSan actually
+     * execute the SDL half of the tree. `make sanitize` built
+     * `build/chuck-sanitize` and then ran only `core_tests`, and CI could not
+     * have run it either — that job builds SDL with no video backend at all —
+     * so `game_render.c`, `level_art.c`, `cutscene.c`, `render_figures.c`,
+     * `audio.c`, `intro.c`, `manual.c` and `chase_render.c` were
+     * sanitizer-*compiled* and never sanitizer-*executed*. More than half the
+     * tree, held by a job whose name says sanitizers.
+     *
+     * A budget rather than a signal from outside, because a soak that is killed
+     * never reaches `SDL_AppQuit`: the teardown is the half of the lifecycle a
+     * sanitizer is most likely to have something to say about, so the process
+     * has to be able to end on its own.
+     *
+     * The countdown is spent in **raw** elapsed time, not the `MAX_FRAME_DT`
+     * clamp below. Under a sanitizer a frame can take longer than the clamp,
+     * and a soak that paid the clamped figure would ask for two seconds and sit
+     * there for two minutes.
+     */
+    bool soaking;
+    float soak_seconds_left;
 } PlatformState;
 
 typedef struct
@@ -154,6 +178,13 @@ typedef struct
     int chatter_speaker;
     int chatter_roll;
     float chatter_timer;
+
+    /* What the sector just cleared paid, when it cleared by a route that shows
+     * no report — a window, or the last sector of the campaign. See
+     * [sector_tally.h](sector_tally.h): the bonus and the record were being
+     * handed out on eleven of the seventeen clears with nothing on screen to
+     * connect either to. */
+    SectorTally sector_tally;
 } PresentationState;
 
 typedef struct
@@ -196,7 +227,40 @@ typedef struct
     int settings_cursor;
     int settings_bind_slot;
     bool settings_capturing;
+    /*
+     * The records row has been pressed once and is waiting to be pressed again.
+     *
+     * The only row on either sheet whose action cannot be undone, so it is the
+     * only one that is armed rather than taken — the same reasoning that keeps
+     * the pause cursor off ABANDON RUN. Anything other than a second press on
+     * the same row disarms it, which is what the armed detail line promises;
+     * `settings_disarm_records` is the one place that clears it so no input path
+     * can leave the sheet armed behind the player's back.
+     */
+    bool settings_records_armed;
     int pause_cursor;
+    /*
+     * The pause sheet's ABANDON row, armed rather than taken — the same shape as
+     * `settings_records_armed` above and for a stronger reason: that row throws
+     * away records the player can rebuild, this one throws away the run they are
+     * standing in. See `PAUSE_ABANDON_ARMED` in [pause_sheet.h](pause_sheet.h)
+     * for the two shortcuts that used to reach it on a single press, one of them
+     * the default weapon-cycle key.
+     *
+     * Cleared by opening the sheet, by moving the cursor and by leaving; the
+     * cursor moving off the row is what "changed my mind" looks like, so nothing
+     * has to be pressed to disarm it.
+     */
+    bool pause_abandon_armed;
+    /*
+     * Where the manual goes back to: `STATE_INTRO` or `STATE_PAUSED`.
+     *
+     * The twin of `settings_return_state`, and it exists for the same reason the
+     * manual can now be opened from a paused run at all — see
+     * `game_open_manual`. Without it every "done" key would hand a mid-sector
+     * reader to `game_return_to_intro`, which banks the score and ends the run.
+     */
+    GameState manual_return_state;
     /* What outlives the process: the best score any run has finished on, and
      * the furthest sector one has reached. Written on the frames that move a
      * number and read once at startup, so a campaign that takes more than one
@@ -208,20 +272,10 @@ typedef struct
      * SDL_AppResult of their own — so the answer is parked here rather than
      * threaded back out through three different call paths. */
     bool quit_requested;
-    /* `--demo`: a scripted hand on the controls instead of a player's, so that
-     * `make smoke` executes the drawing that only a *played* sector reaches.
-     * See [demo.h](demo.h) for what it is for and what it deliberately is not.
-     * False everywhere else, and nothing in a normal run ever sets it. */
-    bool demo_active;
-    DemoHand demo_hand;
 #ifdef CHUCK_DEBUG
     int debug_selected_level;
 #endif
 } Game;
-
-/* Hand the sector over to the scripted hand. Read after `--level`, refused
- * outside a sector for the reason `--page` is refused outside the manual. */
-bool game_start_demo(Game *game);
 
 bool game_init(Game *game);
 bool game_init_seeded(Game *game, uint64_t seed);
@@ -236,11 +290,19 @@ void game_return_to_intro(Game *game);
 /* Open the field manual. It is read from the title screen, and closed with the
  * same route back as anything else: game_return_to_intro. */
 void game_open_manual(Game *game);
+/* Put the manual back over whatever it was opened from — the title screen, or
+ * the pause sheet of a run still standing. Not `game_return_to_intro`, which
+ * banks the score and ends the run. */
+void game_close_manual(Game *game);
 
 /* The pause menu: three items, walked with the cursor and answered with
  * confirm. Pausing resumes the exact state it interrupted. */
 void game_toggle_pause(Game *game);
 void game_pause_move_cursor(Game *game, int delta);
+/* Put the cursor on ABANDON RUN and arm it rather than taking it; a second call
+ * with it already armed abandons. `Q` and the pad's `SELECT`, which both used to
+ * drop a run on one press. See `PAUSE_ABANDON_ARMED` in pause_sheet.h. */
+void game_pause_arm_abandon(Game *game);
 void game_pause_activate(Game *game);
 
 /* The options sheet. It opens from the title screen or from pause and returns
@@ -295,37 +357,71 @@ void game_save_settings(const Game *game);
  * `--level N` switch the editor's playtest button launches the game with. */
 bool game_start_at_level(Game *game, int level_index);
 
-/* Go straight to one named screen, for the `--scene NAME` switch. It exists so
- * `make smoke` can execute the presentation code that is only reached by
- * playing — the two prologue cutscenes, the drive, the manual, the options
- * sheet, the report between sectors, the outro and the credits — none of which
- * anything in the tree ran before. Combine with `--level N` for the screens
- * that report on a sector. False when the name is not one of them. */
-bool game_start_at_scene(Game *game, const char *name);
-
 /*
- * Which sheet of the manual is open, for the `--page N` switch (0-based here,
- * 1-based on the command line, like `--level`).
+ * Put the game on one named screen and leave it there. `--screen NAME`, and
+ * `tools/soak.sh` is its only caller.
  *
- * The book is eight sheets and each one draws its own illustration, and a sheet
- * is only ever turned by a hand: `manual_init` opens on the first one and
- * nothing advances it on a clock. `make smoke` presses no keys, so seven of the
- * eight illustrations — some six hundred lines of drawing, and the figure
- * helpers only they reach — were executed by nothing in this tree at all, in a
- * file `make test` cannot link. `test_manual_sheets_fit_the_column` measures
- * every sheet's *words*, which is exactly what made the gap easy to miss.
+ * `--level N` reaches the sectors and the title screen reaches itself, and
+ * between them that is what the soak used to cover — the script said it also
+ * reached the prologue and it never did, because the title screen advances on
+ * a key press and a headless run receives none. Everything drawn only after a
+ * menu choice, a cleared sector or a finished campaign was therefore compiled
+ * under the sanitizers and never executed by them.
  *
- * False when there is no manual open or the sheet does not exist, for the same
- * reason `--scene restroom` refuses a sector with no door: a switch that
- * quietly draws sheet one and reports it as having drawn sheet six is worse
- * than one that says it cannot.
+ * The names, and the states they land on:
+ * `abduction`, `chase`, `opening` — the prologue's three beats;
+ * `manual`, `settings`, `pause` — the three sheets a player opens;
+ * `report`, `cleared`, `continue`, `gameover` — the four cards a sector or a
+ * run ends on;
+ * `outro`, `credits` — the ending and the roll after it;
+ * `restroom` — the sublevel behind a `U`, which no `--level` run enters on its
+ * own;
+ * `aftermath` — a sector a few seconds after it went wrong, which is the one
+ * thing no `--level` run reaches because a headless player never acts: the
+ * bodies, the opened patch, the alarm lighting, the particles and the bazooka.
+ * See `soak_stage_aftermath`.
+ *
+ * False, and a line saying why, for a name this build does not know.
  */
-bool game_show_manual_page(Game *game, int page);
+/*
+ * `page` is the sheet `--page N` asked for, 1-based, or nought for "whatever the
+ * screen opens on". Only the manual reads it — it is the one screen name that
+ * stands for ten drawings — and a number past the end of the sheaf is refused
+ * rather than clamped, for the reason a sector outside the campaign is.
+ *
+ * `level_index` is the sector `--level N` named, 0-based, or negative for "the
+ * screen's own choice", which is sector 1. The screens that draw over a live
+ * world load one, and which one it is used to be sector 1 always — **which made
+ * `restroom` one name standing for four maps, exactly as `manual` is one name
+ * standing for ten drawings.** Which room a `U` opens on is decided by the
+ * sector's `THEME` (`level_theme_sublevel`), so a sweep pinned to sector 1 drew
+ * `restroom_lobby` seventeen times over and left the plant's, the archive's and
+ * the penthouse's rooms sanitizer-compiled and never sanitizer-executed. The
+ * toilet prop `q` is in those three and in no other map in the game, so
+ * `draw_restroom_toilet` was a drawing function nothing in the tree ever ran.
+ * `--page` answered the sheaf and this answers the rooms; the sectors to walk
+ * are the ones with a `U` in them, which the sweep greps out of the maps rather
+ * than keeping a list of.
+ */
+bool game_soak_screen(Game *game, const char *name, int page,
+                      int level_index);
 
 /* The furthest sector any run has reached, 0-based, and 0 when nobody has got
  * past the lobby — which is also what the title screen reads to decide whether
  * it offers a resume at all. */
 int game_resume_sector(const Game *game);
+/* The most of the docket any run has ever come away with. Read by the one
+ * screen that looks at a finished run. */
+int game_best_evidence(const Game *game);
+/*
+ * The per-sector records, as an array `CAMPAIGN_SECTORS` long.
+ *
+ * `progress_sector_time` answers one sector at a time, which is right for the
+ * report and wrong for the sheet that shows all of them: THE RECORD would have
+ * to know how `Progress` stores them to walk it. This hands over the run of
+ * floats it already keeps, so the manual reads a list and knows nothing else.
+ */
+const float *game_sector_records(const Game *game);
 
 /* The best score any finished run has left behind. Drawn on the game-over
  * card, which is the one screen a score is being looked at on. */

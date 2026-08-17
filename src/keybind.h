@@ -226,10 +226,11 @@ const char *keybind_pad_file_name(int button);
 int keybind_pad_from_file_name(const char *name, size_t length);
 bool keybind_pad_is_bindable(int button);
 
-/* Put `button` in `action`'s pad `slot`, taking it off whoever had it. Same
- * one-button-one-job rule the keyboard keeps, and for the same reason. Returns
- * false and changes nothing when the button is not bindable or the slot is out
- * of range. */
+/* Put `button` in `action`'s pad `slot`, swapping it off whoever had it. Same
+ * one-button-one-job rule the keyboard keeps, kept by the same mechanism and
+ * refused in the same case — see `keybind_set` below for both. Returns false
+ * and changes nothing when the button is not bindable, the slot is out of
+ * range, or the swap would leave an action with no button at all. */
 bool keybind_set_pad(KeyBindings *bindings, BindAction action, int slot,
                      int button);
 
@@ -265,16 +266,25 @@ bool keybind_action_has(const KeyBindings *bindings, BindAction action,
 
 /*
  * Put `scancode` in `action`'s `slot`, and take it away from wherever else it
- * was.
+ * was — handing that action whatever this slot was holding in exchange.
  *
  * One key does one job: a binding that quietly leaves the old owner in place is
  * a key that fires two actions, which on a keyboard is indistinguishable from
- * the game being broken. Clearing the old owner can leave an action with no
- * keys at all, and that is allowed — it is a thing the player did, it is
- * visible on the sheet as an empty chip, and the reset row is beside it.
+ * the game being broken. **The old owner is swapped rather than cleared**, and
+ * that is the half this used to get wrong: the likeliest single edit anybody
+ * makes on this sheet is jump onto SPACE, SPACE is ATTACK's only key, and
+ * clearing it walked the player out of the options screen unable to fire. The
+ * swap hands ATTACK the LSHIFT jump gave up instead.
  *
- * Returns false, changing nothing, when the key is not bindable or the slot is
- * out of range.
+ * When there is nothing to hand back — binding into an empty slot — a bind that
+ * would leave an action answering nothing at all is **refused**. USE is why:
+ * sector 14's window is reachable only through a door pair and nothing but USE
+ * opens one, so an emptied USE is a run that cannot be finished. A file edited
+ * by hand can still arrive with an empty action, and the sheet's empty cap and
+ * the prompt's "-" still say so.
+ *
+ * Returns false, changing nothing, when the key is not bindable, the slot is
+ * out of range, or the bind would empty another action.
  */
 bool keybind_set(KeyBindings *bindings, BindAction action, int slot,
                  int scancode);

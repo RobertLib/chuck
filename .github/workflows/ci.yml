@@ -8,18 +8,55 @@
 #   core     — `make test` links no SDL at all, so it needs nothing installed
 #              and runs in under a second. It is the gate that must never be
 #              slow, because it is the one that runs on every push.
-#   sanitize — the same suite under ASan/UBSan, plus `make smoke`, which boots
-#              the real binary through the title screen, all fifteen sectors,
-#              every named scene and all eight manual sheets against a dummy
-#              display. That is the only thing in the tree that executes the
-#              ~19k lines of renderers, level art and audio synth the core suite
-#              structurally cannot link. It is the long job of the three, and
-#              deliberately: each timed scene now dwells for its own length
-#              rather than a flat few seconds, because a cutscene cut off after
-#              three of its twenty-seven is a cutscene only the first frame of
-#              which has ever been run.
+#   sanitize — the same suite under ASan/UBSan, and the one job that compiles
+#              *and runs* the SDL half of the tree — the renderers, the level
+#              art, the audio synth, the cutscenes, the manual, and the level
+#              editor — with the sanitizers switched on. It is the long job of
+#              the three, because it builds SDL from a pinned source release
+#              before it can build anything of ours.
+#
+#              "Compiles" was all it did for as long as it existed, and the
+#              comment above said exactly that while a reader took it to mean
+#              covered. `make sanitize` ran only `core_tests`, which links no SDL,
+#              so the sanitized game was built here and never started — and this
+#              job could not have started it, because the SDL below is configured
+#              with no video backend on purpose. `make sanitize` ends in
+#              `make soak` now, which runs it on the dummy driver; see
+#              tools/soak.sh. That is why the note further down about this job
+#              never opening a window is written the way it is.
+#
+#              **And that fix had the same hole one floor up.** The sweep walked
+#              the title screen and the seventeen sectors, and its own header
+#              claimed it also walked the prologue — which it never could,
+#              because the title screen advances on a key press and nothing here
+#              sends one. It walks every screen by name now (`--screen`), and it
+#              soaks the editor, which no job had ever run at all.
 #   macos    — the platform the game actually ships on, and the only place the
 #              editor, the debug target and the shipped bundle get built.
+#
+# **And every one of them is bounded, which none of them was.** GitHub's default
+# job timeout is six hours, so a step that neither finishes nor fails spends all
+# six of them and then reports a timeout with no idea in it: a `git clone` that
+# stalls, a package manager that finds no bottle for the runner's macOS and
+# quietly starts compiling one from source, a soak whose binary never reaches
+# `SDL_AppQuit`. Every job carries `timeout-minutes` now, and the steps that reach
+# the network carry their own — a bound on the *step* is what names the culprit, a
+# bound on the job only says the hour is up. The numbers are roughly three times a
+# *measured* healthy run; the first version of them was three times a guessed one,
+# which is how the step that actually hung got forty minutes to do it in. Every
+# figure quoted below came off the API, and the paragraph after next is what they
+# said.
+#
+# The other half of the clock is that nothing was ever reused. The sanitizer job
+# built SDL from source on every single push — the same pinned release, from the
+# same tag, into the same prefix, five or so minutes at a time — because a fresh
+# run shares nothing with the one before it unless it is told to. It is a staged
+# install keyed on the pin now, so that build happens once per version and every
+# run after it unpacks the result. And `concurrency` below cancels a run the
+# moment a newer commit on the same ref supersedes it, because three pushes in a
+# minute used to mean three of everything above, queueing behind each other on a
+# runner allowance that is not infinite — which is the other way this turns into
+# hours without a single slow step in it.
 
 name: CI
 
@@ -32,10 +69,32 @@ on:
 permissions:
   contents: read
 
+# A newer commit on the same ref makes the run below it pointless, and a pointless
+# run still occupies a runner: on a busy branch the queue rather than any step in
+# it is what makes CI take hours.
+#
+# **Including `main`, which this excluded for exactly one morning.** The argument
+# for the exception was that a run on main is the record of whether main is green
+# and a cancelled one leaves that unanswered, which is true and is worth less than
+# it costs here: this repository's history is amended and force-pushed, so a push
+# to main routinely supersedes a run of the commit it replaced. One of those sat
+# in `apt-get update` for forty-six minutes after the commit it was testing had
+# stopped existing — and because it was started from the *previous* version of
+# this file, it had no `timeout-minutes` in it either and would have spent six
+# hours there. The record of whether main is green is the run of the commit main
+# actually points at.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core:
     name: core tests (no SDL)
     runs-on: ubuntu-latest
+    # The suite runs in well under a second and the lint scripts in about as long,
+    # so anything here past a couple of minutes is a checkout that is not coming
+    # back rather than a slow test.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       # Deliberately no SDL install: if this job ever needs one, the boundary
@@ -45,51 +104,179 @@ jobs:
         run: make test
 
   sanitize:
-    name: sanitizers + smoke
+    name: sanitizers
     runs-on: ubuntu-latest
+    # Measured: 5.4 minutes for `make sanitize` — our two sanitized builds, the
+    # suite and the full sweep — on top of a cache restore that is instant, or
+    # 1.8 minutes of building SDL the one time a pin changes. Seven minutes is a
+    # healthy run and twenty-five is the bound. It was forty, chosen against a
+    # guess of fifteen, and forty minutes is a long time to spend finding out that
+    # a distro mirror is having a bad morning.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Install SDL3
+      # Read once, here, because two separate things below need it: the cache key
+      # and the clone. It comes out of packaging/fetch_sdl3.sh for the reason the
+      # comment further down gives — one place, or it drifts.
+      #
+      # The distro release goes in the key beside it. What is cached is a compiled
+      # shared library, so it is only good for the userland it was built against;
+      # keyed on `ubuntu-latest` alone, the day that label moves to the next LTS
+      # is the day this restores a library the runner cannot load, and the failure
+      # would land several steps from its cause.
+      - name: Read the pinned SDL version
+        id: sdl
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config git \
-            libasound2-dev libpulse-dev
+          version=$(sed -n 's/^SDL_VERSION="\(.*\)"$/\1/p' \
+            packaging/fetch_sdl3.sh)
+          if [ -z "$version" ]; then
+            echo "could not read SDL_VERSION from packaging/fetch_sdl3.sh" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "distro=$(. /etc/os-release && echo "$ID$VERSION_ID")" \
+            >> "$GITHUB_OUTPUT"
+      # Built once per pin, not once per push. The five minutes this job spent
+      # compiling somebody else's library was the largest single cost in CI and
+      # bought the same bytes every time.
+      #
+      # A **staged** install rather than a cached /usr/local: the build lands in
+      # $HOME/sdl3-install through DESTDIR and is copied into place below, so what
+      # the cache holds is SDL's own install tree and nothing else the runner
+      # happens to have in there. Everything downstream — pkg-config, the linker,
+      # the loader — then sees the same /usr/local it always did, which is why no
+      # other step in this file had to learn about any of this.
+      #
+      # The workflow file's own hash is in the key because the cmake flags below
+      # are part of what is being cached: a build with a subsystem switched off is
+      # not the artefact the version number promises. Editing this file rebuilds
+      # SDL once, which is the right price for never restoring a library built to
+      # a recipe that no longer exists.
+      - name: Restore the pinned SDL3 build
+        id: sdl-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/sdl3-install
+          key: >-
+            sdl3-${{ steps.sdl.outputs.distro }}-${{ runner.arch }}-${{
+            steps.sdl.outputs.version }}-${{
+            hashFiles('.github/workflows/ci.yml') }}
+      # **`apt-get update` was a thirteen-minute step and it was buying nothing.**
+      # This ran unconditionally and installed pkg-config, which the Ubuntu runner
+      # image already ships — as it ships cmake, ninja, git and a compiler. That
+      # is free on a good morning and it is the whole job on a bad one: when a
+      # distro mirror goes slow, `apt-get update` sits there retrying, and twice
+      # in one morning it turned this job into a ten-minute wait on a package
+      # manager rather than a check of anything in this tree. Measured beside it,
+      # building SDL from source is 1.8 minutes.
+      #
+      # So nothing is installed unless it is actually absent, and the step is
+      # bounded tightly enough that a hanging mirror is a red mark in five minutes
+      # instead of eating the job's forty. The tools are named by the command they
+      # provide rather than by their package, because that is the thing being
+      # asked about.
+      # And it asks about **one** command, because that is all the cached path
+      # needs: linking the game wants pkg-config and nothing else here. cmake,
+      # ninja, git and a compiler are the *build's* prerequisites and are checked
+      # by the build step below, which most runs skip — asking about them here
+      # would put a package manager back on the path every run takes, which is
+      # the whole thing this is undoing.
+      - name: Make sure pkg-config is here
+        timeout-minutes: 5
+        run: |
+          if command -v pkg-config >/dev/null 2>&1; then
+            echo "the runner image ships pkg-config; nothing to install"
+            exit 0
+          fi
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends pkg-config
+      - name: Build SDL3
+        if: steps.sdl-cache.outputs.cache-hit != 'true'
+        # Bounded on its own, and it is the step that most needs it: the one that
+        # clones over the network, and the one whose failure mode is a stall
+        # rather than an error. Measured at 1.8 minutes, a fifth of what the
+        # comment here used to guess — and that guess is where the twenty-minute
+        # bound came from.
+        timeout-minutes: 10
+        # Through the environment rather than interpolated into the script below,
+        # because `${{ }}` is pasted in as text before any shell sees it and the
+        # text comes out of a file a pull request may rewrite. A version number
+        # that arrives as `$(...)` is a command in that case, and quoting does not
+        # help — an env var is read by the shell instead of pasted into it.
+        env:
+          SDL_VERSION: ${{ steps.sdl.outputs.version }}
+        run: |
+          # Whatever this needs and the image has not got. All four are on the
+          # Ubuntu runner today, so this prints a line and installs nothing; it is
+          # here rather than in the step above because that step runs every time
+          # and this one runs when the cache misses.
+          #
+          # The package is chosen where the command is named rather than by
+          # rewriting the list afterwards: two of these four are spelled
+          # differently as a package than as the thing they provide, and a second
+          # pass over the names is where that gets lost.
+          packages=""
+          for tool in cmake ninja git cc; do
+            command -v "$tool" >/dev/null 2>&1 && continue
+            case $tool in
+                ninja) packages="$packages ninja-build" ;;
+                cc) packages="$packages build-essential" ;;
+                *) packages="$packages $tool" ;;
+            esac
+          done
+          if [ -n "$packages" ]; then
+            echo "installing:$packages"
+            sudo apt-get update -o Acquire::Retries=3
+            # shellcheck disable=SC2086
+            sudo apt-get install -y --no-install-recommends $packages
+          else
+            echo "the runner image has cmake, ninja, git and a compiler"
+          fi
           # The version is pinned for the same reason packaging/fetch_sdl3.sh
           # pins one: "whatever was released that day" is not a thing a build
           # failure can be traced to. It has to be *the same* pin as that
-          # script's, too — this job is the only thing in the tree that runs
+          # script's, too — this job is the only thing in the tree that builds
           # the renderers and the audio synth under a sanitizer, and a clean
-          # run against a library two minor versions off the one the shipped
-          # .app links is a clean run of something nobody is being handed.
+          # build against a library two minor versions off the one the shipped
+          # .app links is a clean build of something nobody is being handed.
           #
           # So it is read out of that script rather than written down a second
           # time here. The rule used to be a sentence in this comment with two
           # hand-kept copies of the number under it, which is the arrangement
           # this repository keeps finding on the floor: a colour spelled from
-          # memory, a ceiling written as prose. One place, or it drifts.
-          sdl_version=$(sed -n 's/^SDL_VERSION="\(.*\)"$/\1/p' \
-            packaging/fetch_sdl3.sh)
-          if [ -z "$sdl_version" ]; then
-            echo "could not read SDL_VERSION from packaging/fetch_sdl3.sh" >&2
-            exit 1
-          fi
+          # memory, a ceiling written as prose. One place, or it drifts. It is
+          # read in the step above now, because the cache key needs it too.
+          sdl_version=$SDL_VERSION
           echo "building SDL $sdl_version (pinned in packaging/fetch_sdl3.sh)"
-          git clone --depth 1 --branch "release-$sdl_version" \
+          # One branch and no tags: this clone wants one release's worth of tree
+          # and was being handed the refs of a project with a decade of them.
+          git clone --depth 1 --no-tags --single-branch \
+            --branch "release-$sdl_version" \
             https://github.com/libsdl-org/SDL.git /tmp/SDL
-          # No X11 and no Wayland, because this job never opens a window:
-          # tools/smoke.sh runs the binary against SDL's dummy video and audio
-          # drivers, which is the whole reason it needs no display and no sound
-          # card. Building the two real video backends covered nothing this job
+          # No X11 and no Wayland, because this job opens no window onto a
+          # screen: it runs the core suite, which links no display at all, and
+          # then soaks the game on SDL's **dummy** video driver, which is a
+          # framebuffer with nothing behind it. Building the two real video
+          # backends covered nothing this job
           # runs — or that the shipped .app links, which is Cocoa — and cost a
           # dependency list that has to be guessed right, because SDL turns
           # every X extension it wants into a hard configure error rather than
           # a feature it goes without: the list here was missing libxss-dev and
           # libxtst-dev, and the next version bump is free to want a third.
           # A backend nothing loads is not worth a build that stops for a
-          # reason the game has nothing to do with. The audio backends stay,
-          # because that check is the other shape — a missing ALSA or Pulse is
-          # a line of output, not a stopped build.
+          # reason the game has nothing to do with.
+          #
+          # **And the audio backends went the same way, one apt hang later.**
+          # They used to stay, on the argument that a missing ALSA or Pulse is a
+          # line of output rather than a stopped build — but keeping them meant
+          # two `-dev` packages, which meant `apt-get update`, which is the step
+          # that turned a seven-minute job into a thirteen-minute one. Nothing
+          # here ever opens an audio device: tools/soak.sh exports
+          # `SDL_AUDIODRIVER=dummy` for every run it makes, and the dummy driver
+          # is always built. Switched off explicitly rather than left to
+          # autodetection, because a library whose contents depend on which
+          # `-dev` packages a runner image happens to ship this month is not the
+          # pinned artefact this cache claims to hold.
           #
           # SDL_UNIX_CONSOLE_BUILD is how SDL is told that a unix build with
           # neither backend is the intent rather than a mistake: without it,
@@ -100,38 +287,121 @@ jobs:
           #
           # SDL_TESTS is ON by default when SDL is the project being
           # configured, so this was also building SDL's own test suite, which
-          # is several minutes of a library nobody here tests.
+          # is several minutes of a library nobody here tests. SDL_EXAMPLES is
+          # the same argument and the same saving, and is named for the same
+          # reason SDL_DUMMYVIDEO below is.
+          #
+          # SDL_DUMMYVIDEO is on by default and is asked for explicitly anyway,
+          # because `make soak` is now the only reason this job needs a video
+          # driver at all and a default is a thing that can change under you. An
+          # unknown -D is an unused-variable warning to CMake rather than an
+          # error, so naming it costs nothing if the option is ever renamed —
+          # whereas losing it silently would fail the soak with "no available
+          # video device", several steps away from the line that caused it.
           cmake -S /tmp/SDL -B /tmp/SDL/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DSDL_STATIC=OFF -DSDL_TESTS=OFF \
-            -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_UNIX_CONSOLE_BUILD=ON
+            -DSDL_EXAMPLES=OFF -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_UNIX_CONSOLE_BUILD=ON \
+            -DSDL_ALSA=OFF -DSDL_PULSEAUDIO=OFF \
+            -DSDL_DUMMYVIDEO=ON -DSDL_DUMMYAUDIO=ON
           cmake --build /tmp/SDL/build --parallel
-          sudo cmake --install /tmp/SDL/build
+          # Staged rather than installed, so that what the cache keeps is SDL's
+          # install tree and not a copy of the runner's /usr/local. The prefix is
+          # still /usr/local, which is what makes a restore and a fresh build
+          # indistinguishable to every step after this one.
+          rm -rf "$HOME/sdl3-install"
+          DESTDIR="$HOME/sdl3-install" cmake --install /tmp/SDL/build
+      # Unconditional, because this is the half that has to happen whether the
+      # tree was just built or unpacked from the cache. It ends by asking
+      # pkg-config the version out loud: a restore that installed nothing is a
+      # cache that has silently stopped working, and without this line that shows
+      # up two steps later as a compiler not finding SDL_h.
+      - name: Install SDL3
+        run: |
+          prefix=$HOME/sdl3-install/usr/local
+          # The prefix rather than a directory inside it, because which one SDL
+          # lands its library in is GNUInstallDirs' business and not this file's.
+          # The pkg-config question below is what actually checks the install.
+          if [ ! -d "$prefix" ]; then
+            echo "no staged SDL3 install at $prefix" >&2
+            exit 1
+          fi
+          sudo cp -a "$prefix/." /usr/local/
           sudo ldconfig
+          pkg-config --modversion sdl3
+      # `-j`, because a runner has four cores and this builds the tree three
+      # times over — the game, the editor and the suite, all with ASan and UBSan
+      # in them. See the `sanitize` target: the goals are two `$(MAKE)`
+      # invocations rather than one list precisely so that this switch cannot
+      # start the sweep on a binary that is still being linked.
       - name: make sanitize
-        run: make sanitize
-      # Two seconds is the dwell for a *still* — a sector, the pause sheet, a
-      # manual page — and is enough for several hundred frames of one. It is a
-      # floor rather than the whole answer: a screen that runs on a clock takes
-      # its own length from the header that owns the number, so the outro gets
-      # its twenty-seven seconds and the drive its minute whatever this says.
-      - name: make smoke
-        run: make smoke SMOKE_SECONDS=2
+        run: make -j"$(nproc)" sanitize
 
   macos:
     name: macOS build (game + editor)
     runs-on: macos-latest
+    # Measured at 2.7 minutes for the whole job: five builds at a tenth of a
+    # minute each because of `-j`, the smoke sweep at 1.8, the bundle at 0.4, and
+    # Homebrew at six seconds. Fifteen is the bound — five times a healthy run,
+    # with room for the one failure this job is exposed to, Homebrew finding no
+    # bottle for the runner's macOS and starting to compile one.
+    timeout-minutes: 15
+    env:
+      # `brew install` refreshes the whole tap first by default, which is minutes
+      # of downloading the index of a package manager this job asks two questions
+      # of. The runner image ships a tap recent enough to answer both.
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+      HOMEBREW_NO_ANALYTICS: 1
     steps:
       - uses: actions/checkout@v4
       - name: Install SDL3
-        run: brew install sdl3 pkgconf
+        # Bounded on its own for the reason above: this is the one step here that
+        # can turn into a source build without saying so, and a bound on the job
+        # would blame whichever step happened to be running when the hour ran out.
+        # Six seconds when it is a bottle, so five minutes is the bound — and this
+        # is the step the header above spent a paragraph calling the risk, before
+        # anything had been measured. It is the cheapest thing in this file.
+        timeout-minutes: 5
+        run: brew install --quiet sdl3 pkgconf
+      # `-j` on all four builds below, for the same reason it is on the
+      # sanitizer job: this one compiles the tree five times over — the game, the
+      # editor, the debug target and the bundle's two slices — and did every one
+      # of them a file at a time.
       - name: make
-        run: make
+        run: make -j"$(sysctl -n hw.ncpu)"
       - name: make editor
-        run: make editor
+        run: make -j"$(sysctl -n hw.ncpu)" editor
+      # And run both of them, on the platform the game actually ships on. It
+      # needs the editor above it, which is why it sits here rather than beside
+      # `make`.
+      #
+      # **`SOAK_MODE=smoke`, because this sweep was running twice and the comment
+      # here was wrong about why.** It read "the only place the sweep meets Cocoa,
+      # Homebrew's SDL and an arm64 slice", and the first of those three it never
+      # meets: tools/soak.sh exports `SDL_VIDEODRIVER=dummy` and
+      # `SDL_AUDIODRIVER=dummy` for every run it makes, on every platform, so this
+      # job draws through the software renderer and opens no Cocoa window and no
+      # CoreAudio device — the same two drivers the Linux job uses. What it
+      # genuinely and only covers is the other two: Homebrew's SDL3 dylib and the
+      # whole tree as Apple clang compiles it for arm64.
+      #
+      # That is worth a sweep and is not worth the *timed* half of one. Holding
+      # the drive, the ending and the roll of names for their own length is how
+      # `cutscene.c` and `chase_render.c` get executed rather than merely linked,
+      # and that argument is a sanitizer's — it was measured on the other job, in
+      # a coverage build, and the functions it found are the same functions on
+      # either platform. Paying those three minutes again here bought the arm64
+      # codegen of code this run has already drawn a hundred other frames of.
+      # `smoke` walks the title screen, all seventeen sectors, every sheet, pose,
+      # room and card, and the editor; it names the sequences it skipped on the
+      # way out, and `make sanitize` runs the full sweep.
+      - name: make soak
+        run: make soak SOAK_MODE=smoke
       - name: make test
         run: make test
       - name: make debug
-        run: make debug
+        run: make -j"$(sysctl -n hw.ncpu)" debug
       # The bundle is what actually ships, and it is built by none of the above:
       # `make` links Homebrew's SDL for this arch and this macOS, while the app
       # is two slices against the vendored universal framework with an older
@@ -143,4 +413,4 @@ jobs:
       # enough to prove the bundle is assembled and verifies. `make notarize`
       # is the step that needs a real identity, and stays a local one.
       - name: make app
-        run: make app
+        run: make -j"$(sysctl -n hw.ncpu)" app

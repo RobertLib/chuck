@@ -5,6 +5,11 @@
 
 void gameplay_combat_update_explosives(GameplayState *state,
                                        CampaignState *campaign, float dt);
+/* Bolts in the air, and the throw cooldown that limits them. Its own update
+ * rather than a branch of the explosives one above: nothing here explodes,
+ * chains, scores or damages anybody, and folding it in would put a
+ * `CampaignState` in the signature of something that can never touch one. */
+void gameplay_combat_update_decoys(GameplayState *state, float dt);
 void gameplay_combat_handle_player_action(GameplayState *state,
                                           CampaignState *campaign,
                                           Input *input);

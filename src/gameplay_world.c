@@ -11,6 +11,41 @@ bool gameplay_boxes_overlap(float ax, float ay, float aw, float ah,
            ay < by + bh && ay + ah > by;
 }
 
+static bool point_in_active_crate(const GameplayState *state,
+                                  float px, float py)
+{
+    for (int i = 0; i < state->level.runtime.crate_count; ++i)
+    {
+        const Crate *crate = &state->level.runtime.crates[i];
+        if (crate->active &&
+            px >= crate->x && px < crate->x + CRATE_W &&
+            py >= crate->y && py < crate->y + CRATE_H)
+            return true;
+    }
+    return false;
+}
+
+bool gameplay_sight_line_clear(const GameplayState *state,
+                               float ax, float ay, float bx, float by)
+{
+    float dx = bx - ax;
+    float dy = by - ay;
+    float dist = sqrtf(dx * dx + dy * dy);
+    int steps = (int)(dist / ENEMY_LOS_STEP) + 1;
+    for (int s = 1; s < steps; ++s)
+    {
+        float t = (float)s / (float)steps;
+        float px = ax + dx * t;
+        float py = ay + dy * t;
+        if (level_is_solid(&state->level, (int)floorf(px / TILE_SIZE),
+                           (int)floorf(py / TILE_SIZE)))
+            return false;
+        if (point_in_active_crate(state, px, py))
+            return false;
+    }
+    return true;
+}
+
 void gameplay_world_sound(GameplayState *state, SoundEffect effect,
                           float x, float y)
 {
@@ -414,7 +449,60 @@ void gameplay_destroy_crate(GameplayState *state, CampaignState *campaign,
     float y = crate->y + CRATE_H * 0.5f;
     game_events_explosion(&state->events, x, y, 18);
     gameplay_world_sound(state, SFX_CRATE_BREAK, x, y);
-    campaign->score += 20;
+    campaign->score += CRATE_SCORE;
+}
+
+void gameplay_camera_box(const SecurityCamera *camera, float *x, float *y,
+                         float *w, float *h)
+{
+    *x = (camera->col + 0.5f) * (float)TILE_SIZE - CAMERA_W * 0.5f;
+    /* Hung from the slab above, so it sits at the top of its own tile rather
+     * than in the middle of it — which is where it is drawn and where a shot
+     * aimed at the thing on the ceiling actually goes. */
+    *y = (float)camera->row * (float)TILE_SIZE + 2.0f;
+    *w = CAMERA_W;
+    *h = CAMERA_H;
+}
+
+/*
+ * A camera coming off the ceiling.
+ *
+ * **Shooting one is a decision rather than a freebie**, and the cost is built
+ * into the act rather than bolted on: a shot is the loudest thing the player
+ * can do, `gameplay_alert_enemies_to_noise` is already listening to it, and the
+ * only reason to fire is that the lens is looking somewhere Chuck has to be. So
+ * the sector trades a permanent problem for an immediate one, which is the same
+ * bargain the weak wall makes with an explosive.
+ *
+ * It is worth points for the reason a weak wall is: it is a piece of the
+ * building the player took apart on purpose, and the score is the only thing
+ * that says the game noticed. Deliberately less than a guard — this is
+ * furniture, and a scoring route that ran on shooting fittings would be a worse
+ * game than one that ran on the men.
+ */
+void gameplay_destroy_camera(GameplayState *state, CampaignState *campaign,
+                             int index)
+{
+    if (index < 0 || index >= state->level.map.camera_count)
+        return;
+    CameraState *cam = &state->cameras[index];
+    if (!cam->working)
+        return;
+
+    cam->working = false;
+    cam->notice = 0.0f;
+    cam->suspicion = 0.0f;
+
+    float x = 0.0f;
+    float y = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
+    gameplay_camera_box(&state->level.map.cameras[index], &x, &y, &w, &h);
+    float cx = x + w * 0.5f;
+    float cy = y + h * 0.5f;
+    game_events_explosion(&state->events, cx, cy, 12);
+    gameplay_world_sound(state, SFX_CRATE_BREAK, cx, cy);
+    campaign->score += CAMERA_SCORE;
 }
 
 int gameplay_break_walls_in_radius(GameplayState *state,
@@ -494,7 +582,7 @@ void gameplay_kill_enemy_with_crate(GameplayState *state,
     float y = enemy->y + ENEMY_H * 0.5f;
     game_events_particles(&state->events, x, y, 24, enemy->dir);
     gameplay_world_sound(state, SFX_ENEMY_DOWN, x, y);
-    campaign->score += 150;
+    campaign->score += ENEMY_SCORE;
 }
 
 void gameplay_kill_dog_with_crate(GameplayState *state,
@@ -509,5 +597,5 @@ void gameplay_kill_dog_with_crate(GameplayState *state,
     float y = dog->y + DOG_H * 0.5f;
     game_events_particles(&state->events, x, y, 14, dog->dir);
     gameplay_world_sound(state, SFX_DOG_YELP, x, y);
-    campaign->score += 75;
+    campaign->score += DOG_SCORE;
 }

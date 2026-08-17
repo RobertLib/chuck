@@ -121,6 +121,24 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
         {12, 17, 28, 255}, {20, 28, 42, 255},
         {190, 220, 240, 255}, {140, 170, 196, 255}, 50},
 
+    /*
+     * VAULT — the room the night was for, after they finished with it.
+     *
+     * It reuses the plate walls and the raised access floor rather than
+     * introducing a material of its own, and that is the reading: a sub-vault
+     * is a strongroom bolted into the same building everything else is, not an
+     * architectural set piece. What makes it read as a vault is the palette —
+     * cold steel, almost no lamp, and the one warm value in it is the emergency
+     * lighting somebody left running when they walked out.
+     */
+    [LEVEL_THEME_VAULT] = {
+        WALL_STYLE_PLATE, FLOOR_PANEL, BACKDROP_SERVER,
+        {58, 64, 74, 255}, {22, 26, 33, 255}, {104, 114, 128, 255},
+        {76, 84, 96, 255}, {148, 160, 176, 255}, {182, 196, 214, 255},
+        {FX_INK_RGBA}, {16, 21, 29, 255},
+        {9, 13, 19, 255}, {22, 28, 37, 255},
+        {206, 214, 226, 255}, {126, 140, 158, 255}, 38},
+
     /* RESTROOM — the sublevel. Its interior is derived from the room's own
      * wall ring in game_render.c; only the tile material comes from here. */
     [LEVEL_THEME_RESTROOM] = {
@@ -131,9 +149,10 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
         {13, 23, 31, 255}, {29, 43, 49, 255},
         {202, 235, 222, 255}, {150, 180, 178, 255}, 90},
 
-    /* ---- The four exterior climbs.  Same fields, exterior meanings:
+    /* ---- The five exterior climbs.  Same fields, exterior meanings:
      * air_* is sky, far_shape the distant towers, wall* the building face,
-     * trim* the cornice stone, lamp a lit window, accent the signage. */
+     * trim* the cornice stone, lamp a lit window, accent the signage.
+     * Five entries and four backdrops: SLEET borrows the storm's. */
 
     /* NIGHT — the first climb: clear, cold, city lights below. */
     [LEVEL_THEME_FACADE_NIGHT] = {
@@ -167,56 +186,53 @@ static const LevelThemeArt THEME_ART[LEVEL_THEME_COUNT] = {
         {20, 26, 44, 255}, {74, 84, 104, 255},
         {214, 224, 236, 255}, {162, 178, 198, 255}, 0},
 
-    /* HIGH — the last: above the weather, a sea of cloud below and the
-     * building's own neon signage for company. */
+    /*
+     * HIGH — the fourth: the thinnest air the climb reaches, with the city
+     * gone to a violet glow behind broken cloud a long way below and the
+     * building's own neon signage for company.
+     *
+     * **Broken cloud rather than a deck, and that is the fiction rather than
+     * the art direction.** This read "above the weather, a sea of cloud
+     * below" while the climb *above* it is sleet, so the player climbed out
+     * of the weather in sector 13 and back into it in 15 — the same shape of
+     * mistake `FACADE_MOON` was corrected for, where the sun rose and set
+     * inside five minutes of the night clock. What the beat is for survives
+     * it whole, because what makes this climb read is one purple sky and a
+     * city that has stopped being a street: scattered cloud says that just as
+     * well as a floor of it, and it is what the seven drifting puffs in
+     * `backdrop_facade` actually draw.
+     */
     [LEVEL_THEME_FACADE_HIGH] = {
         WALL_STYLE_CONCRETE, FLOOR_SCREED, BACKDROP_FACADE_HIGH,
         {50, 48, 58, 255}, {34, 33, 42, 255}, {76, 72, 86, 255},
         {104, 100, 112, 255}, {156, 150, 166, 255}, {236, 72, 168, 255},
         {6, 8, 24, 255}, {38, 32, 74, 255},
         {18, 18, 44, 255}, {96, 64, 148, 255},
-        {150, 220, 248, 255}, {186, 196, 236, 255}, 0}};
+        {150, 220, 248, 255}, {186, 196, 236, 255}, 0},
+
+    /*
+     * SLEET — the fifth climb, and the weather has come back in off the sea.
+     *
+     * It borrows the storm's backdrop rather than getting one of its own,
+     * because it is the same weather at a different hour: the storm is the
+     * climb in a hurry and this is the last stretch, wet again, with the roof
+     * already in sight. The palette is the difference — the storm's stone is
+     * warmed by the city under it and this is above that, so everything in it
+     * is a step colder and a step paler.
+     */
+    [LEVEL_THEME_FACADE_SLEET] = {
+        WALL_STYLE_CONCRETE, FLOOR_SCREED, BACKDROP_FACADE_STORM,
+        {56, 62, 72, 255}, {33, 38, 47, 255}, {88, 98, 112, 255},
+        {110, 122, 136, 255}, {170, 184, 200, 255}, {FX_LAMP_RGBA},
+        {8, 12, 22, 255}, {34, 44, 62, 255},
+        {14, 20, 32, 255}, {58, 72, 94, 255},
+        {198, 216, 232, 255}, {158, 176, 196, 255}, 0}};
 
 const LevelThemeArt *level_art(LevelTheme theme)
 {
     if (theme < 0 || theme >= LEVEL_THEME_COUNT)
         return &THEME_ART[LEVEL_THEME_PLANT];
     return &THEME_ART[theme];
-}
-
-/* ---- Scores ---------------------------------------------------------- */
-
-/*
- * What the sector sounds like, decided by the same thing that decides what it
- * looks like. One track per theme, so a floor is never scored by the corridor
- * two sectors down and no two consecutive levels can share a loop — the
- * themes already never repeat back to back
- * (`test_campaign_themes_keep_changing`). The tracks themselves are described
- * in the plan table in audio.c.
- */
-static const MusicTrack THEME_MUSIC[LEVEL_THEME_COUNT] = {
-    [LEVEL_THEME_PLANT] = MUSIC_PLANT,
-    [LEVEL_THEME_LOBBY] = MUSIC_LOBBY,
-    [LEVEL_THEME_OFFICE] = MUSIC_OFFICE,
-    [LEVEL_THEME_SERVER] = MUSIC_SERVER,
-    [LEVEL_THEME_CANTEEN] = MUSIC_CANTEEN,
-    [LEVEL_THEME_LAB] = MUSIC_LAB,
-    [LEVEL_THEME_ARCHIVE] = MUSIC_ARCHIVE,
-    [LEVEL_THEME_SECURITY] = MUSIC_SECURITY,
-    [LEVEL_THEME_DUCTS] = MUSIC_DUCTS,
-    [LEVEL_THEME_PENTHOUSE] = MUSIC_PENTHOUSE,
-    [LEVEL_THEME_ROOF] = MUSIC_ROOF,
-    [LEVEL_THEME_RESTROOM] = MUSIC_RESTROOM,
-    [LEVEL_THEME_FACADE_NIGHT] = MUSIC_FACADE_NIGHT,
-    [LEVEL_THEME_FACADE_STORM] = MUSIC_FACADE_STORM,
-    [LEVEL_THEME_FACADE_MOON] = MUSIC_FACADE_MOON,
-    [LEVEL_THEME_FACADE_HIGH] = MUSIC_FACADE_HIGH};
-
-MusicTrack level_theme_music(LevelTheme theme)
-{
-    if (theme < 0 || theme >= LEVEL_THEME_COUNT)
-        return THEME_MUSIC[LEVEL_THEME_PLANT];
-    return THEME_MUSIC[theme];
 }
 
 /* ---- Shared helpers -------------------------------------------------- */
@@ -357,7 +373,7 @@ static unsigned tile_open_mask(const Level *level, int col, int row)
  * Form shading: what turns the material into a lit solid.
  *
  * The material functions describe a surface — plating, brick, ceramic — but a
- * surface with no light on it is a texture swatch, and fifteen sectors of
+ * surface with no light on it is a texture swatch, and seventeen sectors of
  * swatches is what a flat tile grid looks like. Three cues on top of the
  * material do the rest, and none of them care which material it was:
  *
@@ -406,7 +422,7 @@ static void wall_form_shading(SDL_Renderer *r, const LevelThemeArt *art,
  * is a legibility cue and nothing else: the one surface Chuck spends an entire
  * level standing on said nothing about which floor of the building he was on.
  * The bright arris stays exactly where it was — where you can stand has to
- * read identically in all fifteen sectors — and the pixels beneath it carry
+ * read identically in all seventeen sectors — and the pixels beneath it carry
  * the finish instead.
  */
 #define ART_FLOOR_BAND 5.0f
@@ -1155,7 +1171,7 @@ void level_art_wall_tile(SDL_Renderer *r, const Level *level,
 
     /* Edge treatment is shared by every material: the surfaces the player
      * actually stands on, walks past and jumps under have to read the same
-     * way in all fifteen sectors or the level stops being legible. */
+     * way in all seventeen sectors or the level stops being legible. */
     if (open & OPEN_UP)
     {
         fx_rect(r, art->trim, x, y, TILE_SIZE, 2.0f);
@@ -2304,7 +2320,7 @@ static void backdrop_roof(const LevelArtScene *s, const LevelThemeArt *art,
 {
     SDL_Renderer *r = s->renderer;
 
-    /* The city seen through a curtain wall. After four climbs on the outside
+    /* The city seen through a curtain wall. After five climbs on the outside
      * of this building, the last sector puts the drop behind glass. */
     int star_band = (int)(fh * 0.45f);
     if (star_band < 1)
@@ -2429,7 +2445,7 @@ static void backdrop_roof(const LevelArtScene *s, const LevelThemeArt *art,
 /* ---- Exterior backdrops ---------------------------------------------- */
 
 /*
- * The four climbs share one building: the same masonry shell, floor bands and
+ * The five climbs share one building: the same masonry shell, floor bands and
  * structural bays. What changes is the hour and the weather, which is what a
  * climber would actually notice between one wall and the next.
  */
@@ -2787,9 +2803,12 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
          * This was a sunrise for a long time, and it was the one thing in the
          * game that contradicted the clock outright: the night runs 00:22 to
          * 01:00, this is sector 11, and the wall clocks in the sectors either
-         * side of it read a few minutes before and after 00:47. A player who
+         * side of it read 00:42 and 00:46. A player who
          * looked up in sector 10, climbed through a dawn and looked up again
          * in sector 12 was told the sun had risen and set inside five minutes.
+         * (Both readings were written here as `00:47` while the night divided
+         * fifteen ways; `check_docs.py` derives them from `NIGHT_CLOCK_*` now,
+         * so the next campaign that grows moves this comment with it.)
          *
          * What the beat is actually for survives the change intact — one
          * climb lit from the side by a single round source off the corner,
@@ -2854,17 +2873,18 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
     }
     case BACKDROP_FACADE_HIGH:
     {
-        /* The one purple in the game, and it is deliberate: seen from above
-         * the weather, the sodium-and-neon city sums to a violet haze that no
-         * single fixture in the palette owns — anchoring it to FX_LAMP or
-         * FX_CYAN would hang a lamp in the sky. Owned here as one named trio
-         * (the glow, the cloud deck it soaks, the deck's lit tops) so the hue
-         * has exactly one home and cannot multiply. */
+        /* The one purple in the game, and it is deliberate: seen from this
+         * high the sodium-and-neon city sums to a violet haze that no single
+         * fixture in the palette owns — anchoring it to FX_LAMP or FX_CYAN
+         * would hang a lamp in the sky. Owned here as one named trio (the
+         * glow, the cloud it soaks, the cloud's lit tops) so the hue has
+         * exactly one home and cannot multiply. */
         static const SDL_Color CITY_GLOW = {150, 130, 220, 255};
-        static const SDL_Color CLOUD_DECK = {58, 56, 104, 255};
-        static const SDL_Color CLOUD_DECK_LIT = {96, 92, 156, 255};
-        /* Above the weather: thin air, hard stars, and the city reduced to a
-         * glow coming up through a floor of cloud. */
+        static const SDL_Color CLOUD_BAND = {58, 56, 104, 255};
+        static const SDL_Color CLOUD_BAND_LIT = {96, 92, 156, 255};
+        /* Thin air, hard stars, and the city reduced to a glow coming up
+         * between torn cloud rather than through a floor of it — see the note
+         * on the theme: the climb above this one is sleet. */
         for (int i = 0; i < 60; ++i)
         {
             unsigned h = art_hash(i * 11 + 5, 733);
@@ -2886,9 +2906,9 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
                             (float)s->win_w + 320.0f) -
                       160.0f;
             float w = 150.0f + (float)(h % 160u);
-            fx_rect_a(r, CLOUD_DECK, 150, x,
+            fx_rect_a(r, CLOUD_BAND, 150, x,
                       deck + (float)((h >> 4) % 40u), w, 30.0f);
-            fx_rect_a(r, CLOUD_DECK_LIT, 90, x,
+            fx_rect_a(r, CLOUD_BAND_LIT, 90, x,
                       deck + (float)((h >> 4) % 40u), w, 6.0f);
         }
         facade_shell(s, art, top, height);
@@ -2933,7 +2953,7 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
     }
     }
 
-    /* Every climb keeps the same aircraft beacon so the four walls read as
+    /* Every climb keeps the same aircraft beacon so the five walls read as
      * the same tower at different hours. */
     float beacon = 0.45f + 0.55f * sinf(s->time * 2.2f);
     fx_glow(r, (float)s->win_w - 42.0f, top + 25.0f, 20.0f, art->accent,
@@ -2941,22 +2961,22 @@ static void backdrop_facade(const LevelArtScene *s, const LevelThemeArt *art,
 
     /* The street the cordon is standing in, last of all, because it is light
      * falling on the wall rather than something behind it. */
-    float cordon = 0.0f;
-    switch (art->backdrop)
-    {
-    case BACKDROP_FACADE_NIGHT:
-        cordon = 1.0f; /* the first climb, and the lowest */
-        break;
-    case BACKDROP_FACADE_STORM:
-        cordon = 0.60f;
-        break;
-    case BACKDROP_FACADE_MOON:
-        cordon = 0.26f;
-        break;
-    default:
-        break; /* above the cloud deck there is nothing down there to see */
-    }
-    facade_cordon(s, top, height, cordon);
+    /*
+     * Asked of the **theme**, which is one row per climb, and not of the
+     * backdrop, which is not — and asked of `level.c`, which the suite can
+     * reach, rather than answered by a switch in here, which it cannot.
+     *
+     * The wash fades with height and that is the whole of what it says, so it
+     * needs an answer for each of the five walls. Keyed on `art->backdrop` it
+     * had four, because `FACADE_SLEET` borrows the storm's: the highest climb
+     * in the game, two floors under the roof, washed its face with the storm's
+     * 0.60 and therefore showed *more* street than the two climbs below it.
+     * Nothing failed — the picture simply stopped meaning what
+     * [../docs/story.md](../docs/story.md) says it means, which is that the
+     * climb is also a climb away from the cordon.
+     */
+    facade_cordon(s, top, height,
+                  level_theme_cordon(s->level->map.theme));
 }
 
 /* ---- Entry point ----------------------------------------------------- */

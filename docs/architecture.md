@@ -81,13 +81,23 @@ The chase branch owns its own event dispatch and camera-shake tick because those
 normally run only on playing frames.
 
 `update_playing` ([game.c](../src/game.c)) has a deliberate ordering:
-terminal hold → player physics → elevators/falling/moving platforms → crates →
-platform carry & snap → doors and sublevel travel → AI spawns → player attack →
-AI movement → item pickup → hazards → player bullets → AI combat → enemy
-bullets → contact damage → alarm countdown (**after** perception, so a guard
-seeing Chuck on the final frame keeps the alarm alive) → exit check → camera
-lerp. Reordering these has caused real bugs; several tests pin the resulting
-behavior.
+terminal hold → player physics → body drag → elevators/falling/moving platforms
+→ crates → platform carry & snap → doors and sublevel travel → AI spawns →
+player attack → AI movement → item pickup → hazards → player bullets → bolts in
+the air → AI combat → enemy bullets → contact damage → alarm countdown
+(**after** perception, so a guard seeing Chuck on the final frame keeps the
+alarm alive) → exit check → camera lerp. Reordering these has caused real bugs;
+several tests pin the resulting behavior.
+
+Two of those positions are decisions rather than places they happened to fit.
+**The body drag runs after the walk and after the terminal**: after the walk so
+a corpse follows the step Chuck has just taken rather than the one before it,
+and after the terminal because the two answer the same held button and the
+console has first claim on it. **The bolts land before the perception pass**,
+not after it, so a bolt coming down this frame is a noise the guards get to hear
+this frame; ordered the other way it is a frame late, which is invisible on its
+own and exactly what makes a mechanic feel unreliable. See
+[Going quiet](gameplay.md#going-quiet).
 
 ## Determinism and RNG
 
@@ -127,8 +137,6 @@ of it: `make test` links no SDL and so could never reach a line of it. The
 vocabulary being `static` is what had kept it that way — nothing could move out
 without taking a copy of the lighting rules with it, and two copies of how a
 figure is lit is two answers to the question. What holds this side of the split
-now is `make smoke`, which boots the real binary through the title screen, all
-fifteen sectors, every screen `--scene` names and every sheet of the manual
-under ASan and UBSan, each for the whole of its own length; the split was made
-only after that target existed, because a pure move in a file nothing exercises
-is a pure move nobody can check.
+is the vocabulary itself: one name per rule, in [fx.h](../src/fx.h), with
+`make lint` refusing any literal that respells one of them — a figure drawn
+anywhere in the three files below is lit by the same code as every other.

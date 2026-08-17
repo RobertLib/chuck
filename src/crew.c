@@ -16,10 +16,21 @@
  * Twelve names, in the order they were badged in. Filed by slot rather than
  * drawn, so the man patrolling the archive is the same man every time that
  * sector loads and no callsign costs the seeded stream a draw.
+ *
+ * **The roll is deliberately not a citation**, and five of these were changed to
+ * make sure of it. The building is a homage and
+ * [docs/story.md](../docs/story.md) says so; the rule it sets is that the homage
+ * is paid by *describing* the films rather than naming them, and a roster
+ * reproducing somebody else's crew name for name is the one thing on the page
+ * that named them outright. What the twelve are for is the net and the manual's
+ * `THE CREW` sheet — a man on a handset has a name, a man being shot at is
+ * anonymous — and that works on any twelve names. A reader who recognises the
+ * shape of the night is meant to; a reader who recognises the cast list was
+ * reading a copy.
  */
 static const char *const CREW[CREW_SIZE] = {
-    "KARL",  "THEO",   "TONY",     "HEINRICH", "MARCO", "KRISTOFF",
-    "FRANCO", "FRITZ", "ALEXANDER", "ULI",     "EDDIE", "JAMES",
+    "LENZ",   "BRUNO", "TONY",      "KASPAR", "MARCO", "MATTHIAS",
+    "FRANCO", "FRITZ", "ALEXANDER", "MILO",   "EDDIE", "JAMES",
 };
 
 /*
@@ -86,7 +97,7 @@ static const CrewLine RADIO_LINES[] = {
      * only ever prints a speaker who is on screen — so naming the thirty-second
      * floor, as this used to, put a guard standing beside Chuck in the
      * ground-floor lobby announcing he was thirty floors up. There is no
-     * sector-to-storey mapping to gate it against either: fifteen sectors are
+     * sector-to-storey mapping to gate it against either: seventeen sectors are
      * the route up a forty-floor building, not a floor count. What he can say
      * anywhere is the part that matters, which is that he has nothing. */
     {"NET CHECK. THIS FLOOR IS QUIET. NOTHING TO REPORT.", 0, 0, 0},
@@ -98,15 +109,15 @@ static const CrewLine RADIO_LINES[] = {
      * cite "the sector the report first says the word vault", which is sector
      * 13 and always was: the arithmetic was right and the reason written beside
      * it was somebody else's. */
-    {"THEO IS ON THE SIXTH LOCK. ONE MORE AND WE LOAD.", 8, 0, 0},
+    {"BRUNO IS ON THE SIXTH LOCK. ONE MORE AND WE LOAD.", 8, 0, 0},
     {"THE SEVENTH LOCK IS NOT ON ANY DRAWING WE HAVE.", 0, 0, 0},
     {"TELL VOSS THE CIRCUITS CUT THEMSELVES AT MIDNIGHT.", 0, 0, 0},
     /* Two men not answering is two men down, and it used to be sayable in the
      * lobby before a shot had been fired. The ceiling is the other half of the
      * same thought: naming two absentees says the losses are still small
      * enough to be counted on a hand, and past that the crew has bigger
-     * arithmetic than MARCO and HEINRICH. */
-    {"STILL NOTHING FROM MARCO. NOTHING FROM HEINRICH.", 0, 2, 5},
+     * arithmetic than MARCO and KASPAR. */
+    {"STILL NOTHING FROM MARCO. NOTHING FROM KASPAR.", 0, 2, 5},
     /* The narrowest window on the net, and the most literal: this man has
      * counted, and the number he read out is eleven. It is true while exactly
      * one of the crew is down and false the moment a second goes. */
@@ -149,8 +160,21 @@ static const CrewLine RADIO_LINES[] = {
     /* The sub-vault is emptied during the climb, so this is the one line on
      * the net that reports the job actually being done. */
     {"VAULT IS DRY. LOAD IT AND GET IT ON THE ROOF.", 10, 0, 0},
+    /* The roof, and the reason it needed a line of its own. The report between
+     * sectors is shown only after a stair door, the last of the six lands on the
+     * vault at 16, and the net's highest gate was 14 — so sector 17, the floor
+     * the whole night is played for, arrived with nothing new on either channel.
+     * Every check passed: `test_no_two_sectors_in_a_row_go_quiet` allows one
+     * quiet sector and the climbs were spending it, so the roof came in on the
+     * allowance meant for a wordless wall.
+     *
+     * What it says is the only thing left to report by then: the cases are on the
+     * pad and the crew is waiting on the aircraft rather than on the vault. It is
+     * a fact about the last floor and false on every floor below it, which is
+     * what the gate is for. */
+    {"CASES ARE ON THE PAD. WE ARE WAITING ON THE BIRD.", 17, 0, 0},
     {"NEGATIVE. THE LIFT SHAFTS ARE OURS TONIGHT.", 0, 0, 0},
-    {"KARL WANTS THE LIGHTS BACK ON. TELL KARL NO.", 0, 0, 0},
+    {"LENZ WANTS THE LIGHTS BACK ON. TELL LENZ NO.", 0, 0, 0},
 };
 
 /*
@@ -185,6 +209,9 @@ static const CrewLine TALK_LINES[] = {
     {"THE NIGHT STAFF WERE POLITE. I LIKED THEM.", 0, 0, 0},
     /* Two minutes to 01:00 is the penthouse and the roof, and nowhere else. */
     {"TWO MINUTES AND THIS ROOF IS SOMEBODY ELSE'S.", 14, 0, 0},
+    /* Gated with the radio line above, and for the same floor: there is no floor
+     * above this one to be sent to. */
+    {"THERE IS NO UPSTAIRS LEFT. THIS IS UPSTAIRS.", 17, 0, 0},
     {"HE IS ONE FLOOR BEHIND US. HE IS ALWAYS ONE.", 0, 1, 0},
 };
 
@@ -204,7 +231,7 @@ static const CrewLine ALARM_LINES[] = {
     {"THAT IS NOT SECURITY! THAT IS NOT ANYBODY!", 0, 0, 0},
     {"HE IS NOT A GUEST, VOSS! HE WAS NEVER A GUEST!", 0, 0, 0},
     {"NO SHOT! HE IS BEHIND THE SLAB! NO SHOT!", 0, 0, 0},
-    {"KARL! KARL, ANSWER YOUR HANDSET!", 0, 1, 0},
+    {"LENZ! LENZ, ANSWER YOUR HANDSET!", 0, 1, 0},
     {"GET TO THE ROOF! EVERYBODY GET TO THE ROOF!", 10, 0, 0},
     {"IT IS THE MAN OFF THE PAVEMENT! IT IS HIM!", 0, 0, 0},
     {"HE HAS A CARD! HE IS COMING UP THE STAIR!", 0, 0, 0},
@@ -354,10 +381,71 @@ bool crew_line_allowed(ChatterKind kind, int index,
 }
 
 /*
+ * How often a call leads with the newest thing the crew has to say, as one in
+ * this many.
+ *
+ * **This exists because the middle third of the campaign had no guaranteed story
+ * beat in it at all.** The report between sectors is the one channel the player
+ * cannot miss, and it is shown only after a sector that leaves by its stair door
+ * — so from sector 10 on, where the campaign alternates interior and climb and
+ * every interior therefore needs a `Y`, the reports stop. They land after
+ * sectors 1, 4, 5, 8, 9 and 16: five in the first nine sectors, then six
+ * sectors of silence, then the payoff.
+ *
+ * What was supposed to cover that stretch is this table — `VAULT IS DRY` at 10,
+ * `HE CAME UP THROUGH THE DUCTS` at 12, `TWO MINUTES AND THIS ROOF IS SOMEBODY
+ * ELSE'S` at 14, and the pad at 17 — and it could not, because a gated line
+ * competed on equal terms
+ * with every ungated one. Fifteen-odd lines are sayable by then, so the odds of
+ * any given call being the one beat that moves the plot were about one in
+ * fifteen, on a call that also needs a live guard who is calm, on the ground and
+ * inside `CHATTER_EARSHOT`. The plot was in the table and the player was not
+ * going to hear it.
+ *
+ * A third rather than always: the freshest line is the one worth leading with,
+ * but a net that says the same sentence every time somebody lifts a handset is a
+ * net that reads as one line rather than as a crew. This applies at every tier,
+ * not only the late ones — the newest beat is the right thing to lead with in the
+ * lobby too.
+ *
+ * **And the gates have to reach the top of the building**, which they did not.
+ * For a long time the highest was 14, so 15, 16 and 17 added nothing new: the
+ * roof led with a line written for the penthouse, and sector 17 carried no fresh
+ * beat on either channel at all. A ceiling on the gates is a ceiling on the plot,
+ * and the sector it strands is always the last one — which is the one the whole
+ * night is played for. `test_no_two_sectors_in_a_row_go_quiet` requires a quiet
+ * sector to be a climb now, so a beat missing off an interior fails the build
+ * rather than being spent out of the climbs' allowance.
+ */
+#define CREW_FRESH_LINE_EVERY 3
+
+/*
+ * The highest sector gate this situation has passed, or nought if the table's
+ * sayable lines are all ungated. That is "the newest thing the crew has to say":
+ * a gate is only ever put on a line because the line stopped being untrue at
+ * that point in the night.
+ */
+static int newest_gate_reached(ChatterKind kind, const char *callsign,
+                               const CrewSituation *situation)
+{
+    int count = crew_line_count(kind);
+    int newest = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        const CrewLine *line = &TABLES[kind].lines[i];
+        if (line->from_sector > newest &&
+            !line_names(line->text, callsign) &&
+            line_fits_the_night(line, situation))
+            newest = line->from_sector;
+    }
+    return newest;
+}
+
+/*
  * The line, and the two reasons this man in this sector may not be the one
  * saying it.
  *
- * Several of these name a man: THEO is on the sixth lock, KARL wants the
+ * Several of these name a man: BRUNO is on the sixth lock, LENZ wants the
  * lights back on, nothing has come back from MARCO. The roll and the callsign
  * are drawn from different places — one off the RNG, one off the enemy slot —
  * so nothing stopped the two landing on the same man, and the strip printed
@@ -367,7 +455,10 @@ bool crew_line_allowed(ChatterKind kind, int index,
  * Stepping forward from the rolled index rather than re-rolling keeps both of
  * those out of the seeded stream entirely: the simulation still spends exactly
  * one number on a line however this resolves, so neither filter can move a
- * single seeded choice downstream of it.
+ * single seeded choice downstream of it. **The freshness pass below is held to
+ * the same rule** — it reads a slice of the roll already drawn rather than
+ * asking for a second one, so leading with the newest beat cannot shift a single
+ * seeded choice either.
  */
 const char *crew_line_in(ChatterKind kind, int roll, const char *callsign,
                          const CrewSituation *situation)
@@ -377,6 +468,35 @@ const char *crew_line_in(ChatterKind kind, int roll, const char *callsign,
         return NULL;
     if (roll < 0)
         roll = -roll;
+
+    /*
+     * Lead with the newest beat, one call in `CREW_FRESH_LINE_EVERY`.
+     *
+     * Only when a situation was handed over: `crew_line` and `crew_line_said_by`
+     * pass NULL to ask about the table itself rather than about a moment in a
+     * run, and the suite measures the table through them. A NULL situation is
+     * every situation, which is no situation to be fresh in.
+     */
+    if (situation != NULL && roll % CREW_FRESH_LINE_EVERY == 0)
+    {
+        int newest = newest_gate_reached(kind, callsign, situation);
+        if (newest > 0)
+        {
+            for (int step = 0; step < count; ++step)
+            {
+                const CrewLine *line =
+                    &TABLES[kind].lines[(roll + step) % count];
+                if (line->from_sector == newest &&
+                    !line_names(line->text, callsign) &&
+                    line_fits_the_night(line, situation))
+                    return line->text;
+            }
+        }
+        /* No gated line sayable here, or the one there is belongs to this
+         * speaker: fall through to the ordinary walk rather than saying nothing.
+         * Every line the walk can return was already allowed. */
+    }
+
     for (int step = 0; step < count; ++step)
     {
         const CrewLine *line = &TABLES[kind].lines[(roll + step) % count];

@@ -2,14 +2,38 @@
 
 #include "editor_legend.h"
 
+/* For `CAMPAIGN_CLIMB_SECTOR_COUNT` — see the note on ED_CAMPAIGN_* below. */
+#include "manual_pages.h"
+
 #include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-/* The campaign shape `test_all_embedded_levels_parse` pins. */
-#define ED_CAMPAIGN_LENGTH 15
-#define ED_CAMPAIGN_FACADES 4
+/*
+ * The campaign shape the suite pins, and where each number comes from.
+ *
+ * The first two were `15` and `4` written out here, and they stayed at those
+ * values through the edit that made the campaign seventeen sectors with five
+ * climbs — so the editor told every author who opened a shipped map that the
+ * campaign disagreed with the tests, which was the editor being wrong about the
+ * one thing it exists to check. Worse, nothing could see it: `editor_validate`
+ * takes the sector number off `doc->path`, the suite's own campaign test handed
+ * it a document with no path at all, and the whole cross-sector block was
+ * therefore skipped over every shipped map. Both halves are fixed —
+ * `test_the_editor_has_nothing_to_say_about_the_shipped_campaign` names the file
+ * now — and these two read the constants the maps are held against rather than
+ * repeating them.
+ *
+ * `ED_CAMPAIGN_RESTROOM_DOORS` is deliberately still a literal, because it is a
+ * rule rather than a copy: four sectors carry a `U` and each opens on a room of
+ * its own, which is what `levels/LEGEND.md` states and
+ * `test_embedded_restroom_sublevels` holds the four rooms to. There is no
+ * constant elsewhere for it to drift from.
+ */
+#define ED_CAMPAIGN_LENGTH CAMPAIGN_SECTORS
+#define ED_CAMPAIGN_FACADES CAMPAIGN_CLIMB_SECTOR_COUNT
 #define ED_CAMPAIGN_RESTROOM_DOORS 4
 #define ED_FACADE_MIN_HAZARDS 8
 #define ED_FACADE_MIN_WALLS 40
@@ -249,7 +273,14 @@ static int count_elevator_shafts(const EditorGrid *grid)
 
 static void check_caps(const EditorDoc *doc, EdReport *report)
 {
-    check_one_cap(report, count_of(report, 'M') + count_of(report, 'W'),
+    /* A `Q` is a guard as well — the same `place_enemy` into the same
+     * `enemy_spawns` — so he belongs in this sum and not only in the hazard
+     * budget. Left out, as he was from the day he was drawn, a floor could be
+     * painted past the ceiling entirely in heavies and the loader would drop
+     * them without this report saying a word. */
+    check_one_cap(report,
+                  count_of(report, 'M') + count_of(report, 'W') +
+                      count_of(report, 'Q'),
                   MAX_ENEMIES, "guards");
     /* A `W` is a guard *and* his dog, so it is counted against both ceilings.
      * The loader takes the dog through `find_dog_slot`, which hands back
@@ -257,10 +288,42 @@ static void check_caps(const EditorDoc *doc, EdReport *report)
      * on this list, and the reason this line and the lift one below were worth
      * adding: they were the two the list was missing. */
     check_one_cap(report, count_of(report, 'W'), MAX_DOGS, "guard dogs");
+    /*
+     * And a floor has to seat the men it can *send for*, not only the ones
+     * drawn on it. A console hacked under the alarm calls up to
+     * `TERMINAL_REINFORCEMENT_MAX_COUNT` out of a door, once per console, and
+     * they need slots beside the men already standing there and the corpses of
+     * the ones that have gone down.
+     *
+     * Over the ceiling nothing fails, which is why this needs saying out loud:
+     * `find_enemy_slot` hands the arrival the corpse furthest from Chuck, so
+     * the floor quietly deletes a body and with it the thing
+     * `update_body_discovery` sends the next calm guard over to look at. A
+     * warning rather than an error, because the map loads and plays — it just
+     * stops playing the way it reads.
+     */
+    int consoles = count_of(report, 'T');
+    int called = count_of(report, 'D') > 0
+                     ? consoles * TERMINAL_REINFORCEMENT_MAX_COUNT
+                     : 0;
+    int drawn = count_of(report, 'M') + count_of(report, 'W') +
+                count_of(report, 'Q');
+    if (called > 0 && drawn + called > MAX_ENEMIES)
+    {
+        report_add(report, ED_SEV_WARN, -1, -1,
+                   "%d men could stand here at once — %d drawn plus %d called "
+                   "by %d console(s) — but the array seats %d, so an arrival "
+                   "overwrites a body",
+                   drawn + called, drawn, called, consoles, MAX_ENEMIES);
+    }
+    /* Every character that reaches `place_item`, which is what the ceiling is
+     * on: the docket sheet and the flash charge go into the same array as the
+     * cards and the magazines. */
     check_one_cap(report,
                   count_of(report, 'C') + count_of(report, 'G') +
                       count_of(report, 'N') + count_of(report, 'K') +
-                      count_of(report, 'Z'),
+                      count_of(report, 'Z') + count_of(report, '*') +
+                      count_of(report, '!'),
                   MAX_ITEMS, "items");
     check_one_cap(report, count_of(report, 'X'), MAX_MINES, "mines");
     check_one_cap(report, count_of(report, '^'), MAX_SPIKES, "spikes");
@@ -268,6 +331,9 @@ static void check_caps(const EditorDoc *doc, EdReport *report)
     check_one_cap(report, count_of(report, 'T'), MAX_TERMINALS, "terminals");
     check_one_cap(report, count_of(report, 'A'), MAX_ALARM_SWITCHES,
                   "alarm switches");
+    /* `MAX_CAMERAS` is the tightest ceiling on this list, and it was the one
+     * with no line at all. */
+    check_one_cap(report, count_of(report, 'I'), MAX_CAMERAS, "cameras");
     check_one_cap(report, count_of(report, 'B'), MAX_CRATES, "crates");
     check_one_cap(report, count_of(report, 'L'), MAX_GAS_CANISTERS,
                   "gas canisters");
@@ -284,15 +350,44 @@ static void check_caps(const EditorDoc *doc, EdReport *report)
                   "lift shafts");
     check_one_cap(report, count_of(report, 'r') + count_of(report, 'v'),
                   MAX_FACADE_HAZARD_SPAWNS, "facade hazards");
-    check_one_cap(report,
-                  count_of(report, 'c') + count_of(report, 'd') +
-                      count_of(report, 'i') + count_of(report, 'n') +
-                      count_of(report, 's') + count_of(report, 't') +
-                      count_of(report, 'g') + count_of(report, 'q') +
-                      count_of(report, 'b') + count_of(report, 'u') +
-                      count_of(report, 'p') + count_of(report, 'o') +
-                      count_of(report, 'z'),
-                  MAX_DECORATIONS, "decorations");
+    /*
+     * The props, and this is deliberately not a list of them.
+     *
+     * It was one — fifteen `count_of` calls — and that made it the fifth copy of
+     * a list that already lives in the legend, the parser, the editor's palette
+     * and `check_docs.py`. It fell behind the day the plant set was added: `a`
+     * `e` `j` `l` are decorations the loader counts against `MAX_DECORATIONS`
+     * and this sum did not, so a floor painted past the ceiling in pallets was a
+     * floor the editor called clean while the loader quietly dropped the
+     * overflow. Asked of the palette instead: every symbol filed under one of
+     * the prop bins is a prop, so a sixth set is counted by having been given a
+     * bin.
+     */
+    int props = 0;
+    for (int i = 0; i < ED_SYMBOL_COUNT; ++i)
+    {
+        switch (ED_SYMBOLS[i].group)
+        {
+        case ED_GROUP_OFFICE:
+        case ED_GROUP_LOBBY:
+        case ED_GROUP_RESTROOM:
+        case ED_GROUP_PLANT:
+        case ED_GROUP_NIGHT:
+            props += count_of(report, ED_SYMBOLS[i].symbol);
+            break;
+        case ED_GROUP_TERRAIN:
+        case ED_GROUP_ROUTE:
+        case ED_GROUP_ITEMS:
+        case ED_GROUP_ENEMIES:
+        case ED_GROUP_PEOPLE:
+        case ED_GROUP_HAZARDS:
+        case ED_GROUP_FITTINGS:
+        case ED_GROUP_FACADE:
+        case ED_GROUP_COUNT:
+            break;
+        }
+    }
+    check_one_cap(report, props, MAX_DECORATIONS, "decorations");
 
     if (doc->grid.width >= MAX_LEVEL_WIDTH)
     {
@@ -413,6 +508,89 @@ static void check_decorations(const EditorDoc *doc, EdReport *report)
                    "%d hanging props have no slab above them; the loader drops every one",
                    unhung);
     }
+}
+
+/*
+ * The flight cases, and the one thing they are for.
+ *
+ * An `m` is a stencilled *Meridian Facility Services* box — one of the ones the
+ * crew wheeled in through the goods entrance in March and nobody inspected. It
+ * is scenery in every mechanical sense: non-solid, no score, nothing in the
+ * simulation reads it. What it does is carry the plot. `levels/LEGEND.md` says
+ * how: *the case the bazooka came out of, two tiles from the bazooka, is the
+ * whole plot said without a line of text.*
+ *
+ * Which made it worth asking whether the campaign was doing it, and the answer
+ * was mostly. Nine interiors put their case within two tiles of a grenade or a
+ * bazooka; sector 8 had its nineteen tiles away and sector 14 eleven, so on those
+ * two floors the box was a box.
+ *
+ * **Asked of the sector rather than of each case**, which is the distinction the
+ * legend already draws two sentences earlier: the variants are chosen from the
+ * tile position *"so a run of them is not a run of the same box"*, which sanctions
+ * a run. The roof's service deck is exactly that — four cases along the length of
+ * it, three of them nowhere near the one grenade, and rightly so. One case making
+ * the point is the point; every case making it would be the same sentence four
+ * times.
+ *
+ * A note, not a warning, because it is what the legend calls it: *worth* putting
+ * near one. A floor that keeps its cases away from the explosives still loads and
+ * still plays. It just stops saying the thing they are there to say.
+ */
+#define ED_CASE_NEAR_EXPLOSIVE 6
+
+static void check_flight_cases(const EditorDoc *doc, EdReport *report)
+{
+    int cases = 0;
+    int first_col = -1;
+    int first_row = -1;
+    int nearest = -1;
+
+    for (int row = 0; row < doc->grid.height; ++row)
+    {
+        for (int col = 0; col < doc->grid.width; ++col)
+        {
+            if (doc_at(doc, col, row) != 'm')
+                continue;
+            cases++;
+            if (first_col < 0)
+            {
+                first_col = col;
+                first_row = row;
+            }
+            for (int r = 0; r < doc->grid.height; ++r)
+            {
+                for (int c = 0; c < doc->grid.width; ++c)
+                {
+                    char other = doc_at(doc, c, r);
+                    /* The two things that open a `%` and the two things that
+                     * come out of a case. A flash charge is deliberately not on
+                     * this list: the legend is explicit that `!` is not a
+                     * weapon, and a case it came out of would be a case with
+                     * nothing in it worth the sentence. */
+                    if (other != 'N' && other != 'Z')
+                        continue;
+                    int distance = abs(c - col) + abs(r - row);
+                    if (nearest < 0 || distance < nearest)
+                        nearest = distance;
+                }
+            }
+        }
+    }
+
+    /* No cases is no claim, and no explosive means the sector cannot make the
+     * point at all — sectors 1 and 5 carry neither a grenade nor a bazooka, and
+     * telling their author to move a box nearer to nothing would be a note that
+     * cannot be acted on. */
+    if (cases == 0 || nearest < 0)
+        return;
+    if (nearest <= ED_CASE_NEAR_EXPLOSIVE)
+        return;
+
+    report_add(report, ED_SEV_NOTE, first_col, first_row,
+               "The nearest flight case is %d tiles from an explosive; within "
+               "%d is what makes it read as the case one came out of",
+               nearest, ED_CASE_NEAR_EXPLOSIVE);
 }
 
 /* ---- Authoring rules for interiors ------------------------------------ */
@@ -819,7 +997,20 @@ static void check_route(const Level *level, EdReport *report)
         }
         else
         {
-            report_add(report, ED_SEV_NOTE, col, row,
+            /*
+             * A warning rather than a note, and the campaign is the argument.
+             *
+             * An optional pickup is optional to *take*, never optional to
+             * reach: nothing in an ordinary run reveals one placed where the
+             * player cannot stand, so it is a thing drawn on the map that no
+             * player will ever meet — which is exactly "it loads, but it will
+             * not play the way it reads", the definition of a warning here.
+             * Sector 14's flash charge sat on top of a partition five rows
+             * above its floor and this rule said so all along, in the one
+             * severity `test_the_editor_has_nothing_to_say_about_the_shipped_campaign`
+             * deliberately allows. As a warning it is a failed build instead.
+             */
+            report_add(report, ED_SEV_WARN, col, row,
                        "This pickup cannot be reached");
         }
     }
@@ -1164,6 +1355,8 @@ void editor_validate(const EditorDoc *doc, const Level *level, bool parsed,
         check_spikes(doc, report);
         check_weak_walls(doc, report);
         check_moving_platforms(doc, report);
+        /* Interiors only, which is where an `m` may stand at all. */
+        check_flight_cases(doc, report);
     }
 
     if (!parsed)

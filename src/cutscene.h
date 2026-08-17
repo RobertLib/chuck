@@ -9,11 +9,29 @@
 #define LEVEL_TRANSITION_DURATION 9.4f
 /* The outro's clock runs on past its own last beat, because the thank-you card
  * is held for the rest of it and the credits take the frame when it runs out.
- * The card's replay prompt appears at 21.0, so this is also how long that offer
- * stands: with the roll waiting behind it, the gap between the two is the whole
- * of the player's chance to take it. */
+ * The card's replay prompt appears at `OUTRO_REPLAY_PROMPT_TIME`, so this is
+ * also how long that offer stands: with the roll waiting behind it, the gap
+ * between the two is the whole of the player's chance to take it. */
 #define OUTRO_CUTSCENE_DURATION 27.0f
 #define OUTRO_FINAL_REVEAL_TIME 19.4f
+
+/*
+ * When the replay offer appears — and therefore when it starts being answered.
+ *
+ * One constant for both halves, because they were two: the prompt was a literal
+ * 21.0 inside `render_outro_ui` while R and the pad's own button were wired to
+ * `OUTRO_FINAL_REVEAL_TIME`, so for 1.6 seconds the card answered a key it had
+ * not named. That is the mirror image of a prompt naming a button the state does
+ * not accept, which [game_input.c](game_input.c) argues about at length — and
+ * the copy that was going to go stale was this one, since moving the reveal
+ * later would have left the prompt standing over a key that did nothing.
+ *
+ * The 1.6 second delay is deliberate and is the reveal's own fade: the card
+ * spends it drawing SHE'S SAFE and the two lines under it, and an offer to
+ * replay printed into the middle of that reads as an instruction rather than as
+ * an afterthought.
+ */
+#define OUTRO_REPLAY_PROMPT_TIME (OUTRO_FINAL_REVEAL_TIME + 1.6f)
 
 typedef enum
 {
@@ -75,6 +93,35 @@ typedef struct
      * rather than only that they arrived. See `campaign_award_sector_bonus`. */
     int time_bonus;
     int clean_bonus;
+    /*
+     * The quickest this sector has ever been cleared, and whether this run is
+     * the one that set it.
+     *
+     * The report has printed a stopwatch since it existed, and the score has
+     * paid for the seconds handed back since `campaign_award_sector_bonus` did
+     * — so the game has been asking the player to go fast all along, while
+     * giving them nothing to be fast *against*. `best_seconds` is the number
+     * that closes that, and it is `PROGRESS_NO_TIME` on a first clear, when
+     * there is nothing to compare with and the field says so instead.
+     */
+    float best_seconds;
+    bool best_is_new;
+    /*
+     * The run's docket, printed under the score it paid for.
+     *
+     * The same number `sector_tally.h` carries and for the same reason: the
+     * sheets were counted on the run and read by nothing until the run was
+     * over. This is the other half of that fix — six of the sixteen sector
+     * boundaries show this report instead of the tally line, and a counter that
+     * appears on eleven boundaries and not on the other five would be worse
+     * than one that appears on none.
+     *
+     * It sits under SCORE rather than in a field of its own because that is
+     * what it is: `EVIDENCE_SCORE` a sheet, in the credit colour the time and
+     * clean bonuses already use for "where the points came from".
+     */
+    int docket_sheets;
+    int docket_total;
 } LevelTransition;
 
 typedef enum
@@ -129,7 +176,9 @@ void level_transition_init(LevelTransition *transition,
                            int completed_level, int next_level,
                            float elapsed_seconds, int level_score,
                            int hostiles_neutralized, int deaths,
-                           int time_bonus, int clean_bonus);
+                           int time_bonus, int clean_bonus,
+                           float best_seconds, bool best_is_new,
+                           int docket_sheets);
 bool level_transition_update(LevelTransition *transition, float dt,
                              Uint32 *out_cues);
 void level_transition_render(SDL_Renderer *renderer,

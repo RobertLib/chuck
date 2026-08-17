@@ -3,13 +3,13 @@
 #                   #               #                #
 #              O    #               #                #
 #                                   #                #
-# C   ^ i d     M     dc cd W X X   # ii     A  M  E #
+# C   ^ i d   * M     dc cd W X X   # ii     A  M  E #
 ############H###########H#########FF########H#########
 #           H   #   w   H   #           #   H        #
 #           H   #       H   #           #   H        #
 #           H   #       H  O#           #   H        #
 #           H   #       H               #   H        #
-# ii     M  H^ G#   ^   H  C    ii B TA #   H M X   K#
+# ii     M  H^ G%   ^   H  C    ii B TA #   H M X   K#
 ######H#######################H###################H###
 #     H   #           #       H   #           #   H  #
 #     H   #           #       H   #           #   H  #

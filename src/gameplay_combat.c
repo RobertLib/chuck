@@ -74,7 +74,7 @@ static void damage_dog(GameplayState *state, CampaignState *campaign,
     {
         dog->dead = true;
         gameplay_record_neutralized(state, campaign);
-        campaign->score += 75;
+        campaign->score += DOG_SCORE;
         game_events_particles(&state->events,
                               dog->x + DOG_W * 0.5f,
                               dog->y + DOG_H * 0.5f,
@@ -94,7 +94,7 @@ static void damage_enemy(GameplayState *state, CampaignState *campaign,
     {
         enemy->dead = true;
         gameplay_record_neutralized(state, campaign);
-        campaign->score += 150;
+        campaign->score += ENEMY_SCORE;
         game_events_particles(&state->events,
                               enemy->x + ENEMY_W * 0.5f,
                               enemy->y + ENEMY_H * 0.5f,
@@ -114,6 +114,95 @@ static void damage_enemy(GameplayState *state, CampaignState *campaign,
                              enemy->y + ENEMY_H * 0.5f);
     }
     gameplay_provoke_enemy(state, enemy_index);
+}
+
+/*
+ * A guard who has no idea Chuck is in the room.
+ *
+ * Everything a guard knows about the player is already held in four flags, and
+ * this is all four of them being clear: the building alarm is down, nobody has
+ * shot him (`provoked`), he is not on his way to a switch, and he has not
+ * decided an encounter — which is the flag `update_guard_encounters` sets the
+ * first frame he lays eyes on Chuck and clears again `GUARD_ENCOUNTER_RESET_TIME`
+ * after losing him. A man already mid-aim is excluded with them, because that
+ * aim is started by `update_enemy_reactions` for a guard who has just been
+ * walked up behind and *has* turned: the telegraph is running, the player can
+ * see it, and treating him as unaware would take away the one answer the
+ * telegraph exists to offer.
+ *
+ * **Deliberately not a line-of-sight test.** Sight is what sets these flags in
+ * the first place, and asking it again here would make the rule depend on which
+ * frame the swing landed on rather than on what the guard had actually
+ * noticed — a takedown that works or does not according to where a patrol turn
+ * happened to be in its cycle is not a rule anybody can learn to play.
+ */
+static bool guard_is_unaware(const GameplayState *state, const Enemy *enemy)
+{
+    return !gameplay_alarm_active(state) && !enemy->provoked &&
+           !enemy->raising_alarm && !enemy->encounter_decided &&
+           enemy->aim_timer <= 0.0f;
+}
+
+/*
+ * And which side the blade arrived from. `enemy->dir` is the way he is facing,
+ * so a negative product is Chuck standing behind his shoulders. Level with him
+ * is not behind him — the product is nought and the ordinary three-hit knife
+ * applies — and neither is a spawn that has not picked a direction yet, which
+ * is what a zeroed `dir` means.
+ */
+static bool player_is_behind_guard(const GameplayState *state,
+                                   const Enemy *enemy)
+{
+    float dx = (state->player.x + PLAYER_W * 0.5f) -
+               (enemy->x + ENEMY_W * 0.5f);
+    return dx * (float)enemy->dir < 0.0f;
+}
+
+/*
+ * The knife used the way the man holding it was trained to use it.
+ *
+ * Chuck is twelve years an Army sapper, and up to now the blade was what he was
+ * left holding when the clip ran dry: three swings, at a man who turns round
+ * after the first and shoots him during the second. That made the one weapon
+ * that never runs out the one weapon nobody would choose, and it left the whole
+ * perception model — the cone, the peripheral radius, the sight timer, the
+ * `GUARD_ENCOUNTER_RESET_TIME` window a guard needs to forget somebody — with
+ * exactly one thing the player could do about it, which was to shoot first.
+ *
+ * What separates this from `damage_enemy` is not the damage. It is that a
+ * takedown does not call `gameplay_provoke_enemy`, and that omission is the
+ * feature: provoking wakes the man who was hit *and the partner he was talking
+ * to*, and it is what turns one guard going down into two guards hunting. A
+ * blade behind an unaware man wakes nobody, so the sector stays as quiet as it
+ * was — which is the trade being offered, since getting behind him at all costs
+ * the player their range advantage and their mercy window.
+ *
+ * The magazine still drops. It belongs to direct combat and this is the most
+ * direct combat in the game; only an explosion destroys it with its owner.
+ */
+static void takedown_enemy(GameplayState *state, CampaignState *campaign,
+                           int enemy_index)
+{
+    Enemy *enemy = &state->enemies[enemy_index];
+    enemy->hp = 0;
+    enemy->dead = true;
+    gameplay_record_neutralized(state, campaign);
+    campaign->score += PLAYER_TAKEDOWN_SCORE;
+    /* Fewer than the two dozen a shot throws, and `SFX_ENEMY_HIT` rather than
+     * `SFX_ENEMY_DOWN`: a man folding without a sound is the entire point of
+     * the move, and the death cry the other kills play would be the sector
+     * announcing to the player the very thing they just avoided announcing to
+     * the floor. It is not silent — a press that does nothing audible reads as
+     * a press the game missed — it is quiet. */
+    game_events_particles(&state->events,
+                          enemy->x + ENEMY_W * 0.5f,
+                          enemy->y + ENEMY_H * 0.5f,
+                          10, enemy->dir);
+    gameplay_world_sound(state, SFX_ENEMY_HIT,
+                         enemy->x + ENEMY_W * 0.5f,
+                         enemy->y + ENEMY_H * 0.5f);
+    gameplay_spawn_ammo_drop(state, enemy->x + ENEMY_W * 0.5f,
+                             enemy->y + ENEMY_H - AMMO_DROP_H);
 }
 
 static void player_knife_attack(GameplayState *state,
@@ -148,6 +237,14 @@ static void player_knife_attack(GameplayState *state,
     state->player.action_timer = PLAYER_KNIFE_ACTION_TIME;
     game_events_sound(&state->events, SFX_KNIFE_SWING);
 
+    /* A dog is never taken from behind, and that is a rule about the animal
+     * rather than a gap in the one below. A guard is beaten by getting outside
+     * the cone he is looking down; a dog has no cone to get outside of — it
+     * hears and smells, `dog_sees_player` is a range and a rough heading rather
+     * than a facing test, and the whole reason `DOG_BITE_WINDUP` announces
+     * itself is that the animal has already found you. Handing the blade a
+     * silent answer to one would make the quietest way through a sector the one
+     * that walks straight past the thing placed to stop it. */
     for (int i = 0; i < state->dog_count; ++i)
     {
         Dog *dog = &state->dogs[i];
@@ -162,12 +259,17 @@ static void player_knife_attack(GameplayState *state,
     for (int i = 0; i < state->enemy_count; ++i)
     {
         Enemy *enemy = &state->enemies[i];
-        if (!enemy->dead &&
-            gameplay_boxes_overlap(attack_x, attack_y, attack_w, attack_h,
-                                   enemy->x, enemy->y, ENEMY_W, ENEMY_H))
+        if (enemy->dead ||
+            !gameplay_boxes_overlap(attack_x, attack_y, attack_w, attack_h,
+                                    enemy->x, enemy->y, ENEMY_W, ENEMY_H))
         {
-            damage_enemy(state, campaign, i);
+            continue;
         }
+        if (guard_is_unaware(state, enemy) &&
+            player_is_behind_guard(state, enemy))
+            takedown_enemy(state, campaign, i);
+        else
+            damage_enemy(state, campaign, i);
     }
 }
 
@@ -273,7 +375,7 @@ static void apply_blast(GameplayState *state, CampaignState *campaign,
         gameplay_world_sound(state, SFX_ENEMY_DOWN,
                              enemy->x + ENEMY_W * 0.5f,
                              enemy->y + ENEMY_H * 0.5f);
-        campaign->score += 150;
+        campaign->score += ENEMY_SCORE;
     }
     for (int i = 0; i < state->dog_count; ++i)
     {
@@ -295,11 +397,26 @@ static void apply_blast(GameplayState *state, CampaignState *campaign,
         gameplay_world_sound(state, SFX_DOG_YELP,
                              dog->x + DOG_W * 0.5f,
                              dog->y + DOG_H * 0.5f);
-        campaign->score += 75;
+        campaign->score += DOG_SCORE;
     }
 
     damage_crates_in_radius(state, campaign, x, y, radius);
     gameplay_break_walls_in_radius(state, campaign, x, y, radius);
+
+    /* A blast takes the fittings with it. Left out, a grenade could bring the
+     * wall down and leave the camera bolted to what was left of it looking at
+     * the hole — which is the shape of bug `apply_blast` exists to stop: a
+     * blast that picks which of the things beside it are real. */
+    for (int i = 0; i < state->level.map.camera_count; ++i)
+    {
+        float cx = 0.0f;
+        float cy = 0.0f;
+        float cw = 0.0f;
+        float ch = 0.0f;
+        gameplay_camera_box(&state->level.map.cameras[i], &cx, &cy, &cw, &ch);
+        if (within_radius(cx + cw * 0.5f, cy + ch * 0.5f, x, y, radius))
+            gameplay_destroy_camera(state, campaign, i);
+    }
 
     for (int i = 0; i < state->level.runtime.gas_canister_count; ++i)
     {
@@ -441,9 +558,158 @@ static void explode_rocket(GameplayState *state, CampaignState *campaign,
     apply_blast(state, campaign, x, y, ROCKET_RADIUS);
 }
 
+/*
+ * A flash charge going off, and everything it deliberately does not do.
+ *
+ * It is the shape of `apply_blast` with the whole of `apply_blast` taken out.
+ * Nothing is killed, no crate is broken, no weak wall opens, no charge in reach
+ * chains, and the player himself is untouched — a flash that could hurt Chuck
+ * would be a grenade with a worse radius, and the point of the thing is that it
+ * is safe to use in the room you are standing in.
+ *
+ * What it *does* is take the room's attention away for `FLASH_BLIND_TIME`. It
+ * does not clear the alarm, does not unprovoke anybody and does not clear a
+ * pursuit target: everyone comes back exactly as they were, still hunting,
+ * still remembering where Chuck was standing. The charge buys seconds, and the
+ * seconds are for leaving.
+ */
+/*
+ * Whether the charge went off somewhere this pair of eyes could see it.
+ *
+ * A flash is light, so it is stopped by everything light is stopped by — which
+ * is the same `gameplay_sight_line_clear` a guard's own cone is stopped by, and
+ * saying it here rather than in three places is the whole reason this is a
+ * function. The radius alone was the entire test for as long as the charge
+ * existed, and `FLASH_RADIUS` is five tiles: wider than any partition in the
+ * building and wider than a storey is tall, so one charge blinded the room next
+ * door, the floor above and the floor below. `game_config.h` has said the
+ * opposite the whole time — *"it has to catch the room the player is in, and it
+ * must not reach the one next door, or 'throw it and walk' would be the answer
+ * to every floor"* — and that sentence is what this restores. Sector 12 is six
+ * crawl levels stacked one riser apart and sector 14 is panelled rooms with
+ * single doorways; both of them were a floor a single charge switched off.
+ */
+static bool flash_reaches(const GameplayState *state, float x, float y,
+                          float tx, float ty)
+{
+    return within_radius(tx, ty, x, y, FLASH_RADIUS) &&
+           gameplay_sight_line_clear(state, x, y, tx, ty);
+}
+
+static void detonate_flashbang(GameplayState *state, CampaignState *campaign,
+                               Grenade *flash)
+{
+    if (!flash->active)
+        return;
+
+    flash->active = false;
+    float x = flash->x + FLASH_W * 0.5f;
+    float y = flash->y + FLASH_H * 0.5f;
+    game_events_explosion(&state->events, x, y, 40);
+    gameplay_world_sound(state, SFX_MINE_ARM, x, y);
+    game_events_camera_shake(&state->events, 3.0f, 0.14f);
+    campaign->score += FLASH_SCORE;
+
+    for (int i = 0; i < state->enemy_count; ++i)
+    {
+        Enemy *enemy = &state->enemies[i];
+        if (enemy->dead ||
+            !flash_reaches(state, x, y, enemy->x + ENEMY_W * 0.5f,
+                           enemy->y + ENEMY_H * 0.5f))
+        {
+            continue;
+        }
+        /* Taken rather than added to, so standing in two flashes is not six
+         * seconds of blindness — the second charge is spent for nothing, which
+         * is the right answer to spending it. */
+        if (enemy->blind_timer < FLASH_BLIND_TIME)
+            enemy->blind_timer = FLASH_BLIND_TIME;
+        enemy->aim_timer = 0.0f;
+        enemy->sight_timer = 0.0f;
+        /* A man on his way to a switch is stopped where he is. It is the one
+         * piece of state the charge is allowed to take, because the alternative
+         * is a flash that goes off in a guard's face and does not stop him
+         * pulling the alarm two paces later. */
+        enemy->raising_alarm = false;
+        enemy->alarm_switch_index = -1;
+        enemy->alarm_use_timer = 0.0f;
+        enemy->talking = false;
+        enemy->talk_timer = 0.0f;
+    }
+
+    /* And the animal, which is the one thing in the room with an actual pair of
+     * eyes and was the one thing this charge did not reach. Blinded and stopped
+     * like the men, and a bite already being wound up is cancelled — that is the
+     * dog's `aim_timer`, and leaving it running would mean a charge that went off
+     * in its face and let the teeth land anyway. The chase is deliberately left
+     * alone: the guards keep theirs too, because the charge buys seconds and
+     * never the encounter. */
+    for (int i = 0; i < state->dog_count; ++i)
+    {
+        Dog *dog = &state->dogs[i];
+        if (dog->dead ||
+            !flash_reaches(state, x, y, dog->x + DOG_W * 0.5f,
+                           dog->y + DOG_H * 0.5f))
+        {
+            continue;
+        }
+        if (dog->blind_timer < FLASH_BLIND_TIME)
+            dog->blind_timer = FLASH_BLIND_TIME;
+        dog->bite_windup = 0.0f;
+        dog->bite_ready = false;
+    }
+
+    /* The lenses lose what they had as well. A camera is glass and a sensor,
+     * and a charge this bright in front of one is the same event it is for a
+     * pair of eyes — but it recovers on its own, so nothing here is permanent:
+     * only a round or a blast takes a camera off the ceiling. */
+    for (int i = 0; i < state->level.map.camera_count; ++i)
+    {
+        CameraState *cam = &state->cameras[i];
+        if (!cam->working)
+            continue;
+        float cx = 0.0f;
+        float cy = 0.0f;
+        float cw = 0.0f;
+        float ch = 0.0f;
+        gameplay_camera_box(&state->level.map.cameras[i], &cx, &cy, &cw, &ch);
+        if (!flash_reaches(state, x, y, cx + cw * 0.5f, cy + ch * 0.5f))
+            continue;
+        cam->notice = 0.0f;
+        cam->suspicion = 0.0f;
+    }
+}
+
 void gameplay_combat_update_explosives(GameplayState *state,
                                        CampaignState *campaign, float dt)
 {
+    for (int i = 0; i < MAX_FLASHBANGS; ++i)
+    {
+        Grenade *flash = &state->flashbangs[i];
+        if (!flash->active)
+            continue;
+        flash->vy += GRAVITY * dt;
+        if (flash->vy > MAX_FALL_SPEED)
+            flash->vy = MAX_FALL_SPEED;
+        bool on_ground = false;
+        bool was_grounded = flash->grounded;
+        level_move(&state->level, &flash->x, &flash->y, &flash->vx, &flash->vy,
+                   FLASH_W, FLASH_H, dt, false, &on_ground, false);
+        if (on_ground)
+        {
+            flash->grounded = true;
+            flash->vx = 0.0f;
+            flash->vy = 0.0f;
+            if (!was_grounded)
+                gameplay_world_sound(state, SFX_GRENADE_BOUNCE,
+                                     flash->x + FLASH_W * 0.5f,
+                                     flash->y + FLASH_H * 0.5f);
+        }
+        flash->timer -= dt;
+        if (flash->timer <= 0.0f)
+            detonate_flashbang(state, campaign, flash);
+    }
+
     for (int i = 0; i < state->mine_count; ++i)
     {
         Mine *mine = &state->mines[i];
@@ -508,6 +774,89 @@ void gameplay_combat_update_explosives(GameplayState *state,
         }
         if (grenade->timer <= 0.0f)
             explode_grenade(state, campaign, grenade);
+    }
+}
+
+static int find_decoy_slot(GameplayState *state)
+{
+    for (int i = 0; i < MAX_DECOYS; ++i)
+        if (!state->decoys[i].active)
+            return i;
+    return -1;
+}
+
+/*
+ * A bolt in flight, and the noise it leaves where it stops.
+ *
+ * It is deliberately the *dumbest* projectile in the game. It does not sweep
+ * for collisions the way a bullet does, because there is nothing it could hit
+ * that would matter — it passes through guards, dogs, crates and canisters
+ * alike, and the only thing it interacts with is the floor it lands on. A bolt
+ * that could break a crate or set off a cylinder would be a weapon, and the one
+ * thing this has to stay is not a weapon: the player must be able to throw it
+ * into a room full of people and have the only consequence be that they all
+ * look at it.
+ *
+ * `level_move` is what stops it, so a wall stops it as readily as a floor does
+ * and the noise happens where the bolt actually ended up rather than where it
+ * was aimed. Throwing one at the wall of the room next door is a legitimate way
+ * to use it, and it is legitimate because this is the same collision every
+ * other body in the sector obeys rather than a special case.
+ */
+void gameplay_combat_update_decoys(GameplayState *state, float dt)
+{
+    if (state->player.decoy_cooldown > 0.0f)
+    {
+        state->player.decoy_cooldown -= dt;
+        if (state->player.decoy_cooldown < 0.0f)
+            state->player.decoy_cooldown = 0.0f;
+    }
+
+    for (int i = 0; i < MAX_DECOYS; ++i)
+    {
+        Decoy *decoy = &state->decoys[i];
+        if (!decoy->active)
+            continue;
+
+        decoy->vy += GRAVITY * dt;
+        if (decoy->vy > MAX_FALL_SPEED)
+            decoy->vy = MAX_FALL_SPEED;
+        float previous_vx = decoy->vx;
+        bool on_ground = false;
+        level_move(&state->level, &decoy->x, &decoy->y, &decoy->vx, &decoy->vy,
+                   DECOY_W, DECOY_H, dt, false, &on_ground, false);
+
+        /*
+         * Landed, or stopped dead against a wall. Both are the same event: the
+         * bolt is where it is going to be.
+         *
+         * **The wall half is read off the speed the bolt had before the move,
+         * not the speed it has after it**, and that is the whole of what this
+         * test got wrong for a while. `level_move` *zeroes* the axis it blocks,
+         * so a bolt that has just hit masonry comes back with `vx` at nought —
+         * which made `vx != 0.0f` the one condition a wall strike can never
+         * satisfy. The bolt stayed live, slid down the face it had hit and made
+         * its noise on the floor at the bottom, up to a storey below the spot
+         * the player aimed at. In a game where the bolt's entire value is
+         * *where* the noise is, that is the feature failing quietly: throwing
+         * one at the wall of the room next door is the documented use, and it
+         * was landing in the wrong room.
+         */
+        bool struck_wall = previous_vx != 0.0f && decoy->vx == 0.0f;
+        if (!on_ground && !struck_wall)
+            continue;
+
+        decoy->active = false;
+        float x = decoy->x + DECOY_W * 0.5f;
+        float y = decoy->y + DECOY_H * 0.5f;
+        gameplay_world_sound(state, SFX_GRENADE_BOUNCE, x, y);
+        /* The whole feature, in one call: every calm guard in earshot walks to
+         * *this* spot rather than to Chuck's. It is the same function gunfire
+         * and explosions already use, which is what makes the behaviour the
+         * player gets out of it identical to the one they have already learned
+         * from being shot at — guards already fighting or already running for a
+         * switch are past being curious, and it skips them. */
+        gameplay_alert_enemies_to_noise(state, x, y, DECOY_NOISE_RADIUS);
     }
 }
 
@@ -631,10 +980,9 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             }
             /* Spent one at a time, like the rocket two branches above. Cleared
              * outright, as this used to be, a second grenade was destroyed by
-             * throwing the first — identical for the campaign, which never
-             * hands over two, and the reason the demo hand's vertical throw was
-             * drawn by nothing: it is granted two precisely so the pose on the
-             * floor and the pose on the rung both get one. */
+             * throwing the first — identical for the campaign, which never hands
+             * over two, and wrong for a count all the same. See
+             * `test_a_throw_spends_one_grenade`. */
             state->player.grenades--;
             state->player.shot_vertical = vertical;
             state->player.knife_attacking = false;
@@ -648,6 +996,131 @@ void gameplay_combat_handle_player_action(GameplayState *state,
         {
             /* Same rule as the rocket: a pin pulled with nowhere to put the
              * grenade is a dead press, and a dead press has to be audible. */
+            game_events_sound(&state->events, SFX_EMPTY_CLICK);
+        }
+    }
+    else if (state->player.active_weapon == PLAYER_WEAPON_FLASH &&
+             state->player.flashbangs > 0)
+    {
+        int slot = -1;
+        for (int i = 0; i < MAX_FLASHBANGS; ++i)
+            if (!state->flashbangs[i].active)
+            {
+                slot = i;
+                break;
+            }
+        if (slot >= 0)
+        {
+            Grenade *flash = &state->flashbangs[slot];
+            flash->active = true;
+            flash->timer = FLASH_FUSE_TIME;
+            flash->fuse_sound_timer = 0.0f;
+            flash->grounded = false;
+            int vertical =
+                player_ladder_attack_direction(&state->player, input);
+            if (vertical != 0)
+            {
+                flash->x = state->player.x + (PLAYER_W - FLASH_W) * 0.5f;
+                flash->y = vertical < 0
+                               ? state->player.y - FLASH_H - 3.0f
+                               : state->player.y + player_height(state) + 3.0f;
+                flash->vx = 0.0f;
+                flash->vy = vertical * FLASH_THROW_SPEED;
+            }
+            else
+            {
+                flash->y = state->player.y + player_height(state) * 0.45f;
+                float speed = FLASH_THROW_SPEED * 0.9f;
+                flash->vx = state->player.facing > 0 ? speed : -speed;
+                flash->x = state->player.x +
+                           (state->player.facing > 0
+                                ? PLAYER_W + 6.0f
+                                : -(FLASH_W + 6.0f));
+                float arc_speed = 160.0f * GRAVITY /
+                                  (2.0f * fabsf(flash->vx));
+                if (arc_speed < 30.0f)
+                    arc_speed = 30.0f;
+                if (arc_speed > 220.0f)
+                    arc_speed = 220.0f;
+                flash->vy = -arc_speed;
+            }
+            state->player.flashbangs--;
+            state->player.shot_vertical = vertical;
+            state->player.knife_attacking = false;
+            state->player.grenade_throwing = true;
+            state->player.bazooka_firing = false;
+            state->player.action_timer = 0.18f;
+            game_events_sound(&state->events, SFX_GRENADE_THROW);
+            player_fall_back_to_sidearm(&state->player);
+        }
+        else
+        {
+            game_events_sound(&state->events, SFX_EMPTY_CLICK);
+        }
+    }
+    else if (state->player.active_weapon == PLAYER_WEAPON_DECOY)
+    {
+        /* No count to check, only a clock: a bolt is never carried and never
+         * spent, so the cooldown is the entire limit on it. */
+        int slot = state->player.decoy_cooldown > 0.0f
+                       ? -1
+                       : find_decoy_slot(state);
+        if (slot >= 0)
+        {
+            Decoy *decoy = &state->decoys[slot];
+            decoy->active = true;
+            int vertical =
+                player_ladder_attack_direction(&state->player, input);
+            if (vertical != 0)
+            {
+                decoy->x = state->player.x + (PLAYER_W - DECOY_W) * 0.5f;
+                decoy->y = vertical < 0
+                               ? state->player.y - DECOY_H - 3.0f
+                               : state->player.y + player_height(state) + 3.0f;
+                decoy->vx = 0.0f;
+                decoy->vy = vertical * DECOY_THROW_SPEED;
+            }
+            else
+            {
+                /* The same arc the grenade is thrown on, and for the same
+                 * reason: a flat throw lands at the foot of the first wall,
+                 * which is exactly where the player already is. */
+                decoy->y = state->player.y + player_height(state) * 0.4f;
+                float speed = DECOY_THROW_SPEED;
+                decoy->vx = state->player.facing > 0 ? speed : -speed;
+                decoy->x = state->player.x +
+                           (state->player.facing > 0
+                                ? PLAYER_W + 6.0f
+                                : -(DECOY_W + 6.0f));
+                float arc_speed = 160.0f * GRAVITY /
+                                  (2.0f * fabsf(decoy->vx));
+                if (arc_speed < 30.0f)
+                    arc_speed = 30.0f;
+                if (arc_speed > 220.0f)
+                    arc_speed = 220.0f;
+                decoy->vy = -arc_speed;
+            }
+            state->player.decoy_cooldown = DECOY_COOLDOWN;
+            state->player.shot_vertical = vertical;
+            state->player.knife_attacking = false;
+            /* The throwing pose, which is what this is. It is the grenade's
+             * flag because it is the grenade's animation — a man lobbing
+             * something underarm — and a second flag for the same drawing would
+             * be a second thing every path that ends an action has to clear. */
+            state->player.grenade_throwing = true;
+            state->player.bazooka_firing = false;
+            state->player.action_timer = 0.18f;
+            game_events_sound(&state->events, SFX_GRENADE_THROW);
+            /* And the hand keeps the bolts, unlike every other branch here.
+             * Nothing was spent, so falling back to the sidearm would take the
+             * tool out of the player's hand between the first throw and the
+             * second — which is the pair of throws the whole mechanic is. */
+        }
+        else
+        {
+            /* The cooldown, or four bolts already in the air. The same rule the
+             * dry clip and the busy launcher keep: a trigger that does nothing
+             * has to say so, or it reads as the press having been missed. */
             game_events_sound(&state->events, SFX_EMPTY_CLICK);
         }
     }
@@ -986,6 +1459,31 @@ void gameplay_combat_update_player_bullets(GameplayState *state,
                 break;
             }
         }
+        if (!bullet->active)
+            continue;
+
+        /* Last, and only the player's rounds are tested against them: a guard
+         * shooting his own building's cameras out would hand the player the one
+         * answer to them for nothing, and it would happen constantly, since a
+         * camera hangs over exactly the ground a guard shoots across. */
+        for (int j = 0; j < state->level.map.camera_count; ++j)
+        {
+            if (!state->cameras[j].working)
+                continue;
+            float cx = 0.0f;
+            float cy = 0.0f;
+            float cw = 0.0f;
+            float ch = 0.0f;
+            gameplay_camera_box(&state->level.map.cameras[j], &cx, &cy, &cw,
+                                &ch);
+            if (gameplay_boxes_overlap(swept_x, swept_y, swept_w, swept_h,
+                                       cx, cy, cw, ch))
+            {
+                bullet->active = false;
+                gameplay_destroy_camera(state, campaign, j);
+                break;
+            }
+        }
     }
 }
 
@@ -1138,7 +1636,14 @@ void gameplay_combat_check_contacts(GameplayState *state,
          * to read as a stomp landing on a man who was over Chuck's head. */
         bool from_above = state->player.y + height * 0.5f <
                           enemy->y + ENEMY_H * 0.5f;
-        if (state->player.vy > 0.0f && overlap_y < overlap_x && from_above)
+        /* A helmet is the one answer this man takes away. Everything else
+         * about him is an ordinary guard with more rounds in him and less pace,
+         * and that is deliberate: the stomp is the free kill — no ammunition,
+         * no position, no noise — and it is what a player reaches for the
+         * moment a floor gets busy. Landing on him costs the heart a side
+         * contact costs instead, which is what the branch below already does. */
+        if (state->player.vy > 0.0f && overlap_y < overlap_x && from_above &&
+            enemy_kind_can_be_stomped(enemy->kind))
         {
             /* Climbing down onto a guard would otherwise just have the
              * ladder overwrite this with the climb speed next frame. */

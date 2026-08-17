@@ -22,7 +22,17 @@ Four modules, and the split is by what needs SDL:
   [levels/LEGEND.md](../levels/LEGEND.md) as a table: name, the sentence the legend
   gives it, colour, which mode it belongs to. **Both files change together**;
   a character in one and not the other is either an unpaintable tile or a typo
-  the editor calls an error.
+  the editor calls an error — and `check_lists.py` is what says so now rather than
+  that sentence, because the legend, this table and the parser in
+  [level.c](../src/level.c) are three copies of one list and were held together by
+  nothing but a reader's diligence.
+  The `group` field is also load-bearing rather than a filing detail: a symbol's
+  bin is what decides which palette it is painted from, and the prop bins are what
+  `editor_validate.c` counts against `MAX_DECORATIONS`. That sum used to be
+  fifteen `count_of` calls — a fifth copy of the prop list, already behind the
+  plant set the day it was added — so a floor painted past the ceiling in pallets
+  was one the editor called clean while the loader dropped the overflow. It reads
+  the bins now, so a sixth prop set is counted by having been given one.
 - [editor_validate.c](../editor/editor_validate.c) — the report. Structure the
   loader insists on, the caps in [game_config.h](../src/game_config.h), the
   authoring rules in the legend, the route model, and the campaign-wide rules
@@ -38,7 +48,41 @@ requires that loading and saving every shipped map leaves the file byte
 identical — the moment saving reflows a map, editing one sector rewrites it
 wholesale and buries the actual change in the diff. `test_editor_report_reads_the_campaign`
 requires that the editor reports zero errors for every sector already in the
-tree, which is what keeps its rules and the test suite's rules the same rules.
+tree, which is what keeps its rules and the test suite's rules the same rules;
+`test_the_editor_has_nothing_to_say_about_the_shipped_campaign` goes further and
+requires zero **warnings** as well, since a warning is precisely the class
+nothing else can see — "it loads, but it will not play the way it reads".
+
+**And a save goes through a temporary and is moved onto the map**, which is the
+one thing in this tree nobody can regenerate. `editor_doc_save` opened the target
+with `fopen(path, "wb")` for as long as it existed, and that truncates before the
+first byte is written: a save interrupted by a full disk, a lost volume or a
+crash left the author holding a *shorter* map than the one they opened, and the
+whole point of the tool is that the map is somebody's afternoon. It writes
+`<path>.tmp` and renames it now — atomic inside a directory, so the file is
+either the map that was there or the whole of the new one — and removes the
+temporary on every failing path, including a failed rename, because a stale
+half-map sitting in `levels/` is a map as far as the editor, the embed step and
+`check_docs.py` can tell. The settings and the progress files are written the
+blunt way still, and stay that way: those are what the game can work out again.
+`test_editor_resizes_deletes_and_survives_a_real_file` saves twice over the same
+path, reopens it, and requires the second map and no leftovers.
+
+**Both of those tests have to hand the editor the map's path**, and one of them
+did not. `editor_validate` takes the sector number off `doc->path`, because that
+is how the editor knows which slot of the campaign the map on screen is, and
+`editor_doc_parse` memsets the whole document — so a test that parses and
+validates without setting the path is asking about a map that belongs to no
+sector, and the entire cross-sector block is skipped. That is what the
+warnings-and-notes test was doing over all seventeen maps, with a comment above
+the loop saying otherwise. Two things had been sitting in the skipped half, both
+of them notes: the editor's own campaign constants had stayed at fifteen sectors
+and four climbs, so the tool told every author that the shipped campaign
+disagreed with the tests, and sector 14's flash charge sat on a partition five
+rows above its floor where the route model cannot reach it. The constants read
+`CAMPAIGN_SECTORS` and `CAMPAIGN_CLIMB_SECTOR_COUNT` out of the game now, which
+is why `manual_pages.c` is in `EDITOR_SOURCES`, and an unreachable pickup is a
+warning rather than a note.
 
 `F5` saves, runs `make` and launches `./chuck --level N`. That switch
 ([main.c](../src/main.c)) and `game_start_at_level` are the whole of the game-side
@@ -58,6 +102,134 @@ And the thread touches nothing of the app's — it fills an `EdBuild` and sets a
 atomic as its last act, and the main loop joins it and does everything that
 reaches the screen or launches anything, because a status line written from two
 threads is a status line that is sometimes half of each.
+
+## The headless soak
+
+`make soak` runs a built game across the title screen, every campaign sector,
+every screen that is reached by a choice rather than by play, and the level
+editor, headless, and fails on anything any of them says.
+[tools/soak.sh](../tools/soak.sh) is the whole of it; `SOAK_BINARY` chooses what
+to run, `SOAK_EDITOR` the editor beside it, and `SOAK_SECONDS` how long to hold
+each screen.
+
+`SOAK_MODE` is the fifth knob and it is there because the sweep was being run
+twice — once under the sanitizers and once on macOS — and only one of those two
+runs was paying for what the length of it buys. The expensive half is the timed
+sequences: the drive, the two prologue beats, the report, the countdown, the
+ending and the roll of names are held for as long as the game's own constants say
+they last, which is most of the sweep's five minutes, and the argument for that
+is a **coverage** argument — it is how `cutscene.c` and `chase_render.c` are
+executed rather than merely linked, measured once in a coverage build. That
+argument does not double when the same code is drawn again on another platform.
+So `full` is the sweep, `smoke` walks everything that holds still — the title
+screen, all seventeen sectors, every manual sheet, every aftermath pose, every
+room and card, and the editor — and holds no timed sequence at all. It prints the
+sequences it skipped by name on the way out, and the summary line counts the
+screens it *walked* rather than the length of the list it was handed, because a
+mode that quietly covers less than the mode beside it is the defect this whole
+page is about.
+
+**And it is worth knowing what the macOS run does and does not cover**, because
+the reason it was there said Cocoa and Cocoa is the one thing it never touches:
+the script exports `SDL_VIDEODRIVER=dummy` and `SDL_AUDIODRIVER=dummy` for every
+run on every platform, so both jobs draw through the software renderer and neither
+opens a window or an audio device. What the macOS sweep uniquely covers is
+Homebrew's SDL3 dylib and the whole tree as Apple clang compiles it for arm64 —
+which is worth a sweep, and is what `smoke` is.
+
+**It exists because the sanitizers were not reaching the half of the tree they
+were named for.** `make sanitize` rebuilt everything with ASan and UBSan and then
+ran `core_tests` — which links no SDL, by design, because the gameplay core is
+meant to be testable without one. So the sanitized *game* was compiled and never
+started. The CI job could not have started it either: it builds SDL with
+`-DSDL_X11=OFF -DSDL_WAYLAND=OFF -DSDL_UNIX_CONSOLE_BUILD=ON`, deliberately, since
+nothing in that job had ever opened a window. Between them, those two reasonable
+decisions left [game_render.c](../src/game_render.c),
+[level_art.c](../src/level_art.c), [cutscene.c](../src/cutscene.c),
+[render_figures.c](../src/render_figures.c), [audio.c](../src/audio.c),
+[intro.c](../src/intro.c), [manual.c](../src/manual.c) and
+[chase_render.c](../src/chase_render.c) — more than half the tree by source size —
+sanitizer-compiled and never sanitizer-executed.
+
+It was all clean when the sweep was finally written, and that is the part worth
+keeping in mind: this did not pay off a bug. Nothing had been asking, so there was
+no telling which way it would go, and a gate that has never been reached is not
+evidence of anything. It is the same shape as the fit checks on the sheets of
+words, two of which found a line already lost the day they were written.
+
+Three details are what make it a check rather than a gesture.
+
+- **The dummy video driver.** `SDL_VIDEODRIVER=dummy` gets a window with no
+  screen behind it and SDL falls back to the software renderer, which really does
+  rasterize — a sanitized sector burns most of a core while this runs, so the draw
+  calls are being executed and not merely linked. SDL always builds the dummy
+  driver, which is why this works on the CI job that has no real backend at all.
+- **`--soak N` rather than a `kill`.** A killed process never reaches
+  `SDL_AppQuit`, and teardown is exactly the half of a lifecycle a sanitizer is
+  most likely to have something to say about. The game spends a wall-clock budget
+  and closes itself, so the script can read an exit status. The budget is paid in
+  *raw* elapsed time rather than the `MAX_FRAME_DT` clamp: a sanitized frame can
+  outlast the clamp, and a budget paid in clamped time would turn `--soak 2` into
+  two minutes.
+- **The title screen is soaked separately.** `--level N` skips the title screen
+  and the prologue outright, so a sweep of sectors alone never draws
+  [intro.c](../src/intro.c). A new screen owes this sweep a thought about
+  whether any run reaches it.
+
+**And "reached" has to be asked of the run rather than of the screen, which took
+a second pass to learn.** The bullet above used to end "...never draws
+`intro.c` or either prologue cutscene", and the sweep's own header said the
+title screen was "the only entry point that reaches `intro.c`, the prologue's
+cutscenes and the attract music". It never reached the cutscenes.
+`STATE_INTRO` advances on `game->input.confirm`, every line that sets that flag
+is inside an SDL event handler, and a headless process receives no events — so
+the soak sat on the first screen for its whole budget while two comments said
+it had walked the prologue. A forty-second run settles it: the process reports
+finishing without having left the title screen.
+
+That is the same failure the sweep was written to end, one floor up: a check
+reporting coverage it did not have. What it left compiled-and-never-executed is
+[chase_render.c](../src/chase_render.c) entire, most of
+[cutscene.c](../src/cutscene.c) — the report between sectors, the outro, the
+roll of names, the abduction — [manual.c](../src/manual.c), and the settings,
+pause, continue and game-over halves of
+[game_render.c](../src/game_render.c), plus the four restroom sublevels that no
+`--level N` run enters either.
+
+- **`--screen NAME` is the answer**, and it is a switch rather than synthesised
+  keypresses for the reason `--soak` is a switch rather than a `kill`: a screen
+  reached by three fake button presses is a screen whose coverage breaks the day
+  a menu gains a row, and what would be under test is the event handlers rather
+  than the renderers. `game_soak_screen` in [game.c](../src/game.c) holds the
+  list — `abduction`, `chase`, `opening`, `manual`, `settings`, `pause`,
+  `report`, `cleared`, `continue`, `gameover`, `outro`, `credits`, `restroom` —
+  and `check_lists.py` holds it against the array in
+  [tools/soak.sh](../tools/soak.sh), because those are two copies of one list and
+  the direction that fails silently is the dangerous one: a screen the game knows
+  and the script does not is compiled under the sanitizers, never run by them, and
+  the sweep still reports clean.
+- **`--page N` is the same argument one level in.** `manual` is a single screen
+  name standing for ten sheets, each with an illustration of its own, and nothing
+  turns a sheet but a hand — so the sweep drew `illus_night` and the nine drawings
+  behind it were never executed. The script walks every sheet now, with the count
+  read out of `MANUAL_PAGE_COUNT` rather than written down, so a new sheet is
+  soaked by having been added.
+- **The editor is soaked too**, and it was the last binary in the tree nothing
+  ran. `make sanitize` builds `all test soak` and `all` is the game, so
+  [editor_app.c](../editor/editor_app.c),
+  [editor_render.c](../editor/editor_render.c) and
+  [editor_ui.c](../editor/editor_ui.c) were not merely unexecuted under the
+  sanitizers, they were never compiled under them; the macOS CI job built the
+  editor and then did nothing with it. What made that hole hard to see is that
+  the three editor translation units the suite *does* link —
+  [editor_doc.c](../editor/editor_doc.c),
+  [editor_legend.c](../editor/editor_legend.c) and
+  [editor_validate.c](../editor/editor_validate.c) — are exactly the ones that
+  touch no SDL. It has its own `--soak N` now, and `make sanitize` builds it.
+
+The campaign's length is counted out of `levels/` rather than written down here,
+for the reason every other count in this tree is: a literal seventeen in a shell
+script would go stale on the same day as all the others.
 
 ## The shipped macOS app
 

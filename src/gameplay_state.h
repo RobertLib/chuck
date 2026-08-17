@@ -31,6 +31,24 @@ typedef struct
     bool active;
 } Rocket;
 
+/*
+ * A bolt in the air. It hurts nobody, breaks nothing and is gone the moment it
+ * lands — what it leaves behind is a noise at the place it landed, which is the
+ * whole of the thing.
+ *
+ * No fuse, no owner and no count: see the note beside `MAX_DECOYS`. It is a
+ * separate array from the grenades rather than a flag on one, because every
+ * loop that walks the grenades is a loop about explosives — `apply_blast`
+ * chains them, the fuse ticks them, a blast spends them — and a bolt belongs to
+ * none of it.
+ */
+typedef struct
+{
+    float x, y;
+    float vx, vy;
+    bool active;
+} Decoy;
+
 typedef struct
 {
     float x, y;
@@ -65,6 +83,29 @@ typedef struct
     bool triggered;
     float timer;
 } Mine;
+
+/*
+ * What a ceiling camera is *doing*, as opposed to where it is.
+ *
+ * The position is the map's (`SecurityCamera` in level.h) and this is the
+ * simulation beside it, one per map camera and indexed the same way. Three
+ * fields and each is a different clock: `sweep` is the pass across the floor,
+ * `notice` is how long it has had Chuck in the beam, and `suspicion` is how
+ * long the lens goes on flashing after it has lost him — which exists purely so
+ * a player who got clear in time can see that they nearly did not.
+ *
+ * `working` is the one that is not a clock, and it is what a bullet or a blast
+ * takes away. A destroyed camera stays destroyed for the visit, exactly as a
+ * broken weak wall stays open: a lost life resumes at a checkpoint rather than
+ * reloading, so the sector keeps what the player did to it.
+ */
+typedef struct
+{
+    float sweep;
+    float notice;
+    float suspicion;
+    bool working;
+} CameraState;
 
 /* A magazine shaken loose from a guard downed in direct combat. */
 typedef struct
@@ -210,9 +251,61 @@ typedef struct
      * that belongs to the run rather than to the floor.
      */
     int hostiles_down;
+    /*
+     * How many sheets off Meridian's docket this run has picked up.
+     *
+     * Beside the score and the crew tally because it belongs to the *run*
+     * rather than to the floor — a sector's own copy would be wiped at every
+     * doorway, and what this number is for is the state of the case at the end
+     * of the night. It is the campaign's, and `Progress` keeps the best it has
+     * ever been across runs; see progress.h.
+     */
+    int evidence_collected;
+    /*
+     * Whether any assist switch has been on at any point in this run.
+     *
+     * Sticky, and that is the whole of the rule: the assists take effect the
+     * instant they are switched (`game_apply_assist_everywhere`), so a run's
+     * records cannot be decided by what the sheet happened to say at the finish.
+     * Turning infinite lives on for the one sector that keeps killing you and
+     * off again for the walk to the roof is exactly the run this flag exists to
+     * describe.
+     *
+     * What it costs is the three ratchets in [progress.h](progress.h) —
+     * `best_score`, `best_sector_time` and `best_evidence` — because none of
+     * them means anything measured across two different games. It deliberately
+     * does **not** cost `furthest_sector`: that one is the title screen's resume
+     * chip, which is navigation rather than a record, and a player who took the
+     * assist to get to sector nine is still a player who has to start at sector
+     * nine.
+     *
+     * Veteran does not set it. It is the same lever pulled the other way, and a
+     * harder run has no reason to be kept off the ladder it is beating.
+     */
+    bool assisted;
 } CampaignState;
 
-void campaign_reset(CampaignState *campaign);
+/* `veteran` decides how many lives and continues the run opens with; see
+ * VETERAN_LIVES. Everything else about a campaign is the same either way. */
+void campaign_reset(CampaignState *campaign, bool veteran);
+
+/*
+ * An assist switch is on. Called with the sheet's answer whenever a run starts
+ * and whenever one of the switches is touched mid-run, and it only ever sets:
+ * see `CampaignState.assisted` for why a run cannot un-assist itself by
+ * switching back.
+ */
+void campaign_note_assist(CampaignState *campaign, bool assist_on);
+
+/*
+ * Whether what this run does is worth writing to the player's disk.
+ *
+ * The one place the rule lives, so the four `progress_note_*` calls in the shell
+ * cannot come to disagree about it — and it is here rather than in
+ * [progress.c](progress.c) because it is a fact about the run, not about the
+ * file. `progress_note_sector` is deliberately outside it; see the field.
+ */
+bool campaign_records_count(const CampaignState *campaign);
 bool campaign_lose_life(CampaignState *campaign);
 bool campaign_begin_continue(CampaignState *campaign);
 bool campaign_update_continue(CampaignState *campaign, float dt);
@@ -279,6 +372,24 @@ typedef struct
     int mine_count;
     Grenade grenades[MAX_GRENADES];
     int grenade_count;
+    /*
+     * Flash charges in the air. Their own array rather than a flag on a
+     * grenade, and for the reason the bolts have one: every loop that walks the
+     * grenades is a loop about explosives — `apply_blast` chains them, a blast
+     * spends them, they open weak walls — and a charge that hurts nobody
+     * belongs to none of it.
+     */
+    Grenade flashbangs[MAX_FLASHBANGS];
+    Decoy decoys[MAX_DECOYS];
+    /*
+     * One per map camera, and `cameras_initialized` is what says the array has
+     * been matched to the map yet. A zeroed state has `working` false on every
+     * one of them, which would be a sector full of dead cameras rather than an
+     * untouched one — so they are turned on at the first update instead of
+     * being trusted to a memset, the way the facade hazards already are.
+     */
+    CameraState cameras[MAX_CAMERAS];
+    bool cameras_initialized;
     Rocket rockets[MAX_ROCKETS];
     Bullet bullets[MAX_BULLETS];
     Bullet enemy_bullets[MAX_ENEMY_BULLETS];
@@ -310,6 +421,10 @@ typedef struct
      * and the tests' — runs at the authored difficulty. */
     bool assist_slow_enemies;
     bool assist_more_hearts;
+    /* The other direction, handed over the same way and read in the same two
+     * places. A zeroed state is the authored difficulty, exactly as it is for
+     * the two above. */
+    bool veteran;
 
     float invuln_timer;
     int door_spawns[MAX_DOORS];

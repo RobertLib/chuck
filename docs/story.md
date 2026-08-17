@@ -47,9 +47,9 @@ none of them may be moved alone: **00:04** the demand goes out and the cordon
 forms; **00:12** Ellen is taken three blocks out; **00:12-00:22** the drive, in
 through the cordon; **00:22** the SUV reaches the tower, Ellen is walked in and
 Chuck follows — which is also what sector one's wall clock reads, so the
-cutscene and the first dial agree to the minute; **00:22-00:57** the fifteen
+cutscene and the first dial agree to the minute; **00:22-00:57** the seventeen
 sectors, `NIGHT_CLOCK_*` in [game_config.h](../src/game_config.h) climbing the
-dial at two and a half minutes a sector; **01:00** the helicopter, the outro's
+dial at two minutes and fourteen seconds a sector; **01:00** the helicopter, the outro's
 own caption. A change to any one of them is a change to the two cutscene
 captions, the `TRANSITION_INTEL` table in [intel.c](../src/intel.c), the manual's
 `THE NIGHT` sheet, the drive's cordon caption, `NIGHT_CLOCK_FIRST_MINUTE` and
@@ -70,19 +70,145 @@ intel table is Chuck working it out — one considered line, after the fact. The
 net is the other side saying it themselves, in the room, with no idea he is in
 it. Neither is a substitute for the other and neither may contradict the other.
 
-**The building's height is forty floors**, and it is stated in three places
+**The building's height is forty floors**, and it is stated in four places
 that have to agree: the title screen's tagline, the men shouting down off the
-facade (`CHATTER_WALL`) and the prose in [README.md](../README.md). Fifteen
+facade (`CHATTER_WALL`), the prose in [README.md](../README.md) and the credits
+roll, which opens on it and closes on it. This paragraph said *three* and left
+the roll out, which is how the roll came to be the one place stating the
+campaign's length from memory as well — `SEVENTEEN SECTORS` beside the forty
+floors, unmeasured, on the screen a finished campaign always ends on.
+`test_the_credits_say_the_campaign_they_roll_over` holds that half of the line to
+`CAMPAIGN_SECTORS` now. Seventeen
 sectors is the *route*, not the storey count — a sector is a stretch of the
 climb, not a floor.
 
 The table is indexed by finished sector, but only sectors that leave by a
 **stair door** show a report at all — a window is a continuous physical route
 onto the facade and cuts straight to the next sector. In the campaign as
-shipped that is six reports, after sectors 1, 4, 5, 8, 9 and 14, and those six
-carry the arc on their own. Adding or moving a facade sector therefore changes
-which beats of the story are told, which is the one thing about the level
-layout that reaches all the way into the script.
+shipped that is six reports, after sectors 1, 4, 5, 8, 9 and 16, and those six
+carry the arc on their own. The last of them is the vault, which is the one beat
+in the story that used to be asserted by a caption and is now a floor.
+
+Adding or moving a facade sector therefore changes which beats of the story are
+told, which is the one thing about the level layout that reaches all the way into
+the script — and it has already done it once without anybody noticing. Sector 14
+had to gain a `Y` when sector 15 became a climb, which silently deleted the report
+after it: `TWO-KEY DOOR. SHE IS THE SECOND.`, the answer to sector 8's own turn
+and the only place the game says why the hostage is still alive. It sat in an
+unread row through a green suite, because every check measured the line and
+nothing compared the table to the maps. That beat is at sector 16 now — the vault
+is the room the two-key door belongs to anyway — and
+`test_the_arc_lands_on_the_sectors_that_show_a_report` holds `INTEL_ARC_SECTORS`
+against the embedded maps so the next `Y` fails the build instead of the story.
+
+**And the same alternation that deleted that beat had quietly emptied the middle
+of the campaign, which is a different failure and needed a different answer.**
+The reports land after 1, 4, 5, 8, 9 and 16: five of the six inside the first nine
+sectors, then nothing until the vault. From sector 10 on the campaign alternates
+interior and climb, so 10, 12 and 14 all need a `Y` to put Chuck on the wall, and
+a `Y` suppresses the report — six sectors with no beat on the one channel a player
+cannot miss, which at par is a third of the night. Nothing was wrong with any
+sector. It is what the ordering does, and every check passed.
+
+The answer is not to show a report after a window, which would contradict what is
+on the display, but the crew's own net, which was already carrying beats for
+exactly those sectors: `VAULT IS DRY. LOAD IT AND GET IT ON THE ROOF.` at 10, `HE
+CAME UP THROUGH THE DUCTS. THE DUCTS, VOSS.` at 12, `TWO MINUTES AND THIS ROOF IS
+SOMEBODY ELSE'S.` at 14. **They were written and effectively unreachable.** A
+gated line competed on equal terms with every ungated one, and by the tenth sector
+fifteen-odd lines are sayable — so the chance of a given call being the one that
+moved the plot was about one in fifteen, on a call that also needs a live guard who
+is calm, on the ground and inside `CHATTER_EARSHOT`. Half the point of writing
+them was in a table nobody was going to reach.
+
+`crew_line_in` leads with the newest thing the crew has to say, one call in
+`CREW_FRESH_LINE_EVERY` — the highest sector gate the night has passed, which puts
+those three beats at about a third of calls instead of a fifteenth. It reads a
+slice of the roll already drawn rather than asking for a second one, so the
+freshest line cannot shift a single seeded choice; and it applies at every tier,
+because the newest beat is the right thing to lead with in the lobby too.
+
+**And the sector that fell through that answer was the last one.** The three
+gated lines cover 10, 12 and 14; the sixth and last report lands on the vault at
+16; and the net's highest gate was 14 — so **sector 17, the roof, arrived with
+nothing new to say on either channel.** It is the floor the whole night is played
+for, with eight men, three dogs and four heavies on it and Voss standing on the
+pad with the cases, and the freshest thing the crew could say on it was a line
+written for the penthouse three sectors down. Every check passed, and the way it
+passed is the point: the guard-rail below allows one quiet sector on the argument
+that a quiet sector is a *climb*, and the roof came in on an allowance meant for
+a wordless wall. Two lines are gated at 17 now — `CASES ARE ON THE PAD. WE ARE
+WAITING ON THE BIRD.` and `THERE IS NO UPSTAIRS LEFT. THIS IS UPSTAIRS.` — and
+the rule the guard-rail was standing in for is written down rather than implied.
+
+The guard-rail is `test_no_two_sectors_in_a_row_go_quiet`, and it counts both
+channels together because between them they are what the player meets: a sector
+carries a beat if it shows a report **or** the net gains a line on arriving at it.
+It asks two things. **A quiet sector has to be a climb** — that is the rule, and
+it is the half that was previously only a sentence in a comment. And no two
+sectors in a row may be quiet, which is a different complaint and still worth
+keeping. One quiet sector is allowed and is the climbs — no guards to talk, no report either
+side, and a wordless climb is the point of a climb. Two in a row is the stretch
+where a player starts to wonder whether the game has forgotten what it was about.
+It asks the net through `crew_line_allowed` rather than reading the gates, because
+the schedule is presentation and a test that reached into it would be a second copy
+of it rather than a question about it.
+
+## The docket, and the only thing Chuck takes out that is not a weapon
+
+**The cover is the plot's biggest loose end, and the collectable is what ties
+it off.** The demand broadcast at 00:04 has the whole city believing this is a
+political siege; the cordon is facing outward on the strength of it, and nobody
+outside the building has a single piece of paper saying otherwise. Everything
+Chuck learns tonight he learns by being in the room — the flight cases, the
+twelve names, the settlement clock — and none of it is evidence.
+
+`*` is ([levels/LEGEND.md](../levels/LEGEND.md)) a sheet off Meridian Facility
+Services' own docket, and there is exactly one in every interior sector: twelve
+across the campaign. Picking one up pays `EVIDENCE_SCORE` and changes nothing
+else at all — no checkpoint, no counter the simulation reads, nothing in the
+hand. It is the only pickup in the game that is worth nothing to the man
+carrying it, and that is the point of it: it is worth something to everybody
+else, afterwards.
+
+Three decisions carry it.
+
+**It is counted on the run, never on the floor.** `CampaignState.evidence_collected`
+sits beside the score and the crew tally for the reason those two do — a
+sector's own copy would be wiped at every doorway, and what this number is is
+the state of the case at the end of the night.
+
+**And `Progress` keeps a high-water mark rather than a set of flags**, which is
+a decision about what the collection *is*. Flags would let a player assemble the
+case across a dozen abandoned runs, which is a checklist; a high-water mark asks
+for them in one night, which is what the fiction is about. Chuck is not coming
+back tomorrow. It is read on the game-over card beside the best score — the one
+screen where a finished run is being looked at rather than played — and
+deliberately not on the title screen, whose quiet line of four chips is already
+about 650 of the 800 the frame is laid out in. See
+[The field manual](screens.md#the-field-manual) for why a fifth chip would have
+to earn itself.
+
+**And the count is on both screens between sectors, which it was not.** Everything
+above is about what the sheet does to the *simulation*, and the answer is nothing
+— no checkpoint, no counter a floor reads, nothing in the hand — which is right
+and was quietly taken to settle a different question. `evidence_collected` was
+raised by the pickup and then read by two screens, both of which are the end of
+the run: a player spent a whole night on a collection laid out one to an interior
+precisely so that a missed one is a floor they can *name*, and could not find out
+how many they held until there was nothing left to do about it. So the report
+prints `DOCKET n/12` under the score it paid for, in the credit colour the time
+and clean bonuses already use, and the one-line tally over the next sector's
+reveal carries the same cell — both of them, because six of the sixteen sector
+boundaries show the report and the other ten show the line, and a counter on ten
+of sixteen would be worse than one on none. It is on from the first clear rather
+than from the first sheet: `00/12` after sector one is the game saying there is
+something on these floors, to the player it is actually for.
+
+None of that contradicts the paragraph above it. The objection to telling the
+player is an objection about *Chuck*, who is carrying paper that is worth nothing
+to him; neither of those screens is Chuck. They are the same voice that already
+prints what the seconds were worth.
 
 ## The report between sectors
 
@@ -119,15 +245,15 @@ stopwatch that could not matter beside a death count that cost nothing past the
 walk back. That is a worse arrangement than printing neither, because this page
 is downstream of a fiction that will not stop talking about the clock — 01:00
 is when the bonds leave the roof, the wall dials climb toward it, the line
-after sector eleven says TEN MINUTES — so the game spent fifteen sectors
+after sector eleven says TEN MINUTES — so the game spent the whole campaign
 insisting the night was against a deadline and then put a stopwatch on screen
 that the player could safely ignore.
 
 `campaign_award_sector_bonus` ([gameplay_state.c](../src/gameplay_state.c)) is
 what pays them, and **the par it measures against is the night clock's own**:
 `SECTOR_PAR_SECONDS` is derived from `NIGHT_CLOCK_MINUTES_PER_SECTOR`, so the
-two and a half minutes the dial upstairs gives a floor are the two and a half
-minutes the score gives it, and moving one moves the other.
+134 seconds the dial upstairs gives a floor are the 134 seconds the score
+gives it, and moving one moves the other.
 `test_the_sector_par_is_the_night_clock_s_own` holds the derivation in place.
 Seconds left over pay `SECTOR_TIME_BONUS_PER_SECOND`, a floor cleared without a
 death pays `SECTOR_CLEAN_BONUS`, and both are printed under the field that
@@ -136,8 +262,14 @@ see is a bonus they cannot learn to play for. A sector run well over its slot
 is told `OVER PAR` rather than left with a blank line, because a field that
 sometimes pays for no visible reason teaches nothing.
 
+**And the field now says what there is to beat.** TIME prints the run beside
+`BEST`, which is the quickest any run has ever cleared that sector — see
+[What outlives the process](screens.md#what-outlives-the-process). Without it
+the par is the night's allowance rather than this player's, and a stopwatch
+measured against nothing is a number to glance at rather than one to play for.
+
 The rates are set so that speed is a genuine alternative to clearing a floor
-rather than a rounding error on top of it: a full par under is 3000, and a
+rather than a rounding error on top of it: a full par under is 2680, and a
 sector holds eight or so men at 150 apiece. It is also the largest single jump
 the score ever makes, which is why `try_finish_current_level` looks for an
 extra life immediately after awarding rather than leaving it to the next
@@ -148,7 +280,7 @@ reason the player can connect it to.
 the branch in `try_finish_current_level` rather than inside the reporting arm
 of it: only the stair door draws this sheet, while the window hands straight
 over to a climb and the last floor goes to the outro. Banked where it was
-easiest to put it, the four climbs and the roof would have been the five floors
+easiest to put it, the five climbs and the roof would have been the six floors
 in the campaign that paid nothing for being cleared well.
 
 ## The net
@@ -159,15 +291,15 @@ hundred feet up leans out of a window and shouts down, and the first person out
 of the lobby shouts on the way — five beats the game already had as poses and
 sounds, and none of which had ever said a word.
 The words are in [crew.c](../src/crew.c), one file, and the reason it is one file
-is that a strip printing `KARL` while a manual sheet lists a different twelve
+is that a strip printing `LENZ` while a manual sheet lists a different twelve
 would be two answers to the same question.
 
 **Twelve is the docket, not the body count, and that is a decision rather than
-an oversight.** Counted off the maps, the campaign lays out **83 guard spawns**
-across the eleven interiors, plus fifteen dogs, plus what the `SPAWNS` lines
-and a raised alarm send out of the doors, plus six more in the restrooms — so
-a finished run has put down something like a hundred men, and the fiction says
-twelve. Most action games get away with never being asked; this one asks
+an oversight.** Counted off the maps, the campaign lays out **97 guard spawns**
+across the twelve interiors — 84 of them ordinary and 13 heavies — plus
+seventeen dogs, plus what the `SPAWNS` lines and a raised alarm send out of the
+doors, plus six more in the restrooms — so a finished run has put down comfortably
+more than a hundred men, and the fiction says twelve. Most action games get away with never being asked; this one asks
 itself, out loud, because the manual's `THE CREW` sheet prints twelve ruled
 lines, the report after sector 6 says `TWELVE PLACES LAID IN THE GALLEY. TWELVE
 MEN.` and the net counts them. So the stance has to be written down somewhere,
@@ -179,6 +311,15 @@ and it is this:
   contractor who lied about the cases is not a reliable narrator about the
   heads. What the twelve names are actually *for* is the net and the manual
   sheet: a man being shot at is anonymous, a man on a handset has a name.
+- **And the roll is deliberately not a citation.** The rule this page sets for
+  the homage is that it is paid by describing the films rather than naming them,
+  and a crew reproduced name for name is the one place that rule was broken — so
+  the five names that identified somebody else's roster were changed, and the
+  twelve read as twelve contractors on a docket instead of as a cast list. The
+  work they do is unchanged, because it never depended on which twelve they were:
+  a man on a handset has a name, and any name does that. A reader who recognises
+  the shape of the night is meant to. A reader who recognises the cast was
+  reading a copy.
 - **Nothing on screen ever adds the two up.** The report between sectors prints
   the *sector's* tally and never a running total (`hostiles_neutralized`, wiped
   with the floor), which is the one thing that would put the two numbers side
@@ -228,7 +369,7 @@ Five rules follow, each of which cost something to learn:
   is the one thing a name is for. On the facade there is no enemy array at all
   and the *window index* stands in: the men out there are the same crew.
 - **Nobody talks about himself in the third person.** Several lines name a man
-  — THEO is on the sixth lock, KARL wants the lights back on, nothing has come
+  — BRUNO is on the sixth lock, LENZ wants the lights back on, nothing has come
   back from MARCO — and the roll that picks a line and the slot that picks a
   name come from different places, so the two were free to land on the same
   one: the strip printed `MARCO: STILL NOTHING FROM MARCO.` A one-in-a-hundred
@@ -372,7 +513,7 @@ to say something the story page says, in the place the player is standing.
 - **The clock, `w`.** At 01:00 the bonds leave the roof; that is the only
   reason any of this is happening tonight. The dial reads the campaign sector it hangs in
   (`NIGHT_CLOCK_*` in [game_config.h](../src/game_config.h)), so the minute hand
-  climbs the face across the fifteen sectors and is nearly back at the top on
+  climbs the face across the seventeen sectors and is nearly back at the top on
   the roof. It is the **one prop that hangs**, so it asks the tile above it for
   support where every other prop asks the tile below (`decoration_hangs` in
   [level.h](../src/level.h), and `editor_symbol_hangs` on the editor's side of the
@@ -424,7 +565,13 @@ to say something the story page says, in the place the player is standing.
   the drive never explains and the player reads as traffic to dodge. Out on the wall it is the same cordon from above:
   `facade_cordon` in [level_art.c](../src/level_art.c) washes the lower face in
   out-of-phase blue and red, strongest on the first and lowest climb and gone
-  entirely above the cloud deck, so the climb is also a climb away from it.
+  entirely by the last two, so the climb is also a climb away from it. **That
+  fade is keyed on the sector's theme and not on its backdrop**, which is the
+  one thing about it worth writing down: `FACADE_SLEET` borrows the storm's
+  backdrop, so asking the backdrop gave the highest climb in the game the
+  storm's own wash and put more street under sector 15 than under the two
+  climbs below it. Four backdrops, five climbs; anything that means *per climb*
+  asks the theme.
   `facade_news_helicopter` is the one aircraft allowed near the tower — a
   **news** ship, drawn behind the shell so it passes *behind* the face Chuck is
   on, because the helicopter waiting on the roof at the end of the night is the
@@ -469,8 +616,8 @@ the staff side of the desk stays legible.
 
 **She belongs to the lobby and to nothing above it**, and that is the fiction
 rather than a limit of the code. A `k` stood on the penthouse floor of sector 14
-for a while, which put a civilian calmly working a counter two sectors below the
-roof at around 00:55 — half an hour after the building emptied, on a floor
+for a while, which put a civilian calmly working a counter three sectors below
+the roof at 00:51 — half an hour after the building emptied, on a floor
 twelve armed men have been running all night, ignored by every one of them and
 by Chuck. The counter itself may stand anywhere: an `n` run is dressing, it was
 here yesterday and will be here tomorrow. The person behind it is not, and the
@@ -479,7 +626,7 @@ through.
 
 **The janitor is deliberately not held to that**, and the difference is worth
 stating because the two read as the same objection: a `J` stands in sectors 2,
-5, 6 and 9, which is a civilian still working at around 00:42, after the
+5, 6, 9 and 10, which is a civilian still working at around 00:44, after the
 shooting has started. What separates them is what a post is. A staffed counter
 is the building *serving somebody* — it says the night is normal, and it cannot
 say that once the lobby has been emptied at gunpoint two floors below. A
@@ -500,5 +647,16 @@ man ignoring a room being emptied at gunpoint, and it undercuts the rule the
 other four are allowed by. He is gone from
 [levels/level1.txt](../levels/level1.txt); the lobby keeps five ambient figures
 without him, which is still more than any other sector has. So the list above is
-the list: **2, 5, 6 and 9**, and the lobby is the exception with a reason rather
-than a gap waiting to be filled in.
+the list: **2, 5, 6, 9 and 10**, and the lobby is the exception with a reason
+rather than a gap waiting to be filled in.
+
+**Sector 10 is the one that was added afterwards, and it is the one that argues
+the rule rather than following it.** The other four sit in the first half of the
+night, so the building's ambient life stopped dead at the halfway point — from
+the security floor upward there was nobody in the tower who was not either
+fighting or being fought, which reads as the game forgetting the fiction exactly
+where the fiction is doing its most work. A man with a mop on the monitor-wall
+floor at 00:44 is the least likely place to find one and therefore the most
+useful: what licenses him is the same sentence as before — nobody told him — and
+the floor he is on is the one place the player has just learned somebody
+*would* have.

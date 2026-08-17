@@ -16,10 +16,10 @@
  * game.
  *
  * They came out of game_render.c, which was six thousand lines and the one
- * file in the tree with no test coverage at all — a combination that made
- * every change to it a change nobody could scope. What holds this side of the
- * split now is `make smoke`, which boots the real binary through the title
- * screen and all fifteen sectors under ASan and UBSan.
+ * file in the tree with no test coverage at all — `make test` links no SDL and
+ * so reaches none of it. What holds this side of the split is the shared
+ * vocabulary itself: one name per rule, and `make lint` refusing any literal
+ * that respells one of them.
  */
 
 #include <SDL3/SDL.h>
@@ -35,6 +35,9 @@
  * because the throwing pose is what decides how it has to look.
  */
 void draw_grenade(SDL_Renderer *r, float x, float y, float fuse);
+void draw_decoy(SDL_Renderer *r, float x, float y);
+void draw_flashbang(SDL_Renderer *r, float x, float y, float fuse);
+void draw_evidence_pickup(SDL_Renderer *r, float x, float y);
 
 void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
                  float cam_x, float oy, bool hacking, float hacking_time,

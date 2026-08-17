@@ -1,111 +1,126 @@
 #include "pad_hint.h"
 
+#include <string.h>
+
 const PadHints PAD_HINTS_XBOX = {
     .face = {"A", "B", "X", "Y"},
-    .at = {SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
-           SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH},
+    .at = {PAD_BUTTON_SOUTH, PAD_BUTTON_EAST,
+           PAD_BUTTON_WEST, PAD_BUTTON_NORTH},
     .start = "START",
     .select = "BACK",
     .shoulder_l = "LB",
     .shoulder_r = "RB",
 };
 
+/* Unsized, so the assertion measures the list rather than itself; see the note
+ * on `LEVEL_THEME_NAMES` in level.c. A missing row here would zero-fill to
+ * `PAD_BUTTON_SOUTH` and quietly ask one position twice while never asking
+ * another — which reads as a pad that cannot letter itself and falls back to
+ * the Xbox set, the one failure shaped exactly like success. */
+const int PAD_FACE_POSITIONS[] = {PAD_BUTTON_SOUTH, PAD_BUTTON_EAST,
+                                  PAD_BUTTON_WEST, PAD_BUTTON_NORTH};
+
+_Static_assert(sizeof(PAD_FACE_POSITIONS) / sizeof(PAD_FACE_POSITIONS[0]) ==
+                   (size_t)PAD_FACE_COUNT,
+               "every face needs a button position");
+
 /* A cross, a circle, a square and a triangle in the only alphabet the 8x8
  * debug font has. */
-static const char *label_text(SDL_GamepadButtonLabel label)
+static const char *label_text(PadButtonLabel label)
 {
     switch (label)
     {
-    case SDL_GAMEPAD_BUTTON_LABEL_A:
+    case PAD_LABEL_A:
         return "A";
-    case SDL_GAMEPAD_BUTTON_LABEL_B:
+    case PAD_LABEL_B:
         return "B";
-    case SDL_GAMEPAD_BUTTON_LABEL_X:
+    case PAD_LABEL_X:
         return "X";
-    case SDL_GAMEPAD_BUTTON_LABEL_Y:
+    case PAD_LABEL_Y:
         return "Y";
-    case SDL_GAMEPAD_BUTTON_LABEL_CROSS:
+    case PAD_LABEL_CROSS:
         return "X";
-    case SDL_GAMEPAD_BUTTON_LABEL_CIRCLE:
+    case PAD_LABEL_CIRCLE:
         return "O";
-    case SDL_GAMEPAD_BUTTON_LABEL_SQUARE:
+    case PAD_LABEL_SQUARE:
         return "[]";
-    case SDL_GAMEPAD_BUTTON_LABEL_TRIANGLE:
+    case PAD_LABEL_TRIANGLE:
         return "/\\";
-    default:
-        return NULL;
+    case PAD_LABEL_UNKNOWN:
+        break;
     }
+    return NULL;
 }
 
-static PadFace label_face(SDL_GamepadButtonLabel label)
+static PadFace label_face(PadButtonLabel label)
 {
     switch (label)
     {
-    case SDL_GAMEPAD_BUTTON_LABEL_A:
-    case SDL_GAMEPAD_BUTTON_LABEL_CROSS:
+    case PAD_LABEL_A:
+    case PAD_LABEL_CROSS:
         return PAD_FACE_CONFIRM;
-    case SDL_GAMEPAD_BUTTON_LABEL_B:
-    case SDL_GAMEPAD_BUTTON_LABEL_CIRCLE:
+    case PAD_LABEL_B:
+    case PAD_LABEL_CIRCLE:
         return PAD_FACE_CANCEL;
-    case SDL_GAMEPAD_BUTTON_LABEL_X:
-    case SDL_GAMEPAD_BUTTON_LABEL_SQUARE:
+    case PAD_LABEL_X:
+    case PAD_LABEL_SQUARE:
         return PAD_FACE_ATTACK;
-    case SDL_GAMEPAD_BUTTON_LABEL_Y:
-    case SDL_GAMEPAD_BUTTON_LABEL_TRIANGLE:
+    case PAD_LABEL_Y:
+    case PAD_LABEL_TRIANGLE:
         return PAD_FACE_DOOR;
-    default:
-        return PAD_FACE_NONE;
+    case PAD_LABEL_UNKNOWN:
+        break;
     }
+    return PAD_FACE_NONE;
 }
 
 /* START and SELECT keep their position on every pad and only ever change
  * name, so they are read off the type rather than off the button. */
-static void read_named_buttons(PadHints *hints, SDL_Gamepad *gamepad)
+static void read_named_buttons(PadHints *hints, PadType type)
 {
-    switch (SDL_GetGamepadType(gamepad))
+    switch (type)
     {
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
-    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+    case PAD_TYPE_NINTENDO_SWITCH_PRO:
+    case PAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case PAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+    case PAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
         hints->start = "+";
         hints->select = "-";
         hints->shoulder_l = "L";
         hints->shoulder_r = "R";
         break;
-    case SDL_GAMEPAD_TYPE_PS3:
+    case PAD_TYPE_PS3:
         hints->start = "START";
         hints->select = "SELECT";
         hints->shoulder_l = "L1";
         hints->shoulder_r = "R1";
         break;
-    case SDL_GAMEPAD_TYPE_PS4:
+    case PAD_TYPE_PS4:
         hints->start = "OPTIONS";
         hints->select = "SHARE";
         hints->shoulder_l = "L1";
         hints->shoulder_r = "R1";
         break;
-    case SDL_GAMEPAD_TYPE_PS5:
+    case PAD_TYPE_PS5:
         hints->start = "OPTIONS";
         hints->select = "CREATE";
         hints->shoulder_l = "L1";
         hints->shoulder_r = "R1";
         break;
+    case PAD_TYPE_UNKNOWN:
     default:
-        /* Xbox, and every pad SDL has no better name for. */
+        /* Xbox, and every pad SDL has no better name for. `default` as well as
+         * the named row, because this enum is deliberately a subset of SDL's:
+         * an Xbox 360 pad arrives as a number with no row here at all, and it
+         * belongs in exactly this branch. */
         break;
     }
 }
 
-void pad_hints_read(PadHints *hints, SDL_Gamepad *gamepad)
+void pad_hints_apply(PadHints *hints, PadType type,
+                     const PadButtonLabel *labels, int count)
 {
-    static const SDL_GamepadButton positions[PAD_FACE_COUNT] = {
-        SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST,
-        SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH};
-
     *hints = PAD_HINTS_XBOX;
-    if (gamepad == NULL)
-        return;
 
     /*
      * Filed by the letter printed on it rather than by where it sits, which is
@@ -113,26 +128,27 @@ void pad_hints_read(PadHints *hints, SDL_Gamepad *gamepad)
      * and no two of them landed on the same button: a pad SDL cannot letter at
      * all is better served by the Xbox set than by half a translation.
      */
-    PadHints read = *hints;
-    int found = 0;
-    for (int i = 0; i < PAD_FACE_COUNT; ++i)
+    if (labels != NULL && count >= PAD_FACE_COUNT)
     {
-        SDL_GamepadButtonLabel label =
-            SDL_GetGamepadButtonLabel(gamepad, positions[i]);
-        PadFace face = label_face(label);
-        if (face == PAD_FACE_NONE || (found & (1 << face)) != 0)
-            continue;
-        found |= 1 << face;
-        read.at[face] = positions[i];
-        read.face[face] = label_text(label);
+        PadHints read = *hints;
+        int found = 0;
+        for (int i = 0; i < PAD_FACE_COUNT; ++i)
+        {
+            PadFace face = label_face(labels[i]);
+            if (face == PAD_FACE_NONE || (found & (1 << face)) != 0)
+                continue;
+            found |= 1 << face;
+            read.at[face] = PAD_FACE_POSITIONS[i];
+            read.face[face] = label_text(labels[i]);
+        }
+        if (found == (1 << PAD_FACE_COUNT) - 1)
+            *hints = read;
     }
-    if (found == (1 << PAD_FACE_COUNT) - 1)
-        *hints = read;
 
-    read_named_buttons(hints, gamepad);
+    read_named_buttons(hints, type);
 }
 
-PadFace pad_hints_face(const PadHints *hints, SDL_GamepadButton button)
+PadFace pad_hints_face(const PadHints *hints, int button)
 {
     for (int face = 0; face < PAD_FACE_COUNT; ++face)
     {
@@ -142,10 +158,10 @@ PadFace pad_hints_face(const PadHints *hints, SDL_GamepadButton button)
     return PAD_FACE_NONE;
 }
 
-SDL_GamepadButton pad_hints_button(const PadHints *hints, PadFace face)
+int pad_hints_button(const PadHints *hints, PadFace face)
 {
     if (face < 0 || face >= PAD_FACE_COUNT)
-        return SDL_GAMEPAD_BUTTON_INVALID;
+        return PAD_BUTTON_NONE;
     return hints->at[face];
 }
 
@@ -170,10 +186,10 @@ static const char *token_value(const PadHints *hints, const char *src,
         {"Y", hints->face[PAD_FACE_DOOR]},
     };
 
-    for (size_t i = 0; i < SDL_arraysize(tokens); ++i)
+    for (size_t i = 0; i < sizeof(tokens) / sizeof(tokens[0]); ++i)
     {
-        size_t len = SDL_strlen(tokens[i].name);
-        if (SDL_strncmp(src, tokens[i].name, len) == 0)
+        size_t len = strlen(tokens[i].name);
+        if (strncmp(src, tokens[i].name, len) == 0)
         {
             *consumed = len;
             return tokens[i].value;
@@ -198,7 +214,13 @@ const char *pad_hint(const PadHints *hints, char *buf, size_t size,
      * prompt that teaches the only part of the game nobody guesses. */
     if (hints == NULL)
     {
-        SDL_strlcpy(buf, key_form, size);
+        size_t out = 0;
+        while (key_form[out] != '\0' && out + 1 < size)
+        {
+            buf[out] = key_form[out];
+            ++out;
+        }
+        buf[out] = '\0';
         return buf;
     }
 

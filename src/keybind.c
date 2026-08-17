@@ -183,6 +183,88 @@ bool keybind_action_has_pad(const KeyBindings *bindings, BindAction action,
     return false;
 }
 
+/*
+ * The one mechanism both tables bind through.
+ *
+ * Taking the code off whoever had it is not optional — one key doing two jobs
+ * is indistinguishable from a broken keyboard, and the same of a pad — but
+ * *clearing* the old owner is one answer to that and *swapping* is the other,
+ * and the difference between them is a run.
+ *
+ * The single likeliest edit anybody makes on this sheet is jump onto SPACE,
+ * and SPACE is ATTACK's only key. Cleared, the player walks out of the options
+ * screen unable to fire, told only by a "-" on a prompt they may never read.
+ * Swapped, ATTACK inherits the LSHIFT that jump has just given up and both
+ * actions still answer to something. Nobody asked to lose an action; they
+ * asked to move a key.
+ *
+ * And when the swap has nothing to hand back — binding into an empty slot, so
+ * the old owner is purely losing a key — a bind that would leave an action
+ * answering nothing at all is refused outright, changing nothing. That is the
+ * argument this file already accepts one level in: ESC, ENTER and BACKSPACE are
+ * unbindable because a sheet that let them go could lock the player out of the
+ * sheet. A sheet that lets USE go can lock them out of the *game* — sector 14's
+ * window is reachable only through a door pair, `gameplay_use_door` is the only
+ * thing that opens one, and `test_no_sector_is_locked_behind_an_unbindable_action`
+ * is what holds that sentence to the shipped maps.
+ *
+ * A file edited by hand can still arrive with an action empty, and the sheet
+ * and the in-sector prompt both still say so with an empty cap and a "-": this
+ * is a rule about what the sheet may *do*, not a claim about what the struct
+ * can hold.
+ *
+ * The same file can also arrive with one code on *two* actions — `settings_parse`
+ * writes the table directly, because a loader that refused a line would be a
+ * file that can stop the game starting — and the sweep at the end is what the
+ * clearing version used to do for free: whatever copies are left over after the
+ * swap go, so the table this function returns keeps the one-code-one-job
+ * invariant even when the one it was handed did not. That sweep is deliberately
+ * outside the emptiness check above: an action whose only claim on a code was a
+ * duplicate was never really answering it, and the sheet's empty cap is a more
+ * honest account of that than two actions firing together.
+ */
+static bool bind_into_table(int (*table)[BIND_SLOTS], BindAction action,
+                            int slot, int code, int none)
+{
+    int owner = -1;
+    int owner_slot = -1;
+    for (int other = 0; other < BIND_COUNT && owner < 0; ++other)
+    {
+        for (int s = 0; s < BIND_SLOTS; ++s)
+        {
+            if (table[other][s] == code)
+            {
+                owner = other;
+                owner_slot = s;
+                break;
+            }
+        }
+    }
+
+    int displaced = table[action][slot];
+    if (owner >= 0 && owner != (int)action)
+    {
+        /* What the old owner is left holding once the swap has happened. */
+        int left = displaced != none ? 1 : 0;
+        for (int s = 0; s < BIND_SLOTS; ++s)
+            if (s != owner_slot && table[owner][s] != none)
+                ++left;
+        if (left == 0)
+            return false;
+    }
+
+    if (owner >= 0)
+        table[owner][owner_slot] = displaced;
+    table[action][slot] = code;
+
+    for (int other = 0; other < BIND_COUNT; ++other)
+        for (int s = 0; s < BIND_SLOTS; ++s)
+            if (table[other][s] == code &&
+                !(other == (int)action && s == slot))
+                table[other][s] = none;
+    return true;
+}
+
 bool keybind_set_pad(KeyBindings *bindings, BindAction action, int slot,
                      int button)
 {
@@ -193,15 +275,10 @@ bool keybind_set_pad(KeyBindings *bindings, BindAction action, int slot,
     if (!keybind_pad_is_bindable(button))
         return false;
 
-    /* Taken from whoever had it, exactly as `keybind_set` does: a button that
-     * fires two actions is indistinguishable from a broken pad. */
-    for (int other = 0; other < BIND_COUNT; ++other)
-        for (int s = 0; s < BIND_SLOTS; ++s)
-            if (bindings->pad[other][s] == button)
-                bindings->pad[other][s] = PADBIND_NONE;
-
-    bindings->pad[action][slot] = button;
-    return true;
+    /* Swapped off whoever had it, exactly as `keybind_set` does: a button that
+     * fires two actions is indistinguishable from a broken pad, and an action
+     * with no button left on it is a pad that has quietly lost a verb. */
+    return bind_into_table(bindings->pad, action, slot, button, PADBIND_NONE);
 }
 
 /* ---- The table -------------------------------------------------------- */
@@ -300,14 +377,9 @@ bool keybind_set(KeyBindings *bindings, BindAction action, int slot,
     if (!keybind_is_bindable(scancode))
         return false;
 
-    /* Taken from whoever had it, this action included: binding a key to the
+    /* Swapped off whoever had it, this action included: binding a key to the
      * slot beside the one already holding it would otherwise leave the action
      * answering the same key twice and one slot short. */
-    for (int other = 0; other < BIND_COUNT; ++other)
-        for (int s = 0; s < BIND_SLOTS; ++s)
-            if (bindings->keys[other][s] == scancode)
-                bindings->keys[other][s] = KEYBIND_NONE;
-
-    bindings->keys[action][slot] = scancode;
-    return true;
+    return bind_into_table(bindings->keys, action, slot, scancode,
+                           KEYBIND_NONE);
 }

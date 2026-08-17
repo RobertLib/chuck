@@ -43,6 +43,69 @@ void draw_grenade(SDL_Renderer *r, float x, float y, float fuse)
 }
 
 /*
+ * A bolt in the air.
+ *
+ * Six pixels of plated steel and an outline, and it is drawn small on purpose:
+ * the player has to be able to tell it from a grenade at a glance, because one
+ * of the two is about to go off. Nothing about it is animated — it is in the
+ * air for well under a second and the noise it makes is the event, not the
+ * flight.
+ */
+void draw_decoy(SDL_Renderer *r, float x, float y)
+{
+  color_rect(r, COL_OUTLINE, x - 1.0f, y - 1.0f,
+             (float)DECOY_W + 2.0f, (float)DECOY_H + 2.0f);
+  color_rect(r, FX_STEEL, x, y, (float)DECOY_W, (float)DECOY_H);
+  color_rect(r, FX_STEEL_LT, x, y, (float)DECOY_W, 2.0f);
+}
+
+/*
+ * A flash charge — in the air, and lying on the floor as a pickup.
+ *
+ * It has to be told from a grenade at a glance, because one of the two is about
+ * to kill whoever is standing next to it. So it is the other half of the
+ * palette: a steel cylinder with a white band and a cyan tell-tale rather than
+ * an olive body with a brass spoon, and the tell-tale is what strobes as the
+ * fuse runs down. Same size, opposite colours.
+ */
+void draw_flashbang(SDL_Renderer *r, float x, float y, float fuse)
+{
+  color_rect(r, COL_OUTLINE, x - 1.0f, y + 1.0f, 12.0f, 10.0f);
+  color_rect(r, FX_STEEL, x, y + 2.0f, 10.0f, 8.0f);
+  color_rect(r, FX_CREAM, x, y + 4.0f, 10.0f, 2.0f);
+  color_rect(r, FX_STEEL_LT, x + 2.0f, y + 2.0f, 2.0f, 7.0f);
+  color_rect(r, FX_INK, x + 7.0f, y - 1.0f, 4.0f, 2.0f);
+  if (fuse > 0.0f && ((int)(fuse * 18.0f) & 1) == 0)
+  {
+    color_rect(r, FX_CREAM, x + 10.0f, y - 2.0f, 2.0f, 2.0f);
+    color_rect(r, FX_CYAN, x + 11.0f, y - 1.0f, 2.0f, 2.0f);
+  }
+}
+
+/*
+ * A sheet off the docket, lying where it fell out of a case.
+ *
+ * Paper rather than kit, so it is drawn as paper: a pale leaf with a corner
+ * turned, two ruled lines and the red stamp that makes it Meridian's rather
+ * than the building's. It is the one pickup that is not a weapon, a heart or a
+ * door, and it has to read that way from across a room or a player will walk
+ * past it assuming they are full up on whatever it is.
+ */
+void draw_evidence_pickup(SDL_Renderer *r, float x, float y)
+{
+  color_rect(r, COL_OUTLINE, x + 2.0f, y + 1.0f, 12.0f, 15.0f);
+  color_rect(r, FX_CREAM, x + 3.0f, y + 2.0f, 10.0f, 13.0f);
+  color_rect(r, FX_PALE, x + 3.0f, y + 12.0f, 10.0f, 3.0f);
+  /* The turned corner, which is what stops it reading as a plain white box. */
+  color_rect(r, COL_OUTLINE, x + 10.0f, y + 2.0f, 4.0f, 4.0f);
+  color_rect(r, FX_PALE, x + 10.0f, y + 2.0f, 3.0f, 3.0f);
+  /* Ruled lines and the contractor's stamp. */
+  color_rect(r, FX_LABEL, x + 5.0f, y + 6.0f, 6.0f, 1.0f);
+  color_rect(r, FX_LABEL, x + 5.0f, y + 8.0f, 6.0f, 1.0f);
+  color_rect(r, FX_RED_DK, x + 5.0f, y + 10.0f, 4.0f, 2.0f);
+}
+
+/*
  * The light a shot throws.
  *
  * A muzzle flash drawn as two bright rects is a decal: the brightest thing in
@@ -1599,6 +1662,32 @@ void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
   }
 }
 
+/*
+ * The glare over anything a flash charge has just taken the eyes off.
+ *
+ * It is one function because the two callers were the same five lines with
+ * different numbers, and because a dog is very rarely the thing inside
+ * `FLASH_RADIUS` when the charge goes off — a guard is blinded in six of the
+ * campaign's interiors, and the nearest a dog has been measured is 141px
+ * against a radius of 160. A second copy of this would therefore be a drawing
+ * almost nothing reaches.
+ *
+ * It earns its place at all because a blinded figure is a figure standing
+ * still, which is also what one that has merely lost you looks like — and those
+ * two mean opposite things about whether it is safe to walk past.
+ */
+static void figure_flash_dazzle(SDL_Renderer *r, float cx, float cy,
+                                float radius, float spread, float timer)
+{
+  if (timer <= 0.0f)
+    return;
+  float dazzle = timer / FLASH_BLIND_TIME;
+  if (dazzle > 1.0f)
+    dazzle = 1.0f;
+  fx_glow(r, cx, cy, radius + spread * dazzle, FX_CREAM,
+          (Uint8)(70.0f + 90.0f * dazzle));
+}
+
 void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
                        float cam_x, float oy)
 {
@@ -1620,14 +1709,35 @@ void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
   float step = moving ? sinf(phase) : 0.0f;
   float bob = moving ? fabsf(step) * 0.5f : sinf(e->anim_time * 1.8f) * 0.3f;
   float climb = e->climbing ? sinf(phase) * 4.0f : 0.0f;
-  SDL_Color uniform = e->hp >= ENEMY_HP ? FX_GUARD
-                                           : e->hp == 2 ? (SDL_Color){103, 83, 54, 255}
-                                                        : (SDL_Color){101, 65, 49, 255};
-  SDL_Color light = e->hp >= ENEMY_HP ? (SDL_Color){116, 129, 86, 255}
-                                        : (SDL_Color){135, 98, 58, 255};
+  /* Wounded reads off how much of *his own* health is left rather than off a
+     fixed three, which is the number that stopped being right the day a man
+     with six of them walked into the campaign: read against ENEMY_HP a heavy
+     went on looking untouched for the first three rounds and then jumped
+     straight to the last colour. */
+  int full = enemy_kind_hp(e->kind);
+  bool heavy = e->kind == ENEMY_KIND_HEAVY;
+  SDL_Color uniform = e->hp >= full ? (heavy ? FX_STEEL_DK : FX_GUARD)
+                      : e->hp * 3 > full ? (SDL_Color){103, 83, 54, 255}
+                                         : (SDL_Color){101, 65, 49, 255};
+  SDL_Color light = e->hp >= full
+                        ? (heavy ? FX_STEEL : (SDL_Color){116, 129, 86, 255})
+                        : (SDL_Color){135, 98, 58, 255};
 
   npc_contact_shadow(r, level, e->x + ENEMY_W * 0.5f, e->y + 31.0f,
                      10.0f, 200, cam_x, oy);
+
+  /*
+   * Flashed, and the frame has to say so for the whole of it.
+   *
+   * The player threw the charge for the seconds it buys, so the seconds have to
+   * be legible from across a room and while running: a cold wash over the
+   * figure and a ring of glare at the head, both fading with the timer. Without
+   * it a blinded man is an ordinary guard standing still, which is also what a
+   * guard who has simply lost you looks like — and those two mean opposite
+   * things about whether it is safe to walk past him.
+   */
+  figure_flash_dazzle(r, x + ENEMY_W * 0.5f, y + 8.0f, 16.0f, 8.0f,
+                      e->blind_timer);
 
   if (e->climbing)
   {
@@ -1707,6 +1817,25 @@ void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
                 (SDL_Color){26, 31, 27, 255});
     sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 16.0f + bob, 3.0f, 4.0f,
                 (SDL_Color){30, 35, 31, 255});
+    /* And the heavy's own kit on top of it. A man who cannot be stomped has to
+       be recognisable from across the room *before* the player jumps at him,
+       so the difference is silhouette rather than tint: a second plate over the
+       chest and a pad on each shoulder, both wide enough to break the outline.
+       Reading the tint alone would be a rule the player only learns by losing
+       a heart to it. */
+    if (heavy)
+    {
+      sprite_rect(r, x, y, ENEMY_W, dir, 9.0f, 13.0f + bob, 12.0f, 2.0f,
+                  FX_STEEL_LT);
+      sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 15.0f + bob, 10.0f, 6.0f,
+                  FX_STEEL_DK);
+      sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 15.0f + bob, 10.0f, 1.0f,
+                  FX_STEEL);
+      sprite_rect(r, x, y, ENEMY_W, dir, 7.0f, 12.0f + bob, 3.0f, 3.0f,
+                  FX_STEEL);
+      sprite_rect(r, x, y, ENEMY_W, dir, 19.0f, 12.0f + bob, 3.0f, 3.0f,
+                  FX_STEEL);
+    }
   }
   sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 20.0f + bob, 11.0f, 2.0f, (SDL_Color){31, 37, 31, 255});
   sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 20.0f + bob, 11.0f, 1.0f,
@@ -1964,6 +2093,18 @@ void draw_dog(SDL_Renderer *r, const Dog *dog, const Level *level,
 
   npc_contact_shadow(r, level, dog->x + DOG_W * 0.5f, dog->y + 15.0f,
                      11.0f, 185, cam_x, oy);
+
+  /*
+   * The same glare the flashed guard gets, at the animal's head and scaled to
+   * it, and it earns its place by the same argument: a blinded dog is a dog
+   * standing still, which is also what a dog that has lost you looks like, and
+   * those two mean opposite things about whether it is safe to walk past. Drawn
+   * under the body rather than over it so the figure stays readable inside its
+   * own halo.
+   */
+  figure_flash_dazzle(r, x + DOG_W * 0.68f, y + 6.0f, 11.0f, 6.0f,
+                      dog->blind_timer);
+
   sprite_body(r, x, y, DOG_W, dir, 4.0f + lunge, 6.0f + bob, 14.0f, 7.0f, fur,
               COL_OUTLINE, 1, 1);
   sprite_rect(r, x, y, DOG_W, dir, 7.0f + lunge, 6.0f + bob, 8.0f, 2.0f, fur_hi);

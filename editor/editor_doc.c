@@ -325,6 +325,22 @@ size_t editor_doc_serialize(const EditorDoc *doc, char *out, size_t capacity)
     return sink.length;
 }
 
+/*
+ * Written beside the map and moved onto it, never through it.
+ *
+ * `fopen(path, "wb")` truncates before the first byte is written, so a save
+ * that ran out of disk, lost the volume or died halfway left the author holding
+ * a *shorter* map than the one they had opened — and a map file is the one
+ * thing in this tree nobody can regenerate. The settings and the progress are
+ * written the same blunt way and stay that way on purpose: they are what the
+ * game can work out again, and this is somebody's afternoon.
+ *
+ * `rename` inside a directory is atomic, so the file at `path` is either the
+ * map that was there before or the whole of the new one, and no reader ever
+ * sees a half. The temporary is removed on every failing path, including the
+ * one where the rename itself fails, so a failed save leaves nothing behind to
+ * be found later and mistaken for a map.
+ */
 bool editor_doc_save(EditorDoc *doc, const char *path)
 {
     size_t needed = editor_doc_serialize(doc, NULL, 0);
@@ -333,7 +349,18 @@ bool editor_doc_save(EditorDoc *doc, const char *path)
         return false;
     editor_doc_serialize(doc, text, needed + 1);
 
-    FILE *file = fopen(path, "wb");
+    /* Beside the target rather than in a temp directory, because `rename` is
+     * only atomic — and on most platforms only possible at all — within one
+     * filesystem. */
+    char temp[ED_MAX_PATH + 8];
+    int stamped = snprintf(temp, sizeof(temp), "%s.tmp", path);
+    if (stamped < 0 || (size_t)stamped >= sizeof(temp))
+    {
+        free(text);
+        return false;
+    }
+
+    FILE *file = fopen(temp, "wb");
     if (file == NULL)
     {
         free(text);
@@ -344,12 +371,17 @@ bool editor_doc_save(EditorDoc *doc, const char *path)
     free(text);
 
     if (ok)
+        ok = rename(temp, path) == 0;
+    if (!ok)
     {
-        if (path != doc->path)
-            snprintf(doc->path, sizeof(doc->path), "%s", path);
-        doc->dirty = false;
+        remove(temp);
+        return false;
     }
-    return ok;
+
+    if (path != doc->path)
+        snprintf(doc->path, sizeof(doc->path), "%s", path);
+    doc->dirty = false;
+    return true;
 }
 
 char editor_doc_get(const EditorDoc *doc, int col, int row)

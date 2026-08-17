@@ -2,10 +2,16 @@
 
 #include <stddef.h>
 
-const char *const ED_GROUP_NAMES[ED_GROUP_COUNT] = {
+const char *const ED_GROUP_NAMES[] = {
     "Terrain", "Route", "Items", "Enemies", "People",
     "Hazards", "Fittings", "Office props", "Front of house",
-    "Restroom", "The night", "Facade"};
+    "Restroom", "Plant props", "The night", "Facade"};
+
+/* Unsized, so this measures the list against the enum; see the note on
+ * `LEVEL_THEME_NAMES` in src/level.c. */
+_Static_assert(sizeof(ED_GROUP_NAMES) / sizeof(ED_GROUP_NAMES[0]) ==
+                   (size_t)ED_GROUP_COUNT,
+               "every palette group needs a name");
 
 /* Colours follow fx.h's vocabulary: cyan is security and technology, amber is
  * light and warning, red is danger, green is granted access. */
@@ -51,11 +57,20 @@ const EdSymbol ED_SYMBOLS[] = {
      false, false, false},
     {'Z', "Bazooka", "One rocket, no respawn; interiors only",
      ED_GROUP_ITEMS, 248, 188, 74, false, true, false},
+    {'!', "Flash charge",
+     "Blinds guards and cameras for a few seconds. Hurts nobody and opens nothing; the seconds are for leaving",
+     ED_GROUP_ITEMS, 156, 173, 186, false, true, false},
+    {'*', "Docket sheet",
+     "Proof of what tonight actually is. Scores, changes nothing else, and one belongs in every interior",
+     ED_GROUP_ITEMS, 236, 238, 224, false, true, false},
 
     {'M', "Guard", "Patrolling enemy", ED_GROUP_ENEMIES, 232, 74, 62,
      false, true, false},
     {'W', "Guard and dog", "Enemy with a guard dog", ED_GROUP_ENEMIES,
      232, 110, 62, false, true, false},
+    {'Q', "Heavy guard",
+     "Plate carrier and helmet: twice the rounds, slower, and cannot be stomped. The blade behind him still works",
+     ED_GROUP_ENEMIES, 156, 173, 186, false, true, false},
 
     {'J', "Janitor", "Ambient NPC, takes no part in the fight",
      ED_GROUP_PEOPLE, 70, 156, 180, false, true, false},
@@ -79,6 +94,9 @@ const EdSymbol ED_SYMBOLS[] = {
      ED_GROUP_FITTINGS, 74, 222, 212, false, true, false},
     {'A', "Alarm switch", "A guard who has seen the player may run to it",
      ED_GROUP_FITTINGS, 248, 188, 74, false, true, false},
+    {'I', "Camera",
+     "Sweeps a beam across the floor and raises the alarm. Hangs from the slab above it, not the floor below",
+     ED_GROUP_FITTINGS, 255, 76, 58, false, true, false},
 
     {'c', "Chair", "Office chair", ED_GROUP_OFFICE, 82, 100, 120,
      false, true, false},
@@ -109,6 +127,19 @@ const EdSymbol ED_SYMBOLS[] = {
     {'z', "Closed stall", "Stall with the door shut", ED_GROUP_RESTROOM,
      140, 150, 160, false, true, false},
 
+    {'a', "Pallet",
+     "A pallet of drums or sacks. The stacked thing a machine hall, a duct run or a strongroom is full of",
+     ED_GROUP_PLANT, 132, 104, 68, false, true, false},
+    {'e', "Cable reel",
+     "Stood on its edge with the tail run off to one side; plant, roof deck and anywhere cable was pulled",
+     ED_GROUP_PLANT, 140, 110, 74, false, true, false},
+    {'j', "Pipe rail",
+     "Two risers, a run across them and a hand wheel on the valve: the plumbing a plant room is made of",
+     ED_GROUP_PLANT, 104, 121, 137, false, true, false},
+    {'l', "Bollard",
+     "A short post with a reflective band, for a service deck or a goods route something is driven along",
+     ED_GROUP_PLANT, 248, 188, 74, false, true, false},
+
     {'m', "Flight case",
      "What Meridian wheeled in through the goods entrance; some of them stand shut and some lie open and empty",
      ED_GROUP_NIGHT, 146, 118, 100, false, true, false},
@@ -136,5 +167,8 @@ const EdSymbol *editor_symbol(char symbol)
 
 bool editor_symbol_hangs(char symbol)
 {
-    return symbol == 'w';
+    /* The two fittings that ask the tile *above* them for support. Everything
+     * else in the legend stands on the one below, and the validator reports
+     * either mistake in the same sentence. */
+    return symbol == 'w' || symbol == 'I';
 }

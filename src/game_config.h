@@ -68,9 +68,42 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define GAMEPAD_AXIS_DEAD_ZONE 8000
 
 #define MAX_LEVEL_WIDTH 128
-#define MAX_LEVEL_HEIGHT 48
+/*
+ * 56 rather than the 48 it stood at for four climbs.
+ *
+ * The five facades run 40, 44, 46, 48 and 52 rows and each has to be taller
+ * than the last, so level 13 was standing on the old cap: a fifth climb was
+ * never a map away, it was this number away. Raising it is a memory decision as
+ * much as an authoring one — `LevelMap` holds the grid inline and `Game` holds
+ * two of them (the sector and the paused restroom) — and it comes to about
+ * eight kilobytes across both, which is nothing against what it buys. There is
+ * room for one more climb above 52 before this number is the constraint again.
+ */
+#define MAX_LEVEL_HEIGHT 56
 #define MAX_ITEMS 128
-#define MAX_ENEMIES 16
+/*
+ * The guard ceiling is a seating limit, not a design statement, and it has to
+ * cover the men a floor can *call* as well as the ones drawn on it. A terminal
+ * hacked under the alarm sends for up to `TERMINAL_REINFORCEMENT_MAX_COUNT`
+ * out of a door, once per console, and sector 14 is twelve men with three
+ * consoles and two doors — eighteen, against a ceiling of sixteen. What that
+ * cost was not a crash: `find_enemy_slot` hands the furthest corpse to the
+ * arrival instead, so the floor quietly deleted a body in front of the player
+ * and with it the thing `update_body_discovery` sends the next calm guard to
+ * look at. The one rule the quiet route rests on switched itself off on the
+ * busiest floor that has doors.
+ *
+ * `test_every_sector_can_seat_the_reinforcements_it_can_call` derives the
+ * requirement from the maps rather than trusting this number, so a fourth
+ * console on a floor fails the build instead of eating a corpse.
+ *
+ * Sixteen to twenty-four is 1408 bytes of `GameplayState` and `Game` holds two
+ * of them, so under three kilobytes for the whole change — the same trade
+ * `MAX_LEVEL_HEIGHT` above makes, and worth as little argument. The ceiling on
+ * it is `enemy_body_bit`: one bit per corpse in `Enemy.bodies_investigated`,
+ * asserted in [enemy.h](enemy.h), which is why that field is 64 bits wide.
+ */
+#define MAX_ENEMIES 24
 #define MAX_DOGS 12
 #define ITEM_RESPAWN_TIME 10.0f
 
@@ -167,6 +200,10 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define CRATE_PUSH_SPEED 95.0f
 #define CRATE_FRICTION 8.0f
 #define CRATE_LAND_SOUND_SPEED 90.0f
+/* Breaking one pays the smallest number in the game on purpose: a crate is
+ * cover and a step up, so shooting the floor's furniture away has to read as
+ * spending ammunition rather than as farming it. */
+#define CRATE_SCORE 20
 
 /* Weak walls: a blocked-up opening that only an explosion reopens. Nothing
  * smaller than a blast touches one, so a route through a wall always costs an
@@ -174,10 +211,30 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
  * hole is permanent for the rest of the run, like a fallen panel. */
 #define WEAK_WALL_DUST 9
 #define WEAK_WALL_SCORE 25
+/*
+ * What a sheet of the docket pays.
+ *
+ * Above a key card's `CARD_SCORE` and well below a sector's par bonus, which
+ * is the band it belongs in: taking the detour has to be worth doing on a run
+ * that is only chasing points, and it must not be worth *more* than clearing
+ * the floor quickly — the collectable is a second reason to explore, not a
+ * replacement for the first one.
+ */
+#define EVIDENCE_SCORE 200
+/* And the card the sentence above compares itself to, which was a bare 100 in
+ * `gameplay_collect_items` while the argument for the number sat up here. A
+ * comparison between two values is a third place either of them is written
+ * down; see `ENEMY_SCORE`. */
+#define CARD_SCORE 100
 
 /* Exit-access terminals */
 #define MAX_TERMINALS 16
 #define TERMINAL_HACK_TIME 4.0f
+/* A finished hack pays what a takedown does, and the two are unrelated numbers
+ * that happen to agree: four seconds stood still in the open is the same order
+ * of risk as getting behind a man with a blade. Written separately so that
+ * tuning one does not silently move the other. */
+#define TERMINAL_SCORE 250
 #define TERMINAL_INTERACT_RANGE 44.0f
 #define TERMINAL_MIN_START_TILES 12
 #define TERMINAL_REINFORCEMENT_MIN_COUNT 1
@@ -191,6 +248,53 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
  * run to one of these wall switches. The countdown is refreshed whenever a
  * guard or dog can still see Chuck, so it only expires after the scene has
  * actually been quiet for a while. */
+/*
+ * Ceiling cameras, and the one hazard in the building that cannot be talked to.
+ *
+ * Every other thing that notices Chuck can be worked on. A guard has a facing,
+ * so there is a side of him to be on; he has ears, so a bolt moves him; he can
+ * be taken from behind, and the body can be carried away. A camera has none of
+ * that — no back, no ears, and crawling under it does nothing, because it is
+ * looking down at the floor the crawl is on. What it has instead is a sweep,
+ * which is a *clock*: it is pointing somewhere else half the time, and the
+ * answer to it is to be somewhere else when it is not.
+ *
+ * That is the whole reason it earns a place beside the three quiet mechanics
+ * rather than duplicating them. It is the obstacle they do not solve, and the
+ * sector plans that carry one are the ones where the player has just been
+ * taught that everything can be solved.
+ *
+ * `CAMERA_NOTICE_TIME` is what makes the sweep readable: crossing the beam is
+ * survivable, standing in it is not, and the lens flushes to the danger red for
+ * the whole of that beat so the frame says which of the two is happening. It is
+ * deliberately longer than a guard's `ENEMY_NOTICE_TIME` — a man who spots you
+ * shoots you, and a camera only ever tells everybody else.
+ */
+#define MAX_CAMERAS 8
+#define CAMERA_W 14
+#define CAMERA_H 10
+#define CAMERA_RANGE (5.5f * TILE_SIZE)
+/* Half-width of the beam, in radians: a 60-degree cone. */
+#define CAMERA_CONE_HALF_ANGLE 0.52f
+/* How far either side of straight down the mounting sweeps, and how long one
+ * full pass takes. A sweep that reached the horizontal would look through the
+ * wall it is bolted to. */
+#define CAMERA_SWEEP_ARC 0.85f
+#define CAMERA_SWEEP_PERIOD 5.2f
+#define CAMERA_NOTICE_TIME 0.85f
+/* How long the lens keeps flashing after it has lost him, so the player can see
+ * that it *had* him even when they got clear in time. */
+#define CAMERA_SUSPICION_FADE 1.1f
+/* What a camera contributes to a sector's hazard budget. The same weight as a
+ * dog or a mine: it is a second thing that can raise the alarm, and unlike the
+ * guard who runs for a switch it cannot be reached before it does. */
+#define CAMERA_HAZARD_WEIGHT 2
+/* What taking one down pays. Under a guard's 150 on purpose: this is furniture,
+ * and a scoring route that ran on shooting fittings would be a worse game than
+ * one that ran on the men. Level with a broken crate's 20 would say the
+ * opposite — that it was not worth the round. */
+#define CAMERA_SCORE 60
+
 #define MAX_ALARM_SWITCHES 16
 #define ALARM_CALM_TIME 9.0f
 #define ALARM_SWITCH_USE_TIME 0.65f
@@ -207,6 +311,76 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define GRENADE_FUSE_TIME 1.4f
 #define GRENADE_RADIUS 48.0f
 #define GRENADE_THROW_SPEED 260.0f
+
+/*
+ * The flash charge, and the one situation nothing else in the game answers.
+ *
+ * Every quiet mechanic here is about *before*: a bolt moves attention somewhere
+ * else, a blade removes one man who never saw you, a dragged body removes the
+ * reason the next one looks. All of them stop being available the moment
+ * somebody is actually shooting — and at that point the player's whole
+ * repertoire is "shoot back" and "survive `ALARM_CALM_TIME`". This is the
+ * answer to *after*: it does not move attention, it takes it away for a few
+ * seconds, and what those seconds are for is leaving.
+ *
+ * **It is deliberately not a weapon.** No damage, no wall opened, no charge
+ * chained, and it does not raise the alarm on its own. A guard caught by it
+ * stops seeing, stops aiming and stops walking for `FLASH_BLIND_TIME`, and a
+ * camera in reach forgets what it had; both come back exactly as they were.
+ * Nothing about the sector is permanently different afterwards, which is what
+ * separates it from the grenade it looks like.
+ *
+ * `FLASH_RADIUS` is wider than a grenade's blast and narrower than the noise a
+ * shot makes: it has to catch the room the player is in, and it must not reach
+ * the one next door, or "throw it and walk" would be the answer to every floor.
+ * `FLASH_BLIND_TIME` is measured against `ALARM_CALM_TIME` — about a third of
+ * it, so a flash buys a way out of one room and never waits the whole alarm
+ * out.
+ */
+#define MAX_FLASHBANGS 4
+#define FLASH_W 10
+#define FLASH_H 10
+#define FLASH_FUSE_TIME 1.1f
+#define FLASH_THROW_SPEED 250.0f
+#define FLASH_RADIUS (5.0f * TILE_SIZE)
+#define FLASH_BLIND_TIME 3.2f
+/* What a spent charge pays. It kills nobody, so this is the whole of what the
+ * score says about using one — and it is small, because the escape is the
+ * reward and paying well for it would make throwing one at an empty room worth
+ * doing. */
+#define FLASH_SCORE 40
+
+/*
+ * Bolts, and the noise they make where they land.
+ *
+ * The one thing thrown in this game that is not a weapon. Every perception rule
+ * a guard has — `ENEMY_INVESTIGATE_TIME`, the walk to a heard disturbance, the
+ * scan, the return to patrol — was reachable by the player through exactly one
+ * act, which was firing a gun: the disturbance and the man who caused it were
+ * always the same place, so the whole investigate branch could only ever be
+ * used against the player. A bolt separates the two.
+ *
+ * **It is never picked up and never runs out.** A count would make it a
+ * resource to hoard, and a resource the player is hoarding is one they do not
+ * experiment with — which is fatal for the one mechanic in the game that has to
+ * be discovered by trying it. The cooldown is what keeps it from being a
+ * remote-controlled patrol route: one bolt in the air at a time, roughly a
+ * second apart, so leading a guard somewhere is a plan rather than a joystick.
+ *
+ * `DECOY_NOISE_RADIUS` is deliberately under `ENEMY_HEAR_RADIUS_SHOT`. A shot
+ * is louder than a bolt hitting a floor, and it has to stay louder or the
+ * quietest option in the game would also be the one that reaches furthest.
+ */
+#define MAX_DECOYS 4
+#define DECOY_W 6
+#define DECOY_H 6
+#define DECOY_THROW_SPEED 300.0f
+/* Written as a whole number of tiles rather than as a decimal, for the same
+ * reason MIN_FRAME_RATE is: it lets the assertion beside
+ * `ENEMY_HEAR_RADIUS_SHOT` be an integer constant expression. */
+#define DECOY_NOISE_TILES 6
+#define DECOY_NOISE_RADIUS ((float)DECOY_NOISE_TILES * TILE_SIZE)
+#define DECOY_COOLDOWN 0.9f
 
 /* Bazooka: every pickup contains one rocket. The slow, large projectile
  * detonates on the first solid surface or target it reaches. */
@@ -293,6 +467,47 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define PLAYER_CRAWL_SPEED 75.0f
 #define PLAYER_KNIFE_RANGE 18.0f
 #define PLAYER_KNIFE_ACTION_TIME 0.18f
+/*
+ * What a guard taken from behind is worth, against the `ENEMY_SCORE` every
+ * other way of putting one down pays.
+ *
+ * The premium is the whole of how this mechanic is taught. Nothing on screen
+ * announces that the knife does something different behind a man who has not
+ * seen you — there is no prompt, no highlight and no second button — so the
+ * only thing that can say it happened is the number that comes up, and a
+ * takedown paying exactly what a bullet pays is a mechanic the player is not
+ * told they used. It is deliberately smaller than a hostile is worth twice
+ * over: this is the quiet answer to one man, not a scoring route to run a
+ * sector on.
+ */
+#define PLAYER_TAKEDOWN_SCORE 250
+/*
+ * Dragging a body, and the four numbers it takes.
+ *
+ * A corpse is already a place on the map rather than scenery —
+ * `update_body_discovery` sends the next calm guard who sees one over to look
+ * at it, and often on to the nearest alarm switch. That rule is simulated,
+ * documented and punishing, and up to now the player's only answer to it was to
+ * kill somebody where nobody would walk past. Which is not an answer, it is a
+ * hope: patrol routes are the one thing about a sector that cannot be read off
+ * the map. Dragging is the answer, and it costs what it should — half speed,
+ * both hands, and no ladder.
+ *
+ * `PLAYER_DRAG_SPEED` is deliberately under `PLAYER_CRAWL_SPEED`. Crawling is
+ * the other way to be hard to notice and it has to stay the quicker of the two,
+ * or hauling a dead man about would be the fastest careful way across a floor.
+ *
+ * `BODY_DRAG_BREAK` is the leash. It is longer than the offset the body is held
+ * at, so an ordinary walk never trips it and a body wedged against a doorframe
+ * lets go rather than stretching across the room.
+ */
+#define PLAYER_DRAG_SPEED 62.0f
+_Static_assert((int)PLAYER_DRAG_SPEED < (int)PLAYER_CRAWL_SPEED,
+               "hauling a dead man would be quicker than crawling");
+#define BODY_DRAG_REACH 24.0f
+#define BODY_DRAG_OFFSET 24.0f
+#define BODY_DRAG_BREAK 52.0f
+
 /* An extra life every this many points gives the score a mechanical meaning:
  * better play literally buys more attempts. */
 #define EXTRA_LIFE_SCORE_STEP 10000
@@ -319,6 +534,60 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define ENEMY_CLIMB_CHANCE 3
 #define ENEMY_OBSTACLE_AVOID_TIME 1.25f
 #define ENEMY_HP 3
+/*
+ * What a guard is worth, and the reason it is a name rather than a number.
+ *
+ * A guard pays this however he goes down — a round, a stomp, a blast, a crate,
+ * a mine — with the single exception of the blade behind him, which pays
+ * `PLAYER_TAKEDOWN_SCORE` because that premium is the only thing that teaches
+ * the mechanic. A heavy pays it too: the vest is bought with rounds and with
+ * the stomp being refused, not with points, and paying more for one would make
+ * the loud answer to him the profitable one.
+ *
+ * **It was a bare `150` in three functions and four sentences**, which is the
+ * defect this repository keeps finding on the floor written out in its most
+ * literal form. The three were `damage_enemy` and `apply_blast` in
+ * [gameplay_combat.c](gameplay_combat.c) and `gameplay_kill_enemy_with_crate`
+ * in [gameplay_world.c](gameplay_world.c); the four were the comment on
+ * `PLAYER_TAKEDOWN_SCORE` just below, `docs/gameplay.md`, `docs/story.md` and
+ * the arithmetic in `EVIDENCE_SCORE`'s own comment above. Nothing held any of
+ * them to any other, and `check_docs.py` — the script whose whole job is to
+ * hold a sentence to a constant — could not read a constant that did not
+ * exist. Tuning the number meant finding seven places and hoping.
+ *
+ * `DOG_SCORE` is the same story one line down, in the same three functions.
+ * Half a man, because a dog is half an encounter: it closes fast and it dies
+ * to one of anything.
+ */
+#define ENEMY_SCORE 150
+#define DOG_SCORE 75
+/*
+ * The heavy, and what a plate carrier is worth.
+ *
+ * The campaign had one kind of man in it for fifteen sectors, and every
+ * mechanic the player has learned answers that one man: a stomp for the cheap
+ * kill, three rounds otherwise, a blade behind him if he has not looked. A
+ * second kind exists to take one of those answers away rather than to be
+ * harder — **the stomp**, which is the free one, the one that costs no
+ * ammunition and no position, and the one a player falls back on the moment a
+ * floor gets busy.
+ *
+ * `ENEMY_HEAVY_HP` is what he takes from the front. The blade behind him is
+ * deliberately *not* raised with it: a takedown is a knife across a throat
+ * rather than damage, so the man in the vest goes down to it exactly as the
+ * man in the shirt does — which makes him the sector's clearest argument for
+ * the quiet route rather than a wall to unload into.
+ *
+ * `ENEMY_HEAVY_SPEED` is under one because carrying it has to cost him
+ * something the player can see. A heavy who moved at the ordinary pace would
+ * be an ordinary guard with a longer health bar, which is the version of this
+ * idea worth avoiding.
+ */
+#define ENEMY_HEAVY_HP 6
+#define ENEMY_HEAVY_SPEED 0.72f
+/* Worth more of a sector's budget than a plain guard's 3, and less than a
+ * guard-and-dog pair's 5: he denies an answer rather than covering ground. */
+#define ENEMY_HEAVY_HAZARD_WEIGHT 4
 /* Stomping a guard from above bounces Chuck off instead of killing him. */
 #define ENEMY_STOMP_BOUNCE_SPEED 300.0f
 /* Briefly blocks re-grabbing a ladder after a stomp, so climbing down onto a
@@ -338,8 +607,17 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define ENEMY_LOS_STEP 6.0f
 
 /* Hearing: gunfire and explosions draw nearby guards to investigate. */
-#define ENEMY_HEAR_RADIUS_SHOT (7.0f * TILE_SIZE)
+#define ENEMY_HEAR_TILES_SHOT 7
+#define ENEMY_HEAR_RADIUS_SHOT ((float)ENEMY_HEAR_TILES_SHOT * TILE_SIZE)
 #define ENEMY_HEAR_RADIUS_BLAST (11.0f * TILE_SIZE)
+
+/* The bolt has to stay the quieter of the two. Both radii were written down as
+ * a rule in two prose comments — the one beside `DECOY_NOISE_RADIUS` and the
+ * one in docs/gameplay.md — and held by nothing, which is the arrangement this
+ * file keeps turning into a build failure everywhere else. Swap the numbers and
+ * the quietest option in the game becomes the one that reaches furthest. */
+_Static_assert(DECOY_NOISE_TILES < ENEMY_HEAR_TILES_SHOT,
+               "a thrown bolt would carry further than a gunshot");
 
 /* Suspicion / investigation: a soft alert short of a full building alarm. A
  * guard walks warily to the disturbance, scans, then resumes its patrol. */
@@ -456,6 +734,26 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 /* Assist options, chosen on the title screen. Multipliers of the defaults;
  * leaving them off changes nothing. */
 #define ASSIST_ENEMY_SPEED 0.8f
+/*
+ * And the veteran run, which is the same lever pulled the other way.
+ *
+ * One number rather than a table of them, because a second difficulty *tuning*
+ * would be a second campaign to balance: every map, every hazard budget and
+ * every jump in this tree is drawn against the pace in `game_config.h`, and a
+ * mode that moved several of those at once would be a set of sectors nobody had
+ * played. What it moves is the crew's pace, the lives in hand and the continues
+ * — three numbers the player already understands, all of them read at the same
+ * places the assist switches are read.
+ *
+ * 1.18 rather than something rounder: `ENEMY_WALK_SPEED` at 62 becomes 73, which
+ * is still under `PLAYER_WALK_SPEED`. A crew that outran Chuck on open floor
+ * would make the whole quiet half of the game pointless — there would be no
+ * such thing as breaking off — and that is a different game rather than a
+ * harder one.
+ */
+#define VETERAN_ENEMY_SPEED 1.18f
+#define VETERAN_LIVES 1
+#define VETERAN_CONTINUES 0
 
 /* Projectiles */
 #define MAX_BULLETS 8
@@ -463,7 +761,35 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define BULLET_W 8
 #define BULLET_H 4
 #define MAX_AMMO 6
-#define MAX_ENEMY_BULLETS 16
+/*
+ * One slot per man on the floor, which is what stops a guard aiming and firing
+ * nothing.
+ *
+ * `fire_enemy_bullet` walks this array for a free slot and, finding none,
+ * returns having done nothing at all: no round, no recoil, no `SFX_ENEMY_SHOT`
+ * — and the aim that led to it has already been spent by the caller. So the
+ * failure is not a dropped bullet, it is a guard who visibly levels his weapon
+ * at Chuck and produces silence. The player's own dry trigger is answered with
+ * `SFX_EMPTY_CLICK` in three separate places in `gameplay_combat.c`, for the
+ * stated reason that a press which does nothing has to say so; there is no
+ * equivalent here and there should not need to be one.
+ *
+ * It was 16 against a `MAX_ENEMIES` of 24. Sector 14 is the floor that reached
+ * it: twelve men drawn on the map and three consoles, each of which sends for
+ * `TERMINAL_REINFORCEMENT_MAX_COUNT` more under an alarm — eighteen guns, and
+ * the alarm is exactly the state in which all of them are shooting at once.
+ * The same arithmetic `test_every_sector_can_seat_the_reinforcements_it_can_call`
+ * does for the seating, one array over.
+ *
+ * Tied to `MAX_ENEMIES` rather than raised to a round number, because the
+ * relationship is the rule: a raised enemy ceiling is a raised bullet ceiling,
+ * and the assertion below is what makes the two move together instead of one of
+ * them being remembered.
+ */
+#define MAX_ENEMY_BULLETS MAX_ENEMIES
+_Static_assert(MAX_ENEMY_BULLETS >= MAX_ENEMIES,
+               "every guard on the floor needs a slot, or one of them aims "
+               "and fires nothing");
 #define ENEMY_BULLET_SPEED 380.0f
 #define ENEMY_SHOOT_RANGE (7 * TILE_SIZE)
 #define ENEMY_SHOOT_COOLDOWN 2.5f
@@ -760,7 +1086,7 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
  * overnight settlement — six hundred and forty million in bearer bonds — leaves
  * the roof on their helicopter, which is the only reason any of this is
  * happening tonight. A `w` clock reads the campaign sector it is standing in,
- * so the minute hand climbs toward the top of the dial across the fifteen
+ * so the minute hand climbs toward the top of the dial across the campaign's
  * sectors and the player can watch the job close in without a line of text.
  * The dial itself is presentation and nothing reads its position — but the
  * *rate* is not, any more: `SECTOR_PAR_SECONDS` below is derived from it, so
@@ -771,8 +1097,48 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
  * the lobby's dial reads the minute the cutscene before it was captioned. The
  * last is 00:57, three minutes short of the deadline.
  */
+/*
+ * The night, and the one number in it that moves when the campaign grows.
+ *
+ * Every time the game states is on one line and none of them may be moved
+ * alone — 00:04 the broadcast, 00:12 the pavement, 00:22 the front door, 01:00
+ * the roof — and two cutscenes, the manual's `THE NIGHT` sheet, the intel table
+ * and both prose pages all say them out loud. So the night's *length* is the
+ * fixed thing here and the per-sector step is what is derived from it: thirty
+ * eight minutes divided by however many sectors there are.
+ *
+ * That is why adding the vault and the fifth climb cost one edit rather than
+ * fifteen. The dial upstairs still reads 00:22 in the lobby and still reaches
+ * 01:00 on the roof; each floor simply gets a shade under two and a half
+ * minutes instead of exactly it, and `SECTOR_PAR_SECONDS` follows because it is
+ * derived from the same figure.
+ *
+ * It is written out rather than computed from `EMBEDDED_LEVEL_COUNT` for one
+ * reason: this header is included by the gameplay core, which links no level
+ * data at all and must not start. `test_the_night_clock_fills_the_night` is
+ * what holds the arithmetic instead — a sector added without touching this
+ * number is a campaign that no longer ends at 01:00, and the suite says so.
+ */
 #define NIGHT_CLOCK_FIRST_MINUTE 22.0f
-#define NIGHT_CLOCK_MINUTES_PER_SECTOR 2.5f
+#define NIGHT_CLOCK_TOTAL_MINUTES 38.0f
+#define NIGHT_CLOCK_SECTORS 17
+#define NIGHT_CLOCK_MINUTES_PER_SECTOR \
+    (NIGHT_CLOCK_TOTAL_MINUTES / (float)NIGHT_CLOCK_SECTORS)
+
+/*
+ * The same number under the name of the thing rather than of the dial.
+ *
+ * `test_the_night_clock_fills_the_night` already holds `NIGHT_CLOCK_SECTORS`
+ * against `EMBEDDED_LEVEL_COUNT`, so this is the campaign's length, checked —
+ * and it is an alias rather than a second literal precisely so it cannot come
+ * to disagree. It exists because the clock is not the only thing that needs to
+ * know how long the campaign is: the manual's `THE MISSION` sheet *draws* the
+ * route as one tick a sector, and it drew fifteen of them for a while after
+ * there were seventeen, because the loop counted to a number written into the
+ * renderer. A count in a drawing is as wrong as a count in a sentence and
+ * harder to notice, since no fit check measures a picture.
+ */
+#define CAMPAIGN_SECTORS NIGHT_CLOCK_SECTORS
 
 /*
  * What a sector is worth for being finished, and why the clock decides it.
@@ -796,12 +1162,36 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
  * out loud rather than leaving it to whoever edits the constant above.
  *
  * The rates are set so a fast, clean floor is worth about what its guards are:
- * a full 150 seconds under par is 3000 and a sector holds eight or so men at
- * 150 apiece. Speed is therefore a real alternative to clearing the floor
- * rather than a rounding error on top of it, which is the whole point — the
- * two ways to play a sector should pay comparably.
+ * the whole par is 2680 at `SECTOR_TIME_BONUS_PER_SECOND` and a sector holds
+ * eight or so men at 150 apiece. Speed is therefore a real alternative to
+ * clearing the floor rather than a rounding error on top of it, which is the
+ * whole point — the two ways to play a sector should pay comparably. That
+ * sentence used to quote 150 seconds and 3000 points, which were the par and
+ * the ceiling of a fifteen-sector night; both moved when the vault and the
+ * fifth climb divided the same thirty-eight minutes seventeen ways.
+ *
+ * **And the par is comfortable rather than tight, which is worth writing down
+ * because the arithmetic looks alarming from the other direction.** Dividing a
+ * fixed night by a growing campaign shortens every floor's slot — 134 seconds
+ * now against the old 150 — while the maps themselves have grown, sector 17
+ * being 60x20 against sector 1's 34x16. Measured through the route model in
+ * [level_route.c](level_route.c), the shortest walk from start to the way out
+ * costs 32 seconds on the longest sector in the game and under 14 on most of
+ * them: a quarter of the par at worst. The slot pays for the card detour, the
+ * fighting and the hesitating, not for the walk, so a sector added from here
+ * does not threaten the bonus until a floor plan is three times the size of
+ * anything the campaign currently holds.
  */
-#define SECTOR_PAR_SECONDS (NIGHT_CLOCK_MINUTES_PER_SECTOR * 60.0f)
+/*
+ * Truncated to whole seconds, because the bonus is counted in them and the
+ * report prints them. It was an exact 150 while the step was exactly two and a
+ * half minutes; a night divided seventeen ways is not a round number of
+ * seconds, and a par carrying a fraction would pay a point nobody could see
+ * where it came from. Down rather than nearest, so the par is never longer than
+ * the slot the dial upstairs actually gives the floor.
+ */
+#define SECTOR_PAR_SECONDS \
+    ((float)(int)(NIGHT_CLOCK_MINUTES_PER_SECTOR * 60.0f))
 #define SECTOR_TIME_BONUS_PER_SECOND 20
 #define SECTOR_CLEAN_BONUS 500
 
