@@ -1877,6 +1877,21 @@ static bool synth_sound(AudioSystem *audio, SoundEffect effect)
         add_noise(s, 0.00f, 0.10f, 0.24f, 0.40f,
                   0.003f, 0.08f, 0xb42au);
         break;
+    case SFX_PICKUP_FLASH:
+        /* A capacitor taking charge: two rising triangles into the register the
+         * charge's own detonation lives in (`SFX_MINE_ARM` is 900 and 1160), with
+         * a tick of noise for it coming off the bracket. Deliberately nothing
+         * like `SFX_PICKUP_GRENADE`, which falls from 600 to 410 — these two are
+         * the pair the player has to tell apart in a hurry. */
+        if (!begin_sound(audio, effect, 0.23f, 0.38f, 70))
+            return false;
+        add_tone(s, 0.00f, 0.10f, 520.0f, 700.0f, 0.42f,
+                 WAVE_TRIANGLE, 0.004f, 0.06f);
+        add_tone(s, 0.09f, 0.13f, 700.0f, 1060.0f, 0.38f,
+                 WAVE_TRIANGLE, 0.004f, 0.10f);
+        add_noise(s, 0.00f, 0.05f, 0.18f, 0.45f,
+                  0.002f, 0.04f, 0x5d1fu);
+        break;
     case SFX_CARD_WRONG:
         if (!begin_sound(audio, effect, 0.31f, 0.34f, 110))
             return false;

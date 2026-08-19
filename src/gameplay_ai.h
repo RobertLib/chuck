@@ -9,6 +9,18 @@ void gameplay_ai_update_movement(GameplayState *state, float dt);
 void gameplay_ai_update_combat(GameplayState *state, float dt);
 
 /*
+ * Send one guard to one wall switch, the way the floor's own two decisions do.
+ *
+ * Public because a hand-set `raising_alarm` is not a commitment. The run
+ * carries a budget derived from the distance and the speed he will travel at
+ * (`ALARM_RUN_DETOUR_ALLOWANCE`), and only the commit knows how to compute it,
+ * so a caller that set the flag itself was staging a state the game never
+ * produces — and then measuring it.
+ */
+void gameplay_ai_send_to_alarm(GameplayState *state, int enemy_index,
+                               int switch_index);
+
+/*
  * Where a ceiling camera's beam is pointing, in radians off straight down.
  *
  * Public because the renderer has to draw the very cone the simulation is

@@ -35,6 +35,8 @@ void enemy_init(Enemy *enemy, float x, float y, EnemyKind kind, Rng *rng)
     enemy->raising_alarm = false;
     enemy->alarm_switch_index = -1;
     enemy->alarm_use_timer = 0.0f;
+    enemy->alarm_run_timer = 0.0f;
+    enemy->alarm_switches_tried = 0;
     enemy->investigate_timer = 0.0f;
     enemy->investigate_x = x + ENEMY_W * 0.5f;
     enemy->investigate_y = y + ENEMY_H * 0.5f;
@@ -45,6 +47,7 @@ void enemy_init(Enemy *enemy, float x, float y, EnemyKind kind, Rng *rng)
     enemy->talk_timer = 0.0f;
     enemy->talk_partner = -1;
     enemy->talk_cooldown = 0.0f;
+    enemy->body_turn_cooldown = 0.0f;
     /* Spread across the whole gap rather than starting at the top of it, so a
      * shift that came on together does not report in chorus. */
     enemy->radio_timer =
@@ -575,11 +578,33 @@ static bool enemy_can_mount_crate(const Level *level, const Enemy *enemy,
     return false;
 }
 
+/* Masonry pressed against one side, probed the same 4px out that the AI layer
+ * probes for bodies. The two are deliberately separate questions: see
+ * `body_blocks_side` in [gameplay_ai.c](gameplay_ai.c) for what conflating
+ * them cost. */
+static bool enemy_tile_blocks_side(const Level *level, const Enemy *enemy,
+                                   int dir)
+{
+    float x = dir < 0 ? enemy->x - ENEMY_SIDE_PROBE : enemy->x + ENEMY_W;
+    return !enemy_box_tiles_clear(level, x, enemy->y + 1.0f,
+                                  ENEMY_SIDE_PROBE, ENEMY_H - 2.0f);
+}
+
 static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
                                  bool pursuing, bool alarmed, float target_x,
-                                 float target_y, bool hemmed_in,
+                                 float target_y, bool body_left,
+                                 bool body_right,
                                  float speed_scale, Rng *rng)
 {
+    /*
+     * No horizontal escape, which stops the walk so a man with nowhere to go
+     * does not alternate left and right every frame. Masonry only: a body is
+     * in the way of a step and gone a moment later, and counting one as a pin
+     * is what turned a pair of guards who met into a pile that never came
+     * apart. See `body_blocks_side` in [gameplay_ai.c](gameplay_ai.c).
+     */
+    bool hemmed_in = enemy_tile_blocks_side(level, enemy, -1) &&
+                     enemy_tile_blocks_side(level, enemy, 1);
     bool following_target =
         pursuing && enemy->obstacle_avoid_timer <= 0.0f;
     bool routing_to_target = pursuing;
@@ -667,6 +692,43 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
             enemy->dir = target_dx < 0.0f ? -1 : 1;
         else
             reached_target_x = true;
+    }
+
+    /*
+     * Somebody standing where he is walking, and somewhere else to be.
+     *
+     * The two reversals further down answer masonry and an unsafe edge, and
+     * there was never a third for a *body* — the only answer one ever had was
+     * the pin above, and a pin is exactly the wrong answer to a thing that
+     * moves. This is the third: turn away, provided the way he would turn is
+     * one he could actually walk.
+     *
+     * That proviso is the whole of why the rule lives here rather than beside
+     * the probe that feeds it. Without `enemy_can_advance` vetting the new
+     * facing, this rule and the unsafe-edge reversal below take turns undoing
+     * each other every frame — which is a man vibrating on the spot, the very
+     * thing the pin was written to stop. Measured at a ladder head on sector
+     * 17 with the roof's fifteen men around it.
+     *
+     * And the veto is not enough on its own, because this rule can chatter
+     * against *itself*: turning away walks him out until the neighbour is just
+     * clear of a 4px probe, which parks a body on the boundary and makes the
+     * flag flicker on sub-pixel drift. `body_turn_cooldown` is what makes the
+     * turn a decision instead; see ENEMY_BODY_TURN_COOLDOWN for the figures.
+     *
+     * Not while running somebody down: the steering above has just pointed him
+     * at his target and a colleague in the doorway is not a reason to give up.
+     * He walks through the man instead, which is a moment of two figures
+     * overlapping against a pile that used to be permanent.
+     */
+    if (enemy->on_ground && !following_target && !hemmed_in &&
+        enemy->on_elevator < 0 && enemy->body_turn_cooldown <= 0.0f &&
+        (enemy->dir > 0 ? body_right : body_left) &&
+        !(enemy->dir > 0 ? body_left : body_right) &&
+        enemy_can_advance(level, enemy, -enemy->dir))
+    {
+        enemy->dir = -enemy->dir;
+        enemy->body_turn_cooldown = ENEMY_BODY_TURN_COOLDOWN;
     }
 
     bool preserving_crate_mount =
@@ -849,7 +911,8 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
 void enemy_update(Enemy *enemy, Level *level, float dt,
                   bool pursuing, bool alarmed,
                   float target_x, float target_y,
-                  bool hemmed_in, float speed_scale, Rng *rng)
+                  bool body_left, bool body_right,
+                  float speed_scale, Rng *rng)
 {
     enemy_begin_elevator_ride(enemy, level);
     float previous_y = enemy->y;
@@ -868,6 +931,15 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
         enemy->obstacle_avoid_timer -= dt;
         if (enemy->obstacle_avoid_timer < 0.0f)
             enemy->obstacle_avoid_timer = 0.0f;
+    }
+
+    /* Beside the two above rather than inside the walker, so a man who spends
+     * the interval climbing or on the phone comes back off it able to turn. */
+    if (enemy->body_turn_cooldown > 0.0f)
+    {
+        enemy->body_turn_cooldown -= dt;
+        if (enemy->body_turn_cooldown < 0.0f)
+            enemy->body_turn_cooldown = 0.0f;
     }
 
     if (enemy->recoil_timer > 0.0f)
@@ -905,7 +977,7 @@ void enemy_update(Enemy *enemy, Level *level, float dt,
     {
         enemy_update_walking(enemy, level, dt,
                              pursuing, alarmed, target_x, target_y,
-                             hemmed_in, speed_scale, rng);
+                             body_left, body_right, speed_scale, rng);
     }
     enemy_finish_elevator_ride(enemy, level, previous_y);
 }

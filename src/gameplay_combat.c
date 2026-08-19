@@ -669,6 +669,8 @@ static void detonate_flashbang(GameplayState *state, CampaignState *campaign,
         enemy->raising_alarm = false;
         enemy->alarm_switch_index = -1;
         enemy->alarm_use_timer = 0.0f;
+        enemy->alarm_run_timer = 0.0f;
+        enemy->alarm_switches_tried = 0;
         enemy->talking = false;
         enemy->talk_timer = 0.0f;
     }
@@ -1020,6 +1022,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             state->player.shot_vertical = vertical;
             state->player.knife_attacking = false;
             state->player.grenade_throwing = true;
+            state->player.throwing_weapon = PLAYER_WEAPON_GRENADE;
             state->player.bazooka_firing = false;
             state->player.action_timer = PLAYER_THROW_ACTION_TIME;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
@@ -1075,6 +1078,9 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             state->player.shot_vertical = vertical;
             state->player.knife_attacking = false;
             state->player.grenade_throwing = true;
+            /* The same pose and a different thing in the hand; see
+             * `Player.throwing_weapon`. */
+            state->player.throwing_weapon = PLAYER_WEAPON_FLASH;
             state->player.bazooka_firing = false;
             state->player.action_timer = PLAYER_THROW_ACTION_TIME;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
@@ -1126,8 +1132,12 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             /* The throwing pose, which is what this is. It is the grenade's
              * flag because it is the grenade's animation — a man lobbing
              * something underarm — and a second flag for the same drawing would
-             * be a second thing every path that ends an action has to clear. */
+             * be a second thing every path that ends an action has to clear.
+             * What it is not is a second *prop*: the ladder pose draws whatever
+             * is named below, because a bolt is six pixels of plated steel and
+             * a grenade is about to go off. */
             state->player.grenade_throwing = true;
+            state->player.throwing_weapon = PLAYER_WEAPON_DECOY;
             state->player.bazooka_firing = false;
             state->player.action_timer = PLAYER_THROW_ACTION_TIME;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
@@ -1716,7 +1726,7 @@ void gameplay_combat_check_contacts(GameplayState *state,
             }
             dog->bite_ready = false;
             dog->bite_cooldown = DOG_BITE_COOLDOWN;
-            dog->attack_timer = 0.18f;
+            dog->attack_timer = DOG_BITE_ACTION_TIME;
             dog->state = DOG_CHASE;
             dog->lost_timer = DOG_LOST_TIME;
             dog->chase_target_x = state->player.x + PLAYER_W * 0.5f;

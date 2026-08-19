@@ -7,7 +7,7 @@
   rather than inline.
 - [fx.h](../src/fx.h) is the shared palette and lighting vocabulary for every
   renderer (world, HUD, intro, cutscenes). Use its ramps instead of new literal
-  colors so the screens stay one visual system. The accents are semantic and
+  colours so the screens stay one visual system. The accents are semantic and
   rationed — cyan is technology, amber is light and warning, red is danger,
   green is granted, `FX_RUST` is weathering (never danger), `FX_FLAME` /
   `FX_FLAME_HOT` are the one fire, `FX_LAMP`/`FX_WARM`/`FX_SODIUM` are the
@@ -284,7 +284,7 @@
   ever shown anybody and what fits at the only size the font is sharp at. The
   terminal gave up three decorative keys to make room, and that is the trade
   the rule asks for: the readout was the only thing down there saying anything.
-- Sound effects are synthesized once during `audio_init` and cached as PCM,
+- Sound effects are synthesised once during `audio_init` and cached as PCM,
   replayed through a 16-voice pool. A new effect means: an entry in the
   `SoundEffect` enum in [sound_id.h](../src/sound_id.h) (before `SFX_COUNT`) plus
   a case in `synth_sound` ([audio.c](../src/audio.c)). Audio init failure is

@@ -1,6 +1,8 @@
 #ifndef CHUCK_RUN_TALLY_H
 #define CHUCK_RUN_TALLY_H
 
+#include "progress.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -102,6 +104,90 @@ int run_tally_format_docket(int sheets, int best_sheets, bool assisted,
 #define RUN_TALLY_SECTOR_CELL_W 88.0f
 
 int run_tally_format_sector_time(int sector_index, float seconds, char *out,
+                                 size_t cap);
+
+/*
+ * The same three figures as a headline, for the sheet that offers to delete
+ * them.
+ *
+ * The options sheet grew a RECORDS page when the main page ran out of height,
+ * and for a release it was a page named RECORDS whose strap listed what the game
+ * keeps — the best score, the docket and every sector's best time — over a single
+ * row that clears all of it. The numbers themselves were readable in the field
+ * manual and nowhere else, so the one screen in the game whose subject is the
+ * records was the one screen that would not show them, and the destructive thing
+ * on it asked for a confirmation without saying what was about to be lost.
+ *
+ * Formatted here rather than in [settings.c](settings.c) because this is the file
+ * that already owns what a record reads as — `run_tally_format_sector_time` is
+ * the manual's own cell — and because the answer has to come out of `Progress`,
+ * which the options table has no business knowing about. `RUN_TALLY_RECORD_MAX`
+ * is the ceiling every one of them fits, held by
+ * `test_the_records_page_shows_what_it_offers_to_delete`.
+ */
+typedef enum
+{
+    RUN_TALLY_RECORD_SCORE,
+    RUN_TALLY_RECORD_DOCKET,
+    RUN_TALLY_RECORD_FURTHEST,
+    RUN_TALLY_RECORD_SECTORS_TIMED,
+    RUN_TALLY_RECORD_COUNT
+} RunTallyRecord;
+
+/* Room for the widest value plus its terminator. */
+#define RUN_TALLY_RECORD_MAX 16
+
+/*
+ * `progress` is the player's own file. A figure nothing has ever been written to
+ * prints as the same `--` the manual's sheet uses for a sector nobody has
+ * finished, because nought and "never" are different answers and a page offering
+ * to clear a record must not show one where there is none.
+ */
+int run_tally_format_record(RunTallyRecord which, const Progress *progress,
+                            char *out, size_t cap);
+
+/* What the row above the figure is called. */
+const char *run_tally_record_label(RunTallyRecord which);
+
+/*
+ * The same figure, spelled from the number rather than from the player's file.
+ *
+ * `run_tally_format_record` above is the options sheet's call and reads
+ * `Progress` directly. THE RECORD sheet in the field manual cannot: the manual
+ * is handed plain integers precisely so that it links no `Progress` (see
+ * `ManualRecords`), and for a release that is why it spelled its two run figures
+ * with an `SDL_snprintf` of its own — `BEST SCORE 0` and `DOCKET 0` on a fresh
+ * install, where the options page reading the same file said `--` and the
+ * seventeen cells on that very card said `--:--`. Three screens read a record
+ * and the two that went through this file agreed; the third was a renderer
+ * literal on the far side of the SDL boundary, so nothing could compare it with
+ * anything.
+ *
+ * This is the way in for a caller holding the number instead of the file, which
+ * is what was actually missing: the rule that nought and never are the same
+ * state, and both are `--`, now has one home for every screen that asks.
+ *
+ * `value` is the stored figure — the score, the sheets, the **0-based** furthest
+ * sector, or how many sectors are timed.
+ */
+int run_tally_format_record_value(RunTallyRecord which, int value, char *out,
+                                  size_t cap);
+
+/*
+ * Label and figure as one line, for the card that sets the two as prose rather
+ * than in a table with the names in a column of their own.
+ *
+ * `RUN_TALLY_RECORD_LINE_W` is what THE RECORD sheet's card leaves for one:
+ * `PANEL_W` less its frame, less the card's own inset, less a text margin
+ * either side. The suite measures the widest line every figure can produce
+ * against it, because otherwise this is a renderer's own literal in a renderer's
+ * own layout — which is the state the options sheet's footer and the pause
+ * sheet's rows were both found in.
+ */
+#define RUN_TALLY_RECORD_LINE_MAX 40
+#define RUN_TALLY_RECORD_LINE_W 258.0f
+
+int run_tally_format_record_line(RunTallyRecord which, int value, char *out,
                                  size_t cap);
 
 #endif /* CHUCK_RUN_TALLY_H */

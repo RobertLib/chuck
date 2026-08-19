@@ -3,7 +3,8 @@
 # The tree has been warning-free and green for a long time, but only because
 # somebody remembered to run `make test` — which is a poor place to keep an
 # invariant in a project whose whole thesis is that the rules are written down
-# and held to. Three jobs, and the split is by what each one needs:
+# and held to. Four jobs, and the split is by what each one needs — the fourth
+# arrived last and the reason it took so long is written up beside it:
 #
 #   core     — `make test` links no SDL at all, so it needs nothing installed
 #              and runs in under a second. It is the gate that must never be
@@ -12,7 +13,7 @@
 #              *and runs* the SDL half of the tree — the renderers, the level
 #              art, the audio synth, the cutscenes, the manual, and the level
 #              editor — with the sanitizers switched on. It is the long job of
-#              the three, because it builds SDL from a pinned source release
+#              the four, because it builds SDL from a pinned source release
 #              before it can build anything of ours.
 #
 #              "Compiles" was all it did for as long as it existed, and the
@@ -31,6 +32,25 @@
 #              because the title screen advances on a key press and nothing here
 #              sends one. It walks every screen by name now (`--screen`), and it
 #              soaks the editor, which no job had ever run at all.
+#   crosswin — the second opinion. AGENTS.md calls `make win` the cheapest one
+#              available to this tree and lists the five real diagnostics it
+#              found the first time anybody ran it: a missing `<stdio.h>` that
+#              had compiled for a year because clang's SDL headers drag one in,
+#              two dead loop counters, a `%zu` gcc checks against the platform's
+#              printf rather than SDL's, and two format buffers whose worst case
+#              does not fit. Then it stayed a manual command, so "warning-free"
+#              went back to meaning *under one compiler on one platform* — with
+#              the page that makes the argument sitting in the repository saying
+#              otherwise. `payloads.yml` does not cover it either: that workflow
+#              is `workflow_dispatch` and builds Linux.
+#
+#              It is here rather than folded into `core` because it wants a
+#              cross-compiler installed and `core` is the job that must never
+#              need anything, and it is cheap: mingw-w64 is an apt package, the
+#              SDL it links is libsdl.org's own mingw release at the pin, and
+#              nothing it produces is run. What it checks is that the tree still
+#              compiles clean for a compiler and a platform the author does not
+#              have, which is the only kind of second opinion there is.
 #   macos    — the platform the game actually ships on, and the only place the
 #              editor, the debug target and the shipped bundle get built.
 #
@@ -102,6 +122,37 @@ jobs:
       # the failure is the point.
       - name: make test
         run: make test
+
+  crosswin:
+    name: second opinion (mingw-w64)
+    runs-on: ubuntu-latest
+    # Measured on a Mac: about a minute for the download of the pinned SDL mingw
+    # release and the compile together. Three times that, plus room for the apt.
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mingw-w64
+        # `command -v` first for the same reason the sanitizer job asks before
+        # calling apt: `apt-get update` on a slow mirror was once the single most
+        # expensive step in this whole workflow, in a job that checked nothing.
+        timeout-minutes: 6
+        run: |
+          if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends mingw-w64
+          fi
+          x86_64-w64-mingw32-gcc --version | head -1
+      - name: make win
+        # The archive is a by-product; the compiler's opinion is the point. It is
+        # kept as an artifact anyway, because a Windows payload built on every
+        # push is the thing `payloads.yml` cannot give anybody on demand.
+        timeout-minutes: 10
+        run: make -j"$(nproc)" win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/*-windows-x64.zip
+          if-no-files-found: error
 
   sanitize:
     name: sanitizers
@@ -409,8 +460,8 @@ jobs:
       # lipo, the framework's rpath, the Info.plist read out of version.h —
       # was only ever found by someone cutting a release, which is the worst
       # moment to find one. No signing identity here, and none is needed:
-      # packaging/build_app.sh falls back to an ad-hoc signature, which is
-      # enough to prove the bundle is assembled and verifies. `make notarize`
+      # packaging/build_macos.sh falls back to an ad-hoc signature, which is
+      # enough to prove the bundle is assembled and verifies. `make mac`
       # is the step that needs a real identity, and stays a local one.
       - name: make app
         run: make -j"$(sysctl -n hw.ncpu)" app

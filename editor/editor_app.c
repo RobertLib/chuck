@@ -1249,6 +1249,24 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
     switch (event->type)
     {
     case SDL_EVENT_QUIT:
+        /*
+         * Asked twice, exactly as opening another map is.
+         *
+         * This branch used to close the editor on the spot, so the close box and
+         * ⌘Q threw away an afternoon's drawing without a word — while
+         * `ed_open_file` two hundred lines up refuses the *same loss* the first
+         * time it is asked and explains itself in the status bar. One question,
+         * two answers, and the answer on the path everybody uses was the
+         * dangerous one: there is no autosave here, `editor_doc_save` has to be
+         * asked, and the title bar's `*` is the only warning.
+         *
+         * A window that will not close on the first try is the cost, and it is
+         * the same cost the map switch already charges: pressing it again is the
+         * confirmation, because a second close box click is exactly the gesture
+         * somebody makes when they meant it.
+         */
+        if (!confirm_discard(app, 9000))
+            return SDL_APP_CONTINUE;
         return SDL_APP_SUCCESS;
 
     case SDL_EVENT_WINDOW_RESIZED:
@@ -1433,7 +1451,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     SDL_RenderPresent(app->renderer);
 
     app->clicked = false;
-    return app->quit ? SDL_APP_SUCCESS : SDL_APP_CONTINUE;
+    return SDL_APP_CONTINUE;
 }
 
 void SDL_AppQuit(void *appstate, SDL_AppResult result)

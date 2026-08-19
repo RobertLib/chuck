@@ -5,7 +5,21 @@
 
 #include <math.h>
 
-#define ENEMY_SIDE_PROBE 4.0f
+/*
+ * A guard remembers which alarm switches he has already failed to reach in one
+ * `uint32_t`, so the cap on how many a map may carry is part of that field's
+ * type. This is asserted rather than guarded at the call sites because the
+ * failure it prevents is *silent*: a switch past the mask's width can never be
+ * marked as tried and can therefore never be skipped, so a man who cannot reach
+ * it shuttles back to it for the rest of the sector — which is precisely the
+ * one-way door `alarm_switches_tried` was added to close, returning on the one
+ * map wide enough to hide it. Raising `MAX_ALARM_SWITCHES` past the width now
+ * refuses to compile instead, and both `nearest_alarm_switch` and
+ * `guard_run_to_alarm` shift without a bound of their own on the strength of it.
+ */
+_Static_assert(MAX_ALARM_SWITCHES <= 32,
+               "alarm_switches_tried is a uint32_t bitmask over switch indices; "
+               "widen it before raising MAX_ALARM_SWITCHES");
 
 /*
  * A corpse slot is being handed back to a live body, so nobody may still be
@@ -142,8 +156,34 @@ static void gameplay_settle_body(GameplayState *state, float *x, float *y,
         *vy = 0.0f;
 }
 
-static bool actor_or_tile_blocks_side(const GameplayState *state,
-                                      int enemy_index, int direction)
+/*
+ * A live body pressed against one side of a guard.
+ *
+ * This used to answer for the building as well, and hand the pair of answers
+ * to `enemy_update` as one `hemmed_in` flag meaning "no horizontal escape".
+ * That conflated the only two things on a floor that can be in a man's way,
+ * and they are opposites: masonry is still there next frame and a dog is not.
+ * The walker zeroes the step *and* gates every one of its reversals on
+ * `!hemmed_in`, so a man with a body against each side could no longer walk or
+ * turn — and since a body is the common case and a 34px slot of masonry is a
+ * hole no shipped map has, the state the flag was written for was never the
+ * state it was reaching.
+ *
+ * Two guards who met therefore stopped, the next man along walked into them
+ * and stopped, and the clump that made was **absorbing**: nobody inside one
+ * could ever turn round again, so it only grew. Measured with the player put
+ * where he cannot be seen and nothing pressed: all twelve of sector 14's men
+ * in one two-tile pile inside ninety seconds, and a worst unbroken stall of
+ * 133.9s on sector 17, 102.8s on sector 10 and 36-56s on 12, 14 and 16. A
+ * floor the quiet route is played by *watching* had stopped moving.
+ *
+ * So the two answers travel separately now. The building's half is asked in
+ * [enemy.c](enemy.c), beside `enemy_can_advance`, which is what decides where
+ * a man may turn *to*; this half is asked here, because who else is on the
+ * floor is this layer's question and `enemy.c` is handed a level.
+ */
+static bool body_blocks_side(const GameplayState *state,
+                             int enemy_index, int direction)
 {
     const Enemy *enemy = &state->enemies[enemy_index];
     float x = direction < 0
@@ -151,8 +191,6 @@ static bool actor_or_tile_blocks_side(const GameplayState *state,
                   : enemy->x + ENEMY_W;
     float y = enemy->y + 1.0f;
     float height = ENEMY_H - 2.0f;
-    if (!gameplay_box_tiles_clear(state, x, y, ENEMY_SIDE_PROBE, height, STANCE_UPRIGHT))
-        return true;
     for (int i = 0; i < state->dog_count; ++i)
     {
         const Dog *dog = &state->dogs[i];
@@ -315,8 +353,16 @@ static bool another_guard_is_raising_alarm(const GameplayState *state,
     return false;
 }
 
+/*
+ * The nearest switch this man has not already failed to reach.
+ *
+ * `skip` is his own `alarm_switches_tried`: one refusal per switch, so a floor
+ * whose greedy walk cannot deliver him to the near one still gets the chance to
+ * deliver him to the far one, and a man who has tried them all stops rather
+ * than shuttling between two of them for the rest of the sector.
+ */
 static int nearest_alarm_switch(const GameplayState *state,
-                                const Enemy *enemy)
+                                const Enemy *enemy, uint32_t skip)
 {
     int nearest = -1;
     float best_distance = 0.0f;
@@ -324,6 +370,8 @@ static int nearest_alarm_switch(const GameplayState *state,
     float enemy_y = enemy->y + ENEMY_H * 0.5f;
     for (int i = 0; i < state->level.map.alarm_switch_count; ++i)
     {
+        if ((skip & (1u << i)) != 0)
+            continue;
         const AlarmSwitch *alarm_switch =
             &state->level.map.alarm_switches[i];
         float switch_x = (alarm_switch->col + 0.5f) * TILE_SIZE;
@@ -341,12 +389,49 @@ static int nearest_alarm_switch(const GameplayState *state,
     return nearest;
 }
 
+/*
+ * How long this man is given to reach that switch.
+ *
+ * Derived from the walk the distance implies rather than picked, and divided by
+ * the speed he will actually travel at, so `SLOWER GUARDS` buys the player a
+ * slower runner and not a shorter run — the row promises 80% of the pace, and
+ * an assist that also quietly mutes the alarm would be a fourth switch nobody
+ * asked for. See `ALARM_RUN_DETOUR_ALLOWANCE`.
+ */
+static float alarm_run_budget(const GameplayState *state, const Enemy *enemy,
+                              int switch_index)
+{
+    const AlarmSwitch *alarm_switch =
+        &state->level.map.alarm_switches[switch_index];
+    float dx = fabsf((alarm_switch->col + 0.5f) * TILE_SIZE -
+                     (enemy->x + ENEMY_W * 0.5f));
+    float dy = fabsf((alarm_switch->row + 0.5f) * TILE_SIZE -
+                     (enemy->y + ENEMY_H * 0.5f));
+    float speed = ENEMY_WALK_SPEED * gameplay_enemy_speed_scale(state) *
+                  enemy_kind_speed(enemy->kind);
+    if (speed < 1.0f)
+        speed = 1.0f;
+    float budget = (dx + dy) / speed * ALARM_RUN_DETOUR_ALLOWANCE;
+    /* And never longer than walking the length of the floor, because past that
+     * he is not on an errand any more, he is lost — and the ceiling has to come
+     * off the map rather than off a number typed here, or the widest sector in
+     * the game would buy the longest silence. Sector 17 is 58 tiles across and
+     * granted 86 seconds by the distance alone. */
+    float floor_length =
+        (float)state->level.map.width * (float)TILE_SIZE / speed;
+    if (budget > floor_length)
+        budget = floor_length;
+    return budget < ALARM_RUN_MIN_TIME ? ALARM_RUN_MIN_TIME : budget;
+}
+
 static void guard_run_to_alarm(GameplayState *state, Enemy *enemy,
                                int switch_index)
 {
     enemy->raising_alarm = true;
     enemy->alarm_switch_index = switch_index;
     enemy->alarm_use_timer = 0.0f;
+    enemy->alarm_run_timer = alarm_run_budget(state, enemy, switch_index);
+    enemy->alarm_switches_tried |= 1u << switch_index;
     enemy->aim_timer = 0.0f;
     enemy->talking = false;
     enemy->talk_timer = 0.0f;
@@ -355,6 +440,16 @@ static void guard_run_to_alarm(GameplayState *state, Enemy *enemy,
     gameplay_world_sound(state, SFX_ENEMY_ALERT,
                          enemy->x + ENEMY_W * 0.5f,
                          enemy->y + ENEMY_H * 0.5f);
+}
+
+void gameplay_ai_send_to_alarm(GameplayState *state, int enemy_index,
+                               int switch_index)
+{
+    if (state == NULL || enemy_index < 0 || enemy_index >= state->enemy_count ||
+        switch_index < 0 ||
+        switch_index >= state->level.map.alarm_switch_count)
+        return;
+    guard_run_to_alarm(state, &state->enemies[enemy_index], switch_index);
 }
 
 /* The handler is checked before the slot is taken, and the order is the whole
@@ -381,6 +476,16 @@ static void spawn_dog_for_enemy(GameplayState *state, int enemy_index)
     dog_init(&state->dogs[slot], x, y, enemy_index, &state->rng);
 }
 
+/* Uniform in [0, spread] to the hundredth of a second, which is how this
+ * file's ambient timers have always been drawn. One draw whatever the spread,
+ * so naming the numbers moved nobody else's seeded stream — the rounding is
+ * there because 0.9f is not 0.9 and the truncation would otherwise cost the
+ * pause a hundredth of its range. */
+static float janitor_beat(Rng *rng, float spread)
+{
+    return (float)rng_range(rng, (int)(spread * 100.0f + 0.5f) + 1) * 0.01f;
+}
+
 static void janitor_set_activity(Janitor *janitor,
                                   JanitorActivity activity, Rng *rng)
 {
@@ -390,16 +495,17 @@ static void janitor_set_activity(Janitor *janitor,
     {
     case JANITOR_WALK:
         janitor->activity_timer =
-            3.5f + (float)rng_range(rng, 351) * 0.01f;
+            JANITOR_WALK_TIME_MIN + janitor_beat(rng, JANITOR_WALK_TIME_SPREAD);
         break;
     case JANITOR_MOP:
         janitor->activity_timer =
-            2.8f + (float)rng_range(rng, 241) * 0.01f;
+            JANITOR_MOP_TIME_MIN + janitor_beat(rng, JANITOR_MOP_TIME_SPREAD);
         janitor->wet_timer = 0.0f;
         break;
     case JANITOR_PAUSE:
         janitor->activity_timer =
-            0.6f + (float)rng_range(rng, 91) * 0.01f;
+            JANITOR_PAUSE_TIME_MIN +
+            janitor_beat(rng, JANITOR_PAUSE_TIME_SPREAD);
         break;
     }
 }
@@ -485,6 +591,79 @@ static bool janitor_side_blocked(const GameplayState *state,
     {
         if (level_is_solid(&state->level, col, row) ||
             level_tile(&state->level, col, row) == TILE_DOOR)
+            return true;
+        /*
+         * And a lift shaft, which is not solid and is not somewhere a mop goes.
+         *
+         * `janitor_has_floor_ahead` asks only about masonry and ladders, which
+         * is what keeps this man off every moving surface in the building — and
+         * a shaft is the one that slips through it, because the tile is
+         * passable and the *lowest* one has the storey's own floor underneath.
+         * So he walked into the bottom of sector 5's goods lift and the descending
+         * deck went through him: measured, 15.9px of overlap in both axes for up
+         * to 0.70s, about twelve times a minute of play. Nothing carries a
+         * janitor and nothing crushes him, so it was purely a picture of a plate
+         * crossing a man's chest.
+         *
+         * A guard in the same place is a different question and stays as it is:
+         * he has a ride (`enemy_finish_elevator_ride`), using the lift is what
+         * he is in the shaft *for*, and the deck brushing through him on its way
+         * down to collect him lasts 0.42s at worst and is drawn under the figure.
+         * The alternatives all change how guards patrol three shipped sectors,
+         * which is not a trade worth making for that.
+         */
+        if (level_tile(&state->level, col, row) == TILE_ELEVATOR_SHAFT)
+            return true;
+    }
+    /*
+     * And a crate, which is the one solid thing on these floors that is not a
+     * tile at all — so a rule written in tiles cannot see it, whatever it asks.
+     *
+     * A guard walking into a box is deliberate and is written down beside
+     * `gameplay_resolve_enemy_crates`: he is drawn *after* the crates, so the
+     * overlap reads as him taking the foreground route past one instead of
+     * mounting every box on the floor. The janitor is on the **ambient staff**
+     * layer, drawn before the floor props, so the same overlap is the crate
+     * drawn over him — and he is 26 wide against a 28 box, so a full overlap
+     * hides everything but the top four pixels of his head and the cart with
+     * it. Measured before this clause: on four of the five floors carrying both
+     * a `J` and a `B`, and in the lobby's washroom, up to 19% of a two-minute
+     * visit had him inside a box, at the full 26px, with nobody pressing
+     * anything.
+     *
+     * He turns at it the way he turns at masonry, which is also what keeps the
+     * documented rule intact: the crate is untouched, so he still never blocks
+     * anything. The strip is his own height and three pixels deep, the same
+     * question `dog_blocked_ahead` asks, and it is measured off the
+     * cart-extended bounds because a cart through a box is the same picture as
+     * a man through one.
+     */
+    float strip_x = janitor->dir > 0 ? x + width : x - JANITOR_PROBE_DEPTH;
+    for (int i = 0; i < state->level.runtime.crate_count; ++i)
+    {
+        const Crate *crate = &state->level.runtime.crates[i];
+        if (!crate->active)
+            continue;
+        /*
+         * A box he is already standing in does not stop him, and that arm is
+         * the whole of what makes this rule safe rather than a trap. Nothing
+         * stops a *crate* arriving at him — `move_crate_x` asks
+         * `crate_blocking_enemy` about the men and a janitor is not one, which
+         * is right, because he may never block anything. So a shove or a fall
+         * can leave a box sitting on him, and with the clause below applied
+         * blindly the strip ahead of him is inside that box in both directions:
+         * measured, he turned on the spot for the whole of a sixty-second
+         * probe on all five floors and never got clear. It is the same
+         * direction the crate-at-a-ladder rule had to be given — a push may
+         * not put a box somewhere, and a box that is already there may be
+         * walked out of.
+         */
+        if (gameplay_boxes_overlap(x, janitor->y, width, JANITOR_H,
+                                   crate->x, crate->y, CRATE_W, CRATE_H))
+            continue;
+        if (gameplay_boxes_overlap(strip_x, janitor->y + 1.0f,
+                                   JANITOR_PROBE_DEPTH, JANITOR_H - 2.0f,
+                                   crate->x, crate->y, CRATE_W, CRATE_H))
             return true;
     }
     return false;
@@ -1208,10 +1387,53 @@ static bool dog_can_step_down(const GameplayState *state,
     return false;
 }
 
+/*
+ * Something standing in front of the animal's chest.
+ *
+ * The three questions above all look at the floor — is there one, can he drop
+ * to it, can he jump to it — and none of them looks *ahead*. A guard has had
+ * that rule since he was written (`level_is_solid` at his own row reverses
+ * him); a dog never did, so an animal facing masonry walked at it, `level_move`
+ * refused, the line at the foot of `update_dog` noticed the walk come back
+ * zeroed and answered by setting `DOG_RETURN` — the order to walk at it again.
+ * A crate is worse: it is settled *after* the walk by
+ * `gameplay_resolve_dog_crates`, which puts him back where he started, so the
+ * walk does not even come back zeroed and nothing notices at all.
+ *
+ * Either way he leans on it until the sector ends, and the way he gets there
+ * needs no player: his post is his handler, and a handler who takes a ladder
+ * leaves the animal walking at whatever is between them. Measured with the
+ * player nowhere near: unbroken stalls of 53 to 150 seconds on five of the ten
+ * sectors carrying a `W`.
+ *
+ * Probed at the 3px the floor questions use, over the animal's own height,
+ * because a dog climbs neither a wall nor a box.
+ */
+static bool dog_blocked_ahead(const GameplayState *state, const Dog *dog,
+                              int direction)
+{
+    float x = direction > 0 ? dog->x + DOG_W : dog->x - 3.0f;
+    float y = dog->y + 1.0f;
+    float h = DOG_H - 2.0f;
+    if (!gameplay_box_tiles_clear(state, x, y, 3.0f, h, STANCE_UPRIGHT))
+        return true;
+    for (int i = 0; i < state->level.runtime.crate_count; ++i)
+    {
+        const Crate *crate = &state->level.runtime.crates[i];
+        if (crate->active &&
+            gameplay_boxes_overlap(x, y, 3.0f, h,
+                                   crate->x, crate->y, CRATE_W, CRATE_H))
+            return true;
+    }
+    return false;
+}
+
 /* Whether the dog can make progress in a direction by any means. */
 static bool dog_can_advance(const GameplayState *state, const Dog *dog,
                             int direction)
 {
+    if (dog_blocked_ahead(state, dog, direction))
+        return false;
     return dog_has_floor_ahead(state, dog, direction) ||
            dog_can_step_down(state, dog, direction) ||
            dog_can_jump_gap(state, dog, direction);
@@ -1381,13 +1603,37 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
     if (dog->state == DOG_CHASE)
     {
         target_x = dog->chase_target_x - DOG_W * 0.5f;
-        speed = DOG_CHASE_SPEED * gameplay_enemy_speed_scale(state);
+        speed = DOG_CHASE_SPEED;
         wants_move = fabsf(target_x - dog->x) > DOG_BITE_RANGE * 0.6f;
     }
     else
     {
         float anchor = dog->guard_x;
-        if (fabsf(dog->x - anchor) > DOG_RETURN_RADIUS)
+        /*
+         * Too far from the post, so go back to it — unless the animal is
+         * already roaming, which out here means one thing: the branch at the
+         * bottom of this function has just decided the post cannot be walked
+         * to and turned him round.
+         *
+         * Without that exception the two rules cancel. A handler who takes a
+         * ladder leaves his dog on the storey below, `guard_x` follows the man
+         * rather than the ground, and the animal walks to the nearest ledge and
+         * finds no floor ahead, nothing to step down to and nothing to jump.
+         * The turn *fires* — it sets `DOG_ROAM` and a timer for it, which is
+         * what the frozen `state_timer` in the trace was — and then this line
+         * put him straight back into `DOG_RETURN` on the very next frame,
+         * facing the same gap, for the rest of the sector. Measured with the
+         * player nowhere near: stalls of 53 to 150 seconds on five of the ten
+         * sectors carrying a `W`, the animal standing still at the lip of a
+         * hole with its handler two storeys up.
+         *
+         * A roam is bounded by its own timer and ends in `DOG_RETURN` anyway,
+         * so nothing here lets a dog wander off: it paces the near side of the
+         * gap and tries the walk again a second later, which is both what an
+         * animal does and a dog the player can still be caught by.
+         */
+        if (dog->state != DOG_ROAM &&
+            fabsf(dog->x - anchor) > DOG_RETURN_RADIUS)
             dog->state = DOG_RETURN;
         if (dog->state == DOG_RETURN)
         {
@@ -1439,17 +1685,40 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
     if (dog->blind_timer > 0.0f)
         wants_move = false;
 
+    /*
+     * The difficulty scale, applied once where the speed is spent rather than
+     * inside the branch that picked it.
+     *
+     * It was on `DOG_CHASE_SPEED` alone, and nothing said why. The guard gets
+     * it as a single argument to `enemy_update` and therefore carries it in
+     * every state he has; the animal had four speeds — patrol, roam, return
+     * and chase — and exactly one of them was scaled. So SLOWER GUARDS, whose
+     * own row reads GUARDS AND DOGS MOVE AT 80% SPEED, moved a chasing dog at
+     * 132px/s and a returning one at the full 135, and VETERAN's faster crew
+     * left the animals patrolling at the ordinary pace. Measured on a flat
+     * corridor: chase 165/132/194.7 against return 135/135/135.
+     *
+     * There is no argument for the asymmetry — a patrolling guard is no more
+     * of a threat than a patrolling dog, and he is scaled — so this is the
+     * missing half of one rule rather than a decision. Written here so that a
+     * fifth dog state inherits it the way the guard's does.
+     */
+    speed *= gameplay_enemy_speed_scale(state);
+
     dog->vx = 0.0f;
     if (wants_move)
     {
         int direction = target_x > dog->x ? 1 : -1;
-        if (!dog->on_ground || dog_has_floor_ahead(state, dog, direction) ||
-            dog_can_step_down(state, dog, direction))
+        bool blocked = dog->on_ground &&
+                       dog_blocked_ahead(state, dog, direction);
+        if (!dog->on_ground ||
+            (!blocked && (dog_has_floor_ahead(state, dog, direction) ||
+                          dog_can_step_down(state, dog, direction))))
         {
             dog->dir = direction;
             dog->vx = direction * speed;
         }
-        else if (dog_can_jump_gap(state, dog, direction))
+        else if (!blocked && dog_can_jump_gap(state, dog, direction))
         {
             dog->dir = direction;
             dog->vx = direction * fmaxf(speed, DOG_JUMP_MIN_SPEED);
@@ -1489,6 +1758,7 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
         dog->state != DOG_CHASE)
         dog->state = DOG_RETURN;
 }
+
 
 /*
  * The solo half of a conversation.
@@ -1696,19 +1966,56 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
             enemy->raising_alarm = false;
             enemy->alarm_switch_index = -1;
             enemy->alarm_use_timer = 0.0f;
+            enemy->alarm_run_timer = 0.0f;
+            enemy->alarm_switches_tried = 0;
         }
 
         bool switch_pursuit = enemy->raising_alarm;
         if (switch_pursuit)
         {
+            /*
+             * The run has a clock on it, and the clock is what stops this being
+             * a one-way door. A man who cannot get to the switch he chose tries
+             * the next one he has not failed at, and when he has failed at all
+             * of them he goes back to his floor — which is also what hands the
+             * roll to the next guard, since `another_guard_is_raising_alarm`
+             * holds it to one runner at a time.
+             */
+            enemy->alarm_run_timer -= dt;
+            if (enemy->alarm_run_timer <= 0.0f)
+            {
+                /* The near one was not reachable from wherever the walk has
+                 * left him. One try each, and the man who has tried them all
+                 * goes back to his floor — which is also what hands the roll to
+                 * the next guard, since the gate below is one runner at a
+                 * time. */
+                int next = nearest_alarm_switch(state, enemy,
+                                                enemy->alarm_switches_tried);
+                if (next >= 0)
+                    guard_run_to_alarm(state, enemy, next);
+                else
+                {
+                    enemy->raising_alarm = false;
+                    enemy->alarm_switch_index = -1;
+                    enemy->alarm_use_timer = 0.0f;
+                    enemy->alarm_run_timer = 0.0f;
+                    enemy->alarm_switches_tried = 0;
+                }
+                switch_pursuit = enemy->raising_alarm;
+            }
             int switch_index = enemy->alarm_switch_index;
-            if (switch_index < 0 ||
-                switch_index >= state->level.map.alarm_switch_count)
+            if (switch_pursuit &&
+                (switch_index < 0 ||
+                 switch_index >= state->level.map.alarm_switch_count))
             {
                 enemy->raising_alarm = false;
+                enemy->alarm_switch_index = -1;
+                enemy->alarm_use_timer = 0.0f;
+                enemy->alarm_run_timer = 0.0f;
+                enemy->alarm_switches_tried = 0;
                 switch_pursuit = false;
             }
-            else
+            if (switch_pursuit)
             {
                 const AlarmSwitch *alarm_switch =
                     &state->level.map.alarm_switches[switch_index];
@@ -1743,6 +2050,8 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
                         enemy->raising_alarm = false;
                         enemy->alarm_switch_index = -1;
                         enemy->alarm_use_timer = 0.0f;
+                        enemy->alarm_run_timer = 0.0f;
+                        enemy->alarm_switches_tried = 0;
                         alarm_pursuit = true;
                         switch_pursuit = false;
                     }
@@ -1861,12 +2170,10 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
             enemy->has_pursuit_target = false;
 
         pursuing = pursuing && enemy->has_pursuit_target;
-        bool hemmed_in =
-            actor_or_tile_blocks_side(state, i, -1) &&
-            actor_or_tile_blocks_side(state, i, 1);
         enemy_update(enemy, &state->level, dt, pursuing, alarm_pursuit,
                      enemy->pursuit_target_x, enemy->pursuit_target_y,
-                     hemmed_in,
+                     body_blocks_side(state, i, -1),
+                     body_blocks_side(state, i, 1),
                      gameplay_enemy_speed_scale(state) *
                          enemy_kind_speed(enemy->kind),
                      &state->rng);
@@ -2015,7 +2322,8 @@ static void update_guard_encounters(GameplayState *state, float dt)
             continue;
 
         enemy->encounter_decided = true;
-        int switch_index = nearest_alarm_switch(state, enemy);
+        enemy->alarm_switches_tried = 0;
+        int switch_index = nearest_alarm_switch(state, enemy, 0);
         if (switch_index >= 0 &&
             !another_guard_is_raising_alarm(state, i) &&
             rng_range(&state->rng, 100) < GUARD_ALARM_CHANCE)
@@ -2103,7 +2411,8 @@ static void update_body_discovery(GameplayState *state)
         enemy->investigate_scan_timer = ENEMY_INVESTIGATE_SCAN_FLIP;
         enemy->dir = bx < enemy->x + ENEMY_W * 0.5f ? -1 : 1;
 
-        int switch_index = nearest_alarm_switch(state, enemy);
+        enemy->alarm_switches_tried = 0;
+        int switch_index = nearest_alarm_switch(state, enemy, 0);
         if (switch_index >= 0 &&
             !another_guard_is_raising_alarm(state, i) &&
             rng_range(&state->rng, 100) < GUARD_BODY_ALARM_CHANCE)

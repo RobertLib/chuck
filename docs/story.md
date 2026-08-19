@@ -22,8 +22,20 @@ player has to agree with it.
   names**, and they are written down once, in [crew.c](../src/crew.c) — see
   [The net](#the-net) below. Nothing in the simulation depends on which name a
   guard wears, but the manual's `THE CREW` sheet and every line the player
-  overhears in a sector come off that one list, so a thirteenth name anywhere
-  is a thirteenth man the docket does not have.
+  overhears in a sector come off that one list, so a thirteenth **callsign**
+  anywhere is a thirteenth man the docket does not have.
+  **Voss himself is not one of the twelve**, and that clause used to read
+  "a thirteenth name", which his own name in a crew line contradicts on the
+  first floor of the game: `TELL VOSS THE CIRCUITS CUT THEMSELVES AT MIDNIGHT`
+  is a man on a handset talking about somebody who is not on the roster,
+  because the roster is the twelve *badged* contractors and Voss is the one who
+  badged them. So the count that reaches the player is twelve men plus the
+  one who hired them, which is what makes `SIX FORTY, THIRTEEN WAYS. DO NOT
+  MAKE IT TWELVE.` arithmetic rather than a slip, and `TWELVE OF US, ONE OF
+  HIM` a man counting his own shift. It is the distinction between a name and a
+  callsign that carries all of it, and the sentence above did not draw it — the
+  usual failure of a rule that says "these must agree" without saying which
+  copies it counted.
 - **The cover** — a political demand broadcast at **00:04**. It puts every unit
   in the city on a cordon around this tower and nobody at all inside it. It is
   theatre, and it is also what buys the abduction its impunity: the pavement
@@ -70,24 +82,83 @@ intel table is Chuck working it out — one considered line, after the fact. The
 net is the other side saying it themselves, in the room, with no idea he is in
 it. Neither is a substitute for the other and neither may contradict the other.
 
-**The building's height is forty floors**, and it is stated in four places
-that have to agree: the title screen's tagline, the men shouting down off the
-facade (`CHATTER_WALL`), the prose in [README.md](../README.md) and the credits
-roll, which opens on it and closes on it. This paragraph said *three* and left
-the roll out, which is how the roll came to be the one place stating the
-campaign's length from memory as well — `SEVENTEEN SECTORS` beside the forty
-floors, unmeasured, on the screen a finished campaign always ends on.
-`test_the_credits_say_the_campaign_they_roll_over` holds that half of the line to
-`CAMPAIGN_SECTORS` now. Seventeen
-sectors is the *route*, not the storey count — a sector is a stretch of the
-climb, not a floor.
+**The building's height is `BUILDING_FLOORS`**, forty, and it is stated in six
+places that have to agree: the title screen's tagline ([intro.c](../src/intro.c)),
+the men shouting down off the facade (`CHATTER_WALL` in
+[crew.c](../src/crew.c)), the credits roll twice — it opens on the height and
+closes on it — the prose in [README.md](../README.md), and the store page in
+both of its copies. Seventeen sectors is the *route*, not the storey count: a
+sector is a stretch of the climb, not a floor, which is exactly why the two
+numbers drift in prose and why neither is derived from the other.
+
+**This paragraph has now been wrong about its own subject twice, which is the
+thing worth writing down.** It first said *three* places and left the credits
+roll out — which is how the roll came to be the one place stating the campaign's
+length from memory as well, `SEVENTEEN SECTORS` beside the forty floors,
+unmeasured, on the screen a finished campaign always ends on.
+`test_the_credits_say_the_campaign_they_roll_over` closed that half. Then it said
+*four*, and went on saying it while the store page shipped the number twice more:
+a page written for people who are **not** reading this repository, carrying the
+first line anybody reads of this game. A sentence whose whole content is "these
+copies must agree" is a sentence that will miscount the copies, because nothing
+counts them.
+
+So the number has an owner now rather than a paragraph.
+`BUILDING_FLOORS` is in [game_config.h](../src/game_config.h) beside
+`CAMPAIGN_SECTORS`; the two tables on the SDL-free side are held to it by
+`test_the_tower_is_one_height_everywhere_it_is_said`, which searches both for
+*any* line counting floors rather than working from a list, and the four that are
+prose or a string literal by [tools/check_docs.py](../tools/check_docs.py). The
+constant is computed with nowhere and exists to be checked, which is the same
+reason `INTEL_ARC_SECTORS` exists.
 
 The table is indexed by finished sector, but only sectors that leave by a
 **stair door** show a report at all — a window is a continuous physical route
 onto the facade and cuts straight to the next sector. In the campaign as
 shipped that is six reports, after sectors 1, 4, 5, 8, 9 and 16, and those six
-carry the arc on their own. The last of them is the vault, which is the one beat
+carry the arc between them. The last of them is the vault, which is the one beat
 in the story that used to be asserted by a caption and is now a floor.
+
+**The other ten lines are read too, and for a release they were not.** The
+sentence here said the six carried the arc "on their own", which reads as a
+decision about emphasis and was really a description of ten rows nothing drew:
+written, measured against the report's own divider, held against the maps by
+`test_the_arc_lands_on_the_sectors_that_show_a_report`, and put on no screen in
+the game. `MONITOR WALL: VOSS. HER HAND ON THE SEVENTH LOCK.` was one of them,
+and `TWELVE PLACES LAID IN THE GALLEY. TWELVE MEN.` Every gate was green,
+because every check on that table asks whether a line fits and none asked
+whether anybody sees it.
+This is the same defect as the bonuses one section down, in the same place, left
+standing when the bonuses were fixed: the fiction objects to the *cut*, not to
+the words, and the fix for the numbers was a line over the next sector's reveal,
+which cuts away from nothing. The line rides with them now. What still separates
+a marked row from an unmarked one is how much room the beat gets — a report is a
+screen and the tally is a sentence — so a beat the player has to stop and take
+in still belongs on the six.
+
+**And for a release the sentence got a fifth of a second, which is not a
+sentence.** The band is drawn while `STATE_LEVEL_START` is on screen and nowhere
+else, and that state lasts exactly as long as the tile reveal — twelve tiles
+every 0.004s, so `width * height / 3000` seconds: **0.18s on sector 1 and 0.43s
+on the tallest climb**, for two lines and about 120 characters. Which is to say
+the line above and the `DOCKET n/12` two sections down were on the glass for less
+time than it takes to notice that text is there, and *how much* time depended on
+how big the next floor happened to be. The paragraph above is a decision about
+how much room a beat gets; nothing about a fifth of a second was decided.
+Every gate was green, and the shape of that is the useful part: the fit checks
+ask whether a line is too **wide**, the soak sweep draws the frame so
+`make coverage` counts it, and `--shot` proves the pixels are there. None of the
+three can see how long anybody had to read them. A line that cannot be read is
+the same defect as a line that does not fit, one axis over.
+`level_reveal_hold_for` holds the reveal open for `SECTOR_TALLY_HOLD_TIME` — the
+crew strip's own `CHATTER_HOLD_TIME`, because two answers to "how long does a
+sentence stay readable" would be two numbers nothing holds. It is the reveal
+rather than the play that is held: after the reveal the player is standing at his
+spawn, which on all five climbs and four of the five interiors carrying this line
+is the bottom row of the map, directly behind a band pinned to the bottom edge —
+letting it ride into play hid the climber for the whole of it. Against the report's
+own `LEVEL_TRANSITION_DURATION` of 9.4s on the six boundaries that show a screen,
+3.8s on the ten that show a line is still the cheaper beat.
 
 Adding or moving a facade sector therefore changes which beats of the story are
 told, which is the one thing about the level layout that reaches all the way into
@@ -255,7 +326,7 @@ stopwatch that could not matter beside a death count that cost nothing past the
 walk back. That is a worse arrangement than printing neither, because this page
 is downstream of a fiction that will not stop talking about the clock — 01:00
 is when the bonds leave the roof, the wall dials climb toward it, the line
-after sector eleven says TEN MINUTES — so the game spent the whole campaign
+after sector eleven says FOURTEEN MINUTES — so the game spent the whole campaign
 insisting the night was against a deadline and then put a stopwatch on screen
 that the player could safely ignore.
 

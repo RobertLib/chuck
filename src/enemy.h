@@ -50,6 +50,12 @@ typedef struct
     bool raising_alarm;
     int alarm_switch_index;
     float alarm_use_timer;
+    /* What is left of the run, so the one state in this AI that used to have no
+     * exit but arrival has one, and which switches this man has already failed
+     * to reach for the thing he is reacting to. See
+     * `ALARM_RUN_DETOUR_ALLOWANCE`. */
+    float alarm_run_timer;
+    uint32_t alarm_switches_tried;
     /* Suspicion state: a guard walks to a heard/seen disturbance, scans, and
      * returns to patrol. Escalates to real pursuit the moment it sees Chuck. */
     float investigate_timer;
@@ -105,6 +111,9 @@ typedef struct
     float blind_timer;
     float anim_time;     /* local procedural animation clock */
     float recoil_timer;  /* brief muzzle flash / firing follow-through */
+    /* Debounce on the one reversal that answers a thing which moves; see
+     * ENEMY_BODY_TURN_COOLDOWN for what it costs to be without it. */
+    float body_turn_cooldown;
 } Enemy;
 
 typedef enum
@@ -203,12 +212,20 @@ static inline uint64_t enemy_body_bit(int slot, bool is_dog)
 }
 
 void enemy_init(Enemy *enemy, float x, float y, EnemyKind kind, Rng *rng);
-/* speed_scale multiplies the guard's ground speed; 1.0 is the authored pace
- * and the assist option is the only caller that passes anything else. */
+/*
+ * `body_left` / `body_right` say whether a live dog or another guard is pressed
+ * against that side. They are the AI layer's answer because who else is on the
+ * floor is its question; the building's half of the same question is asked in
+ * here, beside the rule that decides where a man may turn *to*.
+ *
+ * `speed_scale` multiplies the guard's ground speed; 1.0 is the authored pace
+ * and the assist option is the only caller that passes anything else.
+ */
 void enemy_update(Enemy *enemy, Level *level, float dt,
                   bool pursuing, bool alarmed,
                   float target_x, float target_y,
-                  bool hemmed_in, float speed_scale, Rng *rng);
+                  bool body_left, bool body_right,
+                  float speed_scale, Rng *rng);
 void dog_init(Dog *dog, float x, float y, int owner, Rng *rng);
 
 #endif /* CHUCK_ENEMY_H */

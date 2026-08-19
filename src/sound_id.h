@@ -64,6 +64,13 @@ typedef enum
     SFX_PICKUP_GRENADE,
     SFX_PICKUP_HEALTH,
     SFX_PICKUP_BAZOOKA,
+    /* The flash charge, which borrowed the grenade's until somebody counted.
+     * Every other one-shot on this list has its own — ammo, grenade, medkit,
+     * launcher — and the charge is the one item in the game with a written rule
+     * that it must be told apart from the grenade at a glance
+     * (`draw_flashbang`), announcing itself as one. It sits in the register its
+     * own detonation does, which is `SFX_MINE_ARM`. */
+    SFX_PICKUP_FLASH,
     SFX_CARD_WRONG,
     SFX_EXIT_UNLOCKED,
     SFX_PLAYER_HIT,

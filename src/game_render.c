@@ -13,6 +13,7 @@
 #include "render_figures.h"
 #include "render_sprite.h"
 #include "run_tally.h"
+#include "screenshot.h"
 
 #ifdef CHUCK_DEBUG
 #include "embedded_levels.h"
@@ -160,7 +161,7 @@ static void render_background(Game *game, int win_w, int win_h)
   SDL_Renderer *r = game->platform.renderer;
   const float oy = HUD_HEIGHT;
   const float fh = (float)win_h - oy;
-  float t = (float)SDL_GetTicksNS() * 1.0e-9f;
+  float t = game->presentation.render_clock;
 
   if (game->gameplay.level.map.theme == LEVEL_THEME_RESTROOM)
   {
@@ -2394,7 +2395,7 @@ static void render_facade_world(Game *game, int win_w, int win_h)
                 game->presentation.camera_shake_x;
   float oy = HUD_HEIGHT - game->presentation.cam_y +
              game->presentation.camera_shake_y;
-  float world_t = (float)SDL_GetTicksNS() * 1.0e-9f;
+  float world_t = game->presentation.render_clock;
 
   render_background(game, win_w, win_h);
   if (!level->reveal.done)
@@ -2619,7 +2620,7 @@ static void render_world(Game *game)
     return;
   }
   const float cam_x = game->presentation.cam_x - game->presentation.camera_shake_x;
-  float world_t = (float)SDL_GetTicksNS() * 1.0e-9f;
+  float world_t = game->presentation.render_clock;
 
   render_background(game, win_w, win_h);
 
@@ -3171,6 +3172,68 @@ static void draw_hud_separator(SDL_Renderer *r, float x)
              x + 1.0f, 8.0f, 1.0f, 24.0f);
 }
 
+/*
+ * What Chuck is carrying, in one place, because both strips ask it.
+ *
+ * They used to answer it separately and both answers were wrong. The wall drew
+ * the flash charge at 706, inside a cartridge run that ends at 717, so a
+ * climber carrying one was shown a four-round clip on the one readout whose own
+ * comment promises "every pip is always lit". The floor did not draw the charge
+ * at all — on the twelve sectors where it is the only one of the three that can
+ * actually be thrown, and where [gameplay.md](../docs/gameplay.md) leans on this
+ * row by name to argue that a pickup which does not arm itself is still
+ * visible. Two strips, one question, two answers: this codebase's most reliable
+ * smell, and here it was pointing at both of them.
+ *
+ * The slots and the ink widths are in [game_config.h](game_config.h) where the
+ * suite can reach them; see the note there for why a renderer's own literals
+ * are a layout nothing can measure.
+ */
+static void draw_hud_carried(SDL_Renderer *r, const Player *p, float x,
+                             float y)
+{
+  if (p->flashbangs > 0)
+    draw_flashbang(r, x, y, 0.0f);
+  if (p->grenades > 0)
+    draw_grenade(r, x + (float)HUD_CARRY_SLOT_W, y, 0.0f);
+  if (p->bazooka_rockets > 0)
+    draw_rocket_sprite(r, x + 2.0f * (float)HUD_CARRY_SLOT_W,
+                       y + (float)HUD_CARRY_ROCKET_DROP, 1, false);
+
+  /* And a rule under the one the label is talking about.
+   *
+   * The label names the active weapon and the cartridges beside it are always
+   * the pistol's, so `BAZOOKA` over a full clip read as six rockets. This is
+   * what says which number the word means. Drawn only when the slot has
+   * something in it, and only for the three that live in this row: the pistol
+   * and the knife are the clip and the hand, and BOLTS is a pocketful with no
+   * count anywhere — see `player_weapon_label`.
+   *
+   * The slot's own ink rather than the whole slot, so it sits under the glyph
+   * rather than under the gap after it. See `HUD_CARRY_MARK_DROP`. */
+  int slot = -1;
+  int ink = 0;
+  if (p->active_weapon == PLAYER_WEAPON_FLASH && p->flashbangs > 0)
+  {
+    slot = 0;
+    ink = HUD_FLASH_INK_W;
+  }
+  else if (p->active_weapon == PLAYER_WEAPON_GRENADE && p->grenades > 0)
+  {
+    slot = 1;
+    ink = HUD_GRENADE_INK_W;
+  }
+  else if (p->active_weapon == PLAYER_WEAPON_BAZOOKA && p->bazooka_rockets > 0)
+  {
+    slot = 2;
+    ink = HUD_ROCKET_INK_W;
+  }
+  if (slot >= 0)
+    color_rect(r, FX_LABEL, x + (float)slot * (float)HUD_CARRY_SLOT_W - 1.0f,
+               y + (float)HUD_CARRY_MARK_DROP, (float)ink,
+               (float)HUD_CARRY_MARK_H);
+}
+
 /* The console counts the same heart the manual teaches and the outro hands
    over — one glyph, one red, drawn in fx.h. */
 static void draw_hud_heart(SDL_Renderer *r, float x, float y, bool filled)
@@ -3194,7 +3257,7 @@ static const char *player_weapon_label(PlayerWeapon weapon)
     return "FLASH";
   case PLAYER_WEAPON_DECOY:
     /* Plural, because there is no count beside it and never will be. The other
-       four labels name a thing in the hand; this one names a pocketful. */
+       five labels name a thing in the hand; this one names a pocketful. */
     return "BOLTS";
   case PLAYER_WEAPON_COUNT:
     return "NONE";
@@ -3317,20 +3380,23 @@ static void render_facade_hud(Game *game, int win_w)
    * at the doorway, `update_facade_playing` clears `switch_weapon` for the
    * whole climb, and nothing up here can fire. They stay because the note is
    * still true — that *is* what the next sector opens with, and a new player
-   * has no way to know it — but the grenade and the rocket below are the only
-   * part of this that a climb can change. It is also why a climb lays out no
-   * `G`: see `test_no_climb_lays_out_a_pickup_it_cannot_use`. */
+   * has no way to know it — but the carried row below is the only part of this
+   * that a climb can change. It is also why a climb lays out no `G`: see
+   * `test_no_climb_lays_out_a_pickup_it_cannot_use`.
+   *
+   * "Every pip is always lit" is a promise this block used to break by itself.
+   * The flash charge was drawn at 706, on top of the last two of the six, so a
+   * climber carrying one read a four-round clip off the readout that says
+   * otherwise — and no gate could see it, because nothing headless has ever
+   * carried a charge onto a wall. It is `draw_hud_carried` now, clear of the
+   * cartridges and shared with the strip inside. */
   draw_text(r, 618.0f, 20.0f, 1.0f, FX_LABEL.r, FX_LABEL.g, FX_LABEL.b,
             player_weapon_label(game->gameplay.player.active_weapon));
   for (int i = 0; i < MAX_AMMO; ++i)
-    fx_ammo_pip(r, 677.0f + i * 7.0f, 19.0f,
-                i < game->gameplay.player.bullets);
-  if (game->gameplay.player.grenades > 0)
-    draw_grenade(r, 724.0f, 19.0f, 0.0f);
-  if (game->gameplay.player.flashbangs > 0)
-    draw_flashbang(r, 706.0f, 19.0f, 0.0f);
-  if (game->gameplay.player.bazooka_rockets > 0)
-    draw_rocket_sprite(r, 742.0f, 22.0f, 1, false);
+    fx_ammo_pip(r, (float)HUD_FACADE_AMMO_X + i * (float)HUD_AMMO_PIP_PITCH,
+                19.0f, i < game->gameplay.player.bullets);
+  draw_hud_carried(r, &game->gameplay.player, (float)HUD_FACADE_CARRY_X,
+                   (float)HUD_CARRY_ROW_Y);
 }
 
 static void render_hud(Game *game)
@@ -3394,13 +3460,15 @@ static void render_hud(Game *game)
   draw_text(r, 217.0f, 8.0f, 1.0f, label_r, label_g, label_b,
             player_weapon_label(game->gameplay.player.active_weapon));
   for (int i = 0; i < MAX_AMMO; ++i)
-    fx_ammo_pip(r, 218.0f + i * 7.0f, 19.0f,
-                i < game->gameplay.player.bullets);
-  if (game->gameplay.player.grenades > 0)
-    draw_grenade(r, 263.0f, 19.0f, 0.0f);
-  if (game->gameplay.player.bazooka_rockets > 0)
-    draw_rocket_sprite(r, 276.0f, 22.0f, 1, false);
-  draw_hud_separator(r, 292.0f);
+    fx_ammo_pip(r, (float)HUD_SECTOR_AMMO_X + i * (float)HUD_AMMO_PIP_PITCH,
+                19.0f, i < game->gameplay.player.bullets);
+  /* Three slots rather than the two this had: the flash charge is carried on
+     twelve of the seventeen sectors and was reported on none of them, which is
+     the one place in the game where "a pickup never arms itself" stopped being
+     a rule the player could see the consequence of. */
+  draw_hud_carried(r, &game->gameplay.player, (float)HUD_SECTOR_CARRY_X,
+                   (float)HUD_CARRY_ROW_Y);
+  draw_hud_separator(r, (float)HUD_SECTOR_BLOCK_END);
 
   /* Access status chip with a live LED.
    *
@@ -3413,52 +3481,52 @@ static void render_hud(Game *game)
    * and the two have to agree. */
   const GameplayState *sector =
       game->in_sublevel ? &game->inactive_gameplay : &game->gameplay;
-  draw_text(r, 303.0f, 8.0f, 1.0f, label_r, label_g, label_b, "ACCESS");
+  draw_text(r, 319.0f, 8.0f, 1.0f, label_r, label_g, label_b, "ACCESS");
   bool blocked = sector->level.map.has_window;
   bool unlocked = sector->level.runtime.exit_unlocked;
-  float blink = 0.5f + 0.5f * sinf((float)SDL_GetTicksNS() * 1.0e-9f * 4.0f);
+  float blink = 0.5f + 0.5f * sinf(game->presentation.render_clock * 4.0f);
   if (blocked)
   {
-    color_rect(r, (SDL_Color){36, 38, 42, 255}, 303.0f, 19.0f, 70.0f, 13.0f);
-    color_rect(r, (SDL_Color){96, 102, 108, 255}, 303.0f, 19.0f, 70.0f, 1.0f);
-    color_rect(r, (SDL_Color){166, 142, 91, 255}, 307.0f, 24.0f, 3.0f, 3.0f);
-    draw_text(r, 314.0f, 22.0f, 1.0f, FX_PALE.r, FX_PALE.g, FX_PALE.b,
+    color_rect(r, (SDL_Color){36, 38, 42, 255}, 319.0f, 19.0f, 70.0f, 13.0f);
+    color_rect(r, (SDL_Color){96, 102, 108, 255}, 319.0f, 19.0f, 70.0f, 1.0f);
+    color_rect(r, (SDL_Color){166, 142, 91, 255}, 323.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 330.0f, 22.0f, 1.0f, FX_PALE.r, FX_PALE.g, FX_PALE.b,
               "BLOCKED");
   }
   else if (unlocked)
   {
-    color_rect(r, (SDL_Color){16, 52, 40, 255}, 303.0f, 19.0f, 70.0f, 13.0f);
-    color_rect(r, (SDL_Color){40, 132, 96, 255}, 303.0f, 19.0f, 70.0f, 1.0f);
-    color_rect(r, FX_GREEN, 307.0f, 24.0f, 3.0f, 3.0f);
-    draw_text(r, 314.0f, 22.0f, 1.0f, FX_GREEN.r, FX_GREEN.g, FX_GREEN.b,
+    color_rect(r, (SDL_Color){16, 52, 40, 255}, 319.0f, 19.0f, 70.0f, 13.0f);
+    color_rect(r, (SDL_Color){40, 132, 96, 255}, 319.0f, 19.0f, 70.0f, 1.0f);
+    color_rect(r, FX_GREEN, 323.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 330.0f, 22.0f, 1.0f, FX_GREEN.r, FX_GREEN.g, FX_GREEN.b,
               "GRANTED");
   }
   else
   {
-    color_rect(r, (SDL_Color){54, 24, 24, 255}, 303.0f, 19.0f, 70.0f, 13.0f);
-    color_rect(r, (SDL_Color){124, 52, 46, 255}, 303.0f, 19.0f, 70.0f, 1.0f);
+    color_rect(r, (SDL_Color){54, 24, 24, 255}, 319.0f, 19.0f, 70.0f, 13.0f);
+    color_rect(r, (SDL_Color){124, 52, 46, 255}, 319.0f, 19.0f, 70.0f, 1.0f);
     color_rect(r, fx_dim((SDL_Color){246, 90, 70, 255}, 0.45f + blink * 0.55f),
-               307.0f, 24.0f, 3.0f, 3.0f);
-    draw_text(r, 314.0f, 22.0f, 1.0f, FX_RED.r, FX_RED.g, FX_RED.b,
+               323.0f, 24.0f, 3.0f, 3.0f);
+    draw_text(r, 330.0f, 22.0f, 1.0f, FX_RED.r, FX_RED.g, FX_RED.b,
               "LOCKED");
   }
-  draw_hud_separator(r, 387.0f);
+  draw_hud_separator(r, 403.0f);
 
   char level_buf[32];
   SDL_snprintf(level_buf, sizeof(level_buf), "%02d", game->campaign.current_level + 1);
-  draw_text(r, 398.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SECTOR");
-  draw_text(r, 398.0f, 19.0f, 2.0f, 226, 232, 220, level_buf);
-  draw_hud_separator(r, 456.0f);
+  draw_text(r, 414.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SECTOR");
+  draw_text(r, 414.0f, 19.0f, 2.0f, 226, 232, 220, level_buf);
+  draw_hud_separator(r, 472.0f);
 
   /* Score keeps its leading zeros, but only the live digits glow. */
   char score_buf[16];
   SDL_snprintf(score_buf, sizeof(score_buf), "%07d", game->campaign.score);
-  draw_text(r, 467.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SCORE");
+  draw_text(r, 483.0f, 8.0f, 1.0f, label_r, label_g, label_b, "SCORE");
   int first_digit = 0;
   while (first_digit < 6 && score_buf[first_digit] == '0')
     ++first_digit;
-  draw_text(r, 467.0f, 19.0f, 2.0f, 74, 88, 102, score_buf);
-  draw_text(r, 467.0f + first_digit * 16.0f, 19.0f, 2.0f,
+  draw_text(r, 483.0f, 19.0f, 2.0f, 74, 88, 102, score_buf);
+  draw_text(r, 483.0f + first_digit * 16.0f, 19.0f, 2.0f,
             FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, score_buf + first_digit);
 
   /* The passive trail meter becomes an unmistakable security readout while
@@ -3472,7 +3540,7 @@ static void render_hud(Game *game)
    * offering a safe room the sector never granted. The timer itself is frozen
    * with the rest of the sector while he is away, so the number he returns to
    * is the number he left. */
-  float t = (float)SDL_GetTicksNS() * 1.0e-9f;
+  float t = game->presentation.render_clock;
   if (gameplay_alarm_active(sector))
   {
     float pulse = 0.5f + 0.5f * sinf(t * 7.0f);
@@ -3883,8 +3951,13 @@ static void draw_continue_overlay(Game *game)
   char hint[40];
   draw_overlay_panel(game, 190.0f, FX_AMBER,
                      "CONTINUE?",
+                     /* The same pair the skip prompts name, spelled the same
+                      * way: this offer is a different one, the two buttons are
+                      * not. `ENTER OR SPACE` was the third spelling of them in
+                      * the tree — see `PAD_CONFIRM_KEYS`. */
                      pad_hint(game_pad_hints(game), hint, sizeof(hint),
-                              "PRESS $A OR $START", "PRESS ENTER OR SPACE"));
+                              "PRESS " PAD_CONFIRM_PAD,
+                              "PRESS " PAD_CONFIRM_KEYS));
 
   int seconds = (int)ceilf(game->campaign.continue_timer);
   char countdown[16];
@@ -3966,6 +4039,15 @@ static void dim_whole_frame(Game *game, Uint8 alpha)
 _Static_assert(SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE == (int)PAUSE_GLYPH_W,
                "the pause sheet's fit check measures a different glyph than "
                "the renderer draws");
+/* And the options sheet's, which had gone without one — the asymmetry this tree
+ * keeps finding: half a rule kept, and nobody looking at the other half. It
+ * needs both axes now, because that sheet's fit check has grown a second one. */
+_Static_assert(SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE == (int)SETTINGS_GLYPH_W,
+               "the options sheet's fit check measures a different glyph than "
+               "the renderer draws");
+_Static_assert(SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE == (int)SETTINGS_GLYPH_H,
+               "the options sheet's height check measures a different glyph "
+               "than the renderer draws");
 
 static void draw_pause_menu(Game *game)
 {
@@ -4109,41 +4191,48 @@ static void draw_setting_keys(Game *game, float right, float y,
     return;
 
   /*
-   * Sized off the longest name each half may spell, so the caps sit in the
-   * same place on every row however short what is in them is. A column that
-   * moved with its contents would make the sheet jitter as it is edited.
+   * Where the caps go is `settings_bind_caps` in
+   * [settings.c](settings.c) rather than four lines of arithmetic here, and the
+   * move is the whole of a shipped bug. The order they are drawn in is a claim
+   * the sheet makes in words — the heading over the page says `TWO KEYS, THEN
+   * TWO PAD BUTTONS` — and this function was contradicting it: the *keyboard's*
+   * pair was pinned to the right margin with the pad's put to its left, under a
+   * comment saying that made a row read keys-then-buttons "in the order the caret
+   * walks them". Slot 0 is a key, so the page opened with the caret on the third
+   * cap from the left and LEFT moved nothing at all. See `SettingsCap`.
    *
-   * The two halves get their own width because they are two different
-   * alphabets: a key spells itself in up to `KEYBIND_NAME_MAX`, while a pad
-   * button is at most `PADBIND_NAME_MAX` and most of them are two characters.
-   * Giving the pad the keyboard's width would put four wide caps on a row that
-   * has nine label characters to spare.
+   * What is worth keeping from the old comment is why the two halves are still
+   * sized separately over there: they are different alphabets. A key spells
+   * itself in up to `KEYBIND_NAME_MAX` and a pad button in `PADBIND_NAME_MAX`,
+   * most of them in two characters, so giving the pad the keyboard's width would
+   * put four wide caps on a row with nine label characters to spare. Both are
+   * sized off the longest name their half can spell rather than off what is in
+   * them, because a column that moved with its contents would make the sheet
+   * jitter as it is edited.
    */
-  const float cap_w =
-      (float)KEYBIND_NAME_MAX * SETTINGS_GLYPH_W + SETTINGS_CAP_PAD;
-  const float pad_cap_w =
-      (float)PADBIND_NAME_MAX * SETTINGS_GLYPH_W + SETTINGS_CAP_PAD;
   const float cap_h = 15.0f;
-  const float gap = SETTINGS_CAP_GAP;
-  const float group_gap = SETTINGS_CAP_GROUP_GAP;
 
-  const PadHints *hints = game_pad_hints(game);
-  /* The keyboard's run ends on the right margin; the pad's sits to its left,
-   * so a row reads keys-then-buttons in the order the caret walks them. */
-  float keys_left = right - (float)BIND_SLOTS * (cap_w + gap) + gap;
-  float pad_left =
-      keys_left - group_gap - (float)BIND_SLOTS * (pad_cap_w + gap) + gap;
+  const PadHints *spelling = game_pad_spelling(game);
+  SettingsCap caps[BIND_TOTAL_SLOTS];
+  int cap_count = settings_bind_caps(right, caps);
 
-  for (int slot = 0; slot < BIND_TOTAL_SLOTS; ++slot)
+  for (int slot = 0; slot < cap_count; ++slot)
   {
-    bool is_pad = slot >= BIND_PAD_SLOT;
+    bool is_pad = caps[slot].pad;
     int within = is_pad ? slot - BIND_PAD_SLOT : slot;
-    float w = is_pad ? pad_cap_w : cap_w;
-    float x = (is_pad ? pad_left : keys_left) + (float)within * (w + gap);
+    float w = caps[slot].w;
+    float x = caps[slot].x;
 
     /* A pad name is a `pad_hint` template — `$A` and the rest — because what a
      * face button is called depends on what is plugged in. Expanded here, once,
-     * through the same call every other prompt in the game makes. */
+     * through the same call every other prompt in the game makes.
+     *
+     * `game_pad_spelling` rather than `game_pad_hints`, and that is the whole of
+     * a shipped bug: the second answers NULL with no pad plugged in, `pad_hint`
+     * then copies its key form through verbatim, and the only key form a `$A`
+     * template has is itself. So this cap printed the literal text `$A` — and
+     * `$B`, `$X`, `$Y`, `$LB`, `$RB` — to every player without a controller,
+     * which is most of them. See the note in [game_input.c](game_input.c). */
     char spelled[16];
     const char *name;
     if (is_pad)
@@ -4152,7 +4241,7 @@ static void draw_setting_keys(Game *game, float right, float y,
           keybind_pad_name(game->settings.bindings.pad[action][within]);
       name = form[0] == '\0'
                  ? ""
-                 : pad_hint(hints, spelled, sizeof(spelled), form, form);
+                 : pad_hint(spelling, spelled, sizeof(spelled), form, form);
     }
     else
     {
@@ -4204,59 +4293,32 @@ static void draw_settings_sheet(Game *game)
   int row_count = 0;
   const SettingRow *rows = settings_rows(game->settings_page, &row_count);
 
+  /*
+   * The whole of how tall this sheet is comes from `settings_page_layout`, on
+   * the SDL-free side where `make test` can hold it — see the note on the
+   * vertical geometry in [settings.h](settings.h).
+   *
+   * It used to be worked out here, and the arithmetic was wrong in the one
+   * direction nothing could see: the squeeze scaled the value rows and then
+   * took the scale off the whole total, headings included, so the plate came
+   * out about 50px shorter than what this loop draws on it. The last section of
+   * the sheet was printed over the footer and off the bottom of the frame, on
+   * every machine, at every window size — the presentation is logical and
+   * fixed — and in the still the store page is cut from.
+   */
+  SettingsLayout layout =
+      settings_page_layout(game->settings_page, muted, (float)win_h);
   /* A heading is a rule with a name in it; one that carries a sentence as well
    * needs the room for it, or the sentence lands on the first row of its own
-   * section. The height is asked per row rather than assumed, which is also
-   * what lets the sheet grow a section without any of this being retuned. */
-  const float heading_h = 26.0f;
-  const float heading_detail_h = 40.0f;
-  float value_h = 40.0f;
-  /* A binding row carries no sentence under its label, so it needs no room for
-   * one. Nine of them at the full row height is 90px the controls page has
-   * nowhere to put. */
-  float bind_h = 28.0f;
-  const float rows_top = 66.0f;
+   * section. Neither height is squeezed, which is why they are read straight
+   * from the header while the two below come off the layout. */
+  const float heading_h = SETTINGS_HEADING_H;
+  const float heading_detail_h = SETTINGS_HEADING_DETAIL_H;
+  const float value_h = layout.value_h;
+  const float bind_h = layout.bind_h;
+  const float rows_top = SETTINGS_ROWS_TOP;
   const float panel_w = SETTINGS_PANEL_W;
-
-  float rows_h = 0.0f;
-  for (int i = 0; i < row_count; ++i)
-  {
-    if (rows[i].kind == SETTING_ROW_BINDING)
-      rows_h += bind_h;
-    else if (rows[i].kind != SETTING_ROW_HEADING)
-      rows_h += value_h;
-    else if (rows[i].detail != NULL ||
-             (muted && settings_heading_governs_levels(rows, row_count, i)))
-      rows_h += heading_detail_h;
-    else
-      rows_h += heading_h;
-  }
-
-  /*
-   * And if the page still does not fit the frame, the rows give the room back
-   * rather than the plate hanging off the bottom of it.
-   *
-   * The sheet has always been sized from its table so that "a new section costs
-   * no layout", and that held right up to the point where a new section was
-   * bigger than the 36px the main page had spare. Squeezing here keeps the
-   * promise the other way round: a tenth setting shortens the rows a little
-   * instead of silently drawing the last of them off the plate, which is the
-   * failure the manual's control sheet has already had once.
-   */
-  float panel_h = rows_top + rows_h + 38.0f;
-  float frame_limit = (float)win_h - 16.0f;
-  if (panel_h > frame_limit && rows_h > 0.0f)
-  {
-    float squeeze = (frame_limit - rows_top - 38.0f) / rows_h;
-    if (squeeze < 0.6f)
-      /* Past this the labels touch. A sheet that long is a bug in the table,
-       * not something to keep shrinking around. */
-      squeeze = 0.6f;
-    value_h *= squeeze;
-    bind_h *= squeeze;
-    rows_h *= squeeze;
-    panel_h = rows_top + rows_h + 38.0f;
-  }
+  const float panel_h = layout.plate_h;
   float panel_x = ((float)win_w - panel_w) * 0.5f;
   float panel_y = ((float)win_h - panel_h) * 0.5f;
 
@@ -4278,9 +4340,10 @@ static void draw_settings_sheet(Game *game)
     {
       /* A section rule: the name, and the hairline that carries it across the
        * plate so the three groups read as three groups. */
-      float label_w = draw_text_width(row->label, 1.0f);
+      const char *heading = settings_row_label(row);
+      float label_w = draw_text_width(heading, 1.0f);
       draw_text(r, panel_x + 22.0f, y + 11.0f, 1.0f,
-                FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, row->label);
+                FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, heading);
       SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
       set_rgba(r, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, 46);
       fill_rect(r, panel_x + 30.0f + label_w, y + 14.0f,
@@ -4323,25 +4386,37 @@ static void draw_settings_sheet(Game *game)
     }
 
     bool selected = game->settings_cursor == i;
+    /* The highlight is the row's own pitch less a hairline, rather than the
+     * fixed 36px it used to be: that number was chosen against an unsqueezed
+     * 40px row, so on a squeezed page — and on the controls page, whose rows are
+     * 28 — the wash reached over the label under it and claimed a row the cursor
+     * was not on. Under-covering the bottom of a squeezed detail line is the
+     * cheaper of the two mistakes. */
+    float row_pitch = row->kind == SETTING_ROW_BINDING ? bind_h : value_h;
     if (selected)
-      draw_sheet_cursor(r, panel_x, y - 6.0f, panel_w, 36.0f, y);
+      draw_sheet_cursor(r, panel_x, y - 6.0f, panel_w, row_pitch - 2.0f, y);
 
     draw_text(r, panel_x + 34.0f, y, 1.0f,
               selected ? 236 : 200, selected ? 238 : 208,
-              selected ? 224 : 196, row->label);
+              selected ? 224 : 196, settings_row_label(row));
     /*
-     * The records row swaps its own detail line for the confirmation once it has
-     * been armed, in the danger red the muted-levels correction uses, and for the
-     * same reason it is red there: this is not a description of the row any more,
-     * it is what the next press will do. Both lines are strings in
-     * [settings.h](settings.h) and [settings.c](settings.c) so the fit check
-     * measures the one the player is actually reading.
+     * An armed row swaps its own detail line for the confirmation, in the danger
+     * red the muted-levels correction uses, and for the same reason it is red
+     * there: this is not a description of the row any more, it is what the next
+     * press will do. Every line is a string in [settings.h](settings.h) reached
+     * through [settings.c](settings.c) so the fit check measures the one the
+     * player is actually reading.
+     *
+     * Which rows can be armed is not asked here, and that is the point: this
+     * used to name `SETTING_RECORDS_RESET` outright, so the row next door could
+     * be — and was — destructive with nothing to draw.
      */
-    bool armed_records =
-        row->id == SETTING_RECORDS_RESET && game->settings_records_armed;
-    if (armed_records)
+    const char *armed_detail = row->id == game->settings_armed_row
+                                   ? settings_row_armed_detail(row->id)
+                                   : NULL;
+    if (armed_detail != NULL)
       draw_text(r, panel_x + 34.0f, y + 15.0f, 1.0f, FX_RED.r, FX_RED.g,
-                FX_RED.b, SETTINGS_RECORDS_ARMED_DETAIL);
+                FX_RED.b, armed_detail);
     else if (row->detail != NULL)
       draw_text(r, panel_x + 34.0f, y + 15.0f, 1.0f,
                 FX_LABEL.r, FX_LABEL.g, FX_LABEL.b, row->detail);
@@ -4365,11 +4440,30 @@ static void draw_settings_sheet(Game *game)
     {
       draw_setting_keys(game, control_right, y, row, selected);
     }
+    else if (row->kind == SETTING_ROW_READOUT)
+    {
+      /*
+       * A figure the game is reporting, right-aligned on the same margin the
+       * switches and the ends of the bars sit on, so the column reads as one
+       * column whether it holds a state or a number.
+       *
+       * Set in the amber the section rules use rather than the switches' green
+       * and grey: a toggle's pill is a thing the player just changed, and this
+       * is a thing the game is telling them. `run_tally_format_record` answers
+       * `--` for a record nothing has been written to, which is why there is no
+       * empty case here — see the note on it.
+       */
+      char value[RUN_TALLY_RECORD_MAX];
+      run_tally_format_record(settings_row_readout(row->id), &game->progress,
+                              value, sizeof(value));
+      draw_text(r, control_right - draw_text_width(value, 1.0f), y, 1.0f,
+                FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, value);
+    }
     /* SETTING_ROW_ACTION draws no control of its own: it is a label that
      * happens when it is pressed, and a switch beside it would say it holds a
      * state it does not. */
 
-    y += row->kind == SETTING_ROW_BINDING ? bind_h : value_h;
+    y += row_pitch;
   }
 
   /* Named exactly as bound: up and down walk, left and right change, and the
@@ -4571,14 +4665,19 @@ static void draw_credits_roll(Game *game)
   color_rect(r, FX_INK, 0.0f, 0.0f, view_w, 19.0f);
   color_rect(r, FX_INK, 0.0f, view_h - 19.0f, view_w, 19.0f);
 
-  char hint[40];
+  char hint[48];
   const PadHints *pad = game_pad_hints(game);
   bool resting = credits_at_rest(roll);
+  /* The same words the outro one screen back spells, because the outro and the
+   * roll are the two halves of one ending — see `PAD_CONFIRM_KEYS` in
+   * [pad_hint.h](pad_hint.h) for what these two lines used to say instead. */
   const char *prompt =
-      resting ? pad_hint(pad, hint, sizeof(hint), "$A: MAIN MENU",
-                         "SPACE / ENTER: MAIN MENU")
-              : pad_hint(pad, hint, sizeof(hint), "$A: SKIP",
-                         "SPACE / ENTER: SKIP");
+      resting ? pad_hint(pad, hint, sizeof(hint),
+                         PAD_CONFIRM_PAD " FOR THE MAIN MENU",
+                         PAD_CONFIRM_KEYS " FOR THE MAIN MENU")
+              : pad_hint(pad, hint, sizeof(hint),
+                         PAD_CONFIRM_PAD " TO SKIP",
+                         PAD_CONFIRM_KEYS " TO SKIP");
   float pulse = 0.45f + 0.55f * sinf(roll->time * 2.0f);
   draw_text(r, view_w - draw_text_width(prompt, 1.0f) - 24.0f, view_h - 31.0f,
             1.0f, (Uint8)(101.0f + pulse * 40.0f), (Uint8)(109.0f + pulse * 40.0f),
@@ -4614,7 +4713,7 @@ void game_render(Game *game)
                  game->presentation.camera_shake_y,
                  game->settings.reduced_motion,
                  game_pad_hints(game));
-    if (game->state == STATE_PAUSED)
+    if (game->state == STATE_PAUSED && !game->platform.staged_frame)
       draw_pause_menu(game);
   }
   else if (game->state == STATE_SETTINGS)
@@ -4746,7 +4845,7 @@ void game_render(Game *game)
       draw_continue_overlay(game);
     else if (game->state == STATE_GAME_OVER)
       draw_game_over_panel(game);
-    else if (game->state == STATE_PAUSED)
+    else if (game->state == STATE_PAUSED && !game->platform.staged_frame)
       draw_pause_menu(game);
 
     /*
@@ -4776,13 +4875,56 @@ void game_render(Game *game)
       if (sector_tally_format(&game->presentation.sector_tally, tally_line,
                               sizeof(tally_line)) > 0)
       {
-        float tally_y = game->state == STATE_LEVEL_CLEARED ? 292.0f : 522.0f;
+        /*
+         * And the plot line above the numbers, for the ten clears whose row of
+         * `TRANSITION_INTEL` no screen in the game used to reach. Two voices,
+         * so two lines and two colours: the scoreboard is amber and Chuck is
+         * the report's own grey, which is the pairing
+         * [cutscene.c](cutscene.c) already draws one screen over.
+         *
+         * The band grows only when there is a line to put in it. The last
+         * sector of the campaign has no row, so the cleared card keeps the
+         * single-line band it was laid out with and nothing shifts under the
+         * verdict panel above it.
+         */
+        const char *intel =
+            sector_tally_intel(&game->presentation.sector_tally);
+        bool on_card = game->state == STATE_LEVEL_CLEARED;
+        float tally_y = on_card ? 292.0f : 522.0f;
+        /*
+         * The second line grows *away* from whatever the band must not touch,
+         * and the two placements have opposite neighbours: the reveal sits on
+         * the bottom edge of the frame with the map coming up above it, and the
+         * card sits directly under `draw_overlay_panel`'s verdict. So the story
+         * line goes above the numbers on a reveal and below them on the card.
+         *
+         * Grown upward on both, as the first draft did, the card printed the
+         * sentence straight through `SHE IS TWENTY FEET AWAY`. No test could
+         * see it — every assertion about this band is a width — and no run
+         * reaches it either, because the card is only ever the last sector and
+         * the last sector has no row. What reaches it is
+         * `--screen cleared --level 6`, which is a thing a person types when
+         * they are cutting a still, and a frame that prints text over text is
+         * the one thing `--shot` exists to catch.
+         */
+        float intel_y = on_card ? tally_y + SECTOR_TALLY_INTEL_RISE
+                                : tally_y - SECTOR_TALLY_INTEL_RISE;
+        float band_top = tally_y - 7.0f;
+        float band_h = 23.0f;
+        if (intel != NULL)
+        {
+          if (!on_card)
+            band_top -= SECTOR_TALLY_INTEL_RISE;
+          band_h += SECTOR_TALLY_INTEL_RISE;
+        }
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
         set_rgba(r, 5, 9, 15, 205);
-        fill_rect(r, 0.0f, tally_y - 7.0f, (float)win_w, 23.0f);
+        fill_rect(r, 0.0f, band_top, (float)win_w, band_h);
         set_rgba(r, FX_AMBER.r, FX_AMBER.g, FX_AMBER.b, 90);
-        fill_rect(r, 0.0f, tally_y - 7.0f, (float)win_w, 1.0f);
+        fill_rect(r, 0.0f, band_top, (float)win_w, 1.0f);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        if (intel != NULL)
+          draw_text_centered(game, intel_y, 1.0f, 158, 174, 178, intel);
         draw_text_centered(game, tally_y, 1.0f, FX_AMBER.r, FX_AMBER.g,
                            FX_AMBER.b, tally_line);
       }
@@ -4798,6 +4940,14 @@ void game_render(Game *game)
     fx_vignette(r, win_w, win_h, vignette);
     fx_scanlines(r, win_w, win_h, FX_SCANLINE_ALPHA);
   }
+
+  /* A pending `--shot` is written here rather than back in `SDL_AppIterate`,
+   * because the line below is the last moment this frame exists: a presented
+   * back buffer holds whatever the driver decided to leave in it, so a capture
+   * taken after the swap is a capture of nothing in particular. It sits under
+   * the finishing pass for the same reason — a picture of this game with the
+   * vignette and the scanlines missing is a picture of a game nobody plays. */
+  shot_plan_capture(&game->platform.shot, r);
 
   SDL_RenderPresent(r);
 }

@@ -71,12 +71,11 @@ EDITOR_SOURCES := $(wildcard $(EDITOR_DIR)/*.c) \
 EDITOR_OBJECTS := $(patsubst %.c,$(BUILD_DIR)/editor/%.o,$(notdir $(EDITOR_SOURCES)))
 EDITOR_DEPENDENCIES := $(EDITOR_OBJECTS:.o=.d)
 
-.PHONY: all release debug run run-debug run-editor editor test lint \
-	sanitize soak coverage coverage-shell clean app notarize sdl3
+.PHONY: all debug run run-debug run-editor editor test lint \
+	sanitize soak coverage coverage-shell clean sdl3 app \
+	press mac win linux
 
 all: $(TARGET)
-
-release: all
 
 debug:
 	$(MAKE) BUILD_DIR=build/debug TARGET=$(DEBUG_TARGET) \
@@ -184,7 +183,7 @@ soak: $(SOAK_BINARY)
 # forty-two never-executed functions to six — and the *core* never was, which is
 # the half this project calls testable and the half a reader would assume was
 # covered. It was not: fourteen functions in the SDL-free tree had never run,
-# among them both platform updaters (`P` and `F` are on seven shipped floors),
+# among them both platform updaters (`P` and `F` are on six shipped floors),
 # half of how a dog reads a hole in the floor, and `release_body_bit`,
 # which is the fallback that keeps a reinforcement from deleting the corpse the
 # quiet route is played around.
@@ -409,33 +408,62 @@ sanitize:
 	$(MAKE) $(SANITIZE_VARS) all editor test
 	$(MAKE) $(SANITIZE_VARS) soak
 
-# The shipped macOS app. `make` links Homebrew's SDL3, which is right for
-# this machine and wrong for everyone else's: arm64 only, and built for the
-# macOS it was poured on. The bundle is therefore built against the official
-# universal SDL3.framework in vendor/ — both slices, a macOS 11 floor, and it
-# travels inside Contents/Frameworks, so the app needs nothing installed.
-MACOS_MIN_VERSION := 11.0
-APP_ARCHS := -arch arm64 -arch x86_64
-VENDOR_DIR := vendor
-SDL3_FRAMEWORK := $(VENDOR_DIR)/SDL3.framework
-APP_BUILD_DIR := build/app
+# ---- The three releases ---------------------------------------------------
+#
+# One target per platform, one script per platform, and that is the whole of it:
+#
+#   make mac     dist/Chuck-<v>-macos.zip          (and the .app and the .dmg)
+#   make win     dist/Chuck-<v>-windows-x64.zip
+#   make linux   dist/Chuck-<v>-linux-x86_64.tar.gz
+#
+# Each script goes from this tree to one archive in dist/ and stops there, in the
+# same four steps: the library, the game, the payload, the archive. Nothing here
+# uploads anything and nothing here knows an account exists — publishing is a
+# decision, not a build step.
+#
+# Which machine can make which is a fact rather than a taste. macOS needs a Mac:
+# two slices, a Developer ID signature, and Apple's notary service on the other
+# end of the network. Linux needs a Linux, because its SDL is compiled against
+# that userland. Windows cross-builds anywhere mingw-w64 runs, a Mac included,
+# which is why it is also this tree's cheapest second opinion on the C.
+# .github/workflows/payloads.yml exists to hand back the one a Mac cannot make.
+#
+# It was six targets and four scripts, and macOS had three of the targets and two
+# of the scripts to itself — `app`, `notarize` and an `itch-macos` named after a
+# shop, plus a `release-macos` whose entire job was to name the order the other
+# three had to run in. That split is what shipped an archive nobody could open:
+# the target that cut the zip depended on the one that deletes and re-signs the
+# bundle, so it threw away the notarization ticket and packed the result. **A
+# platform whose release is one target and one script cannot be run in the wrong
+# order**, which is worth more than being able to stop halfway.
+mac:
+	packaging/build_macos.sh
 
-sdl3: $(SDL3_FRAMEWORK)
+win:
+	packaging/build_windows.sh
 
-$(SDL3_FRAMEWORK):
-	packaging/fetch_sdl3.sh $(VENDOR_DIR)
+linux:
+	packaging/build_linux.sh
 
-app: $(SDL3_FRAMEWORK)
-	MACOSX_DEPLOYMENT_TARGET=$(MACOS_MIN_VERSION) $(MAKE) \
-		BUILD_DIR=$(APP_BUILD_DIR) TARGET=$(APP_BUILD_DIR)/chuck \
-		CFLAGS="$(BASE_CFLAGS) $(APP_ARCHS) -F$(CURDIR)/$(VENDOR_DIR)" \
-		LDFLAGS="$(APP_ARCHS) -F$(CURDIR)/$(VENDOR_DIR) -framework SDL3 -lm \
-			-Wl,-rpath,@executable_path/../Frameworks" all
-	MACOS_MIN_VERSION=$(MACOS_MIN_VERSION) VENDOR_DIR=$(CURDIR)/$(VENDOR_DIR) \
-		packaging/build_app.sh $(APP_BUILD_DIR)/chuck
+# Not one of the three: the bundle built and signed without going near Apple,
+# which is what the macOS CI job checks on every push. No signing identity is
+# needed — build_macos.sh falls back to an ad-hoc signature — and it still proves
+# the bundle assembles, links the vendored framework and verifies. Anything you
+# would hand to a player comes out of `make mac`.
+app:
+	MACOS_BUNDLE_ONLY=1 packaging/build_macos.sh
 
-notarize: app
-	packaging/notarize.sh
+# vendor/ is a verified download and survives a clean; this refetches it.
+sdl3:
+	packaging/fetch_sdl3.sh vendor
+
+# `press` is not one of the three and is not a build. Every pixel of this game is
+# drawn at runtime, so the store page's screenshots are captured from the built
+# game rather than kept as files — which means they can be *rebuilt* after a
+# change to the art instead of being re-photographed by hand and quietly left a
+# version behind. See tools/press_kit.sh, and `--shot` in src/main.c.
+press: $(TARGET)
+	PRESS_BINARY=$(CURDIR)/$(TARGET) tools/press_kit.sh
 
 # vendor/ is a verified download and survives a clean; `make sdl3` refetches it.
 clean:

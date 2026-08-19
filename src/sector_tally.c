@@ -1,11 +1,35 @@
 #include "sector_tally.h"
 
 #include "game_config.h"
+#include "gameplay_state.h"
 #include "manual_pages.h"
 #include "progress.h"
 
 #include <stdio.h>
 #include <string.h>
+
+int sector_tally_soak_docket(int sector)
+{
+    int laid_out = campaign_docket_sheets_by(sector);
+    return laid_out < SOAK_TALLY_DOCKET ? laid_out : SOAK_TALLY_DOCKET;
+}
+
+int sector_tally_soak_score(int sector)
+{
+    /* What the band above the strip has just said the run holds: the sheets it
+     * quotes, plus the two bonuses it has paid for this floor. Derived from the
+     * same fixture the band is drawn from, so the two cannot come apart. */
+    return sector_tally_soak_docket(sector) * EVIDENCE_SCORE +
+           campaign_time_bonus_for(SOAK_TALLY_ELAPSED) + SECTOR_CLEAN_BONUS;
+}
+
+int sector_tally_soak_hostiles(int authored_hostiles)
+{
+    if (authored_hostiles < 0)
+        authored_hostiles = 0;
+    return authored_hostiles < SOAK_TALLY_HOSTILES ? authored_hostiles
+                                                   : SOAK_TALLY_HOSTILES;
+}
 
 void sector_tally_clear(SectorTally *tally)
 {
@@ -16,11 +40,16 @@ void sector_tally_clear(SectorTally *tally)
 
 void sector_tally_set(SectorTally *tally, int sector, float elapsed_seconds,
                       float best_seconds, bool best_is_new,
-                      int time_bonus, int clean_bonus, int docket_sheets)
+                      int time_bonus, int clean_bonus, int docket_sheets,
+                      const char *intel)
 {
     if (tally == NULL)
         return;
     tally->pending = true;
+    /* An empty string is the same as no line and must not draw an empty row:
+     * `intel_line` answers NULL out of range, but a caller assembling one is
+     * one `""` away from a blank line under the numbers with a rule over it. */
+    tally->intel = (intel != NULL && intel[0] != '\0') ? intel : NULL;
     tally->sector = sector;
     tally->elapsed_seconds = elapsed_seconds;
     tally->best_seconds = best_seconds;
@@ -32,8 +61,10 @@ void sector_tally_set(SectorTally *tally, int sector, float elapsed_seconds,
      * `test_every_interior_lays_out_exactly_one_docket_sheet`'s rule read the
      * other way round. Derived rather than written down, because a campaign
      * that gains a floor gains a sheet with it and a literal twelve here would
-     * be the third copy of a number the maps already answer. */
-    tally->docket_total = CAMPAIGN_SECTORS - CAMPAIGN_CLIMB_SECTOR_COUNT;
+     * be the third copy of a number the maps already answer. The arithmetic
+     * itself moved to `campaign_docket_sheets` the day the RECORDS page needed
+     * the same figure — two derivations of one number are two numbers. */
+    tally->docket_total = campaign_docket_sheets();
     if (tally->docket_sheets > tally->docket_total)
         tally->docket_sheets = tally->docket_total;
 }
@@ -105,13 +136,20 @@ int sector_tally_format(const SectorTally *tally, char *out, size_t cap)
      * way round — it is omitted when it was not earned, because a death is
      * already the walk back and `+0 CLEAN` would be the line rubbing it in.
      */
-    char time_part[16];
+    /* Wide enough for any `int` either bonus could hold, rather than for the
+     * numbers the formulas produce today. gcc says both of these could be
+     * truncated and it is right about the arithmetic even though it is wrong
+     * about this campaign — and a truncated field here would print a number
+     * that is not the number, on the one line whose whole job is to say what
+     * the sector paid. The alternative is a bound on the bonus written down in
+     * a second place, which is the arrangement this tree keeps removing. */
+    char time_part[24];
     if (tally->time_bonus > 0)
         snprintf(time_part, sizeof(time_part), "+%d TIME", tally->time_bonus);
     else
         snprintf(time_part, sizeof(time_part), "OVER PAR");
 
-    char clean_part[16];
+    char clean_part[24];
     if (tally->clean_bonus > 0)
         snprintf(clean_part, sizeof(clean_part), "   +%d CLEAN",
                  tally->clean_bonus);
@@ -147,4 +185,11 @@ int sector_tally_format(const SectorTally *tally, char *out, size_t cap)
     if ((size_t)written >= cap)
         return (int)cap - 1;
     return written;
+}
+
+const char *sector_tally_intel(const SectorTally *tally)
+{
+    if (tally == NULL || !tally->pending)
+        return NULL;
+    return tally->intel;
 }

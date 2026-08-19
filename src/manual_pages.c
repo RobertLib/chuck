@@ -1,5 +1,7 @@
 #include "manual_pages.h"
 
+#include "game_config.h"
+
 #include <string.h>
 
 /* ---- The sheets ------------------------------------------------------- */
@@ -205,13 +207,27 @@ static const ManualLine PAGE_CONTROLS[] = {
 static const ManualLine PAGE_MOVEMENT[] = {
     {LINE_HEAD, "GROUND"},
     /* The two plentiful answers only. A moving platform is a third one on
-     * paper and twice in the building — sector 5 and sector 17, a tile each —
+     * paper and a rarity in the building — sectors 5, 14 and 17, a tile each —
      * so listing it beside the ladder and the lift shaft told the player to
      * look for something that is almost never there. It keeps its mention
      * under GOING UP, worded as the rarity it is. */
-    {LINE_BULLET, "A jump clears a one-tile hole in the"},
-    {LINE_BODY, "floor. Two tiles needs a ladder or a"},
-    {LINE_BODY, "lift shaft."},
+    /* Two, not one, and the sheet said one for as long as it existed.
+     *
+     * A hole is landed *past* rather than cleared: `level_move` holds the box
+     * up while any part of it is over solid tile, so the ground a gap asks for
+     * is its width less `PLAYER_W`. The authoring page had the same arithmetic
+     * a tile short in the same direction — see the jump-reach bullet in
+     * [levels/LEGEND.md](../levels/LEGEND.md) — and this is the copy a player
+     * reads, so it was the one telling somebody to go and find a ladder they do
+     * not need. `test_a_jump_clears_a_wider_hole_than_the_model_will_route`
+     * measures both widths.
+     *
+     * The third tile needs a second open row over the jump, which is the
+     * difference between a corridor and a hall; "with headroom" is that
+     * condition in the words a player can act on while standing in one. */
+    {LINE_BULLET, "A jump clears a two-tile hole in the"},
+    {LINE_BODY, "floor - three with headroom. Wider"},
+    {LINE_BODY, "needs a ladder or a lift shaft."},
     {LINE_BULLET, "Hold DOWN to crawl. It is the only way"},
     {LINE_BODY, "under a one-tile gap, and the only way"},
     {LINE_BODY, "to hit something sitting on the floor."},
@@ -398,12 +414,14 @@ static const ManualLine PAGE_CONSOLE[] = {
     {LINE_BULLET, "AMMO: fills the pistol back to six."},
     {LINE_BULLET, "MEDKIT: refills the hearts, or adds a"},
     {LINE_BODY, "life if they are already full."},
-    /* The two explosives share the rule, so they share the bullet: picking one
-     * up does not raise it. The sheet has no room to say it twice, and the
-     * page clips at BODY_BOTTOM rather than reflowing, so this section cannot
-     * grow. */
-    {LINE_BULLET, "GRENADE and ROCKET: one shot each, and"},
-    {LINE_BODY, "neither arms itself -- switch to it."},
+    /* All three carried things share the rule, so they share the bullet:
+     * picking one up does not raise it. The sheet has no room to say it three
+     * times, and the page clips at BODY_BOTTOM rather than reflowing, so this
+     * section cannot grow — which is how the flash charge came to be left off
+     * the one list in the book that says what is worth picking up, while the
+     * sheet before this one teaches what it does. */
+    {LINE_BULLET, "GRENADE, ROCKET and FLASH: one each, and"},
+    {LINE_BODY, "none arms itself -- switch to it first."},
     {LINE_GAP, NULL},
     {LINE_HEAD, "ON THE WALL"},
     {LINE_BULLET, "The climb has a strip of its own: height"},
@@ -464,8 +482,21 @@ const ManualPageText MANUAL_PAGES[] = {
      "FIVE OF THEM ARE ON THE OUTSIDE", PAGE(PAGE_MISSION)},
     {"CONTROLS", "KEYBOARD AND GAMEPAD ARE BOTH ALWAYS LIVE",
      "PICK ONE UP AND THE HINTS FOLLOW", PAGE(PAGE_CONTROLS)},
+    /* The caption is a claim about the simulation rather than a label on the
+     * picture — the distinction `MANUAL_SIGHT_CONE_LABEL` is already drawn on —
+     * so it is held: `test_the_on_foot_sheet_spells_the_jump_it_draws`
+     * measures the two widths off the body and requires this line to spell
+     * them, with no list anywhere of which string is right. It read ONE and TWO, which is the same tile the bullet inside the
+     * sheet was short by and the same tile `levels/LEGEND.md` was short by —
+     * the fix landing on the words while the picture beside them kept the old
+     * number is this file's own recurring shape, and it happened here.
+     *
+     * Two and four rather than two and three because both halves have to be
+     * true in any room: three tiles is a jump only with a second open row over
+     * it, and that condition belongs in the bullet, where there is room to say
+     * it. Four is a ladder everywhere. */
     {"ON FOOT", "WHAT THE FLOOR PLAN WILL AND WILL NOT ALLOW",
-     "ONE TILE IS A JUMP. TWO IS A LADDER", PAGE(PAGE_MOVEMENT)},
+     "TWO TILES IS A JUMP. FOUR IS A LADDER", PAGE(PAGE_MOVEMENT)},
     {"FIGHTING", "NOTHING IN THIS BUILDING IS FRIGHTENED OF YOU",
      "BEHIND HIM IS THE SAFEST PLACE", PAGE(PAGE_COMBAT)},
     {"GOING QUIET", "THE OTHER WAY THROUGH A FLOOR FULL OF THEM",
@@ -495,6 +526,26 @@ _Static_assert(sizeof(MANUAL_PAGES) / sizeof(MANUAL_PAGES[0]) ==
 const int CAMPAIGN_CLIMB_SECTORS[] = {3, 7, 11, 13, 15};
 const int CAMPAIGN_CLIMB_SECTOR_COUNT =
     (int)(sizeof(CAMPAIGN_CLIMB_SECTORS) / sizeof(CAMPAIGN_CLIMB_SECTORS[0]));
+
+int campaign_docket_sheets_by(int sector)
+{
+    if (sector < 1)
+        return 0;
+    if (sector > CAMPAIGN_SECTORS)
+        sector = CAMPAIGN_SECTORS;
+    int climbs = 0;
+    for (int i = 0; i < CAMPAIGN_CLIMB_SECTOR_COUNT; ++i)
+        if (CAMPAIGN_CLIMB_SECTORS[i] <= sector)
+            ++climbs;
+    return sector - climbs;
+}
+
+int campaign_docket_sheets(void)
+{
+    /* The whole campaign is the general answer asked about the last sector, so
+     * the two share one rule rather than agreeing by arithmetic. */
+    return campaign_docket_sheets_by(CAMPAIGN_SECTORS);
+}
 
 /* ---- Does it fit? ----------------------------------------------------- */
 

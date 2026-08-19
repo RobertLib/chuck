@@ -41,6 +41,16 @@ wall clock four minutes out. A sentence does not become checked by being in a
 the sentence describing it did not. Anything under `src/` that states a fact
 about the campaign is fair game for a check here.
 
+**And `itch/` was the fourth sweep, which is the one worth being embarrassed
+about.** Every check in this file was anchored to `docs/`, `README.md`,
+`AGENTS.md`, the `Makefile` or a comment under `src/` — so the one page written
+for people who are *not* reading this repository, the store copy a stranger reads
+before playing a second of the game, was held to nothing at all. It states the
+campaign's length, the climb count, the hearts, the size of the crew, two
+readings off the night's clock and the length of the night, which is very nearly
+the complete list of things this script exists for. The campaign has already gone
+from fifteen sectors to seventeen once and taken three pages with it.
+
 Runs from `make lint`, which `make test` depends on, for the reason
 `check_palette.py` does: this is a question about text rather than behaviour, and
 the suite links no SDL and reads no docs.
@@ -69,10 +79,19 @@ WORDS = [
 ]
 
 
+# And the tens, for the one figure the pages spell that is over twenty-four: the
+# length of the night. Composed rather than listed, because a list of sixty words
+# to reach one of them is the kind of table this script exists to argue against.
+TENS = ["", "", "twenty", "thirty", "forty", "fifty"]
+
+
 def spelled(value: int) -> str:
-    if not 0 <= value < len(WORDS):
-        raise SystemExit(f"check_docs: no spelling for {value}")
-    return WORDS[value]
+    if 0 <= value < len(WORDS):
+        return WORDS[value]
+    if 0 <= value // 10 < len(TENS) and TENS[value // 10]:
+        tens, unit = TENS[value // 10], value % 10
+        return tens if unit == 0 else f"{tens}-{WORDS[unit]}"
+    raise SystemExit(f"check_docs: no spelling for {value}")
 
 
 def define_of(name: str, path: Path) -> int:
@@ -89,6 +108,48 @@ def define_of(name: str, path: Path) -> int:
     if match is None:
         raise SystemExit(f"check_docs: could not read {name} from {path.name}")
     return int(match.group(1))
+
+
+def string_define_of(name: str, path: Path) -> str:
+    """The value of a `#define NAME "text"`, for the two that name the save."""
+    match = re.search(rf'^#define {name} "([^"]*)"', path.read_text(), re.M)
+    if match is None:
+        raise SystemExit(f"check_docs: could not read {name} from {path.name}")
+    return match.group(1)
+
+
+def linux_runner() -> str:
+    """Which Ubuntu the Linux payload is linked on, read off the workflow.
+
+    A payload's glibc floor is whatever the machine that linked it had, and
+    `itch/install-instructions.md` tells a Linux player which that is so they can
+    tell whether the download will start at all. The workflow said
+    `ubuntu-latest`, which is a label that moves: the floor would have risen the
+    day GitHub rolled it over, silently, and the sentence would have become a lie.
+    Pinned there, derived here.
+    """
+    text = (ROOT / ".github" / "workflows" / "payloads.yml").read_text()
+    match = re.search(r"runs-on:\s*ubuntu-([0-9]+\.[0-9]+)", text)
+    if match is None:
+        raise SystemExit("check_docs: payloads.yml names no pinned ubuntu runner")
+    return match.group(1)
+
+
+def press_captures() -> tuple[int, int]:
+    """How many stills and how many GIFs tools/press_kit.sh actually takes.
+
+    The same trick `define_of` plays on a header, on a shell script instead: the
+    counts were written into AGENTS.md by hand and the stills had already drifted
+    — the sentence said twenty and the script declares nineteen. A picture count
+    is exactly the shape of claim this file exists for, because adding or cutting
+    one line of press_kit.sh moves it and touches nothing else.
+    """
+    text = (ROOT / "tools" / "press_kit.sh").read_text(encoding="utf-8")
+    stills = len(re.findall(r"^still ", text, re.M))
+    gifs = len(re.findall(r"^animation ", text, re.M))
+    if not stills or not gifs:
+        raise SystemExit("check_docs: no captures found in tools/press_kit.sh")
+    return stills, gifs
 
 
 def bind_row_count() -> int:
@@ -175,12 +236,20 @@ def step_spelled() -> str:
 def minutes_left_at(sector: int) -> int:
     """Whole minutes from `sector`'s dial to the helicopter at 01:00.
 
-    The intel table's sector 11 row is the one line in the game that states a
-    remaining duration, and it is arithmetic on the same constants the dials
-    are. It said TEN when the night divided fifteen ways and the row was read
-    at 00:50; it is read at 00:46 now. Nothing caught it because the row is one
-    of the eleven a window suppresses — measured for width by the suite,
-    reachable by no player, and true of a campaign that no longer exists.
+    The intel table's sector 11 row states a remaining duration, and it is
+    arithmetic on the same constants the dials are. It said TEN when the night
+    divided fifteen ways and the row was read at 00:50; it is read at 00:46 now.
+    Nothing caught it because the row is one of the ten a window suppresses —
+    measured for width by the suite, reachable by no player, and true of a
+    campaign that no longer exists.
+
+    **And this docstring used to open by calling that row "the one line in the
+    game" that does this, which is how the second one went unlooked at for a
+    release.** `crew.c`'s `THREE MINUTES AND THIS ROOF IS SOMEBODY ELSE'S` is
+    the other, it read TWO from a gate where the dial says 00:51, and it went
+    stale in the same edit and for the same reason. A docstring claiming to have
+    enumerated something is the last place anybody recounts; `crew_duration_lines`
+    below is what counts them now, and it counts rather than names.
 
     Derived from the *dial* rather than from the raw minute, for the reason
     `dial` gives: the hand is truncated, so a player standing under sector 12's
@@ -195,12 +264,55 @@ def sector_index(sector: int) -> int:
     return sector - 1
 
 
+# Every line on the net that counts minutes, with the gate it is spoken from.
+#
+# The intel table's row is checked as a string, which is all it needs: which
+# sector reads a row *is* its position in that array, so a row cannot come apart
+# from its sector. A crew line can — the sector is a field beside the words — so
+# what has to agree here is a pair, and checking the words alone would pass the
+# gate being put back to 14 without a murmur.
+#
+# It matches on the shape of the claim rather than on a line anybody listed, so
+# a second clock line on the net is checked by having been written. The tables
+# are `{"TEXT", from_sector, until_sector, after_down, until_down}`, and the
+# number is spelled because every word the crew says is.
+#
+# **Both sector numbers are read, and the first version of this read one.** The
+# pair it held was the number against the dial at the *floor*, which is one of
+# however many sectors the line can actually be heard on — and with no ceiling
+# in the table that was every sector above it. `NINE MINUTES` passed this check
+# while being sayable on 14, 15, 16 and 17, where the dial gives nine, seven,
+# five and three. A duration is true over a window, so what has to agree is the
+# number against the dial at *every* sector inside it.
+CREW_MINUTES = re.compile(
+    r'\{\s*"([^"]*?\b([A-Z][A-Z-]*)\s+MINUTES?\b[^"]*)"\s*,'
+    r'\s*(\d+)\s*,\s*(\d+)\s*,'
+)
+
+
+def crew_duration_lines() -> list[tuple[str, str, int, int]]:
+    """`(line, the number it spells, from_sector, until_sector)`, for each.
+
+    `until_sector` is exclusive and nought is no ceiling, exactly as `crew.c`
+    has it; the caller turns that into the run of sectors to check.
+    """
+    text = (SRC / "crew.c").read_text(encoding="utf-8")
+    return [
+        (match.group(1), match.group(2), int(match.group(3)),
+         int(match.group(4)))
+        for match in CREW_MINUTES.finditer(text)
+    ]
+
+
 # The two hazard weights that have names of their own, read once. The rest of
 # the formula is literals in `level_hazard_budget`; see `hazard_budget` below.
 HEAVY_WEIGHT = define_of("ENEMY_HEAVY_HAZARD_WEIGHT", SRC / "game_config.h")
 CAMERA_WEIGHT = define_of("CAMERA_HAZARD_WEIGHT", SRC / "game_config.h")
 MANUAL_SHEETS = define_of("MANUAL_PAGE_COUNT", SRC / "manual_pages.h")
 BIND_ROWS = bind_row_count()
+# The building, which is not the campaign: seventeen sectors is the route and
+# forty floors is the tower. See the comment on the define.
+BUILDING_FLOORS = define_of("BUILDING_FLOORS", SRC / "game_config.h")
 
 # The dial, from the three constants `draw_wall_clock` reads.
 FIRST_MINUTE = float_define_of("NIGHT_CLOCK_FIRST_MINUTE", SRC / "game_config.h")
@@ -449,6 +561,88 @@ def claimed_sectors(text: str, anchor: str) -> tuple[list[int] | None, str]:
     return [int(n) for n in re.findall(r"\d+", matches[-1].group(1))], ""
 
 
+def veteran_row_detail() -> str:
+    """The VETERAN row's own detail line, out of the table the player reads.
+
+    This one is here because the claim it holds has already been wrong on three
+    pages at once. Two of the veteran mode's three numbers reach a run in
+    progress — the pace on purpose, the lives because
+    `campaign_accept_continue` reads the same flag — and for a release the row
+    said `NEXT RUN`, the comment beside `case SETTING_VETERAN:` said the lives
+    deliberately did not, `docs/screens.md` argued both sides two paragraphs
+    apart, and the suite asserted the live behaviour the whole time. The code
+    and the test were right; every sentence about them was not.
+
+    `test_the_veteran_row_says_when_it_bites` holds the *row* against the
+    simulation. Nothing held the prose, and `README.md` went on describing the
+    old reading for a release after the row was corrected — the same defect one
+    file over, on the page most readers of this repository start at. So the
+    direction is read off the row here, and the pages are required to agree with
+    it in both directions.
+    """
+    table = (SRC / "settings.c").read_text(encoding="utf-8")
+    match = re.search(
+        r'SETTING_VETERAN,\s*"VETERAN",\s*"([^"]*)"', table, re.S
+    )
+    if match is None:
+        raise SystemExit(
+            "docs: could not find the VETERAN row's detail line in "
+            "src/settings.c; this check needs updating"
+        )
+    return match.group(1)
+
+
+def record_label(which: str) -> str:
+    """One of the RECORDS page's row labels, out of the table that owns them.
+
+    Same reasoning as `veteran_row_detail` one function up, and the same defect:
+    a string the player reads, quoted in prose, held by nothing.
+
+    `RECORD_LABELS` in src/run_tally.c is the only home for these four now — it
+    used to have a second copy spelled out in `RECORD_ROWS` in src/settings.c,
+    which was the copy actually drawn and the copy nothing checked, and that is
+    how the third row came to read `FURTHEST FLOOR` over a value that formats as
+    `SECTOR 09`. A floor is not a sector here: `BUILDING_FLOORS` is forty against
+    seventeen sectors, and this script already derives both.
+
+    The suite holds the row (`test_a_record_is_named_once_and_in_its_own_unit`).
+    It cannot see prose, and `docs/screens.md` was found still calling it the
+    furthest *floor* after the row was corrected — a fifth copy of a sentence
+    written up as fixed in four places, which is the failure mode AGENTS.md names
+    outright. So the noun comes off the label.
+
+    `which` is the enumerator name, so the index cannot drift from the order.
+    """
+    source = (SRC / "run_tally.c").read_text(encoding="utf-8")
+    table = re.search(
+        r"RECORD_LABELS\[\]\s*=\s*\{(.*?)\};", source, re.S
+    )
+    order = re.search(
+        r"typedef enum\s*\{(.*?)\}\s*RunTallyRecord;",
+        (SRC / "run_tally.h").read_text(encoding="utf-8"),
+        re.S,
+    )
+    if table is None or order is None:
+        raise SystemExit(
+            "docs: could not read RECORD_LABELS or RunTallyRecord; this check "
+            "needs updating"
+        )
+    names = [
+        m.group(1)
+        for m in re.finditer(r"(RUN_TALLY_RECORD_[A-Z_]+)", order.group(1))
+        if m.group(1) != "RUN_TALLY_RECORD_COUNT"
+    ]
+    labels = re.findall(r'"([^"]*)"', table.group(1))
+    if len(names) != len(labels):
+        raise SystemExit(
+            f"docs: RECORD_LABELS has {len(labels)} entries against "
+            f"{len(names)} record figures; this check needs updating"
+        )
+    if which not in names:
+        raise SystemExit(f"docs: no record figure named {which}")
+    return labels[names.index(which)]
+
+
 def main() -> int:
     grids = sector_grids()
     facades = facade_sectors()
@@ -477,6 +671,23 @@ def main() -> int:
             DOCS / "gameplay.md",
             "two medkits apiece",
             sectors_where(interiors, "K", lambda n: n == 2),
+        ),
+        # Which floors a console can actually call anybody onto. The rule in
+        # LEGEND.md is conditional — two men per `T`, "and only if it has a door
+        # at all, since that is where an arrival comes from" — and the condition
+        # was stated correctly and never counted, so nobody knew it lands on
+        # three floors of the eight that carry a console. On the other five the
+        # console is a lock to pick and the alarm costs nothing extra. That is a
+        # defensible shape and it is now a claim rather than a surprise.
+        (
+            "floors a console can call reinforcements onto",
+            LEVELS / "LEGEND.md",
+            "and on no others, because the rest of the floors carrying a `T`",
+            sorted(
+                n
+                for n, grid in interiors.items()
+                if grid.count("T") > 0 and grid.count("D") > 0
+            ),
         ),
         # Which floors carry the one answer to having already been seen. It was
         # prose nowhere at all until sector 16 was found without a charge — the
@@ -531,6 +742,20 @@ def main() -> int:
             "every restroom hands out the grenade the campaign's own budget",
             sectors_where(interiors, "K", lambda n: n == 2),
         ),
+        # And there was a *third* copy of that sentence, which is the part worth
+        # keeping. The entry above was added when the source comment was found
+        # stale; the test that covers the rule repeats the same paragraph, and it
+        # went on saying `10, 12 and 15` for another release. The script already
+        # read this file and already knew this phrase — what was missing was
+        # nothing but the two lines below. A fix that lands on one copy of a
+        # sentence and a check that lands with it is how the *other* copies stop
+        # being looked at.
+        (
+            "sectors with two medkits, said in the test that covers the rule",
+            TESTS / "test_main.c",
+            "every restroom hands out the grenade the campaign's own budget",
+            sectors_where(interiors, "K", lambda n: n == 2),
+        ),
         # And a sector list in a test's comment is prose for the same reason one
         # in a source comment is. These two say which floors the mechanic the
         # test covers is actually on, which is the argument for the test
@@ -550,6 +775,47 @@ def main() -> int:
             "and the same was true of every one of those",
             sectors_where(grids, "F", lambda n: n > 0),
         ),
+        # And the *other two* copies of the moving-platform list, which is the
+        # part worth keeping. The entry above holds the one in the test, and the
+        # sentence is written down three times: `levels/LEGEND.md` argues that a
+        # one-floor mechanic is a decision, and a comment on the manual's
+        # movement sheet explains why the sheet does not list a platform beside
+        # the ladder and the lift shaft. The comment said `sector 5 and sector 17`
+        # — the maps say three floors — so the page that a player's own sheet is
+        # justified from was the stale one, and it was the copy nothing read.
+        #
+        # Both had to be reworded to be checkable at all: `SECTOR_LIST` needs the
+        # word in front of the numbers, and neither sentence had it. That is the
+        # cost of holding a list written in prose, and it is cheaper than the list
+        # being wrong.
+        (
+            "sectors with a moving platform, said on the authoring page",
+            LEVELS / "LEGEND.md",
+            "with a single panel each",
+            sectors_where(grids, "P", lambda n: n > 0),
+        ),
+        (
+            "sectors with a moving platform, said beside the sheet that omits it",
+            SRC / "manual_pages.c",
+            "a tile each",
+            sectors_where(grids, "P", lambda n: n > 0),
+        ),
+        # The two lists in the same LEGEND.md sentence, held while the paragraph
+        # is open. Both were correct; a mechanic that belongs to one floor is a
+        # mechanic one map edit away from belonging to two, and this paragraph's
+        # entire argument is the count.
+        (
+            "sectors with trunking",
+            LEVELS / "LEGEND.md",
+            "alone, lift shafts",
+            sectors_where(grids, "=", lambda n: n > 0),
+        ),
+        (
+            "sectors with a lift shaft",
+            LEVELS / "LEGEND.md",
+            "and never again, moving platforms",
+            sectors_where(grids, "V", lambda n: n > 0),
+        ),
         # The `J` list, which was true and unpinned: it is the one sentence in
         # `story.md` that decides where a visual-only NPC may stand, and the
         # difference between it and the receptionist's rule is the whole
@@ -558,6 +824,28 @@ def main() -> int:
             "sectors with a janitor",
             DOCS / "story.md",
             "which is a civilian still working at",
+            sectors_where(grids, "J", lambda n: n > 0),
+        ),
+        # And the crate half of the same paragraph, on the authoring page. The
+        # entry above holds where a `J` may *stand*; this holds the floors where
+        # standing there put him inside a box, which is the argument for the rule
+        # the paragraph goes on to state. Two claims about the same character in
+        # two pages, and only one of them was ever derived.
+        (
+            "sectors with both a janitor and a crate",
+            LEVELS / "LEGEND.md",
+            "the top four pixels of his head",
+            sectors_where(grids, "J", lambda n: n > 0),
+        ),
+        # And the count the test asserts is the same list said in words, which is
+        # the third copy. `CHECK(floors == 6)` is five sectors and a washroom, so
+        # the number cannot be derived here — the sectors in the sentence beside
+        # it can be, and a map that gains a `J` fails this before it fails the
+        # count.
+        (
+            "sectors with both a janitor and a crate, said in the test",
+            TESTS / "test_main.c",
+            "a map that gains a janitor is measured by having gained one",
             sectors_where(grids, "J", lambda n: n > 0),
         ),
         # The restrooms, which is the sector list the README has always carried
@@ -598,13 +886,231 @@ def main() -> int:
     # the sentence said before this was written.
     platform_floors = len(set(sectors_where(grids, "P", lambda n: n > 0)) |
                           set(sectors_where(grids, "F", lambda n: n > 0)))
+
+    # The rocket rota, on the sheet a player reads.
+    #
+    # `AGENTS.md` filed this as "a sector list nothing holds", left it, and
+    # closed by saying that the day a rocket moved this was the sentence that
+    # would go stale first. It was wrong twice over: `check_campaign_position` in
+    # `editor/editor_validate.c` has refused any interior whose bazooka count is
+    # not `number % 2 == 0` as an ERROR since long before that note was written,
+    # and the suite holds the shipped campaign to nought errors — so a rocket
+    # cannot move at all without failing `make test`, let alone move quietly. A
+    # note reporting an absence of cover it *has* is the mirror of a rationale
+    # reporting agreement it has not, and it costs the same thing: the item goes
+    # on the list of known holes and nobody looks at it again.
+    #
+    # What genuinely was not held is the direction that note did not consider:
+    # the rule and the *wording* are two copies, and changing the rota would
+    # leave the sheet describing the old one. So the phrase is derived from the
+    # maps the editor pins, and a rota that stops being "even sectors only" is
+    # reported with the list it has become — because no wording is automatically
+    # right for that and the author has to pick one.
+    rocket_sectors = sectors_where(grids, "Z", lambda n: n > 0)
+    even_interiors = [n for n in sorted(interiors) if n % 2 == 0]
+    if (rocket_sectors == even_interiors
+            and all(interiors[n].count("Z") == 1 for n in rocket_sectors)):
+        rocket_rota = "BAZOOKA: one rocket, even sectors only."
+    else:
+        rocket_rota = ("BAZOOKA: one rocket on sectors "
+                       + ", ".join(str(n) for n in rocket_sectors) + ".")
     terminals = terminal_facts(grids)
 
     # Claims that are a number in a sentence rather than a list of sectors, so
     # `claimed_sectors` cannot see them. Each entry is an anchor that proves the
     # sentence is still there, and the phrases that sentence has to contain.
     # A phrase that has gone missing is reported with what the maps say instead.
+    press_stills, press_gifs = press_captures()
+
+    # The store page's own numbers, and the reason this block exists: the copy in
+    # itch/ is the most public prose in the project — the text a stranger reads
+    # before they have played a second of it — and until now nothing in the tree
+    # scanned that directory at all. Every check in this script was anchored to
+    # docs/, README.md, AGENTS.md, the Makefile or a comment under src/. So the
+    # one page written for people who are not reading the repository was the one
+    # page held to nothing, and it states the campaign's length, the climb count,
+    # the hearts, the size of the crew and two readings off the night's clock —
+    # which is the whole list of things this file was written for. The campaign
+    # has already gone from fifteen sectors to seventeen once and taken three
+    # pages with it.
+    hearts = define_of("PLAYER_MAX_HP", SRC / "game_config.h")
+    crew = define_of("CREW_SIZE", SRC / "crew.h")
+    night_minutes = int(float_define_of("NIGHT_CLOCK_TOTAL_MINUTES",
+                                       SRC / "game_config.h"))
+    # The hour the night ends on. `dial()` cannot say it — it formats `00:MM`,
+    # because every sector of the game happens inside that hour — and this is the
+    # one reading on the far side of it.
+    end_minute = int(FIRST_MINUTE) + night_minutes
+    app_org = string_define_of("CHUCK_APP_ORG", SRC / "version.h")
+    app_title = string_define_of("CHUCK_APP_NAME", SRC / "version.h")
+    macos_floor = re.search(
+        r"MACOS_MIN_VERSION:-([0-9]+)\.",
+        (ROOT / "packaging" / "build_macos.sh").read_text(),
+    )
+    if macos_floor is None:
+        raise SystemExit("check_docs: no MACOS_MIN_VERSION in build_macos.sh")
+    macos_floor = macos_floor.group(1)
+    deadline = f"{end_minute // 60:02d}:{end_minute % 60:02d}"
+
     phrase_checks = [
+        # What a player is told about the download, on the one page they read
+        # after downloading it. Both of these are owned somewhere else — the
+        # deployment floor by the build script, the glibc floor by the workflow's
+        # runner — and both were typed here by hand.
+        (
+            "the macOS floor a player is told about",
+            ROOT / "itch" / "install-instructions.md",
+            "drag `Chuck.app` wherever you keep applications",
+            [f"Needs macOS {macos_floor} or newer"],
+        ),
+        (
+            "the Linux build's own distribution",
+            ROOT / "itch" / "install-instructions.md",
+            "holds the SDL3 this build was made against",
+            [f"Built on Ubuntu {linux_runner()} for x86_64"],
+        ),
+        # Where the save lives, in the one sentence a player reads to delete it.
+        # `CHUCK_APP_ORG` and `CHUCK_APP_NAME` are version.h's to own, and this
+        # page spells the pair three times over.
+        (
+            "the save folder a player is told about",
+            ROOT / "itch" / "install-instructions.md",
+            "Settings and progress live in one folder and nowhere else",
+            [
+                f"`~/Library/Application Support/{app_org}/{app_title}` on "
+                f"macOS",
+                f"`%APPDATA%\\{app_org}\\{app_title}` on Windows",
+                f"`~/.local/share/{app_org}/{app_title}` on Linux",
+            ],
+        ),
+        # The night, as the shop window states it. `dial(1)` is the front door
+        # and the hour the bonds leave is that plus the whole night, which is
+        # the same arithmetic the wall clock in the game does.
+        (
+            "the store page's clock",
+            ROOT / "itch" / "page.md",
+            "Chuck follows them across a cordon he does not yet understand",
+            [f"front door at {dial(1)}"],
+        ),
+        (
+            "the store page's deadline",
+            ROOT / "itch" / "page.md",
+            "That is why they needed Ellen",
+            [f"At {deadline} the bonds leave the roof."],
+        ),
+        (
+            "the store page's campaign length",
+            ROOT / "itch" / "page.md",
+            "## What you actually do",
+            [f"{spelled(len(grids)).capitalize()} sectors between the lobby "
+             f"and the roof"],
+        ),
+        (
+            "the store page's climb count",
+            ROOT / "itch" / "page.md",
+            "The stair door is welded, the way\non is an open window",
+            [f"**{spelled(len(facades)).capitalize()} sectors that are not "
+             f"walked at all.**"],
+        ),
+        (
+            "the store page's crew",
+            ROOT / "itch" / "page.md",
+            "run this night like a shift",
+            [f"{spelled(crew).capitalize()} men run this night"],
+        ),
+        (
+            "the store page's hearts",
+            ROOT / "itch" / "page.md",
+            "## What it remembers",
+            [f"{spelled(hearts).capitalize()} hearts a life"],
+        ),
+        (
+            "the store page's record sheet",
+            ROOT / "itch" / "page.md",
+            "the quickest each sector has ever been cleared",
+            [f"all {spelled(len(grids))} readable on one sheet"],
+        ),
+        # The two counts on this page that were spelled out and derived nowhere,
+        # both of them currently right and neither of them held. The manual's
+        # sheet count is derived for `docs/screens.md` and `README.md` further
+        # down and was simply never asked of the shop; the controls count has six
+        # entries of its own below and the store page was not one of them. A page
+        # written for people who are not reading the repository is the last place
+        # a stale number should survive, and it was the only page where both
+        # could.
+        (
+            "the store page's controls",
+            ROOT / "itch" / "page.md",
+            "## Set up how you want to play it",
+            [f"Every one of the {spelled(BIND_ROWS)} sector controls rebinds"],
+        ),
+        (
+            "the store page's manual",
+            ROOT / "itch" / "page.md",
+            "on the title screen explains the crew",
+            [f"A **{spelled(MANUAL_SHEETS)}-sheet illustrated field manual**"],
+        ),
+        #
+        # The building's height, in the four places that are prose or a string.
+        #
+        # `docs/story.md` spends a paragraph on this number insisting it "is
+        # stated in four places that have to agree" — a paragraph that had itself
+        # said *three* and left the credits roll out, which is how the roll came
+        # to state the campaign's length from memory as well. That half got a
+        # check; the height got the paragraph, and there are six places rather
+        # than four. Two of them are tables on the SDL-free side and belong to
+        # `test_the_tower_is_one_height_everywhere_it_is_said`. These are the
+        # other four, and the tagline is the one that matters most: it is the
+        # first line of the game and the first line of the shop.
+        #
+        # Kessler Tower is forty floors and the campaign is seventeen sectors,
+        # and the two are deliberately not derived from each other — a sector is a
+        # stretch of the climb, not a storey — which is exactly why the pair drifts
+        # in prose. `BUILDING_FLOORS` is the authority now.
+        (
+            "the tower's height, on the title screen",
+            SRC / "intro.c",
+            "const char *line =",
+            [f'"{spelled(BUILDING_FLOORS).upper()} FLOORS. ONE WAY UP."'],
+        ),
+        (
+            "the tower's height, on the README",
+            ROOT / "README.md",
+            "armed men have sealed from within",
+            [f"{spelled(BUILDING_FLOORS)}-storey tower"],
+        ),
+        (
+            "the tower's height, on the store page",
+            ROOT / "itch" / "page.md",
+            "# Chuck",
+            [f"**{spelled(BUILDING_FLOORS).capitalize()} floors. One way up.**"],
+        ),
+        (
+            "the tower's height, in the tagline",
+            ROOT / "itch" / "README.md",
+            "Short description / tagline",
+            [f"{spelled(BUILDING_FLOORS).capitalize()} floors, one way up"],
+        ),
+        # And the tagline, which is the one line of this project most people
+        # will ever read. The night is a constant; the sentence spells it.
+        (
+            "the tagline's clock",
+            ROOT / "itch" / "README.md",
+            "Short description / tagline",
+            [f"{spelled(night_minutes)} minutes"],
+        ),
+        # The press kit's own inventory, in the one place that states it: the
+        # command list every session reads. It said twenty stills against a
+        # script that declares nineteen, which is a number in prose that had
+        # already drifted — and the whole of the argument for this script.
+        (
+            "the press kit's inventory",
+            ROOT / "AGENTS.md",
+            "make press    # photograph the game",
+            [
+                f"{press_stills} stills, {press_gifs} GIFs",
+            ],
+        ),
         # The docket's size, spelled as a figure on the page that argues for the
         # collection and printed as one on both screens between sectors. It is
         # one sheet to an interior and none on a climb
@@ -623,9 +1129,38 @@ def main() -> int:
         # seven — one sector carries both — which is the arithmetic slip this
         # half of the script exists for.
         (
+            "the rocket rota, on the sheet a player reads",
+            SRC / "manual_pages.c",
+            "BAZOOKA:",
+            [rocket_rota],
+        ),
+        (
             "how many floors carry a platform",
             ROOT / "Makefile",
             "which is the fallback that keeps a reinforcement",
+            [f"`P` and `F` are on {spelled(platform_floors)} shipped floors"],
+        ),
+        # And the same sentence, word for word, in `AGENTS.md` — which is where
+        # it was written first and which this check did not read. Removing sector
+        # 9's panels took the count from seven to six, the entry above caught the
+        # `Makefile`'s copy, the fix landed on it, and the copy on the page every
+        # session loads in full went on saying seven for a release: a check that
+        # holds one copy of a sentence written down twice is how the other copy
+        # stops being looked at, which is this file's oldest defect wearing its
+        # own diagnostic's clothes.
+        #
+        # A "must contain" is enough here only because the phrase now has exactly
+        # one home in that file. The write-up of the sector 9 pass used to quote
+        # the `Makefile`'s old wording verbatim, so the flattened page carried
+        # both spellings and this check would have passed with the live claim
+        # still stale — the `veteran_row_detail` trap, reached by a page
+        # explaining its own history. That quotation names the count instead of
+        # spelling it.
+        (
+            "how many floors carry a platform, said again on the page every "
+            "session loads",
+            ROOT / "AGENTS.md",
+            "A function is not reached because its file is linked",
             [f"`P` and `F` are on {spelled(platform_floors)} shipped floors"],
         ),
         # The dog count, written into the paragraph that explains why a fallen
@@ -1004,6 +1539,21 @@ def main() -> int:
                 f"{spelled(minutes_left_at(12)).upper()} MINUTES.",
             ],
         ),
+        # And the page that *quotes* that row, which is the copy nothing held.
+        #
+        # `docs/story.md` cites it in the middle of the argument for the report
+        # having a clock on it at all — and it went on saying TEN for a release
+        # after the row itself was corrected to the dial's own arithmetic, with
+        # the entry above added in the same commit. A fix that lands on one copy
+        # of a sentence, and a check that lands with it, is how the other copies
+        # stop being looked at; this script's own list has that written on it
+        # three times already.
+        (
+            "what the page quoting that row says is left",
+            DOCS / "story.md",
+            "the line\nafter sector eleven says",
+            [f"says {spelled(minutes_left_at(12)).upper()} MINUTES"],
+        ),
     ]
 
     failures = 0
@@ -1056,6 +1606,107 @@ def main() -> int:
                 print("      it does not; the prose has fallen behind what it "
                       "describes")
                 failures += 1
+
+    # The veteran mode's reach, in both directions, off the row itself. See
+    # `veteran_row_detail`: "must contain" alone would pass a page that said both
+    # things, which is precisely the state `docs/screens.md` was found in.
+    #
+    # Each entry carries the string it was derived *from*, because the
+    # diagnostic quotes it. The first draft of the records entry below shared
+    # this list's single `detail` variable and therefore reported the VETERAN
+    # row's sentence as its authority — a message that sends the reader to the
+    # wrong file to fix the right bug, which is this repository's own recurring
+    # defect wearing a diagnostic's clothes. One source per claim.
+    detail = veteran_row_detail()
+    bites_now = "THIS RUN" in detail
+    row_checks = [
+        (
+            "when the veteran switch bites, on the page a stranger reads first",
+            ROOT / "README.md",
+            "The options sheet has one switch that runs the other way from the "
+            "assists",
+            "it takes hold in the run you are already in" if bites_now
+            else "waits for the next run",
+            "waits for the next run" if bites_now
+            else "it takes hold in the run you are already in",
+            f"the VETERAN row reads {detail!r}",
+        ),
+    ]
+    # And what the RECORDS page calls its third figure, off the label itself.
+    # See `record_label`: the row reports a sector, the tower is measured in
+    # floors, and the two are different numbers — so the page has to use the
+    # row's noun and must not use the other one.
+    furthest = record_label("RUN_TALLY_RECORD_FURTHEST")
+    says_sector = "SECTOR" in furthest.upper()
+    row_checks.append(
+        (
+            "what the RECORDS page calls the figure it reports",
+            DOCS / "screens.md",
+            "It carries four readouts",
+            "the furthest sector" if says_sector else "the furthest floor",
+            "the furthest floor" if says_sector else "the furthest sector",
+            f"the RECORDS row is labelled {furthest!r}",
+        )
+    )
+
+    for what, doc, anchor, wanted, forbidden, source in row_checks:
+        if not doc.exists():
+            print(f"docs: {doc.relative_to(ROOT)} is missing")
+            failures += 1
+            continue
+        flat = flattened(doc)
+        if re.sub(r"\s+", " ", anchor) not in flat:
+            print(f"docs: {doc.relative_to(ROOT)}: {what}: "
+                  f"anchor not found: {anchor!r}")
+            print("      the sentence moved or was reworded; update this check")
+            failures += 1
+            continue
+        phrases_checked += 1
+        if re.sub(r"\s+", " ", wanted) not in flat:
+            print(f"docs: {doc.relative_to(ROOT)}: {what}")
+            print(f"      {source}, so the page should say:")
+            print(f"        {wanted!r}")
+            failures += 1
+        if re.sub(r"\s+", " ", forbidden) in flat:
+            print(f"docs: {doc.relative_to(ROOT)}: {what}")
+            print(f"      {source}, so the page must not say:")
+            print(f"        {forbidden!r}")
+            failures += 1
+
+    # And the net's own clock, held as a pair rather than as a string: the
+    # number a line spells against the dial at every sector it can be said in.
+    # See `crew_duration_lines` for why the intel table needs no such pair and
+    # this does, and for why the window rather than its floor is the subject.
+    duration_lines = crew_duration_lines()
+    if not duration_lines:
+        # The regex found nothing at all, which is a check that has stopped
+        # checking rather than a table that has stopped claiming. Louder than a
+        # pass, for the reason `check_lists.py`'s empty-set guard exists.
+        print("docs: src/crew.c: no line on the net counts minutes any more; "
+              "this check has lost its subject")
+        failures += 1
+    for line, spelling, gate, ceiling in duration_lines:
+        phrases_checked += 1
+        last = (ceiling - 1) if ceiling else NIGHT_SECTORS
+        wrong = [
+            sector
+            for sector in range(max(gate, 1), last + 1)
+            if spelled(minutes_left_at(sector)).upper() != spelling
+        ]
+        if not wrong:
+            continue
+        print(f"docs: src/crew.c: what the net says is left")
+        print(f"      {line!r}")
+        readings = ", ".join(
+            f"sector {sector} reads {dial(sector)} and has "
+            f"{spelled(minutes_left_at(sector)).upper()!r} left"
+            for sector in wrong
+        )
+        print(f"      says {spelling!r} but is sayable on sectors "
+              f"{max(gate, 1)}-{last}, where {readings}")
+        print(f"      a duration is true over a window: give the line an "
+              f"`until_sector` that closes before the number stops being true")
+        failures += 1
 
     if failures:
         print(f"docs: {failures} claim(s) disagree with what they describe")

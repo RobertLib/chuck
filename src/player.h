@@ -123,7 +123,26 @@ typedef struct
     float anim_time;       /* local visual animation clock */
     float action_timer;    /* short attack/throw follow-through timer */
     bool knife_attacking;  /* current action is a close-range knife swing */
-    bool grenade_throwing; /* current action is a grenade throw */
+    bool grenade_throwing; /* current action is an underarm throw */
+    /*
+     * Which of the three underarm throwables left the hand, for the one frame
+     * of the pose that draws the object still in it.
+     *
+     * `grenade_throwing` is deliberately shared by all three — it is one
+     * animation, a man lobbing something, and a second flag for the same
+     * drawing would be a second thing every path that ends an action has to
+     * clear. That argument is right about the *pose* and was quietly wrong
+     * about the *prop*: the ladder throw draws what is in the hand, and it drew
+     * a grenade whether Chuck was throwing a grenade, a flash charge or a bolt
+     * — with `draw_flashbang`'s own comment two files over insisting the two
+     * have to be told apart at a glance, "because one of the two is about to
+     * kill whoever is standing next to it".
+     *
+     * It is not a second thing to clear, which is the whole reason it is a
+     * value rather than a flag: it is read only while `grenade_throwing` is
+     * true, so whatever ends the action ends this with it.
+     */
+    PlayerWeapon throwing_weapon;
     bool bazooka_firing;   /* current action is the bazooka launch recoil */
     int shot_vertical;     /* -1 = last attack went up, +1 = down, 0 = horizontal */
 } Player;
@@ -140,9 +159,14 @@ void player_reset(Player *player, const Level *level);
 /* Opening a sector: a reset, plus whatever the sector below is allowed to hand
  * over. `previous` is the man who walked out of it, or NULL when nobody did —
  * the first sector of a run, a retry after a continue, or an authored jump
- * straight into a map. See player.c for why only the explosives travel. */
+ * straight into a map. See player.c for why only the carried things travel. */
 void player_begin_sector(Player *player, const Level *level,
                          const Player *previous);
+/* The other doorway: a death and the restroom door, which hand over the clip
+ * and the weapon in the hand on top of what a sector boundary carries. Both of
+ * them are the same man carrying on rather than a sector opening; see player.c
+ * for why the two rules share their agreement instead of restating it. */
+void player_carry_loadout(Player *destination, const Player *source);
 /* Returns the downward speed immediately before collision resolution, so the
  * caller can classify a landing that occurred on any kind of platform. */
 float player_update(Player *player, Level *level, const Input *input, float dt);

@@ -4,9 +4,9 @@
 
 Everything the player is allowed to decide is one struct and one table, both in
 [settings.c](../src/settings.c) / [settings.h](../src/settings.h): two audio levels,
-fullscreen, the CRT filter, reduced motion, the three assist switches, the
-veteran run, the row that throws the records away, and — on
-a second page — which key does what. The sheet opens
+fullscreen, the CRT filter, reduced motion, the three assist switches and the
+veteran run, and — on two further pages — which key does what, and the row that
+throws the records away. The sheet opens
 from the title screen or from pause (`J`, or X on a pad) and returns to
 whichever opened it. It replaced a three-switch assist sheet, an `M` key and a
 fullscreen key that were the whole of the game's settings, and four decisions
@@ -74,13 +74,34 @@ one in the table that is not: the cursor, the renderer and
 no other row has. Somebody who wants the hard run on their first night can have
 it, and the heading says who it is for.
 
-**The pace reaches a sector already running and the lives do not.** A switch
+**The pace reaches a sector already running, and so do the lives.** A switch
 that only took effect at the next doorway would be a setting the player cannot
-see having changed anything; but the lives and the continues are handed out by
-`campaign_reset` at the start of a run, and reaching back into one in progress
-to take two lives off somebody would be the only thing on this sheet that costs
-a player something they already had. The row's detail line says `NEXT RUN` for
-exactly that reason.
+see having changed anything, so `apply_assist_to_state` puts both
+`state->veteran` and `campaign->veteran` on the sheet in both directions. Only
+`continues_remaining` waits for a new run, because that one is
+`campaign_reset`'s alone.
+
+**This page said the opposite of that two paragraphs earlier, and the sheet
+believed it.** The passage here read "the pace reaches a sector already running
+and the lives do not", argued that reaching into a run to take two lives off
+somebody would be the only thing on this sheet that costs a player something
+they already had, and cited the row's own `NEXT RUN` as proof — while the
+paragraph above it, on the same page, explained that the flag lives on
+`CampaignState` precisely so a *continue* can ask it. Both cannot be true.
+`campaign_accept_continue` reads the flag, so flipping VETERAN on mid-run cuts
+the next continue from `PLAYER_LIVES` to `VETERAN_LIVES`: one flip, one death,
+two lives gone, on the promise that nothing would happen until the next run.
+`test_the_veteran_run_is_three_numbers_and_no_more` had been *asserting* that
+behaviour the whole time, so the suite and this page disagreed in the same tree
+and the row sided with the page. It says `THIS RUN TOO` now.
+
+Two things are worth keeping from it. The first is that **the sheet is the only
+one of the three that a player reads**, which makes a wrong word there worse
+than a wrong comment — the same reason the `$A` pad cap further down this page
+mattered more than any of the code around it. The second is that a comment which
+cites a user-facing string as its justification has quietly made that string
+part of the invariant; there was nothing holding the two together, and the
+argument read as a check for as long as anybody skimmed it.
 
 **Assist reaches the simulation as it always did.** The three switches live in
 `Settings.assist`, and only two of them ever reach the gameplay core: they are
@@ -137,14 +158,65 @@ its shake when it always did and nothing but the camera can tell.
 
 ## The controls page
 
-**Which key does what is a second page of the options sheet rather than a
-section of the first, and the reason is arithmetic.** The plate is sized from
-its rows and the main page already stands 516px tall inside a 552px frame; nine
-controls with two keys apiece do not go in the 36px that are left. So they are a
-page reached from a row, the way the manual and the options sheet are siblings
-off the title screen — and the sheet now squeezes its rows if a page would still
-leave the frame, which keeps "a new section costs no layout" true in the
-direction it had quietly stopped being true in.
+**Which key does what is a page of the options sheet rather than a section of
+the main one, and the reason is arithmetic.** The plate is sized from its rows
+and the frame is 552px tall, of which the title, the strap, the footer and the
+margin take about 120 — so a page is roughly eight rows and four headings before
+it has to start squeezing them. So nine controls with two keys apiece, and two pad
+buttons beside them, do not go on the end of the main page: they are a page
+reached from a row, the way the manual and the options sheet are siblings off the
+title screen.
+
+**And the records are the third page, which arrived the other way round and is
+the reason the arithmetic above is now measured rather than asserted.** That
+section was *added* to the main page, took it to 716px against a 536px budget,
+and the squeeze meant to absorb that scaled the value rows and then took the
+scale off the headings as well — which cannot be done, because a heading's height
+is its rule plus its sentence. So the plate came out about 50px shorter than the
+rows laid on it: the RECORDS strap was printed through the footer prompt, and
+`RESET RECORDS` and its detail line were drawn below the plate and off the
+bottom of the screen. On every machine, because the renderer's presentation is
+logical and fixed at `VIEW_W`×`VIEW_H`, and in the still the store page is cut
+from.
+
+Two things came out of it. The layout is `settings_page_layout` in
+[settings.c](../src/settings.c) now rather than arithmetic inside the renderer,
+which is the same rule every table of words in this game keeps — the geometry
+lives where `make test` can reach it — and
+`test_every_page_of_the_options_sheet_fits_the_frame_it_is_drawn_in` adds the
+axis nothing had ever measured. The width check beside it is called "every word
+… fits the plate" and had always asked about one axis of two.
+
+**And then somebody asked how much room was left, which `fits` cannot answer.**
+It is a cliff: true for every page since the split, and silent about how close
+the edge is. Measured, the main page was *at* it — one spare value row, and
+**none** with the mute warning up, drawn at a squeeze of 0.68 against a floor of
+0.6, which is about 4px of air between a detail line and the label under it where
+the design allows 17. The gate does fire on the row that would break it, in the
+muted state, one release before a player could see anything; what it cannot do is
+tell the next person adding a row that they are adding it to a full page. So the
+layout answers `spare_rows` as well, the header states the figures, and the fit
+test checks the number against the function rather than restating it — a page with
+`spare_rows` in hand must still fit a frame that much shorter and must not fit one
+shorter still, since a row costs a *squeezed* row rather than a whole one.
+
+**DIFFICULTY is the fourth page, and it is the split that paragraph asked for.**
+What it said the page needed was another split and that the choice of *which*
+rows was "a decision about what a player should see rather than something a check
+can make" — so the check kept reporting one spare row for a release while the
+decision waited. ASSIST and CHALLENGE came off together rather than one at a time,
+because they are one question asked in both directions: `gameplay_enemy_speed_scale`
+reads both switches and resolves them against each other, the comment on
+`ChallengeOptions` calls veteran "the other direction", and a sheet holding one of
+the two would answer half of "how hard do you want this". The main page keeps what
+a player changes on the way past — the two levels and the three display switches —
+and carries a row down to each of the other three pages, under a heading of its
+own. `CONTROLS` used to hang off the end of DISPLAY and `RECORDS` off the end of
+CHALLENGE, which put two "this opens another sheet" rows inside two sections about
+something else: a grouping nobody chose, arrived at because there was no room for
+a fourth heading. Measured after the split, the main page has **six** spare value
+rows and no squeeze at all in either state — 502px of plate against a 552px
+frame, or 516 with the mute warning up.
 
 Five decisions carry it.
 
@@ -166,6 +238,32 @@ finger finds and leaving B inert mid-sector read as a dead button.
 `keybind_defaults` reproduces exactly what the two hard-coded paths used to do,
 because a rebindable pad that quietly moved a button on first launch would be a
 regression wearing a feature's clothes.
+
+**And "two keys, then two buttons" is the order they are drawn in, which for a
+release they were not.** The caret is one number — `settings_bind_slot`, stepped
+by left and right — and slots 0 and 1 are the keys. The renderer pinned the
+*keyboard's* pair to the right margin and put the pad's to its left, under a
+comment saying that made a row read keys-then-buttons "in the order the caret
+walks them". So the page opened with the caret on the third cap from the left,
+LEFT was refused at slot 0 while two caps sat beside the label, and the two the
+caret reached last were the two drawn first. The heading over the page said one
+thing, the manual's own `CONTROLS` sheet drew the other, and the two screens
+disagreed for as long as nobody counted — which is this tree's most reliable
+smell and the one it keeps finding on sheets rather than in simulations.
+
+Nothing could have caught it. The fit check measures the run's *width* and the
+order does not change it; the soak sweep drew the frame every run, and a counter
+cannot tell a frame that was drawn from a frame anybody could read. What makes it
+checkable is that the geometry moved to
+[settings.c](../src/settings.c) — `settings_bind_caps`, beside
+`settings_page_layout`, which had moved there for the same reason one release
+earlier — and `test_the_binding_caps_run_left_to_right` asks the property rather
+than the numbers: cap `i + 1` starts right of where cap `i` ends, the keys come
+first, the two groups are further apart than two caps of one group, and the run
+finishes on the margin it was handed. The check that used to measure the run laid
+it out a second time, "exactly as `draw_setting_keys` lays it out"; it asks the
+one function now, because two copies of a layout is the arrangement every drifted
+pair in this repository started as.
 
 **A face binding is stored as a letter and only becomes a position when it is
 read**, and getting that backwards would undo the fix
@@ -294,6 +392,23 @@ from one to the other instead of off the end of both, and
 `test_the_sector_tally_fits_the_frame_it_is_drawn_in` measures the widest line
 any run can make against the frame in [sector_tally.h](../src/sector_tally.h).
 
+**And the same argument had one more thing on the suppressed screen that this
+fix walked straight past.** The report carries a *line of the plot* as well as
+the numbers, and `TRANSITION_INTEL` is sixteen rows against six reports — so ten
+story beats were in exactly the state the eleven records above were described as
+being in, and the paragraph rescuing the records did not look up. Fixing one half
+of a symmetric defect is the most reliable way to stop anybody looking at the
+other half, and this is that, one file over from where the page already says so.
+The tally carries the sentence too now, in the report's own grey above the amber
+numbers, and the assertion is about *reach* rather than width: every row of the
+table either shows a report or rides the tally. The band grows away from
+whichever neighbour it has — upward off the bottom edge on a reveal, downward
+under the verdict on the cleared card — and getting that wrong the first time
+printed the sentence straight through `SHE IS TWENTY FEET AWAY` on a frame no
+test could see and no run reaches. `--screen reveal` is in the soak sweep so the
+other placement is drawn by something too: a placement is not covered because
+its twin is.
+
 Two properties of it are the rest of this section's rules, restated for a value
 that is not an integer. It is **banked on every way out of a sector** — the
 stair door, the window onto a climb, and the last floor of all — because a
@@ -315,19 +430,109 @@ A run that spent one sector on infinite lives banks no score, no sector time and
 no docket. That is not tidiness: a par set with infinite lives is a par nobody can
 beat honestly, and the player who set it was never told they had stopped competing
 — which is the same complaint this section makes about a stopwatch nobody can
-measure themselves against, one turn further on. The RECORDS heading on the
-options sheet states the rule, the game-over card and the outro print `SCORE n -
+measure themselves against, one turn further on. The RECORDS page of the
+options sheet states the rule in its strap, the game-over card and the outro print `SCORE n -
 ASSIST, NOT RECORDED` instead of a best, and `THE RECORD` sheet in the manual says
-it a third time where the numbers themselves are read. **`furthest_sector` is
+it a third time where all seventeen numbers are read.
+
+**And the RECORDS page shows the figures, which for a release it did not.** Its
+strap listed the three things the game keeps and the only other row on it offered
+to delete all of them, so the one screen in the game whose whole subject is the
+records was the one screen that would not print one — they were readable on the
+manual's `THE RECORD` sheet and nowhere else, and the destructive row was asking
+"are you sure" about numbers the player could not see. It carries four readouts
+now: the best score, the docket out of `campaign_docket_sheets`, the furthest
+sector, and how many of the seventeen sectors have a time on them at all — which
+is the line that says there is a grid of them to go and look at. The seventeen
+themselves stay on the manual sheet, because a grid is not a row.
+
+**And the third of those said *floor* for a release, in five places at once.**
+The row's label read `FURTHEST FLOOR` over a value that formats as `SECTOR 09`,
+under a detail line saying "THE HIGHEST SECTOR ANY RUN HAS REACHED" — one word
+out of three disagreeing, on the screen whose whole subject is what the game
+remembers. It is not a synonym in this game: `BUILDING_FLOORS` is forty and
+`CAMPAIGN_SECTORS` is seventeen, and AGENTS.md keeps the two constants
+deliberately underived from each other because the tower is a height and the
+campaign is a route up it. What let it happen is that the words existed twice —
+`RECORD_LABELS` in [run_tally.c](../src/run_tally.c), which had a
+`_Static_assert`, a test and **no caller in the game at all**, and a second copy
+spelled out in `RECORD_ROWS` in [settings.c](../src/settings.c), which was what
+the player actually read and was held by nothing. They have one home now and
+reach the renderer from it through `settings_row_label`, and
+[check_docs.py](../tools/check_docs.py) derives the label so this paragraph
+cannot be the copy that goes stale next — which is what the sentence above it
+was, for a release, having been written while the row still said floor.
+
+Two things about the readout are worth keeping. It is a **row kind**
+(`SETTING_ROW_READOUT`) rather than a block the renderer draws under the table,
+because everything that makes this sheet safe is per-row: the plate's height is
+added up from the rows, the fit check walks the rows, and the caret walks the
+rows. A line drawn outside the table would be a line on this plate that none of
+the three had an opinion about, which is exactly how the sheet came to be drawn
+50px off the bottom of the frame the last time something was added to it. And a
+record nothing has been written to prints as `--` rather than as nought, for the
+reason `PROGRESS_NO_TIME` is not nought: all four are high-water marks that only
+rise, so nought and never are the same state, and a page offering to clear a
+record must not show one where there is none. **`furthest_sector` is
 deliberately outside the gate**: the resume chip is navigation rather than a
 record, and a player who took the assist to reach sector nine still has to start
 at sector nine.
+
+**And that rule had to be applied twice more in the file that exists to hold
+it.** [run_tally.c](../src/run_tally.c) is one file so that a record reads the
+same wherever it is read, and it was keeping the rule on two of its three lines.
+The end-of-run card's score line fell through to its comparison clause and told
+the first player to die before scoring `SCORE 0 - BEST 0` — quoting a record
+that does not exist at them, on their first sight of the scoreboard, while the
+RECORDS page described the identical state as `--` two screens away. The docket
+line beside it had suppressed itself in exactly that state, for exactly that
+reason, since it was written. It is `SCORE 0` now, and
+`test_no_end_card_quotes_a_record_before_there_is_one` asks the property rather
+than the strings: no line quotes a record until one exists, and every line
+quotes it once there is one, with the card and the page driven from the same
+`Progress` in the same state so they cannot answer differently again.
+
+**And there was a third line, which that fix could not see because it was not in
+that file at all.** The check above drives the card and the page, and its own
+closing comment says so — "which is the check that would have caught this". There
+are three screens that show a record, and the third is `THE RECORD` sheet in the
+field manual, which spelled its two run figures with an `SDL_snprintf` of its own
+because the manual is handed plain integers rather than a `Progress` (see
+`ManualRecords`, and the split it exists to keep). So a fresh install opened that
+sheet and read `BEST SCORE 0` and `DOCKET 0`, while the options page reading the
+same file said `--`, and while the seventeen sector cells directly above on that
+same card — which do come through `run_tally.c` — said `--:--`. The card
+disagreed with the page beside it, with its own grid, and with the rule the file
+it bypassed exists to hold. `DOCKET 0` is the one that costs something: it reads
+as "your best night carried no sheets" rather than "no night has finished", which
+is the misreading the score line above was fixed to stop.
+
+What was missing was not the rule but a way in for a caller holding the number
+instead of the file. `run_tally_format_record_value` is that, and
+`run_tally_format_record_line` puts the label in front of it so the card's two
+lines are a label and a figure from the one place that owns both;
+`RUN_TALLY_RECORD_LINE_W` is the column those lines have to fit, because
+otherwise they are a renderer's own literals in a renderer's own layout — the
+state this sheet's neighbour was found in with a line already off the plate.
+`test_every_screen_spells_a_record_the_same_way` now asks the property of every
+figure at once, with no list anywhere of which string is right.
+**A fix that names the screens it covers has counted them**, and this one counted
+two of three.
+
+And `SECTORS TIMED` counted the wrong set. `Progress` keeps
+`PROGRESS_MAX_TRACKED_SECTORS` times against `CAMPAIGN_SECTORS` floors on
+purpose — the slack is what lets a longer campaign ship without a new file
+format, and `progress_parse` accepts every index inside it — so the count walked
+the array while the denominator named the campaign, and a file from such a build
+or from anybody with a text editor printed `20 / 17`, a fraction over its own
+whole. **A numerator and a denominator have to be asked the same question**, and
+the question is the campaign that is running.
 
 **And the sheet can throw the records away**, which is the answer for somebody who
 found that rule out too late. `RESET RECORDS` clears the best score, every sector
 time and the docket (`progress_clear_records`) and leaves `furthest_sector`
 standing, so it does not answer "my times are polluted" by also discarding the
-campaign the player is in the middle of. It is the only row on either page whose
+campaign the player is in the middle of. It is the only row on any of the four pages whose
 action cannot be undone, so it is the only one that is armed rather than taken:
 the first press swaps the row's own detail line for
 `SETTINGS_RECORDS_ARMED_DETAIL` in the danger red, the second press spends it, and
@@ -397,7 +602,15 @@ lobby is what START already is. Taking it is `R`, or **SELECT** on a pad — the
 one button still free on that screen, since A starts, X and Y open the two
 sheets and B is deliberately inert — and both are named on the manual's control
 sheet, because a screen answering a button nothing names is the same bug as a
-prompt naming a button that does nothing. The best score is drawn on the two
+prompt naming a button that does nothing.
+**Whether the sweep drew it used to depend on whose machine the sweep ran on.**
+Five things in [intro.c](../src/intro.c) hang off `resume_offered` — the chip's
+width, the row's centring, the hit plate and the drawing — and all of them come
+off `progress.furthest_sector`, which was read from the runner's disk. A
+developer who had played to sector 2 rasterized the chip on every soak; a clean
+checkout never did, and neither could tell which. `--shot` and `--soak` take the
+shipped defaults now, so `--screen resume` is what reaches it: the last sector's
+number, which is also the widest one the chip has to fit beside START. The best score is drawn on the two
 screens a run *ends* on instead, which is where a score is being looked at
 rather than played for: the game-over card, and — since
 [run_tally.c](../src/run_tally.c) — the outro's own thank-you card. The second of

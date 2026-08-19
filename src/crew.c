@@ -37,9 +37,11 @@ static const char *const CREW[CREW_SIZE] = {
  * A line, and the stretch of the night somebody may say it in.
  *
  * The three numbers after the text are the whole gate: the first sector it may
- * be heard in, how many of the crew have to be down before it may be heard at
- * all, and how many may be down before it stops being true. **Nought is no gate
- * in all three**, so a row reading `0, 0, 0` is ungated in every direction,
+ * be heard in, the sector it stops being true at, how many of the crew have to
+ * be down before it may be heard at all, and how many may be down before it
+ * stops being true — two axes, each written floor-then-ceiling. **Nought is no
+ * gate in all four**, so a row reading `0, 0, 0, 0` is ungated in every
+ * direction,
  * which is most of them. They are spelled out rather than left to zero-fill
  * because `-Wextra` is right about that: a field nobody wrote is a field
  * nobody decided.
@@ -62,11 +64,47 @@ static const char *const CREW[CREW_SIZE] = {
  * counting. A line that names a number is true over a *window*, not from a
  * moment onward, and `until_down` is that window's far edge.
  *
- * It is deliberately only ever set on a line that counts. Everything else here
- * is a crew's opinion of the man coming up the stairs, and an opinion does not
- * go stale — `IT IS ONE MAN. HOW MUCH TROUBLE IS ONE MAN?` gets funnier with
- * the tally, not falser, and pinning a ceiling to it would thin the late
- * sectors for nothing.
+ * **And that paragraph was written about the tally and left standing over the
+ * sector, which is the half it names.** `until_down` was added, the sentence
+ * explaining why a floor needs a ceiling was written directly above the field
+ * it had just been given to — and `from_sector` went on having none, so the
+ * fix landed on one of the two axes and the argument for it read as though it
+ * covered both. Two lines were paying:
+ *
+ *   - `NINE MINUTES AND THIS ROOF IS SOMEBODY ELSE'S` is gated from 14, whose
+ *     dial reads 00:51 against a night that ends at 01:00. With no ceiling it
+ *     is also sayable on 15, 16 and 17, where the dial gives **seven, five and
+ *     three** — so the one line on the net that states a remaining duration was
+ *     right on one of the four sectors it could be heard on, and on the roof
+ *     itself a man announced nine minutes standing beside another saying
+ *     `THERE IS NO UPSTAIRS LEFT`.
+ *   - `BRUNO IS ON THE SIXTH LOCK. ONE MORE AND WE LOAD` is gated from 8, and
+ *     the seventh lock is open by 10 — `VAULT IS DRY` is gated there and says
+ *     so. With no ceiling the same net reported the sixth lock still being
+ *     worked, the vault already empty and, on 17, the cases already on the pad.
+ *
+ * **And the third one was found by the check written for the first two**, which
+ * is the whole argument for asking the property rather than fixing the rows.
+ * `VAULT IS DRY. LOAD IT AND GET IT ON THE ROOF` is an order with loading still
+ * pending, and it outlived its own completion: on 17 it stood beside `CASES ARE
+ * ON THE PAD. WE ARE WAITING ON THE BIRD`. It runs 10-16 now, and the three
+ * stages of the job — the locks, the vault, the pad — hand over to each other in
+ * order rather than piling up. `test_the_net_reports_one_stage_of_the_job_at_a_time`
+ * is what holds that, and it finds the three by what they claim rather than by
+ * index, so rewording one fails loudly instead of being checked no longer.
+ *
+ * `check_docs.py` holds the first of those, and could not see it: the pair it
+ * checks is the number against the dial at the sector in the gate, and there
+ * was no second number to read. A guard on a floor is a guard on a floor.
+ *
+ * A ceiling is deliberately only ever set on a line that *counts* or that
+ * reports a **stage of the job**. Everything else here is a crew's opinion of
+ * the man coming up the stairs, and an opinion does not go stale — `IT IS ONE
+ * MAN. HOW MUCH TROUBLE IS ONE MAN?` gets funnier with the tally, not falser,
+ * and pinning a ceiling to it would thin the late sectors for nothing. An
+ * *event* does not go stale either, which is why `WHO BROKE THE GLASS ON THE
+ * STAIR` and `HE CAME UP THROUGH THE DUCTS` keep their open tops: something
+ * that happened goes on having happened.
  *
  * Gate for what a line *asserts*, never for flavour. `THE SEVENTH LOCK IS NOT
  * ON ANY DRAWING WE HAVE` is a crew that has been on the locks since midnight
@@ -78,6 +116,12 @@ typedef struct
 {
     const char *text;
     short from_sector;
+    /* Exclusive, and the mirror of `until_down` below: the line is dropped
+     * once the run reaches this sector. Nought is no ceiling. The two axes are
+     * written floor-then-ceiling, in pairs, because the whole of the defect
+     * this field fixes was that one of them had a ceiling and the other did
+     * not — and a reader of the four numbers could not see which. */
+    short until_sector;
     short after_down;
     /* Exclusive: the line is dropped once this many of the crew are down.
      * Nought is no ceiling. */
@@ -100,7 +144,7 @@ static const CrewLine RADIO_LINES[] = {
      * sector-to-storey mapping to gate it against either: seventeen sectors are
      * the route up a forty-floor building, not a floor count. What he can say
      * anywhere is the part that matters, which is that he has nothing. */
-    {"NET CHECK. THIS FLOOR IS QUIET. NOTHING TO REPORT.", 0, 0, 0},
+    {"NET CHECK. THIS FLOOR IS QUIET. NOTHING TO REPORT.", 0, 0, 0, 0},
     /* Six of seven locks is most of a night's work, so it may not be said
      * before the player knows there are locks at all. Sector 8's own report is
      * the beat that turns the job from a ransom into a door — `NOT FOR RANSOM.
@@ -109,21 +153,21 @@ static const CrewLine RADIO_LINES[] = {
      * cite "the sector the report first says the word vault", which is sector
      * 13 and always was: the arithmetic was right and the reason written beside
      * it was somebody else's. */
-    {"BRUNO IS ON THE SIXTH LOCK. ONE MORE AND WE LOAD.", 8, 0, 0},
-    {"THE SEVENTH LOCK IS NOT ON ANY DRAWING WE HAVE.", 0, 0, 0},
-    {"TELL VOSS THE CIRCUITS CUT THEMSELVES AT MIDNIGHT.", 0, 0, 0},
+    {"BRUNO IS ON THE SIXTH LOCK. ONE MORE AND WE LOAD.", 8, 10, 0, 0},
+    {"THE SEVENTH LOCK IS NOT ON ANY DRAWING WE HAVE.", 0, 0, 0, 0},
+    {"TELL VOSS THE CIRCUITS CUT THEMSELVES AT MIDNIGHT.", 0, 0, 0, 0},
     /* Two men not answering is two men down, and it used to be sayable in the
      * lobby before a shot had been fired. The ceiling is the other half of the
      * same thought: naming two absentees says the losses are still small
      * enough to be counted on a hand, and past that the crew has bigger
      * arithmetic than MARCO and KASPAR. */
-    {"STILL NOTHING FROM MARCO. NOTHING FROM KASPAR.", 0, 2, 5},
+    {"STILL NOTHING FROM MARCO. NOTHING FROM KASPAR.", 0, 0, 2, 5},
     /* The narrowest window on the net, and the most literal: this man has
      * counted, and the number he read out is eleven. It is true while exactly
      * one of the crew is down and false the moment a second goes. */
-    {"I COUNTED ELEVEN OF US TONIGHT. IT WAS TWELVE.", 0, 1, 2},
-    {"SOMEBODY TOOK A FIRE HOSE OFF THE THIRTY-FIRST.", 6, 0, 0},
-    {"WHO BROKE THE GLASS ON THE STAIR? ALL OF IT.", 4, 0, 0},
+    {"I COUNTED ELEVEN OF US TONIGHT. IT WAS TWELVE.", 0, 0, 1, 2},
+    {"SOMEBODY TOOK A FIRE HOSE OFF THE THIRTY-FIRST.", 6, 0, 0, 0},
+    {"WHO BROKE THE GLASS ON THE STAIR? ALL OF IT.", 4, 0, 0, 0},
     /* He is not a cop because he came in alone and did not wait, which is the
      * one thing about him they can actually see. It used to say he was not
      * wearing shoes, which is a joke about a different man in a different
@@ -131,35 +175,35 @@ static const CrewLine RADIO_LINES[] = {
      * render_figures.c), so the line only worked as a nod and not as a
      * sentence about anybody on screen — which is the one thing the writing
      * on this net is not allowed to be. */
-    {"HE IS NOT A COP. A COP WOULD HAVE WAITED FOR BACKUP.", 0, 1, 0},
-    {"ROOF CHARGES ARMED. NOBODY GOES UP BEFORE 01:00.", 0, 0, 0},
+    {"HE IS NOT A COP. A COP WOULD HAVE WAITED FOR BACKUP.", 0, 0, 1, 0},
+    {"ROOF CHARGES ARMED. NOBODY GOES UP BEFORE 01:00.", 0, 0, 0, 0},
     /* No distance in this line, deliberately. The ring is a spatial ramp that
      * thickens all the way to the kerb (`cordon_side` in chase.h), the
      * abduction happened on clean pavement three blocks out, and a man on a
      * handset naming a number contradicted one or the other of those whichever
      * number he named. What he can say is the part that matters: all of it is
      * pointing the wrong way. */
-    {"THE WHOLE CORDON IS FACING AWAY FROM US. ALL OF IT.", 0, 0, 0},
-    {"THE CONTROLLER STAYS BREATHING. VOSS WAS CLEAR.", 0, 0, 0},
-    {"COPY. NOBODY MOVES UNTIL THE LAST BOLT DROPS.", 0, 0, 0},
-    {"SIX HUNDRED AND FORTY MILLION. IN ONE CASE.", 0, 0, 0},
-    {"IT IS ONE MAN. HOW MUCH TROUBLE IS ONE MAN?", 0, 1, 0},
-    {"IF HE BLEEDS, HE CAN BE STOPPED. HE BLEEDS.", 0, 1, 0},
-    {"MOVEMENT ON THE SERVICE LEVEL. SOMETHING BIG.", 2, 0, 0},
+    {"THE WHOLE CORDON IS FACING AWAY FROM US. ALL OF IT.", 0, 0, 0, 0},
+    {"THE CONTROLLER STAYS BREATHING. VOSS WAS CLEAR.", 0, 0, 0, 0},
+    {"COPY. NOBODY MOVES UNTIL THE LAST BOLT DROPS.", 0, 0, 0, 0},
+    {"SIX HUNDRED AND FORTY MILLION. IN ONE CASE.", 0, 0, 0, 0},
+    {"IT IS ONE MAN. HOW MUCH TROUBLE IS ONE MAN?", 0, 0, 1, 0},
+    {"IF HE BLEEDS, HE CAN BE STOPPED. HE BLEEDS.", 0, 0, 1, 0},
+    {"MOVEMENT ON THE SERVICE LEVEL. SOMETHING BIG.", 2, 0, 0, 0},
     /* The ducts are sector 12, and the line is only funny standing in them. */
-    {"HE CAME UP THROUGH THE DUCTS. THE DUCTS, VOSS.", 12, 0, 0},
-    {"SAY AGAIN? YOU WANT ME TO SWEEP WHICH STAIR?", 0, 0, 0},
-    {"STAIR CORE IS WELDED. NOTHING COMES DOWN IT.", 0, 0, 0},
-    {"I AM GETTING TOO OLD FOR NIGHT WORK.", 0, 0, 0},
-    {"TWELVE CASES IN, TWELVE OUT. THAT IS THE JOB.", 0, 0, 0},
-    {"HE WILL BE BACK. THIS ONE IS ALWAYS BACK.", 0, 1, 0},
-    {"DEAD OR ALIVE, HE IS COMING WITH US.", 0, 1, 0},
-    {"I HEARD THIS MAN WAS DEAD. EVERYBODY HEARD IT.", 0, 1, 0},
-    {"NO SIRENS OUT THERE. NOT ONE. LISTEN TO IT.", 0, 0, 0},
-    {"SHE WROTE THIS ACCESS SYSTEM. OF COURSE SHE DID.", 0, 0, 0},
+    {"HE CAME UP THROUGH THE DUCTS. THE DUCTS, VOSS.", 12, 0, 0, 0},
+    {"SAY AGAIN? YOU WANT ME TO SWEEP WHICH STAIR?", 0, 0, 0, 0},
+    {"STAIR CORE IS WELDED. NOTHING COMES DOWN IT.", 0, 0, 0, 0},
+    {"I AM GETTING TOO OLD FOR NIGHT WORK.", 0, 0, 0, 0},
+    {"TWELVE CASES IN, TWELVE OUT. THAT IS THE JOB.", 0, 0, 0, 0},
+    {"HE WILL BE BACK. THIS ONE IS ALWAYS BACK.", 0, 0, 1, 0},
+    {"DEAD OR ALIVE, HE IS COMING WITH US.", 0, 0, 1, 0},
+    {"I HEARD THIS MAN WAS DEAD. EVERYBODY HEARD IT.", 0, 0, 1, 0},
+    {"NO SIRENS OUT THERE. NOT ONE. LISTEN TO IT.", 0, 0, 0, 0},
+    {"SHE WROTE THIS ACCESS SYSTEM. OF COURSE SHE DID.", 0, 0, 0, 0},
     /* The sub-vault is emptied during the climb, so this is the one line on
      * the net that reports the job actually being done. */
-    {"VAULT IS DRY. LOAD IT AND GET IT ON THE ROOF.", 10, 0, 0},
+    {"VAULT IS DRY. LOAD IT AND GET IT ON THE ROOF.", 10, 17, 0, 0},
     /* The roof, and the reason it needed a line of its own. The report between
      * sectors is shown only after a stair door, the last of the six lands on the
      * vault at 16, and the net's highest gate was 14 — so sector 17, the floor
@@ -172,9 +216,9 @@ static const CrewLine RADIO_LINES[] = {
      * pad and the crew is waiting on the aircraft rather than on the vault. It is
      * a fact about the last floor and false on every floor below it, which is
      * what the gate is for. */
-    {"CASES ARE ON THE PAD. WE ARE WAITING ON THE BIRD.", 17, 0, 0},
-    {"NEGATIVE. THE LIFT SHAFTS ARE OURS TONIGHT.", 0, 0, 0},
-    {"LENZ WANTS THE LIGHTS BACK ON. TELL LENZ NO.", 0, 0, 0},
+    {"CASES ARE ON THE PAD. WE ARE WAITING ON THE BIRD.", 17, 0, 0, 0},
+    {"NEGATIVE. THE LIFT SHAFTS ARE OURS TONIGHT.", 0, 0, 0, 0},
+    {"LENZ WANTS THE LIGHTS BACK ON. TELL LENZ NO.", 0, 0, 0, 0},
 };
 
 /*
@@ -187,32 +231,64 @@ static const CrewLine TALK_LINES[] = {
     /* The boast only works while the twelve is still roughly true; once half
      * the crew is down, the arithmetic he is inviting is not the one he means.
      * Written off CREW_SIZE so the window moves if the roster ever does. */
-    {"TWELVE OF US, ONE OF HIM. DO THE ARITHMETIC.", 0, 1, CREW_SIZE / 2},
-    {"VOSS SAYS DO NOT SHOOT THE GLASS. HE LIKES GLASS.", 0, 0, 0},
-    {"SWEEP THE STAIR. NO MERCY ON THE STAIR.", 0, 1, 0},
-    {"IT IS ALL IN THE REFLEXES. THAT IS ALL IT IS.", 0, 0, 0},
-    {"REMEMBER I SAID I WOULD RELIEVE YOU LAST? I LIED.", 0, 0, 0},
-    {"BE NICE. UNTIL VOSS SAYS IT IS TIME NOT TO BE.", 0, 0, 0},
-    {"THERE IS ONLY ONE OF HIM. THAT IS THE PROBLEM.", 0, 1, 0},
-    {"I WOULD BUY THAT FOR A DOLLAR.", 0, 0, 0},
-    {"HE DREW FIRST BLOOD, NOT US. REMEMBER THAT.", 0, 1, 0},
-    {"COME WITH ME IF YOU WANT TO GET PAID.", 0, 0, 0},
-    {"WELCOME TO THE PARTY. HE IS NOT ON THE LIST.", 0, 1, 0},
-    {"SIX FORTY, THIRTEEN WAYS. DO NOT MAKE IT TWELVE.", 0, 0, 0},
-    {"I AM ALL OUT OF PATIENCE AND ALL OUT OF GUM.", 0, 0, 0},
-    {"HE STOPPED FOR COFFEE. I WATCHED HIM ORDER IT.", 0, 0, 0},
-    {"WHO KEEPS TURNING THE LIGHTS OFF ON THIS FLOOR?", 0, 0, 0},
-    {"WHO COMES UP A LIFT SHAFT? NOBODY COMES UP ONE.", 2, 0, 0},
-    {"I NEED YOUR HANDSET, YOUR BOOTS AND YOUR CLIP.", 0, 0, 0},
-    {"EVERY UNIT IN THE CITY IS OUTSIDE LOOKING AT US.", 0, 0, 0},
-    {"TALK TO ME. NOBODY ON THIS NET EVER TALKS TO ME.", 0, 0, 0},
-    {"THE NIGHT STAFF WERE POLITE. I LIKED THEM.", 0, 0, 0},
-    /* Two minutes to 01:00 is the penthouse and the roof, and nowhere else. */
-    {"TWO MINUTES AND THIS ROOF IS SOMEBODY ELSE'S.", 14, 0, 0},
+    {"TWELVE OF US, ONE OF HIM. DO THE ARITHMETIC.", 0, 0, 1, CREW_SIZE / 2},
+    {"VOSS SAYS DO NOT SHOOT THE GLASS. HE LIKES GLASS.", 0, 0, 0, 0},
+    {"SWEEP THE STAIR. NO MERCY ON THE STAIR.", 0, 0, 1, 0},
+    {"IT IS ALL IN THE REFLEXES. THAT IS ALL IT IS.", 0, 0, 0, 0},
+    {"REMEMBER I SAID I WOULD RELIEVE YOU LAST? I LIED.", 0, 0, 0, 0},
+    {"BE NICE. UNTIL VOSS SAYS IT IS TIME NOT TO BE.", 0, 0, 0, 0},
+    {"THERE IS ONLY ONE OF HIM. THAT IS THE PROBLEM.", 0, 0, 1, 0},
+    {"I WOULD BUY THAT FOR A DOLLAR.", 0, 0, 0, 0},
+    {"HE DREW FIRST BLOOD, NOT US. REMEMBER THAT.", 0, 0, 1, 0},
+    {"COME WITH ME IF YOU WANT TO GET PAID.", 0, 0, 0, 0},
+    {"WELCOME TO THE PARTY. HE IS NOT ON THE LIST.", 0, 0, 1, 0},
+    {"SIX FORTY, THIRTEEN WAYS. DO NOT MAKE IT TWELVE.", 0, 0, 0, 0},
+    {"I AM ALL OUT OF PATIENCE AND ALL OUT OF GUM.", 0, 0, 0, 0},
+    {"HE STOPPED FOR COFFEE. I WATCHED HIM ORDER IT.", 0, 0, 0, 0},
+    {"WHO KEEPS TURNING THE LIGHTS OFF ON THIS FLOOR?", 0, 0, 0, 0},
+    {"WHO COMES UP A LIFT SHAFT? NOBODY COMES UP ONE.", 2, 0, 0, 0},
+    {"I NEED YOUR HANDSET, YOUR BOOTS AND YOUR CLIP.", 0, 0, 0, 0},
+    {"EVERY UNIT IN THE CITY IS OUTSIDE LOOKING AT US.", 0, 0, 0, 0},
+    {"TALK TO ME. NOBODY ON THIS NET EVER TALKS TO ME.", 0, 0, 0, 0},
+    {"THE NIGHT STAFF WERE POLITE. I LIKED THEM.", 0, 0, 0, 0},
+    /*
+     * The second line on the net that states a *remaining duration*, and the
+     * one nobody counted.
+     *
+     * It said `TWO MINUTES`, and the dial at the sector it is gated from reads
+     * 00:51 — **nine** minutes to the helicopter, not two. The comment here
+     * said "two minutes to 01:00 is the penthouse and the roof, and nowhere
+     * else", which is where the number came from and is arithmetic on a
+     * campaign divided fifteen ways. It is the twin of the intel table's
+     * `THE SETTLEMENT CLOCK IS RUNNING` row, which said TEN for exactly the
+     * same reason, was found, was corrected to the dial's own arithmetic, and
+     * is held by [check_docs.py](../tools/check_docs.py) — whose docstring for
+     * the helper that derives it opened by calling that row "the one line in
+     * the game that states a remaining duration". This was the other one.
+     * Fixing one half of a symmetric defect is the most reliable way to stop
+     * anybody looking at the other half, and a comment claiming to have
+     * enumerated something is the last place anybody recounts.
+     *
+     * **The number was wrong and the sector was not**, which took a wrong fix
+     * to establish. The first attempt moved the line to 17, where the dial
+     * gives three and "this roof" is the one under the speaker's boots — and
+     * `test_no_two_sectors_in_a_row_go_quiet` refused it, because this gate is
+     * what carries sector 14: emptied, 13, 14 and 15 go quiet in a row. The
+     * beat coverage this table's own header is about was resting on the line
+     * whose number was false, so the honest edit is one word. A duration in a
+     * sentence is a fact about the clock; where the sentence is said is a fact
+     * about the campaign, and only one of them was broken.
+     *
+     * `crew_duration_lines` in that script holds the pair — the number in the
+     * words against the dial at the sector in the gate — and it holds *every*
+     * row that counts minutes rather than this one by name, so a second clock
+     * line is checked by having been written.
+     */
+    {"NINE MINUTES AND THIS ROOF IS SOMEBODY ELSE'S.", 14, 15, 0, 0},
     /* Gated with the radio line above, and for the same floor: there is no floor
      * above this one to be sent to. */
-    {"THERE IS NO UPSTAIRS LEFT. THIS IS UPSTAIRS.", 17, 0, 0},
-    {"HE IS ONE FLOOR BEHIND US. HE IS ALWAYS ONE.", 0, 1, 0},
+    {"THERE IS NO UPSTAIRS LEFT. THIS IS UPSTAIRS.", 17, 0, 0, 0},
+    {"HE IS ONE FLOOR BEHIND US. HE IS ALWAYS ONE.", 0, 0, 1, 0},
 };
 
 /*
@@ -225,20 +301,20 @@ static const CrewLine TALK_LINES[] = {
  * one that is about the ending, ask for anything.
  */
 static const CrewLine ALARM_LINES[] = {
-    {"HE IS ON THIS FLOOR! I SAY AGAIN, THIS FLOOR!", 0, 0, 0},
-    {"GAME OVER! THAT IS IT, THAT IS GAME OVER!", 0, 0, 0},
-    {"SOMEBODY GET ON THE NET! WE HAVE A MAN INSIDE!", 0, 0, 0},
-    {"THAT IS NOT SECURITY! THAT IS NOT ANYBODY!", 0, 0, 0},
-    {"HE IS NOT A GUEST, VOSS! HE WAS NEVER A GUEST!", 0, 0, 0},
-    {"NO SHOT! HE IS BEHIND THE SLAB! NO SHOT!", 0, 0, 0},
-    {"LENZ! LENZ, ANSWER YOUR HANDSET!", 0, 1, 0},
-    {"GET TO THE ROOF! EVERYBODY GET TO THE ROOF!", 10, 0, 0},
-    {"IT IS THE MAN OFF THE PAVEMENT! IT IS HIM!", 0, 0, 0},
-    {"HE HAS A CARD! HE IS COMING UP THE STAIR!", 0, 0, 0},
+    {"HE IS ON THIS FLOOR! I SAY AGAIN, THIS FLOOR!", 0, 0, 0, 0},
+    {"GAME OVER! THAT IS IT, THAT IS GAME OVER!", 0, 0, 0, 0},
+    {"SOMEBODY GET ON THE NET! WE HAVE A MAN INSIDE!", 0, 0, 0, 0},
+    {"THAT IS NOT SECURITY! THAT IS NOT ANYBODY!", 0, 0, 0, 0},
+    {"HE IS NOT A GUEST, VOSS! HE WAS NEVER A GUEST!", 0, 0, 0, 0},
+    {"NO SHOT! HE IS BEHIND THE SLAB! NO SHOT!", 0, 0, 0, 0},
+    {"LENZ! LENZ, ANSWER YOUR HANDSET!", 0, 0, 1, 0},
+    {"GET TO THE ROOF! EVERYBODY GET TO THE ROOF!", 10, 0, 0, 0},
+    {"IT IS THE MAN OFF THE PAVEMENT! IT IS HIM!", 0, 0, 0, 0},
+    {"HE HAS A CARD! HE IS COMING UP THE STAIR!", 0, 0, 0, 0},
     /* Same claim as the boast in TALK_LINES and the same ceiling: a man
      * shouting that there are twelve of them has to be shouting it while there
      * are still about twelve of them. */
-    {"TWELVE OF US! WHERE ARE THE OTHER ELEVEN?", 0, 1, CREW_SIZE / 2},
+    {"TWELVE OF US! WHERE ARE THE OTHER ELEVEN?", 0, 0, 1, CREW_SIZE / 2},
 };
 
 /*
@@ -251,19 +327,19 @@ static const CrewLine ALARM_LINES[] = {
  * climb is sector 3, by which point everything here is true.
  */
 static const CrewLine WALL_LINES[] = {
-    {"GET OFF THE WALL, COWBOY!", 0, 0, 0},
-    {"FORTY FLOORS! COUNT THEM ON THE WAY DOWN!", 0, 0, 0},
-    {"THERE IS NOTHING UP HERE BUT US!", 0, 0, 0},
-    {"HEADS!", 0, 0, 0},
-    {"LOOK UP! I SAID LOOK UP!", 0, 0, 0},
-    {"THIS IS THE PART WHERE YOU LET GO!", 0, 0, 0},
-    {"NOBODY CLIMBS OUT OF THIS BUILDING!", 0, 0, 0},
-    {"SAY GOODNIGHT, WALL-CRAWLER!", 0, 0, 0},
-    {"VOSS SAYS YOU ARE NOT EVEN REAL!", 0, 0, 0},
+    {"GET OFF THE WALL, COWBOY!", 0, 0, 0, 0},
+    {"FORTY FLOORS! COUNT THEM ON THE WAY DOWN!", 0, 0, 0, 0},
+    {"THERE IS NOTHING UP HERE BUT US!", 0, 0, 0, 0},
+    {"HEADS!", 0, 0, 0, 0},
+    {"LOOK UP! I SAID LOOK UP!", 0, 0, 0, 0},
+    {"THIS IS THE PART WHERE YOU LET GO!", 0, 0, 0, 0},
+    {"NOBODY CLIMBS OUT OF THIS BUILDING!", 0, 0, 0, 0},
+    {"SAY GOODNIGHT, WALL-CRAWLER!", 0, 0, 0, 0},
+    {"VOSS SAYS YOU ARE NOT EVEN REAL!", 0, 0, 0, 0},
     /* The other half of the radio line above, and it stays the other half: the
      * running gag is that nobody is coming for him, which is the truest thing
      * anybody on this net says all night and is what the cordon bought. */
-    {"STILL NO BACKUP!", 0, 0, 0},
+    {"STILL NO BACKUP!", 0, 0, 0, 0},
 };
 
 /*
@@ -278,16 +354,16 @@ static const CrewLine WALL_LINES[] = {
  * can be heard on is the one they are written for.
  */
 static const CrewLine PANIC_LINES[] = {
-    {"THEY HAVE GUNS! EVERYBODY OUT!", 0, 0, 0},
-    {"THEY TOOK THE NIGHT CONTROLLER!", 0, 0, 0},
-    {"THE STAIRS ARE WELDED! THE STAIRS ARE WELDED!", 0, 0, 0},
-    {"DO NOT GO UP THERE!", 0, 0, 0},
-    {"MAINTENANCE! THEY SAID THEY WERE MAINTENANCE!", 0, 0, 0},
-    {"SOMEBODY CALL SOMEBODY!", 0, 0, 0},
-    {"THERE IS NOBODY OUTSIDE! I LOOKED!", 0, 0, 0},
-    {"I AM NOT PAID ENOUGH FOR THIS!", 0, 0, 0},
-    {"GO! GO! DO NOT LOOK AT THEM!", 0, 0, 0},
-    {"THAT IS NOT THE NIGHT SHIFT!", 0, 0, 0},
+    {"THEY HAVE GUNS! EVERYBODY OUT!", 0, 0, 0, 0},
+    {"THEY TOOK THE NIGHT CONTROLLER!", 0, 0, 0, 0},
+    {"THE STAIRS ARE WELDED! THE STAIRS ARE WELDED!", 0, 0, 0, 0},
+    {"DO NOT GO UP THERE!", 0, 0, 0, 0},
+    {"MAINTENANCE! THEY SAID THEY WERE MAINTENANCE!", 0, 0, 0, 0},
+    {"SOMEBODY CALL SOMEBODY!", 0, 0, 0, 0},
+    {"THERE IS NOBODY OUTSIDE! I LOOKED!", 0, 0, 0, 0},
+    {"I AM NOT PAID ENOUGH FOR THIS!", 0, 0, 0, 0},
+    {"GO! GO! DO NOT LOOK AT THEM!", 0, 0, 0, 0},
+    {"THAT IS NOT THE NIGHT SHIFT!", 0, 0, 0, 0},
 };
 
 #define COUNT_OF(table) ((int)(sizeof(table) / sizeof((table)[0])))
@@ -367,6 +443,8 @@ static bool line_fits_the_night(const CrewLine *line,
     if (situation->sector < line->from_sector ||
         situation->hostiles_down < line->after_down)
         return false;
+    if (line->until_sector != 0 && situation->sector >= line->until_sector)
+        return false;
     return line->until_down == 0 ||
            situation->hostiles_down < line->until_down;
 }
@@ -393,7 +471,7 @@ bool crew_line_allowed(ChatterKind kind, int index,
  * sectors of silence, then the payoff.
  *
  * What was supposed to cover that stretch is this table — `VAULT IS DRY` at 10,
- * `HE CAME UP THROUGH THE DUCTS` at 12, `TWO MINUTES AND THIS ROOF IS SOMEBODY
+ * `HE CAME UP THROUGH THE DUCTS` at 12, `NINE MINUTES AND THIS ROOF IS SOMEBODY
  * ELSE'S` at 14, and the pad at 17 — and it could not, because a gated line
  * competed on equal terms
  * with every ungated one. Fifteen-odd lines are sayable by then, so the odds of

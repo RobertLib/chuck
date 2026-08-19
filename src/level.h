@@ -503,6 +503,19 @@ float level_theme_cordon(LevelTheme theme);
 /* True when an embedded sublevel path is the file that stem names. */
 bool level_sublevel_name_is(const char *path, const char *stem);
 
+/*
+ * How many hostiles the plan puts on this floor: every guard, plus the dog each
+ * of them may bring.
+ *
+ * A ceiling on what a clear of this sector can have counted, and it is here
+ * rather than beside the one thing that asks it because it is a fact about the
+ * map. Deliberately the *authored* population and not what a run can reach — a
+ * console's reinforcements and a `SPAWNS` drip both add to it — so anything
+ * held under this number is a number a clear could have produced, which is what
+ * the staged screens' fixture needs and all it needs.
+ */
+int level_authored_hostiles(const LevelMap *map);
+
 /* Tile queries. Out-of-bounds is treated as solid wall. */
 TileType level_tile(const Level *level, int col, int row);
 bool level_is_solid(const Level *level, int col, int row);
@@ -526,6 +539,27 @@ void level_update_moving_platforms(Level *level, float dt);
 
 /* Initialise level reveal state (hide all tiles and start timer). */
 void level_reveal_init(Level *level);
+/*
+ * Stretch the reveal so the whole walk takes `seconds`, and never speed it up.
+ *
+ * **The reveal is the vehicle for whatever is written over it**, and until this
+ * existed it was the other way round: the between-sectors line
+ * ([sector_tally.h](sector_tally.h)) is drawn while `STATE_LEVEL_START` is on
+ * screen, that state lasts exactly as long as this animation, and the animation
+ * is `width * height / 3000` seconds — so a line of about 120 characters was
+ * readable for **0.18s** on the smallest sector and 0.43s on the tallest climb,
+ * and how long the player got to read the plot depended on how big the next
+ * floor happened to be. See `SECTOR_TALLY_HOLD_TIME`.
+ *
+ * A duration rather than an interval, because the interval is the thing that
+ * cannot be reasoned about: it is per *tile*, and the tile count is what varies.
+ * `test_a_stretched_reveal_lasts_the_same_on_every_map` holds the difference.
+ *
+ * Only ever slower, so a call with a duration shorter than the map's own snappy
+ * default leaves the default alone. Nothing wants a reveal that flashes past
+ * faster than the one somebody already tuned.
+ */
+void level_reveal_hold_for(Level *level, float seconds);
 /* Advance reveal animation by dt seconds; returns true when reveal just completed. */
 bool level_reveal_step(Level *level, float dt);
 

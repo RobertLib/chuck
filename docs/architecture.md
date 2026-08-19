@@ -87,7 +87,7 @@ player attack → AI movement → item pickup → hazards → player bullets →
 the air → AI combat → enemy bullets → contact damage → alarm countdown
 (**after** perception, so a guard seeing Chuck on the final frame keeps the
 alarm alive) → exit check → camera lerp. Reordering these has caused real bugs;
-several tests pin the resulting behavior.
+several tests pin the resulting behaviour.
 
 Two of those positions are decisions rather than places they happened to fit.
 **The body drag runs after the walk and after the terminal**: after the walk so
@@ -98,6 +98,18 @@ not after it, so a bolt coming down this frame is a noise the guards get to hear
 this frame; ordered the other way it is a frame late, which is invisible on its
 own and exactly what makes a mechanic feel unreliable. See
 [Going quiet](gameplay.md#going-quiet).
+
+A third is worth naming because it looks like a mistake. **The platform carry
+runs before AI movement**, so a guard or a dog standing on a moving plate is
+carried on the strength of where the *previous* frame's `level_move` left him,
+against a plate that has already taken this frame's step. Per frame that is the
+same displacement either way — it is one `vx * dt` — and a body the plate has
+just left behind simply is not carried, which is the wanted answer. What it buys
+is that "which plate is under this box" is asked in one place for every body
+rather than after each of the three movement calls. It is also where the
+*support* is not: `level_move` holds every body up on a plate on its own, in the
+same block as the falling panel, and for a long time that was the only half
+anybody but Chuck had — see `P` in [the legend](../levels/LEGEND.md).
 
 ## Determinism and RNG
 

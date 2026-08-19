@@ -6,6 +6,20 @@
 #define HUD_HEIGHT 40
 
 /*
+ * The frame every screen in the game is laid out inside.
+ *
+ * Not the window: the renderer is given a fixed logical presentation of exactly
+ * this size and letterboxes it, so a resized window and a fullscreen display
+ * both hand every layout the same numbers. Which is why a sheet that does not
+ * fit these does not fit anywhere, and why `make test` can hold the options
+ * sheet to them without a display — the two were literals inside `game_init`,
+ * so the one screen whose height is computed from a table had nothing to
+ * compute it against on this side of the SDL boundary.
+ */
+#define VIEW_W 800
+#define VIEW_H 552
+
+/*
  * The longest step the simulation is ever asked to take. `SDL_AppIterate`
  * clamps the frame to this before anything sees it, which is what keeps a
  * dropped frame or a dragged window from teleporting the world.
@@ -116,7 +130,27 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define JANITOR_W 26
 #define JANITOR_H 32
 #define JANITOR_CART_SIDE_EXTENT 26.0f
+/* How far ahead of the cart the floor is read. The tile questions probe a
+ * point; a crate is a box rather than a tile, so it needs a strip, and this is
+ * the same three pixels `dog_blocked_ahead` uses for the same question. */
+#define JANITOR_PROBE_DEPTH 3.0f
 #define JANITOR_WALK_SPEED 34.0f
+/*
+ * The three beats of the ambient loop, each drawn uniformly in
+ * [MIN, MIN + SPREAD] to the hundredth of a second.
+ *
+ * They were literals inside `janitor_set_activity` until the suite needed to
+ * say how long this man may take to do anything at all: the rule that keeps him
+ * out of a crate is only safe because a box that lands *on* him does not stop
+ * him, and "does not stop him" is a claim with a duration in it. See
+ * `test_the_man_with_the_mop_keeps_out_of_the_boxes`.
+ */
+#define JANITOR_WALK_TIME_MIN 3.5f
+#define JANITOR_WALK_TIME_SPREAD 3.5f
+#define JANITOR_MOP_TIME_MIN 2.8f
+#define JANITOR_MOP_TIME_SPREAD 2.4f
+#define JANITOR_PAUSE_TIME_MIN 0.6f
+#define JANITOR_PAUSE_TIME_SPREAD 0.9f
 #define JANITOR_WET_SPOTS 6
 #define JANITOR_WET_LIFETIME 7.0f
 
@@ -303,6 +337,40 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define ALARM_SIREN_INTERVAL 1.15f
 #define GUARD_ALARM_CHANCE 45
 #define GUARD_ENCOUNTER_RESET_TIME 2.5f
+/*
+ * How long a guard is allowed to be on his way to a wall switch, and why the
+ * run needs a clock at all.
+ *
+ * `raising_alarm` was the one "go somewhere" state in this AI with no way out
+ * but arrival. Every other one is bounded — a suspicion expires at
+ * `ENEMY_INVESTIGATE_TIME`, an encounter at `GUARD_ENCOUNTER_RESET_TIME`, the
+ * alarm itself at `ALARM_CALM_TIME` — and `update_body_discovery`'s own comment
+ * closed the argument with "the moment anybody reaches a switch the alarm goes
+ * up", which is a rationale that assumes its own success. The walk has no
+ * pathfinder in it: a pursuing guard only follows the target's column once he
+ * is already on its floor, and otherwise keeps his patrol direction and hopes
+ * the ladder logic finds a way. That is right for chasing Chuck, who is
+ * usually on the same storey, and it loses a fixed point across the building
+ * often enough to matter — measured over the twelve interiors, 151 of 388
+ * staged commitments never left the state in three minutes.
+ *
+ * What that cost is not one lost man. `another_guard_is_raising_alarm` keeps
+ * the roll to one runner at a time, and a runner who never arrives therefore
+ * mutes the *floor*: measured, a body left where somebody would find it
+ * committed a guard in 231 of 368 seeds and raised the alarm in 134, and on
+ * sector 16 it committed one in 25 of 32 and raised the alarm **nought** times
+ * — the risk the whole quiet route is played against, gone for the rest of the
+ * visit, on the floor below the roof.
+ *
+ * The allowance is measured rather than picked. Of the runs that do arrive the
+ * time taken is a median 1.35 and a p90 3.60 of the straight-line walk the
+ * distance implies, so four keeps 92% of them and abandons the ones the player
+ * has long since walked away from. `ALARM_RUN_MIN_TIME` is the floor a switch
+ * two paces away needs: `ALARM_SWITCH_USE_TIME` alone is most of a second, and
+ * a budget derived from a walk of nothing would expire before he could pull it.
+ */
+#define ALARM_RUN_DETOUR_ALLOWANCE 4.0f
+#define ALARM_RUN_MIN_TIME 4.0f
 
 /* Grenades */
 #define MAX_GRENADES 8
@@ -429,6 +497,38 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define PLAYER_CONTINUES 3
 #define CONTINUE_COUNTDOWN_TIME 10.0f
 #define GAME_OVER_DISPLAY_TIME 3.0f
+/*
+ * How long the card that ends a cleared sector holds before the game moves on.
+ *
+ * Named beside the game-over card's own span because it is the same kind of
+ * thing and was a literal `1.2f` inside `game_enter_state`, which cost the soak
+ * sweep a row. [tools/soak.sh](../tools/soak.sh) sorts the screens into cards
+ * that hold still until a hand moves them and beats that run on a clock of their
+ * own, and it derives every clock from a constant here — so an unnamed one is
+ * filed as a card by default. `--screen cleared` was therefore held for the
+ * ordinary two seconds: 1.2 of them on the card, and the remaining 0.8
+ * simulating the *next sector*, which the comment in that file says outright
+ * cannot happen.
+ *
+ * **And then it was 1.2 seconds of the last card of the campaign, which is the
+ * one screen this game has to end on.** `SECTOR_TALLY_HOLD_TIME` below is this
+ * tree's answer to "how long does a sentence stay readable", written when the
+ * line between sectors turned out to have no time of its own — and the band it
+ * measures has two placements: the reveal, which now holds for it, and this
+ * card, which had a number of its own. The card carries the whole of what the
+ * seventeenth floor paid — the stopwatch, the record beside it, both bonuses and
+ * `DOCKET n/12` — under `THE ROOF IS HIS`, ninety characters of it, and then
+ * cuts to the outro on a timer no press can extend. The losing card next door
+ * held for three seconds; the winning one held for 1.2, and the tally band's
+ * other placement held for 3.8. **A placement is not readable because its twin
+ * is**, which is the same sentence this file already carries about the sweep
+ * that draws them.
+ *
+ * So it is that number rather than a number, for the reason `SECTOR_TALLY_HOLD_TIME`
+ * is `CHATTER_HOLD_TIME`: two answers to one question are two numbers with
+ * nothing holding them together.
+ */
+#define LEVEL_CLEARED_DISPLAY_TIME SECTOR_TALLY_HOLD_TIME
 /*
  * How long B has to be held on the title screen to close the game.
  *
@@ -578,6 +678,41 @@ _Static_assert((int)PLAYER_DRAG_SPEED < (int)PLAYER_CRAWL_SPEED,
 #define ENEMY_WALK_SPEED 62.0f
 #define ENEMY_CLIMB_SPEED 60.0f
 #define ENEMY_CLIMB_COOLDOWN 1.8f
+/*
+ * How far to either side of a guard the "is something against me" probe
+ * reaches. Far enough to cover his largest horizontal step: the frame's `dt`
+ * is capped, so an undamaged patrol moves a little over three pixels in one
+ * update.
+ *
+ * Here rather than in one .c file because two of them ask it now — the AI
+ * layer for a body and [enemy.c](enemy.c) for masonry — and a probe width
+ * written down twice is two probe widths.
+ */
+#define ENEMY_SIDE_PROBE 4.0f
+
+/*
+ * How long a guard commits to a turn made because of a *body*.
+ *
+ * The probe above is a 4px band, and the rule that reads it turns a man away
+ * from whoever is standing where he is walking — which walks him back out until
+ * his neighbour is just barely clear of the band again. That equilibrium parks a
+ * body exactly on the boundary, where a fraction of a pixel of drift makes the
+ * flag flicker; with a man on each side the two flags alternate, and the rule
+ * fires on whichever one is momentarily set. Measured on the roof: 5877 of these
+ * turns in eight minutes, 2127 of them covering under 2px of ground, and a worst
+ * guard flipping his facing 9.92 times a second.
+ *
+ * So the turn is a decision that has to hold for long enough to be one. Longer
+ * than `DOG_TURN_COOLDOWN` because a guard's neighbour is a body rather than a
+ * ledge and can walk into him again: at `ENEMY_WALK_SPEED` this carries him
+ * clear of a stationary body's own probe band before he may reconsider.
+ *
+ * A masonry or unsafe-edge turn needs none of this — both are asked of the tile
+ * map, which does not drift — which is why this is the one reversal in the
+ * walker with a debounce.
+ */
+#define ENEMY_BODY_TURN_COOLDOWN 0.6f
+
 #define ENEMY_CLIMB_CHANCE 3
 #define ENEMY_OBSTACLE_AVOID_TIME 1.25f
 #define ENEMY_HP 3
@@ -738,7 +873,29 @@ _Static_assert(DECOY_NOISE_TILES < ENEMY_HEAR_TILES_SHOT,
 #define DOG_VIEW_RANGE (6 * TILE_SIZE)
 #define DOG_BACK_SENSE_RANGE (2 * TILE_SIZE)
 #define DOG_BITE_RANGE 16.0f
+/*
+ * How long the animal itself waits before it may line up another bite — and it
+ * is not what a player feels, which is worth saying here because the name says
+ * otherwise. `gameplay_combat_check_contacts` returns before the dog loop while
+ * the mercy window is up, so the rhythm of being chewed is
+ * `PLAYER_HIT_INVULN` plus a fresh `DOG_BITE_WINDUP`: 1.50s measured, against
+ * the 1.05s this constant would give. At 0.75 against a mercy window of 1.2 it
+ * decides nothing at all. Kept rather than deleted because it is the animal's
+ * own clock and would start binding the moment the mercy window came down, and
+ * pinned from the outside by
+ * `test_a_dog_standing_on_you_bites_to_a_rhythm` so that either constant moving
+ * past the other arrives as a changed rhythm rather than as a silent one.
+ */
 #define DOG_BITE_COOLDOWN 0.75f
+/* How long the lunge is drawn after the teeth land. It sat in
+ * [gameplay_combat.c](../src/gameplay_combat.c) as a literal `0.18f` beside a
+ * named cooldown, which is the class the four throw branches were named for one
+ * release earlier — a number a renderer reads
+ * (`render_figures.c:draw_dog`) and nothing in a header states. It is not the
+ * knife's `PLAYER_KNIFE_ACTION_TIME`, which is also 0.18 and is why a reader
+ * would assume a relationship: a lunge and a knife stroke are two animations
+ * that happen to be the same length. */
+#define DOG_BITE_ACTION_TIME 0.18f
 #define DOG_LOST_TIME 2.0f
 #define DOG_DOOR_HANDLER_CHANCE 30
 
@@ -770,6 +927,42 @@ _Static_assert(DECOY_NOISE_TILES < ENEMY_HEAR_TILES_SHOT,
  */
 #define CHATTER_EARSHOT (TILE_SIZE * 11.0f)
 #define CHATTER_HOLD_TIME 3.8f
+
+/*
+ * How long the line between sectors stays on the glass, and it is the same
+ * number one line above for the reason this file keeps repeating: two answers
+ * to "how long does a sentence stay readable" would be two numbers to keep in
+ * step, and nothing would hold them.
+ *
+ * It exists because the band had no time of its own at all. It is drawn while
+ * `STATE_LEVEL_START` is up and nowhere else, and that state lasts exactly as
+ * long as the tile reveal — `level_reveal_step` uncovers `REVEAL_BATCH` tiles
+ * every 0.004s, so a sector's whole reveal is `width * height / 3000` seconds:
+ * **0.18s on sector 1 and 0.43s on the tallest climb**. What was on the glass
+ * for that fifth of a second is two lines and about 120 characters — the story
+ * beat for ten of the sixteen sector boundaries, and the score line carrying
+ * `DOCKET n/12`, which [docs/story.md](../docs/story.md) put there precisely so
+ * a player could learn the count *while there was still something to do about
+ * it*. How long anybody got to read the plot depended on how big the next floor
+ * happened to be, which is nobody's design.
+ *
+ * Every gate was green over it, and the shape is this tree's oldest: the fit
+ * checks measure whether the line is too **wide**, the soak sweep draws the
+ * frame so `make coverage` counts it, and `--shot` proves the pixels are there.
+ * None of the three can see how long anybody had to read them. A line that
+ * cannot be read is the same defect as a line that does not fit, one axis over.
+ *
+ * `level_reveal_hold_for` spends it, so the reveal now lasts as long as what is
+ * written over it. **Not by letting the band ride on into play**, which was the
+ * first attempt and is the part worth keeping: after the reveal the player is
+ * standing at his spawn, and on the five climbs and four of the five interiors
+ * that carry this line that spawn is the bottom row of the map — directly behind
+ * a band pinned to the bottom edge. It hid the climber for the whole hold. A
+ * reveal has nobody drawn on it yet, so it is the one screen this line can own.
+ * Against `LEVEL_TRANSITION_DURATION`'s 9.4s on the six boundaries that show the
+ * report instead, 3.8s is the cheaper beat rather than a new expense.
+ */
+#define SECTOR_TALLY_HOLD_TIME CHATTER_HOLD_TIME
 
 /* Ammunition dropped by guards downed in direct combat (bullet, knife or
  * stomp). Explosions destroy the magazine along with its owner. */
@@ -923,6 +1116,15 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
 #define MAX_ELEVATORS 8
 #define ELEVATOR_SPEED 72.0f
 #define ELEVATOR_PLAT_H 6
+/*
+ * How much room the top of a lift's travel has to leave above the deck, which
+ * is the height of the tallest thing a lift carries. The player and the guard
+ * are the two and they are the same height, but this is written as the maximum
+ * rather than as `TILE_SIZE` because the fact it encodes is about the *rider* —
+ * a box that grew past a tile would otherwise reintroduce, silently, exactly
+ * the defect the note beside `top_limit` in level.c describes.
+ */
+#define ELEVATOR_RIDER_H (PLAYER_H > ENEMY_H ? PLAYER_H : ENEMY_H)
 #define MAX_FALL_PLATFORMS 64
 #define FALL_PLATFORM_H 6
 #define FALL_PLATFORM_TRIGGER_DELAY 0.25f
@@ -1188,6 +1390,33 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
 #define CAMPAIGN_SECTORS NIGHT_CLOCK_SECTORS
 
 /*
+ * How tall Kessler Tower is, which is a different number from how long the
+ * campaign is and is spelled out loud in six places.
+ *
+ * **Seventeen sectors is the route; forty floors is the building.** A sector is
+ * a stretch of the climb rather than a storey, which is why these are two
+ * numbers and why nothing derives one from the other — and it is also why the
+ * pair is so easy to get wrong in prose: `docs/story.md` spent a long time
+ * saying the height "is stated in four places that have to agree", having
+ * itself previously said three and left the credits roll out. The roll opens on
+ * `FORTY FLOORS. SEVENTEEN SECTORS. ONE NIGHT.` and closes on the height again,
+ * so a campaign that grew and a building that did not both pass through one
+ * line.
+ *
+ * This exists to be checked rather than to be computed with, which is the same
+ * reason `INTEL_ARC_SECTORS` exists: a fact stated in six places and owned by
+ * none of them is six copies, and the only question is which of them is the
+ * authority. The six are the title screen's tagline (`intro.c`), the men
+ * shouting down off the facade (`CHATTER_WALL` in `crew.c`), the credits roll
+ * twice (`credits.c`), `README.md`, and the store page in both of its copies.
+ * The two tables on the SDL-free side are held to it by
+ * `test_the_tower_is_one_height_everywhere_it_is_said`; the prose and the
+ * tagline by `tools/check_docs.py`, which cannot reach a `#define` from a
+ * markdown file any other way.
+ */
+#define BUILDING_FLOORS 40
+
+/*
  * What a sector is worth for being finished, and why the clock decides it.
  *
  * The report between floors has printed TIME and DEATHS since it existed and
@@ -1241,5 +1470,87 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
     ((float)(int)(NIGHT_CLOCK_MINUTES_PER_SECTOR * 60.0f))
 #define SECTOR_TIME_BONUS_PER_SECOND 20
 #define SECTOR_CLEAN_BONUS 500
+
+/*
+ * The row along the HUD that says what Chuck is carrying, on both strips.
+ *
+ * It is here rather than as literals in [game_render.c](game_render.c) for the
+ * reason the options sheet's plate is: the renderer is on the far side of the
+ * SDL boundary, so a row laid out with numbers typed into it is a row nothing
+ * in this repository can measure — and this one was wrong on both strips at
+ * once, in opposite directions. The wall drew the flash charge **on top of two
+ * of the six cartridges beside it**, because it was placed 706 into a pip run
+ * that ends at 717, so a climber carrying one read a four-round clip. The floor
+ * did not draw it at all, on the twelve sectors where it is the only one of the
+ * three that can actually be thrown. Two strips, the same question, two
+ * answers, and neither of them the right one;
+ * `test_the_carried_row_gives_every_throwable_its_own_place` is what asks it
+ * once.
+ *
+ * Every slot is drawn whether or not it holds anything, which is the rule the
+ * options sheet's key caps already keep: a row that closes up around what is
+ * missing is a row that moves under the player's eye mid-sector, and what the
+ * player is being asked to notice is a *change* in it.
+ *
+ * Every ink width below is what the glyph actually covers **measured from
+ * `x - 1`**, rather than the projectile's collision size: `draw_grenade` and
+ * `draw_flashbang` open at `x - 1` and run 12 wide, `fx_ammo_pip`'s base plate
+ * does the same and runs 5, and `draw_rocket_sprite` opens at `x` and runs to
+ * `x + 16`, which is 17 from the same origin. One origin for all four, because
+ * the only thing worth asking of them is whether one reaches into the next.
+ */
+#define HUD_GRENADE_INK_W (GRENADE_W + 2)
+#define HUD_FLASH_INK_W (FLASH_W + 2)
+#define HUD_ROCKET_INK_W (ROCKET_W + 1)
+#define HUD_CARRY_SLOTS 3
+#define HUD_CARRY_SLOT_W 14
+/* The launcher is the widest of the three and it is last, so the row runs to
+ * its ink rather than to a whole slot. */
+#define HUD_CARRY_ROW_W \
+    ((HUD_CARRY_SLOTS - 1) * HUD_CARRY_SLOT_W + HUD_ROCKET_INK_W)
+/* The rocket sits three pixels lower than the two round things beside it: it is
+ * drawn on its side and its ink is six tall against their ten. */
+#define HUD_CARRY_ROCKET_DROP 3
+
+/*
+ * Where the row sits, and the rule drawn under whichever slot the weapon label
+ * is naming.
+ *
+ * The strip prints one label and two numbers, and for a release the label sat
+ * directly over the wrong one of them: the pips are always the pistol clip —
+ * "all carried ammunition remains visible" — while the label names whatever the
+ * next press will fire. So selecting the launcher printed `BAZOOKA` over six lit
+ * cartridges, which reads as six rockets, while the one rocket the player
+ * actually has was a glyph three slots to the right with nothing tying it to the
+ * word. Nothing was wrong with either readout; what was missing was which of
+ * them the label meant.
+ *
+ * A rule rather than a fourth colour or a second number, because the row is
+ * already three glyphs in a 46px block and the strip's whole idea is that a
+ * cartridge and a grenade are recognised rather than spelled. It needs no room
+ * of its own: it is a slot's own ink wide and sits under the row, inside the
+ * console. `HUD_CARRY_ROW_Y` is where both strips draw the row, written here
+ * because the mark has to be placed against it and a renderer's own literal is a
+ * layout nothing can measure.
+ */
+#define HUD_CARRY_ROW_Y 19
+#define HUD_CARRY_MARK_DROP 12
+#define HUD_CARRY_MARK_H 1
+
+/* The sector strip: the clip, then the row, then the rule that closes the
+ * block. The block is sixteen pixels wider than it was, and the pixels come out
+ * of the air the SCORE readout was sitting on — which is why every block from
+ * ACCESS rightward moved and the TRAIL meter did not. */
+#define HUD_AMMO_PIP_PITCH 7
+#define HUD_AMMO_PIP_INK_W 5
+#define HUD_SECTOR_AMMO_X 218
+#define HUD_SECTOR_CARRY_X 262
+#define HUD_SECTOR_BLOCK_END 308
+
+/* And the same row on the wall, where nothing on it can be used and it is a
+ * note about the sector above rather than a live readout. */
+#define HUD_FACADE_AMMO_X 677
+#define HUD_FACADE_CARRY_X 722
+#define HUD_FACADE_BLOCK_END 782
 
 #endif /* CHUCK_GAME_CONFIG_H */

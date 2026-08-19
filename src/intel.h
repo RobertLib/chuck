@@ -40,10 +40,7 @@
  * Indexed by finished sector, but only a sector that leaves by a **stair
  * door** shows a report at all — a window is a continuous physical route onto
  * the facade and cuts straight to the next sector. In the campaign as shipped
- * that is six reports, after sectors 1, 4, 5, 8, 9 and 16, and those six carry
- * the arc on their own. The other rows are written anyway, because the table
- * is indexed by sector and a sector that later gains a stair door must not
- * gain a blank line with it.
+ * that is six reports, after sectors 1, 4, 5, 8, 9 and 16.
  *
  * **What that rule was never an argument for is the scoreboard going with it.**
  * The report carries the stopwatch, the record, the two bonuses and the tally
@@ -51,6 +48,24 @@
  * other eleven clears paid a bonus and banked a record in silence. The
  * objection is to the *cut*, not to the numbers, so the numbers now travel on
  * their own — see [sector_tally.h](sector_tally.h).
+ *
+ * **And that fix was half of itself for a release, which is the part worth
+ * keeping.** It rescued the numbers and left the *line* behind, and then this
+ * comment said the six reports "carry the arc on their own" — which read as a
+ * decision and was really a description of a hole. Ten of these sixteen rows
+ * were written, measured against the divider above, pinned against the maps by
+ * `test_the_arc_lands_on_the_sectors_that_show_a_report`, and **read by
+ * nobody**: `MONITOR WALL: VOSS. HER HAND ON THE SEVENTH LOCK.` and `TWELVE
+ * PLACES LAID IN THE GALLEY. TWELVE MEN.` among them. Every check in the tree
+ * was green, because every one of them asks whether the line fits and none
+ * asked whether anybody sees it.
+ *
+ * All sixteen reach a screen now: the six on the arc through the report, the
+ * other ten riding the tally over the reveal of the sector above, which is the
+ * same vehicle and the same argument as the seconds. The rows are still all
+ * written, because the table is indexed by sector and a sector that changes
+ * which door it leaves by must not gain a blank line with it — but a row that
+ * is never read is no longer one of the things that can happen here.
  */
 const char *intel_line(int completed_level);
 

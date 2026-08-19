@@ -348,6 +348,45 @@ static void npc_contact_shadow(SDL_Renderer *r, const Level *level,
                       half_w, lift, alpha);
 }
 
+/*
+ * The thing in the hand of a throw, which is not always a grenade.
+ *
+ * All three underarm throwables share one pose and one flag — see
+ * `Player.throwing_weapon` — and for as long as that was true the ladder pose
+ * drew a grenade for every one of them, including the bolt, which is six
+ * pixels of plated steel, and the flash charge, whose own comment up this file
+ * says it "has to be told from a grenade at a glance, because one of the two is
+ * about to kill whoever is standing next to it". A shared animation is not a
+ * shared prop.
+ *
+ * The grenade is the default arm rather than an error, because it is what this
+ * pose drew before there was anything else to draw, and a figure with an empty
+ * hand mid-throw is worse than a figure holding the wrong thing.
+ */
+static void draw_thrown_in_hand(SDL_Renderer *r, const Player *p,
+                                float x, float y)
+{
+  switch (p->throwing_weapon)
+  {
+  case PLAYER_WEAPON_FLASH:
+    draw_flashbang(r, x, y, 0.0f);
+    return;
+  case PLAYER_WEAPON_DECOY:
+    /* Centred in the space the fatter two fill, so a bolt does not read as a
+       grenade that has slipped out of the fingers. */
+    draw_decoy(r, x + (float)(GRENADE_W - DECOY_W) * 0.5f,
+               y + (float)(GRENADE_W - DECOY_W) * 0.5f);
+    return;
+  case PLAYER_WEAPON_PISTOL:
+  case PLAYER_WEAPON_KNIFE:
+  case PLAYER_WEAPON_GRENADE:
+  case PLAYER_WEAPON_BAZOOKA:
+  case PLAYER_WEAPON_COUNT:
+    break;
+  }
+  draw_grenade(r, x, y, 0.0f);
+}
+
 static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, float y)
 {
   int dir = p->facing;
@@ -825,8 +864,8 @@ void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
         sprite_limb_segment(r, x, y, PLAYER_W, dir,
                             18.0f, 14.0f + bob, 21.0f, hand_y,
                             (SDL_Color){42, 118, 153, 255});
-        draw_grenade(r, x + 17.0f,
-                     p->shot_vertical < 0 ? y - 5.0f : y + 23.0f, 0.0f);
+        draw_thrown_in_hand(r, p, x + 17.0f,
+                            p->shot_vertical < 0 ? y - 5.0f : y + 23.0f);
       }
       else
       {
@@ -834,10 +873,10 @@ void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
         sprite_limb_segment(r, x, y, PLAYER_W, throw_dir,
                             17.0f, 14.0f + bob, 23.0f, 10.0f + bob,
                             (SDL_Color){42, 118, 153, 255});
-        draw_grenade(r,
-                     throw_dir > 0 ? x + PLAYER_W + 2.0f
-                                   : x - GRENADE_W - 2.0f,
-                     y + 5.0f + bob, 0.0f);
+        draw_thrown_in_hand(r, p,
+                            throw_dir > 0 ? x + PLAYER_W + 2.0f
+                                          : x - GRENADE_W - 2.0f,
+                            y + 5.0f + bob);
       }
     }
     else if (firing && p->shot_vertical == 0)

@@ -84,7 +84,10 @@ typedef struct
     SDL_Texture *canvas_texture;
     int canvas_texture_w, canvas_texture_h;
     int win_w, win_h;
-    bool quit;
+    /* There was a `bool quit` here, read once by `SDL_AppIterate` and written
+     * by nothing at all: the only way out of this program is
+     * `SDL_EVENT_QUIT`, which answers for itself. A field nothing sets is a
+     * claim about how the editor closes that is not true of it. */
     float time;
 
     EdFile files[ED_MAX_FILES];

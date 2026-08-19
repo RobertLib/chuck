@@ -567,6 +567,20 @@ static void draw_icon_grenade(SDL_Renderer *r, float x, float y)
     color_rect(r, FX_AMBER_DK, x + 10.0f, y - 1.0f, 3.0f, 1.0f);
 }
 
+/* The other half of the grenade's palette, exactly as `draw_flashbang` is: same
+   silhouette, steel and a white band instead of olive and brass, and a cyan
+   tell-tale where the spoon is. Told apart at a glance is the whole rule — one
+   of the two is about to kill whoever is standing next to it. */
+static void draw_icon_flash(SDL_Renderer *r, float x, float y)
+{
+    color_rect(r, FX_INK, x + 3.0f, y - 1.0f, 10.0f, 13.0f);
+    fx_mass(r, FX_STEEL, x + 4.0f, y + 1.0f, 8.0f, 9.0f, 2, 2);
+    color_rect(r, FX_CREAM, x + 4.0f, y + 4.0f, 8.0f, 2.0f);
+    color_rect(r, FX_STEEL_LT, x + 5.0f, y + 2.0f, 2.0f, 1.0f);
+    color_rect(r, FX_STEEL, x + 6.0f, y - 1.0f, 4.0f, 2.0f);
+    color_rect(r, FX_CYAN, x + 10.0f, y - 1.0f, 3.0f, 1.0f);
+}
+
 static void draw_icon_medkit(SDL_Renderer *r, float x, float y)
 {
     color_rect(r, FX_INK, x - 1.0f, y - 1.0f, 18.0f, 13.0f);
@@ -1190,9 +1204,18 @@ static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time,
     float floor_y = p.y + p.h - 34.0f;
     float upper_y = p.y + 96.0f;
     float gap_left = p.x + 150.0f;
-    float gap_right = gap_left + 26.0f;
+    /* Two tiles at the vignette's own scale, which is about four fifths of the
+     * world's — the crate beside it is drawn 22px against a `CRATE_W` of 28.
+     * It was one tile wide, under a caption that said one tile was the jump,
+     * and both were a tile short of what the body does: see
+     * `test_a_jump_clears_a_wider_hole_than_the_model_will_route` for the
+     * widths and `test_the_on_foot_sheet_spells_the_jump_it_draws` for the
+     * caption. The caption is the claim and is held; this is the picture
+     * agreeing with it, because a drawing that shows a notch under a line saying two tiles is
+     * the reader's first reason to doubt the line. */
+    float gap_right = gap_left + 50.0f;
 
-    /* Two storeys and the one-tile hole between the upper slabs. */
+    /* Two storeys and the hole between the upper slabs. */
     draw_slab(r, p.x, upper_y, gap_left - p.x, 14.0f);
     draw_slab(r, gap_right, upper_y, p.x + p.w - gap_right, 14.0f);
     draw_slab(r, p.x, floor_y, p.w, 20.0f);
@@ -1260,7 +1283,11 @@ static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time,
     float floor_y = p.y + p.h - 34.0f;
     draw_slab(r, p.x, floor_y, p.w, 20.0f);
     fx_vgrad(r, p.x, floor_y - 14.0f, p.w, 14.0f, FX_INK, 0, FX_INK, 90);
-    draw_text(r, p.x + 8.0f, ledge_y + 34.0f, 1.0f, FX_LABEL, "SEVEN TILES");
+    /* The reach of the cone below, spelled in [manual_pages.h](manual_pages.h)
+   * beside the sentence on this same sheet that states it, because it is a
+   * number out of `game_config.h` rather than a caption. */
+  draw_text(r, p.x + 8.0f, ledge_y + 34.0f, 1.0f, FX_LABEL,
+            MANUAL_SIGHT_CONE_LABEL);
 
     float guard_x = p.x + p.w * 0.46f;
     float eye_y = floor_y - 22.0f;
@@ -1522,41 +1549,51 @@ static void illus_console(SDL_Renderer *r, SDL_FRect p, float time,
                      (SDL_Color){190, 190, 184, 255}, "BLOCKED");
     draw_text(r, p.x + 92.0f, alt_y + 23.0f, 1.0f, COL_TEXT, "USE THE WINDOW");
 
-    /* The legend. One icon, one name, one line about it. */
-    static const char *const names[5] = {"KEY CARD", "AMMO", "GRENADE",
-                                         "MEDKIT", "ROCKET"};
+    /*
+     * The legend. One icon, one name, and the two written together so they
+     * cannot come apart.
+     *
+     * They had, and in the way this repository already has a name for: the
+     * names were a `[5]` beside a `for (i < 5)` and a `switch` on the index,
+     * and the flash charge — added to the game after the other five — was in
+     * none of the three. The words on the left of this sheet named the card,
+     * the ammo, the medkit, the grenade and the rocket; so did the picture; and
+     * the one item in the game that answers *having already been seen* was on
+     * neither list, on the one sheet whose subject is what is worth picking up.
+     * A pair table written `[]` is the same guard `WEAPON_CYCLE` keeps, and it
+     * is the only one available here, because no fit check can read a picture.
+     */
+    static const struct
+    {
+        const char *name;
+        void (*draw)(SDL_Renderer *, float, float);
+    } legend[] = {
+        {"KEY CARD", draw_icon_card},
+        {"AMMO", draw_icon_ammo},
+        {"GRENADE", draw_icon_grenade},
+        /* Beside the grenade, where the weapon ring puts it and for the same
+           reason: the player choosing between them is choosing what the next
+           few seconds are for. */
+        {"FLASH", draw_icon_flash},
+        {"MEDKIT", draw_icon_medkit},
+        {"ROCKET", draw_icon_rocket},
+    };
+    const int legend_rows = (int)SDL_arraysize(legend);
     float list_y = alt_y + 52.0f;
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < legend_rows; ++i)
     {
         float y = list_y + (float)i * 22.0f;
         color_rect(r, (SDL_Color){15, 20, 30, 255}, p.x + 10.0f, y - 3.0f,
                    p.w - 20.0f, 18.0f);
         color_rect(r, (SDL_Color){26, 34, 48, 255}, p.x + 10.0f, y - 3.0f,
                    p.w - 20.0f, 1.0f);
-        switch (i)
-        {
-        case 0:
-            draw_icon_card(r, p.x + 18.0f, y);
-            break;
-        case 1:
-            draw_icon_ammo(r, p.x + 18.0f, y);
-            break;
-        case 2:
-            draw_icon_grenade(r, p.x + 18.0f, y);
-            break;
-        case 3:
-            draw_icon_medkit(r, p.x + 18.0f, y);
-            break;
-        default:
-            draw_icon_rocket(r, p.x + 18.0f, y);
-            break;
-        }
-        draw_text(r, p.x + 46.0f, y + 2.0f, 1.0f, COL_TEXT, names[i]);
+        legend[i].draw(r, p.x + 18.0f, y);
+        draw_text(r, p.x + 46.0f, y + 2.0f, 1.0f, COL_TEXT, legend[i].name);
     }
 
     /* And what the idle trail meter turns into once the building is looking
      * for you, which is the one readout worth recognising in a hurry. */
-    float alert_y = list_y + 5.0f * 22.0f + 12.0f;
+    float alert_y = list_y + (float)legend_rows * 22.0f + 12.0f;
     float pulse = 0.5f + 0.5f * sinf(time * 7.0f);
     SDL_Color alert = fx_dim((SDL_Color){255, 76, 54, 255}, 0.55f + pulse * 0.45f);
     draw_text(r, p.x + 10.0f, alert_y, 1.0f, alert, "SECURITY");
@@ -1646,14 +1683,40 @@ static void illus_record(SDL_Renderer *r, SDL_FRect p, float time,
     dash_h(r, fx_dim(FX_STEEL_DK, 0.9f), card.x + 12.0f, foot - 8.0f,
            card.w - 24.0f, 3.0f, 3.0f);
 
-    char line[RUN_TALLY_MAX];
+    char line[RUN_TALLY_RECORD_LINE_MAX];
     int best_score = records != NULL ? records->best_score : 0;
     int best_sheets = records != NULL ? records->best_evidence : 0;
-    snprintf(line, sizeof(line), "BEST SCORE %d", best_score);
-    draw_text(r, card.x + 12.0f, foot, 1.0f, COL_COLD, line);
-    snprintf(line, sizeof(line), "DOCKET %d", best_sheets);
-    draw_text(r, card.x + 12.0f, foot + 13.0f, 1.0f,
-              fx_dim(FX_AMBER, 0.85f), line);
+    /*
+     * Spelled by [run_tally.c](run_tally.c) rather than here, which is the whole
+     * reason that file exists — and it took a sweep to notice that these two
+     * lines were the one place it had been bypassed. They were an
+     * `SDL_snprintf("BEST SCORE %d")` and an `SDL_snprintf("DOCKET %d")`, so a
+     * fresh install opened this sheet and read `BEST SCORE 0` and `DOCKET 0`
+     * while the options page, reading the same file, said `--`, and while the
+     * seventeen cells directly above — which do go through that file — said
+     * `--:--`. The card contradicted the page beside it and its own grid, and
+     * `DOCKET 0` in particular reads as "your best night carried no sheets"
+     * rather than "no night has finished": the very misreading the game-over
+     * card's `SCORE 0 - BEST 0` was fixed to stop.
+     *
+     * Three screens read a record; the two that came through that file agreed,
+     * and this one was a renderer literal on the far side of the SDL boundary
+     * where nothing could compare it with anything. A record has one spelling
+     * wherever it is read.
+     *
+     * There is no `%d` left on this card, which is also why nothing here reaches
+     * for `snprintf`: this file includes no <stdio.h> and compiled for a year
+     * only because the platform's SDL headers happened to drag one in — under
+     * mingw-w64 they do not, and that is what the Windows cross-build first
+     * stopped on.
+     */
+    if (run_tally_format_record_line(RUN_TALLY_RECORD_SCORE, best_score, line,
+                                     sizeof(line)) > 0)
+        draw_text(r, card.x + 12.0f, foot, 1.0f, COL_COLD, line);
+    if (run_tally_format_record_line(RUN_TALLY_RECORD_DOCKET, best_sheets, line,
+                                     sizeof(line)) > 0)
+        draw_text(r, card.x + 12.0f, foot + 13.0f, 1.0f,
+                  fx_dim(FX_AMBER, 0.85f), line);
 
     /* The lamp's own flicker, so the card sits under the same light as the rest
      * of the desk rather than reading as a screen. */

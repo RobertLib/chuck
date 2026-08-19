@@ -107,7 +107,7 @@ the boxes on the floor that get no second chance. Walking over a second `N`
 while carrying a grenade set `collected` with a nought respawn timer and played
 `SFX_PICKUP_GRENADE`: the scarcest thing in the sector destroyed by crossing a
 tile, announced with the sound of a successful pickup. It was not a corner —
-sector 12 carries two grenades, sectors 10, 12, 16 and 17 two medkits apiece,
+sector 12 carries two grenades, sectors 10, 12, 14, 16 and 17 two medkits apiece,
 and **every restroom hands out the grenade the campaign's own budget is
 balanced on**, so a player who took the detour still holding one paid for it
 with nothing. `item_would_be_wasted` in
@@ -120,12 +120,28 @@ nothing and the box is there again before it is wanted. Nothing else gets a
 second chance, which is exactly why nothing else may be spent for nothing.
 `test_a_pickup_that_would_be_wasted_is_left_alone` pins both sides.
 
-**A grenade and a rocket survive the way out of a sector, and nothing else
-does.** `player_begin_sector` ([player.c](../src/player.c)) is the rule and
+**A grenade, a rocket and a flash charge survive the way out of a sector, and
+nothing else does.** `player_begin_sector` ([player.c](../src/player.c)) is the
+rule and
 `load_level` is the only caller; the sidearm does not travel because
 `player_reset` hands over a full clip either way, and the weapon *in the hand*
 deliberately does not travel either, because "a pickup never arms itself" is a
 rule about a doorway as much as about a floor tile.
+
+**That rule is only fair if the player can see the thing that did not arm
+itself, which is what the carried row on the strip is for — and for a release the
+row's own label pointed at the wrong number.** The strip prints one label over
+two readouts: the cartridges, which are always the pistol's because all carried
+ammunition stays visible, and the three slots of the carried row. The label names
+whatever the next press will fire. So selecting the launcher printed `BAZOOKA`
+over six lit cartridges — which reads as six rockets — while the one rocket the
+player actually had was a glyph three slots to the right with nothing joining the
+word to it. Neither readout was wrong; what was missing was which of them the
+label meant. A rule under the slot the label names says so, and `PISTOL` and
+`BOLTS` mark nothing, which is right: one *is* the cartridges and the other is a
+pocketful with no count anywhere in the game. Every gate was green over it and
+always would have been — a counter cannot tell a frame that was drawn from a
+frame anybody could read.
 
 **The facade is why it exists.** Nothing on a climb can be thrown or fired at
 all — `update_facade_playing` clears `shoot` for the whole of it and
@@ -180,8 +196,19 @@ straight onto the grenade so the follow-up shot threw that too. So
 weapon is spent calls `player_fall_back_to_sidearm`
 ([player.c](../src/player.c)) — the pistol if it is loaded, the knife if it is not
 — rather than `player_select_next_weapon`, which is now the bumpers' alone. The
-HUD already draws the grenade and the rocket whether or not they are raised, so
-carrying one is still visible; the bumpers are how it reaches the hand.
+HUD draws all three carried things whether or not they are raised, so carrying
+one is still visible; the bumpers are how it reaches the hand.
+
+**That last sentence was the rule's whole justification and it was two thirds
+true**, which is worse than a missing argument: a pickup that does not arm
+itself is only fair if the player can see they have it, and the sector strip
+drew the grenade, drew the rocket and drew nothing at all for the flash charge.
+It is `draw_hud_carried` now, one row of three slots shared by both strips, laid
+out from constants in [game_config.h](../src/game_config.h) that
+`test_the_carried_row_gives_every_throwable_its_own_place` can reach. The wall's
+strip had the same defect the other way up — it drew the charge *on top of* two
+of the six cartridges — which is this repository's most reliable smell: two
+screens, the same question, two answers, and here neither of them right.
 
 There is **one exception, and it is the one that costs nothing**: a magazine
 picked up while Chuck is holding the knife with a dry clip raises the sidearm,
@@ -374,9 +401,40 @@ and by the crush pass, and only Chuck on his elbows ever passes it anything but
 
 **What it costs is the other half of the same fact.** The louvres are opaque
 both ways, so the player cannot see the room they are about to come out in; and
-a crawl already denies the sidearm, the hack, and hauling a body. The shaft is a
-bet rather than a shortcut — you go in knowing where you entered and not what is
-waiting at the far mouth.
+a crawl already denies hauling a body. The shaft is a bet rather than a shortcut
+— you go in knowing where you entered and not what is waiting at the far mouth.
+
+**And that sentence used to deny two more things that the crawl does not deny,
+which is this page arguing with the sheet the player reads.** It said *"a crawl
+already denies the sidearm, the hack, and hauling a body"*, and only the last of
+the three is true — `player_can_drag` refuses `crawling` in as many words, and
+nothing else does.
+
+- **The sidearm is the opposite of denied: it is the reason to crawl.** The
+  manual's own movement sheet sells the posture as *"the only way to hit
+  something sitting on the floor"* and its combat sheet says *"Crawl and shoot a
+  GAS CANISTER"*; `test_the_shot_line_is_chest_high` exists because a standing
+  round passes over anything sixteen tall on the floor, which is the whole
+  mechanic. Measured, a crawling press spends a round and puts one in the air.
+  So the one page describing the duct denied, by name, the one thing the two
+  player-facing sheets are built on. **Two documents, one question, two answers**
+  — which is this tree's most reliable smell, and the first time it has pointed
+  at a page rather than at a screen.
+- **The hack is not denied either, and nothing was ever going to deny it.**
+  There is no `crawling` test anywhere in the terminal path, and driven against
+  every console in the campaign a crawler is in range of exactly what an upright
+  man is in range of. What is true is narrower and is about the tile rather than
+  the posture: a console cannot be *inside* trunking, because a `T` needs a tile
+  and the duct is the wall.
+
+The shape is the one the `%`-and-`P` note further down this page already has a
+name for: **a claim about what a shaft is for, read as a claim about what the
+simulation refuses.** The duct's other sentence had the same defect in its JUMP
+clause and that one was fixed in the code, because the game was wrong; these two
+were fixed here, because the game was right. `test_what_the_crawl_takes_away`
+holds all three of them from now on — that the crawl fires, that it reaches a
+console, and that it will not drag — so the next person to write this sentence
+has to be right about it.
 
 **And the picture says the same thing, which took a fix.** A shaft whose whole
 cost is opaque louvres has to be *drawn* opaque, and it was not: the tile layer
@@ -886,10 +944,22 @@ not were fixed by moving a medkit each onto the line they were beside. and
 air that could land on the man who has just been put back — enemy bullets
 inside, thrown bricks and birds on the wall. What Chuck himself threw is left
 alone deliberately: it is part of the world he changed, and the respawn's own
-`INVULN_TIME` already covers him. A death keeps the carried grenade and rocket
-(`finish_player_death` transfers the loadout across `player_reset`), refills
-the sidearm, and never reloads the level, so the world keeps its dead guards
-and opened walls.
+`INVULN_TIME` already covers him. A death keeps everything Chuck was carrying
+(`finish_player_death` calls `player_carry_loadout` across `player_reset`),
+refills the sidearm, and never reloads the level, so the world keeps its dead
+guards and opened walls.
+
+**"The carried grenade and rocket" is what this said, and it was a list of
+three written as a list of two.** The loadout rule was written out twice — once
+in [player.c](../src/player.c) for a sector boundary and once in the shell for a
+death and the restroom door — and the flash charge was added to the first copy
+only. So dying destroyed the one item in the game whose entire subject is a
+floor having *already* gone wrong, on the six sectors that lay one out, and one
+`!` a floor does not respawn. Both rules share `carry_throwables` now, on the
+side of the boundary the suite can reach, and
+`test_every_doorway_hands_over_the_whole_pack` asks the property off the weapon
+enum rather than off a list of fields — which is the only version of the check
+that cannot go stale the way the thing it checks went stale.
 
 Running out of lives always offers a retry of the current sector:
 `campaign_begin_continue` no longer gates on the continue count. Continues
@@ -941,7 +1011,7 @@ rather than a straight line up, and each is tested:
 wall are real detours — and the explosive among them is spent in the sector
 above, because **nothing out here can be thrown or fired**: the branch clears
 `shoot` every frame and this module has no notion of a weapon. That is the
-whole reason a grenade and a rocket cross a sector boundary at all; see
+whole reason the three carried things cross a sector boundary at all; see
 `player_begin_sector` and
 [Only the magazine comes back](#hearts-damage-and-the-two-real-deaths) above.
 A climb that stops carrying one is a climb the handover is paying for nothing,
@@ -952,8 +1022,30 @@ which is what `test_every_climb_carries_an_explosive_out` is watching.
 `Game` holds two `GameplayState`s: `gameplay` (active) and `inactive_gameplay`.
 Entering the WC door swaps them (`swap_gameplay_areas`), so the parent level is
 frozen intact rather than reloaded, and only the player's loadout crosses over
-(`transfer_player_loadout`). Sublevel doors (`U`/`R`) are a separate mechanism
-from the paired teleport doors (`D`), which are matched by index 0↔1, 2↔3, ….
+(`player_carry_loadout`, the same call a death makes). Sublevel doors (`U`/`R`)
+are a separate mechanism from the paired teleport doors (`D`), which are matched
+by index 0↔1, 2↔3, ….
+
+The door used to take the flash charge off him for the length of the visit — the
+shell had its own copy of the loadout rule and the charge was missing from it —
+so the four rooms, which have men in them and one of which has a dog, were the
+one place in the building where the answer to being seen was in the sector
+outside. Same one-line cause as the death above, same fix.
+
+**And the blink travels with the hearts**, which for a long time it did not.
+`invuln_timer` is a field of `GameplayState` rather than of `Player`, so the
+swap took it with the frozen area and the shell handed back only the pack and
+the hearts: a player who took a hit and stepped through arrived with no mercy
+window at all and could be hit on the first frame of a room holding two men and
+a dog, and coming back out he was handed the sector's *old* window, banked at
+the moment he went in, however long the visit had taken. The blink belongs to
+the body the way the hearts do, and the whole rule is
+`gameplay_carry_through_doorway` in
+[gameplay_state.c](../src/gameplay_state.c) now rather than three assignments in
+the shell — which is also what lets
+`test_the_doorway_hands_over_the_blink` reach it, since
+`leave_restroom` is executed by neither gate. It is still not a heal: what
+crosses is what he had, never more.
 
 **The paused sector is not ticked, and that is the decision.** `update_playing`
 only ever advances `gameplay`, so while Chuck is in the restroom the sector's

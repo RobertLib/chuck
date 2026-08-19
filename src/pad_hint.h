@@ -196,6 +196,56 @@ const char *pad_hint(const PadHints *hints, char *buf, size_t size,
                      const char *pad_form, const char *key_form);
 
 /*
+ * How a player says yes to a scene, spelled once.
+ *
+ * `state_accepts_confirm` in [game_input.c](game_input.c) takes SPACE, RETURN
+ * and KP_ENTER in every state a scene can be skipped from, and START on the pad
+ * everywhere START is not the pause button. That is one answer, and the nine
+ * prompts reporting it had grown four spellings:
+ *
+ * - `ENTER / SPACE TO SKIP` with `$A / $START TO SKIP` on the four cutscene
+ *   beats and the drive's departure.
+ * - `SPACE / ENTER: SKIP` and `SPACE / ENTER: MAIN MENU` with `$A: ...` on the
+ *   credits roll — the same words in a different order with different
+ *   punctuation, naming one pad button where two work, **one screen after the
+ *   outro** that spells it the other way. The outro and the roll are the two
+ *   halves of one ending.
+ * - `ENTER: SKIP THE DRIVE` on the drive, naming one key where two work, on
+ *   the same screen as the departure prompt that names both.
+ * - `PRESS ENTER OR SPACE` on the continue card. That one names every button
+ *   that works and is only a third spelling of the pair, which is what makes it
+ *   the mild case and worth fixing anyway: a player learns one thing.
+ *
+ * The first three were unified once and the fix landed on `cutscene.c` alone,
+ * which is this tree's oldest shape: the roll, the second drive prompt and the
+ * continue card live in `game_render.c` and `chase_render.c`, so nobody counted
+ * them. Nothing in the tree could have said so either — there is no fit check on
+ * any of these lines, because every one of them is a literal inside a renderer,
+ * which is the state `settings.c`'s footer and the sector HUD's weapon row were
+ * each found in; the sweep draws all five screens so `make coverage` counts
+ * them, and a counter cannot tell a frame that was drawn from a frame anybody
+ * could read.
+ *
+ * So the *keys* are one string and the *offer* is written at the call site,
+ * because what is being skipped is that screen's business and which buttons say
+ * so is not. The seam is gone rather than guarded, which is the answer this
+ * repository reaches for whenever a defect was only possible because one
+ * sentence had two homes. What is left to hold is a *tenth* prompt arriving
+ * spelled by hand — which is how all nine of these did — and
+ * [check_lists.py](../tools/check_lists.py) asks it: a `pad_hint` call naming
+ * `$START` in its pad form, or both ENTER and SPACE in its key form, has to
+ * build that half from here.
+ *
+ * `PAD_CONFIRM_DRIVE` is the one deliberate exception and it is not a spelling
+ * difference: during the drive A and B are the pedals, so the skip moves to Y
+ * (`confirm_with_gamepad`) and START is the pause button there. A prompt that
+ * offered either would be offering a button that does something else.
+ */
+#define PAD_CONFIRM_KEYS "ENTER / SPACE"
+#define PAD_CONFIRM_PAD "$A / $START"
+#define PAD_CONFIRM_DRIVE "$Y"
+
+/*
  * Which way a stick is pushed, said as the d-pad button that means the same
  * thing, or `PAD_BUTTON_NONE` while it is inside `GAMEPAD_AXIS_DEAD_ZONE`.
  *

@@ -21,6 +21,66 @@ has to be added there as well, or it is a character the editor cannot paint.
   That is the same bargain `F` panels make, and it is written up in
   [The hole is runtime, not map](../docs/levels.md#walls-that-open). Interiors
   only, and never the way out — see the authoring rule below.
+  **And "any blast opens it" is not the same question as "the player has a
+  blast".** All four go through `apply_blast`, which is why the list above is
+  four items long; what an author has to provide is one the player can actually
+  bring to bear. A grenade or a rocket can be carried to any patch on the plan,
+  so either settles the whole floor. A gas canister cannot be carried, so it only
+  answers for a patch inside its own radius — and it is the *better* answer where
+  it fits, because shooting one spends none of the sector's explosive. A mine
+  answers for nothing: it takes a patch out when it goes off, but nothing sets
+  one off except the player's own weight or somebody else's blast, so a floor
+  whose only opener is a mine offers one way through the wall and it costs two of
+  three hearts. `check_weak_walls` in
+  [editor_validate.c](../editor/editor_validate.c) asks it in exactly those
+  terms; it used to ask for an `N` or a `Z` and report "nothing to open them
+  with", which is a claim about the floor and was false on any floor with a
+  canister beside the patch — and because the suite holds the campaign to nought
+  warnings, being wrong in that direction forbade a design the game supports.
+  **And it has to save a walk, which is the rule this entry did not have.** A
+  patch is a shortcut: that is the whole of what the route model counting it as
+  wall in both directions buys, and it is stated as settled fact in
+  [docs/levels.md](../docs/levels.md#walls-that-open). Nobody measured it, and on
+  four of the seven interiors that carried one — sector 10 holding six of the
+  campaign's seventeen patch tiles — opening every patch on the floor shortened
+  the route to the way out and to every pickup by **nothing at all**.
+  Nothing was wrong with any of those *tiles*. It was the floor around them, which
+  is the one thing no rule about a single tile can see, so the editor measures it
+  and says so as a note (`check_weak_wall_shortcut` in
+  [editor_validate.c](../editor/editor_validate.c)): open every patch, flood
+  again, and ask whether the walk to the way out or to any pickup got shorter.
+  Nought is the threshold and it is not a number anybody chose — a shortcut that
+  shortens nothing is not a shortcut in any degree. It stays a note rather than a
+  warning because whether a bolt-hole worth no steps is worth a rocket *under an
+  alarm* is a judgement about risk, which this model does not measure and the
+  author does.
+  **Then the four were fixed, and the two ways they had to be fixed are the thing
+  worth knowing before you draw one.** Sector 2's patch moved: it now sits at the
+  foot of the partition beside the start, where blowing it drops Chuck through the
+  slab into the basement instead of walking the long way round through the paired
+  `D`, and it is worth 43 steps of a 56-step floor. Sectors 4, 6 and 10 lost
+  theirs, because every position on all three floor plans was tried — vertical and
+  horizontal, two tiles and three — and the best saving available anywhere on any
+  of them is two or three steps. Those floors have ladders at four or five columns
+  each, which is a good way for a floor to be built and exactly why a patch on one
+  promises something the plan cannot deliver. **So the answer to a patch that
+  measures nought is either a different place for it or no patch**, and which of
+  the two it is is a question about the whole floor rather than about the tile.
+  The campaign carries four now — sectors 2, 9, 12 and 14, worth 43, 7, 15 and 25
+  steps — and every one of them is real:
+  `test_a_weak_wall_is_a_shortcut_somewhere_in_the_campaign` requires every sector
+  with a patch on it to save something, which it can only do because none of them
+  is scenery any more.
+  **And a patch with a slab tile in it is a fall, not a doorway.** Sector 2's is
+  the campaign's only one, and it is safe because the door pair is the way back
+  up. Nothing had ever asked that question: every route rule above is asked of the
+  map *as authored*, and the floor a run actually walks for most of a sector is the
+  one with the holes in it. `check_opened_walls_leave_a_way_out` asks it now, as an
+  **error** — a hole that drops the player somewhere they cannot climb out of is a
+  run ended by using the mechanic correctly.
+  This is the mirror of the docket sheet's rule three entries down. That one has
+  to *cost* a detour and seven of twelve were on a shortest path to the door; this
+  one has to *save* one. Both were prose for as long as they went unmeasured.
 - `=` : Ventilation duct — galvanised trunking let into the wall, louvred.
   **Masonry to the whole building and a way through to a man on his elbows**,
   which is the only tile in the game those two sentences disagree about. What
@@ -30,8 +90,26 @@ has to be added there as well, or it is a character the editor cannot paint.
   (`level_is_solid`) rather than a special case in the AI, the ballistics or the
   lighting. What it costs is the other half of the same fact: the louvres are
   opaque both ways, so a player in a duct cannot see the room they are about to
-  come out in, and cannot stand, hack, haul a body or fire from inside it. The
-  shaft is a bet rather than a shortcut. The drawing agrees: a man inside one is
+  come out in, cannot stand up in one (`level_blocks_stance`) and cannot haul a
+  body through one (`player_can_drag` refuses a crawler outright). The
+  shaft is a bet rather than a shortcut.
+  **Firing is the one item that used to be on that list and does not belong on
+  it.** The trigger is not refused inside a shaft: the round leaves the clip, and
+  because trunking still answers `level_is_solid` it reaches nothing — and the
+  launcher spends the sector's rocket and puts its own blast on the man holding
+  it, which is two of three hearts. That is the ordinary point-blank rule
+  (a rocket fired with the muzzle in masonry does the same anywhere, see
+  [One blast, one rule](../docs/gameplay.md#one-blast-one-rule)) rather than
+  anything the duct does, and it is worth knowing precisely because a shaft is
+  the one place the muzzle is *always* in masonry — there is no stepping back
+  from it. Measured rather than reasoned about, and pinned by
+  `test_a_shot_from_inside_a_shaft_reaches_nothing`.
+  **The list it was on is the same sentence whose JUMP clause was prose for as
+  long as it existed**, written up under the crawl below: a claim about what a
+  shaft is *for* reads as a claim about what the simulation refuses, and only
+  some of it was ever refused. Two of the four held, one was fixed in the code,
+  and this one was fixed in the sentence.
+  The drawing agrees: a man inside one is
   behind its louvres and shows through the slots between them, and that takes a
   pass of its own (`render_duct_fronts`) because the tile layer goes down before
   the figures do.
@@ -98,7 +176,12 @@ has to be added there as well, or it is a character the editor cannot paint.
   are already full. Does not respawn.
 - `Z` : Bazooka item (`ITEM_BAZOOKA`). Contains one explosive rocket and does not respawn.
 - `!` : Flash charge (`ITEM_FLASHBANG`). One at a time, spent on the throw, and
-  it crosses a sector boundary with the grenade and the rocket. **It is not a
+  it crosses a sector boundary with the grenade and the rocket — **and a death,
+  and the restroom door**, which for six sectors it did not: the shell kept its
+  own copy of the loadout rule and the charge had been added to the other one.
+  So the item placed for the moment a floor goes wrong was destroyed by the
+  moment a floor goes wrong, and one `!` a floor does not respawn. That is worth
+  knowing here because it is what the placement advice below rests on. **It is not a
   weapon**: it kills nobody, breaks nothing, opens no `%` and chains with no
   other explosive. What it does is take a room's attention away for
   `FLASH_BLIND_TIME` — everything in the room with eyes. Every guard inside
@@ -158,9 +241,10 @@ taking a magazine on a full clip costs nothing and the box is there again ten
 seconds later. `test_a_pickup_that_would_be_wasted_is_left_alone` pins both
 halves.
 
-**A grenade and a rocket also survive the way out of a sector.** Nothing else
-does — the sidearm is refilled anyway and the weapon in the hand is reset to it
-— and the rule is `player_begin_sector` in [../src/player.c](../src/player.c).
+**A grenade, a rocket and a flash charge also survive the way out of a
+sector.** Nothing else does — the sidearm is refilled anyway and the weapon in
+the hand is reset to it — and the rule is `player_begin_sector` in
+[../src/player.c](../src/player.c).
 The climbs are why it exists: nothing on a facade can be thrown or fired at
 all, so the `N` on each of the five is a pickup whose entire value is in the
 sector above it.
@@ -188,6 +272,36 @@ sector above it.
   night shift, and nothing about a mopped corridor two floors up claims he has
   heard a shot. He may stand in any interior sector; he still owes the ordinary
   rule that he never fights, blocks or is seen.
+  **He is also the one body that keeps off every moving surface in the
+  building.** `janitor_has_floor_ahead` asks about masonry and ladders and
+  nothing else, so a plate, a panel and a deck are all the end of his run — which
+  is deliberate, because he is the one body with no ride of any kind and giving
+  him three would be three mechanics nobody will ever watch. A lift shaft used to
+  slip through that, since the tile is passable and the lowest one in a run has
+  the storey's own floor underneath: on sector 5 he walked into the bottom of the
+  goods lift and the descending deck crossed his chest for up to 0.70s, twelve
+  times a minute of play. Drawn every run, counted as covered, and seen by nobody
+  until somebody read the frame. `janitor_side_blocked` refuses a `V` outright
+  now.
+  **A crate is the other one that slipped through, and for a different reason:
+  it is not a tile at all**, so a rule written in tiles could not see it whatever
+  it asked. He walked clean through a `B` — measured, up to 19% of a two-minute
+  visit spent standing inside a box at the full 26px of his own width, with
+  nobody pressing anything, on four of the five floors carrying both a `J` and a
+  `B` (sectors 2, 5, 6, 9 and 10) and in the lobby's washroom, which carries
+  both as well. A
+  *guard* doing the same thing is deliberate and is written down beside
+  `gameplay_resolve_enemy_crates`: he is drawn after the crates, so the overlap
+  reads as the foreground route past one. The janitor is drawn *before* them, on
+  the ambient-staff layer, so the box is drawn over him and a full overlap leaves
+  the top four pixels of his head. He turns at one now the way he turns at
+  masonry, which keeps the rule above intact — the crate is untouched, so he
+  still blocks nothing. **A box that lands on him does not stop him**, and that
+  arm is what makes the rule safe rather than a trap: nothing prevents a shove or
+  a fall putting one there, and without it he turned on the spot for the whole of
+  a sixty-second probe.
+  So placing a `J` needs no rule of its own about crates, which is the point of
+  fixing it here rather than in the validator.
 - `f` : Fleeing civilian (visual-only NPC). The level starts with him frozen
   facing the way the player came in; after a staggered beat he shouts and runs
   for it, dissolving as he reaches it, and the part is over. He falls off
@@ -204,6 +318,30 @@ sector above it.
   guard or a dog caught in it, breaks crates and opens a `%` patch. Counted in
   the hazard budget below as a threat to the player, because that is who
   triggers it.
+  **It is the most expensive tile on this page — two hearts of three — and for a
+  long time it was the only hazard with no rule at all**: five checks for a fan
+  that costs one heart, one for a spike bed that costs one, and nothing
+  whatsoever for the charge. It is invisible to the route model too, which knows
+  a spike and has never heard of a mine, so a certified route runs straight over
+  every one of them.
+  None of what the editor now says forbids a mine anywhere. A mine is a tile
+  that makes the player look at the floor and the answers are all still there —
+  see it and walk round it, hop it, or set it off from a distance with anything
+  that explodes. What it warns about is a charge whose answers something *else*
+  on the plan has taken away: blades in its own column, where ducking the fan
+  lands on the charge and hopping the charge lands in the fan; a mine right
+  against a ladder or a shaft, which is stepped on coming off the rungs rather
+  than walked into; and two abreast, which cannot be hopped at all and so cuts
+  the floor in half at twice a spike bed's price. It notes a charge with nothing
+  under it, since weight is what arms one.
+  **One column off a riser and not two, which is worth knowing because the fan's
+  rule says two.** Blades reach: `CEILING_FAN_BLADE_LENGTH` hangs better than a
+  tile either side of the fan's own column, so a fan two columns off a ladder
+  genuinely overhangs the arrival. A mine is exactly its tile and reaches
+  nothing, so borrowing the fan's number would have been borrowing a span whose
+  justification does not come with it. Measured on the shipped maps, two columns
+  flags six tiles across four of the seven mined floors and one column flags the
+  two where the step really has nowhere to land.
 - `^` : Spike / hazard. Costs one heart on contact and pops the boots back out
   of the bed, so one misstep is one heart rather than a loop.
 - `O` : Rotating ceiling fan (one heart on contact with the blades). It is drawn
@@ -228,6 +366,25 @@ sector above it.
   bodies being readable, so that is the one thing a floor plan must not spend.
   `test_every_sector_can_seat_the_reinforcements_it_can_call` holds the shipped
   maps to it.
+  **And `SPAWNS` is the other way men come out of a door**, which that seating sum
+  omitted for as long as it existed and the editor's warning could not see at all.
+  It is the *deterministic* path — the line is copied into `door_spawns` at level
+  start and dripped out on a timer with no alarm and no console involved — and it
+  lands in the same `spawn_enemy_from_door`, taking the same slots and rolling the
+  same handler. So a floor's real guard count is the `M`, `W` and `Q` on it, plus
+  two per `T` if there is a door, plus every value on its `SPAWNS` line. Measured
+  that way sector 14 reaches **21 of 24** where the check reported 18, and the
+  editor's warning was gated on the console count, so a map whose whole
+  over-subscription came out of `SPAWNS` was never warned about — nothing bounds
+  the value either. Both hold the whole sum now, dogs included.
+  **The threat only exists where the floor has a door**, and that is worth
+  knowing before you place a console rather than after: the reinforcement penalty
+  for hacking under an alarm is live on sectors 4, 8 and 14 and on no others,
+  because the rest of the floors carrying a `T` have no `D` for anybody to come
+  out of. On those the console is a lock to pick and nothing else. It is a
+  deliberate shape — the vault and the roof get their pressure from fourteen and
+  fifteen men rather than from arrivals — but it is a shape nobody chose in one
+  place, so it is written here where it can be checked.
 - `A` : Wall-mounted alarm switch. A guard may run to it after spotting the player.
 - `I` : Ceiling security camera. It sweeps a beam across the floor below and
   raises the building alarm after `CAMERA_NOTICE_TIME` of holding the player in
@@ -245,6 +402,40 @@ sector above it.
   dead end: a camera nobody has to pass is a fitting rather than an obstacle.
   `CAMERA_RANGE` is five and a half tiles, so a mounting more than five storeys
   above the floor it is meant to watch is watching nothing.
+  **Both of those sentences were prose for as long as the mechanic existed, and
+  the second one is not the way a camera actually goes blind.** The failure is
+  the opposite of a mounting too far above its floor: it is a mounting with no
+  air under it. `camera_sees_player` refuses anything at or above the lens, and
+  a standing player is exactly one tile tall, so in a **one-tile-high space a
+  camera is level with his chest and sees nothing at all** — only a crawler, and
+  only within about a tile, on the fitting whose own manual sheet promises "it
+  looks down - crawling is no help". Sector 12 hung both of its cameras in the
+  service gap over a duct run, where the tile below the lens is trunking and
+  therefore masonry: measured, each watched **nought** cells a standing player
+  could occupy, against five to fourteen for every other camera in the game, and
+  reaching either beam at all cost a detour of +78 and +101 steps on a 133-step
+  floor. They cost two of the hazard budget each, so that floor's stated
+  pressure was four higher than the floor it described. Both moved — one to the
+  corridor west of the row-8 duct's mouth, one to the corridor west of the
+  row-14 duct's — which is the placement the original was reaching for and had
+  upside down, because **a duct is cover from a camera** (`level_is_solid` stops
+  the beam) and a lens watching the floor beside a mouth is what makes the shaft
+  worth crawling.
+  `check_cameras` in [editor_validate.c](../editor/editor_validate.c) asks both
+  halves now: a camera with no slab above it, and a camera whose beam reaches no
+  tile a standing player can occupy. The first of those was already the loader's
+  rule and the comment beside it in [level.c](../src/level.c) claimed the editor
+  said so while the map was being drawn — it did not, because
+  `editor_symbol_hangs` answers for the clock `w` and the camera `I` and its
+  only caller sits inside `check_decorations`, which filters to the four
+  decoration groups. An `I` is `ED_GROUP_FITTINGS`, so the clock was caught and
+  the camera was never asked.
+  **Reachability is deliberately not the bar and neither is the shortest
+  route.** Seven of the campaign's eleven cameras watch only ground that costs a
+  detour of +10 to +61 steps, and every one of those is a lens guarding a pickup
+  or a side route, which is what the fitting is *for*. The question that
+  separates an obstacle from an ornament is not how far the ground is but
+  whether there is any.
 - `c` : Decorative office chair (non-solid).
 - `d` : Decorative office desk with a computer (non-solid).
 - `i` : Decorative office equipment; its visual variant is selected from a filing cabinet, printer, or server rack (non-solid).
@@ -319,7 +510,13 @@ sector above it.
 - `p` : Decorative restroom stall partition (non-solid).
 - `o` : Open restroom stall with a visible toilet (non-solid).
 - `z` : Closed restroom stall door (non-solid).
-- `V` : Elevator shaft (vertical elevator track).
+- `V` : Elevator shaft (vertical elevator track). A deck carries its rider to the
+  top of its own run and no further, which is the rule the route model has always
+  been certified against (`route_in_shaft` only ever answers for tiles that *are*
+  shaft) and which the simulation had to be made to agree with — see the note in
+  AGENTS.md on the guard who stood in sector 6's ceiling. Guards ride one; dogs
+  and the janitor do not, and neither of their floor tests counts a deck as
+  floor, which is what keeps them out of a shaft rather than standing in one.
 - `F` : Falling panel. **Only Chuck's weight arms it**, like a mine `X`, and
   once armed it goes for the rest of the visit — a lost life keeps the hole,
   reloading the sector restores the panel. Everything else in the building
@@ -327,7 +524,25 @@ sector above it.
   `triggers_falling` as false. A dog used to be the exception, which spent
   sector 12's panel about a second into every run and left a hole that boxed
   the guard beside it into one tile.
-- `P` : Moving platform (moves horizontally).
+- `P` : Moving platform (moves horizontally). It patrols between the ends of its
+  own row's clear run, and **it carries everything it holds up** — Chuck, a
+  guard, a dog. The support was never the interesting half: `level_move` has
+  always settled every body onto a plate the same way it settles one onto a
+  falling panel, so a guard walking across one has always worked. The *carry* was
+  the player's alone, so a guard who stopped on a plate was left behind by it and
+  dropped off the trailing edge 0.44s later — and that is reachable by design
+  rather than by luck, because `enemy_floor_in_col` counts a plate as floor on
+  purpose so a pursuing guard does not mistake one for a gap. Measured, the AI
+  leaves bodies resting on plates for 716 frames on sector 14 and 1512 on
+  sector 17 over twenty-four minutes of play a sector, and sector 17's plate is
+  eleven tiles long.
+  What it will *not* do is push a rider into masonry: a plate's limits are the
+  ends of its row, so the plate never reaches a wall and the rider does — a tile
+  is 32 and a body is 26. The carry is refused for that frame instead, which is
+  the same rule and the same function for every body on one.
+  A crate is the deliberate exception and keeps its own note above: a box rests
+  on a plate and is not carried, so the plate slides out from under it. And the
+  janitor is the other, for the reason under `J`.
 - `r` : Facade-mode window that periodically throws an object toward the player.
 - `v` : Facade-mode bird entry point. Birds periodically cross toward the player.
 
@@ -405,9 +620,10 @@ Notes:
   Nothing can be *fired* out there — `update_facade_playing` never runs the
   attack — so a climb's pickups are entirely a bet on the sector above it.
   **Which means only what actually crosses the doorway is worth placing**, and
-  that is the grenade and the rocket: `player_begin_sector` carries those two and
-  nothing else, because `player_reset` hands the next sector a full clip either
-  way. So every climb carries an `N` and a `K`, and none of them carries a `G`.
+  that is the grenade, the rocket and the flash charge: `player_begin_sector`
+  carries those three and nothing else, because `player_reset` hands the next
+  sector a full clip either way. So every climb carries an `N` and a `K`, and
+  none of them carries a `G`.
   All four of the climbs there were then did, on the stated grounds that sector
   7's climb otherwise handed into the LAB "with whatever ammunition was left" —
   which was never true of any sector, since the clip is refilled at every
@@ -520,13 +736,43 @@ Each sector now has a floor plan that belongs to its theme, and
 `test_campaign_levels_are_distinct_and_solvable` pins that no two share a size
 or a storey rhythm.
 
+**Several of the mechanics on this page belong to one floor each, and that is a
+decision rather than an oversight.** It is worth writing down because counting
+the maps makes it look like the opposite: trunking (`=`) is on sector 12 alone,
+lift shafts (`V`) on sectors 5, 6 and 10 and never again, moving platforms (`P`)
+on sectors 5, 14 and 17 with a single panel each. Read as a running mechanic, a
+duct that costs a split solidity rule, a renderer pass of its own, a route-model
+edge and two editor checks for one floor of twelve looks like a thing that was
+started and dropped. It is not: it is what makes sector 12 the floor called
+`DUCTS`, the same way the goods lift is what sector 5 is and the gondola is what
+the roof is. A sector's identity is a mechanic the rest of the building does not
+have.
+
+The cost of that is real and is the other half of the decision: a mechanic met
+once is met without practice, so the floor that introduces it must also be the
+floor that teaches it, and none of them may be the last one before something the
+campaign turns on. What would be an actual defect is a mechanic on *two* floors
+with the second assuming fluency the first did not build.
+
+**The teaching load is not spread evenly either, and sector 2 carries most of
+it.** Sector 1 introduces the basics a player cannot refuse — ladder, guard,
+console, card, medkit, alarm, the restroom door, the docket sheet — and sector 2
+then introduces ten more: the crate, the canister, the grenade, the bazooka, the
+fan, the falling panel, the weak wall, the door pair, the window and the janitor.
+Everything after it arrives one at a time and slowly: the mine on 8, the heavy on
+10, the duct on 12. That front-loading is on purpose — the second floor is where
+a player is still willing to be taught, and a grenade withheld until sector 6 is
+a grenade the player has already decided the game does not have — but it means
+**sector 2 is the one floor where a new tile is a real cost**, and anything added
+to it is the eleventh thing in one room.
+
 | # | Theme | Plan |
 | --- | --- | --- |
 | 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the double-height atrium to a gallery, a service ladder up to the security wing where the exit is, and a second service ladder down behind the reception line to the staff corridor with the restroom. The hall empties past Chuck as he walks in — see `f` — and the front desk stays staffed after it has, see `k` |
 | 2 | `OFFICE` | three open-plan floors cut into blocks by floor-to-ceiling partitions, the ladders staggered so every partition is passed by changing floor; a welded stair core at the far end, the executive gallery back across the top, and a service crawl underneath reached by one ladder, where the bazooka lies beside a blocked-up opening (`%`) that saves the teleport across |
 | 3 | `FACADE_NIGHT` | one wide breach per course, walking slowly from side to side |
 | 4 | `SERVER` | a serpentine of four aisles walked in alternating directions, plus two fenced pockets — the vault above, the terminal room below — joined by a service ladder, entered by an airlock door pair or by dropping through the cable gap in the hot-aisle floor |
-| 5 | `PLANT` | catwalk towers either side of a solid plant block, goods lift onto its roof, crane platform across the hall to the exit ledge; spiked pit under the crane gap |
+| 5 | `PLANT` | catwalk towers either side of a solid plant block, goods lift onto its roof, crane platform across the hall to the exit ledge; spiked pit under the crane gap. **It lays out no grenade and no rocket, and that is the washroom's job**: it is the only interior above a hazard budget of 20 with neither on its plan — sectors 2 and 4 under it carry both — so the floor's blast is behind the `U`, which is what makes that detour worth the walk here rather than a free medkit. Written down because a supply outlier nobody has explained is indistinguishable from an oversight, and the obvious "fix" is to drop an `N` in the plant hall and delete the reason. `test_every_interior_can_reach_a_blast` holds the rule rather than the list: a floor with no explosive on its plan has a door to one |
 | 6 | `CANTEEN` | a double-height dining hall against a tight galley stack; the way up is the kitchen and its dumbwaiter, and a blast through the galley wall is the way back down |
 | 7 | `FACADE_STORM` | short balconies instead of courses, so cover for the wind is sparse |
 | 8 | `LAB` | a spine corridor with sealed clean-room bays combed off it above — each an airlock reached by its own ladder — and basement chambers and a deep-storage crawl below; the rocket vault opens only through a paired door |
@@ -535,7 +781,7 @@ or a storey rhythm.
 | 11 | `FACADE_MOON` | two breaches that braid, swapping sides as the climb rises and merging where the lines cross |
 | 12 | `DUCTS` | six crawl levels chopped into runs, one riser each; climb, drop through a missing panel, climb again. The rocket pocket hides behind a blocked-up bulkhead. Two cameras, and the crawl that gets a player past a guard's cone does nothing at all about them |
 | 13 | `FACADE_HIGH` | offset stubs laid like brickwork: every band is a lateral detour |
-| 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall crossed by balcony stubs. The far bay keeps the medkit and the rocket behind a paired door whose other end is the one guards come out of; the `%` in the bay's end wall is a second way in, for anyone who can spare a blast. Two cameras over the middle storey. **It leaves by the window and its stair core is therefore welded** — sector 15 is a climb and a climb is entered from a window — which makes it the fifth of the welded sectors and the only one of them that still lays out cards and a terminal, since both score and bank a checkpoint whatever the door is doing. It is also the reason it shows no report: see [intel.c](../src/intel.c) |
+| 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall crossed by balcony stubs. The far bay keeps a medkit and the rocket behind a paired door whose other end is the one guards come out of; the `%` in the bay's end wall is a second way in, for anyone who can spare a blast. **The second medkit is on the middle storey between the first heavy and a mine**, and it is there because this floor was the campaign's one outlier on supply: the highest pressure below the roof, and the only late interior with no crate and no canister on it, so the two floors under it were carrying more of both on less of a budget Two cameras over the middle storey. **It leaves by the window and its stair core is therefore welded** — sector 15 is a climb and a climb is entered from a window — which makes it the fifth of the welded sectors and the only one of them that still lays out cards and a terminal, since both score and bank a checkpoint whatever the door is doing. It is also the reason it shows no report: see [intel.c](../src/intel.c) |
 | 15 | `FACADE_SLEET` | paired courses with the breach swapping side every band, so no two are left by the column they were entered on — the tallest climb in the game and the only one that ends at a roof rather than a window |
 | 16 | `VAULT` | four storeys of unequal depth around the strongroom core: the trolley run they emptied it onto at the bottom, the boxes themselves above it, the handling floor where they were still working, and the way out over the top. The risers are staggered end to end, so every floor is crossed the full width. Two cameras, and the report after it is the one that answers sector 8 |
 | 17 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, a gondola strung between the two towers, and a fan-choked service level beneath the deck that is the only way past the two breaches in it. **The last stretch is where the crew is**: the roof of the final plant room is mined under its own guard, the run out of the service level past the second breach is mined at both ends under a fan and three more times along its length, and the helicopter pad is held by a **heavy** standing on it — the last man in the campaign is the one a boot bounces off, so the free answer is gone exactly where the player most wants it. Voss's remaining crew between Chuck and the ride, which is the one thing the finale has to say |
@@ -604,6 +850,44 @@ Two campaign-wide rules go with it, both pinned by the same test:
   carries three more mines along its length. 89 against the vault's 77 is a step of
   twelve, one clear of sector 9's nine. Left at 82 the sector the whole night
   climbs toward played a shade easier than the floor below it.
+  **And the height half of the rule was held by a proxy, which is the same
+  failure one clause to the left.** The check measured `map.height` — the row
+  count of the file — where the rule says a *climb's* height. The two agree only
+  while the spawn sits on the bottom row, and sector 13's did not: two blank
+  rows under its `S` made its map 48 against sector 11's 46, so the assertion
+  passed while both walls were 45 tiles from spawn to window. The player is
+  shown that number, and the facade HUD read `WINDOW 45M` on the third climb and
+  again on the fourth. The `S` moved to the bottom row — the campaign runs 39,
+  42, 45, 48, 51 now — and the test computes the rise the way `draw_facade_hud`
+  computes it, so the assertion and the readout cannot come to disagree. Nothing
+  in the maps was wrong; what was wrong was that the thing being measured was
+  not the thing being ruled on.
+  **And then the condition that fix rests on went unheld for a release, on one
+  wall.** "The `S` moved to the bottom row" was the repair and it was never made
+  a rule, so nothing stopped a climb keeping a blank row under its spawn — and
+  sector 7 still had one, the only wall of the five that did, which made
+  `map.height` rise + 2 there and rise + 1 everywhere else. Nothing was broken by
+  it: the rise was right, the order was right, and the camera clamp never showed
+  the row. What was wrong is that the campaign carried one wall where the cheap
+  reading and the true one disagreed, on the exact pair of quantities that had
+  already been confused once — so the next reader of `map.height` would have been
+  right about four walls. **A repair that a check depends on is a rule, and wants
+  holding like one.** The spawn is on the bottom row of every climb now (heights
+  40, 43, 46, 49, 52 against rises 39, 42, 45, 48, 51) and the same test asserts
+  it, so a spare row arrives as a failure rather than as a proxy quietly going
+  stale again.
+  **And that move landed the fourth spawn off the window grid, which nothing but
+  the editor noticed.** A facade's painted windows sit on rows of three and
+  columns of four, and an `S`, `Y`, `r` or `v` that misses an intersection covers
+  a window instead of replacing one. The rise it was moved to was 47, and 47 is
+  the one figure in that sequence not divisible by three — so sector 13 spent a
+  release as the only shipped map with a finding against it, the single note in
+  all seventeen. Two rules pulling on one tile: the rise has to beat sector 11's
+  45 and stay under sector 15's 51, and it has to be a multiple of three, which
+  leaves exactly 48. The wall gained a row at its foot and the sequence is
+  divisible by three all the way up, which is the property to keep rather than
+  the numbers — a fifth climb inserted anywhere in it inherits both rules at
+  once.
   **Sector 12 was the same complaint one floor lower**, and clearing the rule is
   not the same as keeping it: it once beat the floor below it by two, the
   smallest step anywhere in the campaign at the time, while dropping from ten
@@ -638,8 +922,22 @@ Three things that model deliberately will not do, so do not require them:
   has to work once every panel has gone.
 - **Stand on a door that hangs over a ladder.** A `D` needs a wall under it;
   put doors on the floor row, not on top of a riser.
-- **Land two tiles up, or cross two spikes.** Anything the rules below say is
-  out of reach really is out of reach.
+- **Land two tiles up, or cross two spikes.** The model refuses both, and the
+  two refusals are not the same kind of claim — which matters, because this
+  sentence used to say "anything the rules below say is out of reach really is
+  out of reach" and one half of that was false.
+  The spike is a claim about the *body*: crossing two of them costs a heart, and
+  `test_the_route_model_promises_only_moves_the_player_can_make` measures it. The
+  two-tile step up is a claim about the *model only*. Measured, the body can do
+  it — the apex is 68.7px against 64px of rise, with about 4.7px in hand — so a
+  ledge two tiles up is somewhere the player can get and the model will never
+  route them. That is the conservative side and it stays: a floor certified
+  finishable is finishable. But **do not draw a pocket two tiles up and call it
+  unreachable**, because it is not, and nothing will tell you. Measured across
+  every shipped sector the wider move opens *nought* extra tiles, so the campaign
+  as it stands does not depend on either reading;
+  `test_a_two_tile_step_up_is_the_bodys_move_not_the_models` is what keeps the
+  paragraph honest if the jump is ever retuned.
 
 ## Authoring rules for interiors
 
@@ -657,10 +955,30 @@ a hall. These rules come from the tuning in
   a stuttering one, which made a ceiling placed to cap a jump clearable on a
   slow machine and not on a quick one. `test_the_jump_apex_does_not_depend_on_the_frame_rate`
   is what holds it there, so an author may draw against this figure.
-  In a two-row band the ceiling caps it at one tile and the player only covers
-  about 48px of ground — enough to clear a one-tile hole in the floor, not a
-  two-tile one. Give him a second open row (~87px) before asking for a two-tile
-  jump; anything wider needs a ladder, a lift shaft or a moving platform.
+  In a two-row band the ceiling caps the rise at one tile and the player covers
+  about 48px of ground; a second open row buys the full apex and about 87px.
+  **What that is worth in tiles is one more than it reads**, and the correction
+  is the player's own box: a hole is landed *past* rather than cleared, and
+  `level_move` holds a body up while any part of it is over solid tile, so he
+  leaves the near lip with his left edge on it and lands the moment his right
+  edge reaches the far one. The ground a hole asks for is `width - PLAYER_W` —
+  38px for two tiles, 70px for three. So **a two-row corridor jumps a two-tile
+  hole and a three-row hall jumps a three-tile one**; four tiles is where a
+  ladder, a lift shaft or a moving platform becomes the answer. This bullet
+  said one and two for as long as it existed, and the spike bullet below it has
+  had the same 26px right the whole time — because a spike *does* have to be
+  cleared entirely, so there the box is added rather than subtracted. Two
+  adjacent rules about one body, and only one of them had ever been measured
+  against the simulation;
+  `test_a_jump_clears_a_wider_hole_than_the_model_will_route` measures both
+  widths in both directions now.
+  The route model refuses a tile earlier in each band, which is the same
+  conservative gap the two-tile step up has and the same reason it stays. But
+  **do not draw a two-tile gap in a corridor and call it a barrier**, because
+  it is not one, and nothing will tell you. Measured across the twelve
+  interiors nothing rests on the old reading: seventy-three one-tile gaps, two
+  two-tile gaps that both have three open rows, and four six-tile ones that are
+  storey breaks.
 - **Spikes are area denial, not an obstacle course.** Clearing a single 32px
   spike means covering 58px of ground while the whole 26px-wide player box is
   above floor level, and even an unobstructed jump only offers about 73px of
@@ -696,13 +1014,37 @@ a hall. These rules come from the tuning in
   **laying `F` into a hole a sector already has the safest placement there
   is**: the model's answer cannot change, and the player gets one crossing of a
   gap that was never crossable. That is where the campaign's panels are, in
-  sectors 2, 4, 9, 12 and 17.
+  sectors 2, 4, 12 and 17.
   **This list said 15 for a while, and 15 is a facade** — a climb has no slab to
   cut a panel into, so the claim was not merely stale but impossible, in the same
   edit that turned the old sector 15 into a wall and moved the last interior to
   17. It is derived from the maps by
   [tools/check_docs.py](../tools/check_docs.py) now, which is what
   `docs/gameplay.md`'s sector lists already had and this page did not.
+  **And every rule above is about the fallen state of the *map*, which left the
+  player out.** Nothing asked what is *under* a panel, and two of the five
+  panelled floors were paying for it. The archive's pair was an **outright
+  death**: a man standing on a panel has his feet on its top edge, so the drop
+  is measured from the row *above* it — 192px into the hall below against a
+  `PLAYER_FATAL_FALL_HEIGHT` of 160, arriving at 592px/s against a fatal 560.
+  Three hearts, which is the life rather than a hit, on a dead-end mined pocket
+  whose only other exit was walking back out. Every column of that slab drops
+  the same 192px, so there was no better place for it and those two tiles are
+  masonry now, which is why the list above is one shorter than it was.
+  **The route model already knew** — the fall it implies is one
+  `route_survivable_fall` returns false for, so the model refused the hole and
+  certified the floor by another path while the player could walk straight into
+  it: *a model that refuses a move is not a warning to whoever drew it.*
+  The roof's panel dropped through a ceiling fan instead, one heart every time
+  the mechanic was used, which `check_fans` cannot see because all five of its
+  questions look **down** from the blades — a hole in the slab directly above
+  one is the half of that pair nothing asked about. The fan moved two columns,
+  which is what clears `CEILING_FAN_BLADE_LENGTH` of the falling player's box.
+  `check_panels` in [editor_validate.c](../editor/editor_validate.c) asks all
+  three now: a drop the player cannot survive as an **error**, because that is a
+  floor that can eat a run rather than one that plays differently from how it
+  reads, and blades or a spike bed on the way down as a warning, because those
+  cost a heart and an author may well mean it.
 - **`%` patches are the same bargain from the other side.** The route model
   counts one as wall, so a sector is judged in the state it is authored in and a
   blocked-up opening can never be the way out, a key card's only approach or a
@@ -713,9 +1055,38 @@ a hall. These rules come from the tuning in
   direction being crossed — a blast opens the face it goes off against, not a
   tunnel — and leave the row above a floor-level patch solid so the hole reads
   as a doorway.
+- **Every interior reaches a blast, and the washroom counts.** Ten of the twelve
+  lay out an `N` or a `Z`; sectors 1 and 5 do not, and both have a `U`, and every
+  washroom hands out a grenade. So the rule is a reachability one rather than a
+  list of floors with an exception on the end: **a floor with no explosive on its
+  plan has a door to one.** On sector 5 that is what the detour is *for* — see
+  its row in the plan table above, and
+  `test_every_interior_can_reach_a_blast`, which asks the property so a new
+  interior drawn with neither fails on the change rather than on a player.
+- **A crate shoved at a dog is a shove, not a doorway.** `move_crate_x` stops for
+  a man and not for an animal, on purpose, because a dog that stopped a box would
+  stop the shove the mechanic is played for. What that means for a plan is that
+  the animal is put out from under the crate, on the far side where there is room
+  and behind it where there is not — so a `B` and a `W` on the same run against a
+  wall is a legal arrangement rather than a trap. It was not always: until
+  `eject_from_crate` asked the building anything, that arrangement put the dog
+  inside the masonry and then a tile beyond the map, permanently. See
+  `test_a_crate_never_shoves_a_body_into_the_building`.
 - **`P` platforms** patrol the contiguous non-solid run of their row, bounded by
   `#`, `D` and `V`. Keep ladders and other gaps out of that row or the platform
   will wander further than the void it is meant to bridge.
+  **And keep `B` out of that run.** A crate now rests on a platform the way it
+  rests on masonry, which is the fix for a box falling through the one thing on
+  a floor that is drawn as floor — but the platform's own pass carries nobody,
+  so it slides out from under a crate and drops it, and one travelling into a
+  crate passes through it sideways. Neither is reachable by pushing on any
+  shipped map and `test_a_crate_rests_on_what_the_player_does` is what keeps it
+  that way; the rule is here so an author does not have to discover it. A lift
+  shaft `V` refuses a crate outright for the opposite reason — a deck travels
+  *up* into things, so there is no position inside a shaft that would be safe to
+  allow. See `crate_position_clear` in
+  [gameplay_physics.c](../src/gameplay_physics.c) for why the three surfaces get
+  three different answers.
 
 ## Authoring rules for facades
 
@@ -730,3 +1101,78 @@ a hall. These rules come from the tuning in
   the start column, or the climb is sealed in before it begins.
 - A row of short balconies instead of a full cornice makes a good breather: it
   still gives cover and a wind shelter without a lateral detour.
+- **Keep the lowest `r` or `v` six rows above `S`.** A source wakes on
+  *vertical* distance alone (`FACADE_HAZARD_WAKE_RANGE`, ten tiles), and its
+  first delay is only a quarter to a little over half of the ordinary one, so a
+  bird three rows up can be in the air 0.6s after the player arrives. A thrown
+  object shouts and leans out for `THROWN_OBJECT_WINDUP` first; **a bird does
+  not announce itself at all**, which makes it the one hazard on the wall that
+  cannot be answered by having seen it coming, and therefore the one that must
+  not be within reach of a climber who has not moved yet.
+  Sector 15's lowest `v` was three rows above the spawn and four columns
+  across, and it cost a heart 1.25s into the climb on 94 of 256 seeds with
+  nothing pressed. Sectors 11 and 13 keep theirs six rows up and are clean at
+  256; 15 is six rows up now too. This is the facade half of the interiors'
+  "a sector has to give the player a moment to read it", which is
+  `SPAWN_GRACE_SECONDS` in
+  [tests/test_main.c](../tests/test_main.c) — and the rule was checked by a
+  loop that counted to seventeen while asking twelve, because a wall has no men
+  on it and the stepper drove the interior frame. Both modes are driven in their
+  own order now.
+  **And then it was measured a source at a time, which says the rule is exactly
+  right and was about the wrong hazard.** One `r` or one `v` at a time on a real
+  wall's geometry, 128 seeds of thirty seconds with nothing pressed: a **bird**
+  costs nothing from six rows up, and at three rows up it is worth 79 to 106
+  seeds of 128 anywhere within four columns of the spawn. So this clause is a
+  bird rule, it is a good one, and the number in it is the number the
+  measurement gives.
+  **The clause used to close "at *any* column", and that half was a reading
+  rather than a rule.** 128 seeds cannot see a one-in-three-thousand event, and
+  re-measured at 4096 seeds across four independent seed families sector 13 —
+  six rows up and four columns across, obeying every word above — cost a
+  passive climber a heart at 8.06s, inside the 11.05s window
+  `test_a_climb_does_not_bite_before_its_first_gust_blows_out` gives a wall.
+  The mechanism is the one written in the bullet below for the thrower,
+  arriving at the hazard that bullet exempts: the first gust carries a still climber
+  five to six tiles sideways, out from under the cornice that was sheltering
+  him, and a bird descending on his column has no windup to answer. So the
+  column matters for a `v` too — what it has to clear is not the spawn but the
+  band the drift can reach — and how far that is depends on which cornice is
+  over it, which is why the rule stays behavioural. Sector 13's lowest `v`
+  moved four columns and is nought at 4096 on all four families; the wall's
+  thirty-second profile is unchanged, which is what says it was a grace fix and
+  not a difficulty one. The check now samples 2048 seeds rather than 64, which
+  is the order of magnitude the rate is, and it is still a sample.
+  It never covered the thrower. A thrown object is aimed, so it stays dangerous
+  at **six and nine rows up as well**, and what decides whether it lands is how
+  many columns lie between the source and the spawn — with a cornice in between
+  worth more than either. Sectors 3 and 7 were both sitting at three rows and
+  both measured clean, which is what a rule written on one axis buys you: they
+  were saved by their cornices rather than by their placement, and nobody had
+  looked. Both are six rows up now and it bought nought at 512 seeds of sixty
+  seconds, which is worth writing down rather than dressing up — the maps obey
+  the campaign's own rule now, and that is the whole of what changed.
+- **And keep an `r` out of the spawn's own column**, which is the clause that
+  was missing and the one that was costing a run. Sector 7's sat directly above
+  `S`, six rows up and therefore obeying every word written above it, and it
+  took a heart off a climber who pressed nothing at **7.18s on 45 of 256
+  seeds** — the second wall of the campaign, and the harshest in it: 13 and 15
+  both wait about fifteen seconds and 3 and 11 never bite at all, so the curve
+  ran backwards for three climbs with every gate green. Moving that one
+  character eight columns across takes it to nought at 256.
+  The mechanism is the one thing on this wall that moves a player who is not
+  moving. A gust carries a passive climber three to five tiles sideways; a
+  thrown object's horizontal reach is `THROWN_OBJECT_SPEED` over the 1.35s its
+  travel time is clamped to, about 8.6 tiles, so a source the drift walks him
+  under is in range and one four columns further out is not.
+  **The check is behavioural rather than positional, and that is deliberate**:
+  how far is far enough depends on which cornice is between the two, which is a
+  fact about the floor plan and not about the tile — the same reason the weak
+  wall's rule and the docket sheet's live in the route model rather than in the
+  grid parser. `test_a_climb_does_not_bite_before_its_first_gust_blows_out`
+  gives a wall its own window instead of the floor's three seconds, derived
+  from the wind cycle rather than picked: `FACADE_WIND_CALM_MAX` plus the
+  warning plus the gust, 11.05s, by which point the wall has shown the player
+  the one thing it does on every seed rather than on the lucky ones. Measured at
+  15s the figures are identical, so the boundary is the map's and not the
+  constant's.

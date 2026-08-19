@@ -1787,10 +1787,11 @@ static void backdrop_office(const LevelArtScene *s, const LevelThemeArt *art,
         fx_rect_a(r, art->trim_hi, (h & 1u) ? 30 : 13, x, glass_top + 5.0f,
                   13.0f, glass_h - 10.0f);
     }
-    /* Head rail and sill, and the mullions the glazing is divided by. */
-    int mullion = art_repeat(s->cam_x, 0.12f, 132.0f);
+    /* Head rail and sill, and the mullions the glazing is divided by. Every bay
+     * is drawn the same, so this loop keeps no bay counter — it had one, set and
+     * incremented and read by nothing, which gcc says and clang does not. */
     for (float x = art_scroll(s->cam_x, 0.12f, 132.0f);
-         x < (float)s->win_w + 132.0f; x += 132.0f, ++mullion)
+         x < (float)s->win_w + 132.0f; x += 132.0f)
     {
         fx_rect_a(r, art->near_shape, 210, x, glass_top, 5.0f, glass_h);
     }
@@ -2555,9 +2556,8 @@ static void facade_shell(const LevelArtScene *s, const LevelThemeArt *art,
 
     /* One rainwater downpipe every four bays, bracketed to the stone. A blank
      * facade with no service on it is a drawing of a facade. */
-    int pipe_bay = (int)floorf(s->cam_x / 512.0f) - 1;
     for (float px = art_scroll(s->cam_x, 1.0f, 512.0f) - 512.0f;
-         px < (float)s->win_w; px += 512.0f, ++pipe_bay)
+         px < (float)s->win_w; px += 512.0f)
     {
         float x = px + 40.0f;
         if (x < face_left + 10.0f || x + 6.0f > face_right - 10.0f)

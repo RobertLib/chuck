@@ -183,6 +183,18 @@ bool level_sublevel_name_is(const char *path, const char *stem)
            strcmp(base + length, ".txt") == 0;
 }
 
+int level_authored_hostiles(const LevelMap *map)
+{
+    /* No NULL guard, on `gameplay_carry_through_doorway`'s argument: the one
+     * caller hands it the map of a level it has just loaded, and a guard
+     * nothing can reach is a line `make coverage` reports for ever. */
+    int hostiles = map->enemy_count;
+    for (int i = 0; i < map->enemy_count; ++i)
+        if (map->enemy_spawns[i].has_dog)
+            ++hostiles;
+    return hostiles;
+}
+
 static void place_item(Level *level, int col, int row, ItemType type)
 {
     if (level->runtime.item_count >= MAX_ITEMS)
@@ -775,7 +787,16 @@ bool level_load_data(Level *level, const char *name,
      * wrong as a desk standing on nothing, and it would sweep a beam out of
      * thin air in the middle of a hall. Dropped rather than refused, the way an
      * unsupported prop is — a map is not worth failing to load over a fitting
-     * nobody can mount, and the editor says so while it is being drawn. */
+     * nobody can mount.
+     *
+     * The clause here used to close "and the editor says so while it is being
+     * drawn", which was a rationale reporting cover it did not have.
+     * `editor_symbol_hangs` answers for the clock `w` and for this, and its only
+     * caller was inside `check_decorations`, which filters to the four
+     * decoration groups — an `I` is `ED_GROUP_FITTINGS`, so the clock was caught
+     * and the camera was never asked. `check_cameras` is what makes the sentence
+     * true, and it also asks the half nobody had ever measured: whether the beam
+     * lands on any floor a standing player can occupy. */
     int mounted_camera_count = 0;
     for (int i = 0; i < level->map.camera_count; ++i)
     {
@@ -905,8 +926,49 @@ bool level_load_data(Level *level, const char *name,
                 {
                     Elevator *el = &level->runtime.elevators[level->runtime.elevator_count++];
                     el->col = c;
-                    el->top_limit = first * (float)TILE_SIZE;
+                    /*
+                     * The topmost shaft tile is the rider's headroom, not the
+                     * platform's parking space.
+                     *
+                     * This was `first * TILE_SIZE`, which parks the deck flush
+                     * with the *top* of the highest `V` — so a rider, who is
+                     * exactly one tile tall, stood entirely in the tile *above*
+                     * the shaft. On two of the campaign's three shafts that
+                     * tile is air, and the only symptom was a lift that climbs
+                     * out of its own run. On sector 6 it is `#`, and there it
+                     * produced both of the consequences available:
+                     *
+                     * The player is killed. `gameplay_resolve_player_crush`
+                     * finds the slab over his head, a one-tile shaft offers
+                     * nothing either side to be pushed into, and an elevator
+                     * crush is an outright death rather than a heart — so
+                     * riding the dumbwaiter that LEGEND.md calls "the way up"
+                     * one second past the storey ended the run.
+                     *
+                     * The guard is *not* killed, which is worse to look at.
+                     * `enemy_begin_elevator_ride` snaps him to the deck with no
+                     * ceiling test at all, and figures are drawn over the tile
+                     * layer, so he stood inside the ceiling in plain sight for
+                     * 0.89s of every 10.5s lift cycle — three of them at once,
+                     * with the player standing still and pressing nothing.
+                     *
+                     * `route_in_shaft` has only ever answered for tiles that
+                     * *are* shaft, so the route model already certified every
+                     * map on the rule this now keeps: a lift carries its rider
+                     * to the top of its own run and no further. That is also
+                     * why no ceiling test is needed anywhere downstream — every
+                     * tile a deck can reach is a `V`, and a `V` is passable.
+                     */
+                    el->top_limit =
+                        first * (float)TILE_SIZE + (float)ELEVATOR_RIDER_H;
                     el->bot_limit = (last + 1) * (float)TILE_SIZE - ELEVATOR_PLAT_H;
+                    /* A run only long enough for the headroom would otherwise
+                     * invert, and a lift travelling backwards is not a thing to
+                     * discover from a map. `last > first` above makes this
+                     * unreachable at the heights the game ships; it is here so
+                     * that stays a fact about the numbers rather than luck. */
+                    if (el->top_limit > el->bot_limit)
+                        el->top_limit = el->bot_limit;
                     el->y = el->bot_limit;    /* start at bottom of shaft */
                     el->vy = -ELEVATOR_SPEED; /* initially moving upward */
                 }
@@ -946,11 +1008,24 @@ bool level_load_data(Level *level, const char *name,
         }
         mp->left_limit = lc * (float)TILE_SIZE;
         mp->right_limit = rc * (float)TILE_SIZE;
-        /* Ensure vx has correct sign */
-        if (mp->vx > 0.0f)
-            mp->vx = MOVING_PLATFORM_SPEED;
-        else
-            mp->vx = -MOVING_PLATFORM_SPEED;
+        /*
+         * The sign is not normalised here and there is nothing to normalise.
+         * `P` is the only thing that makes a platform and it sets
+         * `vx = MOVING_PLATFORM_SPEED` where the character is read, a few
+         * hundred lines up; nothing between the two touches the field. What
+         * stood here was `if (mp->vx > 0) vx = SPEED; else vx = -SPEED;` under
+         * a comment saying "ensure vx has correct sign", and the `else` was
+         * **compiled and never run** on any map that can be authored — a branch
+         * claiming a platform can start out heading left when nothing in the
+         * format can ask for one. Same shape as the `TILE_FALL_PLATFORM` that
+         * sat in level.h naming a tile no character parsed to: a claim about
+         * the map format that is not true of it.
+         *
+         * If a leftward `P` ever becomes a thing an author can draw, it belongs
+         * at the character rather than as a fixup here, so the file and the
+         * runtime say the same thing in one place.
+         */
+        mp->vx = MOVING_PLATFORM_SPEED;
     }
 
     /* Parse optional SPAWNS metadata line: "SPAWNS n0 n1 n2 ..."
@@ -1045,21 +1120,22 @@ bool level_load_data(Level *level, const char *name,
                 name, start_count);
         return false;
     }
-    bool valid_destination = false;
-    if (sublevel_return_count == 1)
-        valid_destination = exit_count == 0 && window_count == 0;
-    else if (level->map.mode == LEVEL_MODE_FACADE)
-        valid_destination = exit_count == 0 && window_count == 1;
-    else
-        valid_destination = exit_count == 1 && window_count <= 1;
-    if (!valid_destination)
-    {
-        fprintf(stderr,
-                "Level '%s' has invalid destinations for its mode "
-                "(E=%d, Y=%d, R=%d)\n",
-                name, exit_count, window_count, sublevel_return_count);
-        return false;
-    }
+    /*
+     * How many of each, before what they add up to.
+     *
+     * The other way round — which is how this was written — the destination
+     * rule swallows two of the three: every one of its arms already requires
+     * `window_count` to be nought or one, so `Y` twice was refused by the arm
+     * rather than by the rule about `Y`, and the sentence naming that rule was
+     * compiled and could never print. An author with two windows on an
+     * interior read `invalid destinations for its mode (E=1, Y=2, R=0)` and had
+     * to work out which of the three figures was the complaint.
+     *
+     * A count and a sum are two faults and want two sentences; see the SPAWNS
+     * parser in AGENTS.md for the same defect one file over. Nothing about
+     * which maps load changes — all four of these refuse — only which sentence
+     * an author is handed.
+     */
     if (window_count > 1)
     {
         fprintf(stderr,
@@ -1082,6 +1158,21 @@ bool level_load_data(Level *level, const char *name,
                 "Level '%s' may contain at most one sublevel return 'R' "
                 "(found %d)\n",
                 name, sublevel_return_count);
+        return false;
+    }
+    bool valid_destination = false;
+    if (sublevel_return_count == 1)
+        valid_destination = exit_count == 0 && window_count == 0;
+    else if (level->map.mode == LEVEL_MODE_FACADE)
+        valid_destination = exit_count == 0 && window_count == 1;
+    else
+        valid_destination = exit_count == 1 && window_count <= 1;
+    if (!valid_destination)
+    {
+        fprintf(stderr,
+                "Level '%s' has invalid destinations for its mode "
+                "(E=%d, Y=%d, R=%d)\n",
+                name, exit_count, window_count, sublevel_return_count);
         return false;
     }
     if ((level->map.door_count % 2) != 0)
@@ -1373,6 +1464,16 @@ void level_update_moving_platforms(Level *level, float dt)
     }
 }
 
+/*
+ * Tiles uncovered per tick of `reveal.interval`.
+ *
+ * Shared by the two functions below rather than spelled in the stepper, because
+ * `level_reveal_hold_for` has to know how many ticks a map's walk takes to turn
+ * a duration into an interval — and a second copy of this number would be a
+ * second answer to the question "how long is a reveal".
+ */
+#define REVEAL_BATCH 12
+
 void level_reveal_init(Level *level)
 {
     /* Default: hide everything and start reveal from top-left. */
@@ -1389,13 +1490,36 @@ void level_reveal_init(Level *level)
     level->reveal.done = false;
 }
 
+void level_reveal_hold_for(Level *level, float seconds)
+{
+    if (level == NULL || seconds <= 0.0f)
+        return;
+
+    /*
+     * One tick per `REVEAL_BATCH` tiles, plus the tick that walks off the end
+     * of the last row — which is the tick the animation actually finishes on,
+     * so leaving it out would make every stretched reveal finish a hair early.
+     */
+    long tiles = (long)level->map.width * (long)level->map.height;
+    long ticks = (tiles + REVEAL_BATCH) / REVEAL_BATCH;
+    if (ticks < 1)
+        ticks = 1;
+
+    /* Never faster: a duration shorter than the map's own snappy default leaves
+     * the default alone, so this can only ever be asked to hold a reveal open
+     * and never to hurry one somebody tuned. */
+    float interval = seconds / (float)ticks;
+    if (interval > level->reveal.interval)
+        level->reveal.interval = interval;
+}
+
 bool level_reveal_step(Level *level, float dt)
 {
     if (level->reveal.done)
         return false;
 
     level->reveal.timer += dt;
-    const int batch = 12; /* reveal this many tiles per interval (larger = faster) */
+    const int batch = REVEAL_BATCH;
     bool just_finished = false;
     while (level->reveal.timer >= level->reveal.interval && !level->reveal.done)
     {

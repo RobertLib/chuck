@@ -1,6 +1,20 @@
 #include "gameplay_state.h"
 
+#include "game_config.h"
+
 #include <string.h>
+
+/*
+ * The docket is a bitmask over the campaign, so the campaign has to fit one.
+ *
+ * `MAX_ALARM_SWITCHES` is held to the same width one file over for the same
+ * reason: past thirty-two the bit is silently never set, which here would mean
+ * a sheet that can be taken again on every retry — the exact defect the mask
+ * exists to close, returning on the sectors nobody could see it on.
+ */
+_Static_assert(CAMPAIGN_SECTORS <= 32,
+               "CampaignState.docket_sheets_held is a uint32_t; widen it "
+               "before the campaign passes thirty-two sectors");
 
 void campaign_reset(CampaignState *campaign, bool veteran)
 {
@@ -10,6 +24,41 @@ void campaign_reset(CampaignState *campaign, bool veteran)
     campaign->continues_remaining =
         veteran ? VETERAN_CONTINUES : PLAYER_CONTINUES;
     campaign->next_extra_life_score = EXTRA_LIFE_SCORE_STEP;
+}
+
+bool campaign_holds_docket_sheet(const CampaignState *campaign, int sector)
+{
+    if (campaign == NULL || sector < 0 || sector >= CAMPAIGN_SECTORS)
+        return false;
+    return (campaign->docket_sheets_held & (1u << sector)) != 0u;
+}
+
+void campaign_take_docket_sheet(CampaignState *campaign, int sector)
+{
+    if (campaign == NULL || sector < 0 || sector >= CAMPAIGN_SECTORS)
+        return;
+    /* Idempotent, so a caller that has not asked first cannot double-count.
+     * The pickup does ask — `item_would_be_wasted` leaves the sheet on the
+     * floor — but the count and the set must not be able to disagree even
+     * from a call site that forgets. */
+    if (campaign_holds_docket_sheet(campaign, sector))
+        return;
+    campaign->docket_sheets_held |= 1u << sector;
+    campaign->evidence_collected++;
+}
+
+int campaign_time_bonus_for(float elapsed_seconds)
+{
+    /* Whole seconds, truncated, and the same arithmetic the report prints: the
+     * field shows `elapsed / 60` and `elapsed % 60` off an int, and a bonus
+     * computed off the float would pay for a second the player was never
+     * shown. */
+    int elapsed = (int)elapsed_seconds;
+    int par = (int)SECTOR_PAR_SECONDS;
+    int spare = par - elapsed;
+    if (spare < 0)
+        spare = 0;
+    return spare * SECTOR_TIME_BONUS_PER_SECOND;
 }
 
 void campaign_note_veteran(CampaignState *campaign, bool veteran)
@@ -104,7 +153,30 @@ bool campaign_check_extra_life(CampaignState *campaign)
      * counter already at MAX_LIVES announcing a life it did not gain is the
      * HUD miscounting out loud. */
     if (campaign->lives >= MAX_LIVES)
+    {
+        /*
+         * And the milestones the score has *already* passed go with it, which
+         * the paragraph above claimed and the caller undid.
+         *
+         * Every call site is `while (campaign_check_extra_life(...))`, so the
+         * drain stops on the first `false` — and returning here left the
+         * threshold one step behind a score that may be several ahead. Those
+         * steps were banked after all: at nine lives with a score five
+         * milestones past the mark, the next death dropped the count to eight
+         * and the next point scored handed a life straight back, once per
+         * banked step. Measured before this loop existed, a run at the cap
+         * that had passed four spare milestones got two of them back over its
+         * next two deaths.
+         *
+         * The cap is meant to *cost* the milestones it swallows, which is what
+         * makes nine lives a ceiling rather than a buffer. Burning them here
+         * rather than at the call site keeps that a property of the rule and
+         * not of how a caller happens to loop.
+         */
+        while (campaign->score >= campaign->next_extra_life_score)
+            campaign->next_extra_life_score += EXTRA_LIFE_SCORE_STEP;
         return false;
+    }
     campaign->lives++;
     return true;
 }
@@ -130,17 +202,11 @@ void campaign_award_sector_bonus(CampaignState *campaign,
         return;
     campaign->sector_bonus_paid = true;
 
-    /* Whole seconds under par, floored, so the number on the report and the
-     * number in the score are arrived at the same way: the field prints
-     * `elapsed / 60` and `elapsed % 60` off an int, and a bonus computed off
-     * the float would pay for a second the player was never shown. */
-    int elapsed = (int)campaign->level_elapsed_time;
-    int par = (int)SECTOR_PAR_SECONDS;
-    int spare = par - elapsed;
-    if (spare < 0)
-        spare = 0;
-
-    int time_bonus = spare * SECTOR_TIME_BONUS_PER_SECOND;
+    /* Through `campaign_time_bonus_for`, which is the only place the clock is
+     * priced. It was inline here, and the three staged screens in game.c each
+     * carried a figure somebody had worked out by hand — one of which was the
+     * bonus for a different clock than the one printed beside it. */
+    int time_bonus = campaign_time_bonus_for(campaign->level_elapsed_time);
     /* A death is what costs this, not a hit: the hearts are the sector's own
      * currency and spending all three is already the walk back. */
     int clean_bonus = campaign->level_deaths == 0 ? SECTOR_CLEAN_BONUS : 0;
@@ -151,6 +217,23 @@ void campaign_award_sector_bonus(CampaignState *campaign,
         *out_time_bonus = time_bonus;
     if (out_clean_bonus != NULL)
         *out_clean_bonus = clean_bonus;
+}
+
+void gameplay_carry_through_doorway(GameplayState *arriving,
+                                    const Player *travelling,
+                                    float travelling_invuln)
+{
+    /* No NULL guard, to match `player_carry_loadout` — which this function's
+     * first line is — rather than the campaign accessors above it: both callers
+     * are `&game->gameplay`, and a guard nothing can reach is a line `make
+     * coverage` reports for ever. */
+    player_carry_loadout(&arriving->player, travelling);
+    /* The door is not a heal. */
+    arriving->player.hp = travelling->hp;
+    arriving->invuln_timer = travelling_invuln;
+    /* And the door he has just come through must not read as under his feet on
+     * the frame he arrives, in either direction. */
+    arriving->teleport_cooldown = TELEPORT_COOLDOWN;
 }
 
 void gameplay_state_begin_level(GameplayState *state)

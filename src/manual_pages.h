@@ -66,6 +66,29 @@ typedef struct
 #define MANUAL_PAGE_COUNT 10
 
 /*
+ * The one label inside an illustration that states a tuning number.
+ *
+ * `FIGHTING`'s lower vignette draws a guard's sight cone and prints how far it
+ * reaches, and that figure is `ENEMY_VIEW_RANGE` — the number the whole quiet
+ * route is played against. It was a literal inside
+ * [manual.c](manual.c), on the side of the SDL boundary no test can reach, while
+ * the bullet saying the same thing an inch to its left sat in
+ * [manual_pages.c](manual_pages.c), where a test could have reached it and none
+ * did. So the most important number in the game was written out in words twice
+ * and derived from the constant neither time.
+ *
+ * It is here for the reason every table of words in this tree is here: so the
+ * suite can read it. `test_the_sheets_spell_the_tuning_they_quote` requires both
+ * copies to spell `ENEMY_VIEW_RANGE / TILE_SIZE`, so retuning the cone fails the
+ * build instead of leaving the manual quietly lying about it.
+ *
+ * The rest of that vignette's labels stay in the renderer, and the difference is
+ * the rule rather than an inconsistency: `FROM ABOVE` and `LAND ON HIS HEAD` are
+ * captions on a picture, and this one is a claim about the simulation.
+ */
+#define MANUAL_SIGHT_CONE_LABEL "SEVEN TILES"
+
+/*
  * Declared without its length, so the definition's `_Static_assert` measures the
  * sheaf rather than itself — see the same note on `ED_GROUP_NAMES` in
  * editor/editor_legend.h. A sheet in the enum with no words here would otherwise
@@ -91,6 +114,34 @@ extern const ManualPageText MANUAL_PAGES[];
  */
 extern const int CAMPAIGN_CLIMB_SECTORS[];
 extern const int CAMPAIGN_CLIMB_SECTOR_COUNT;
+
+/*
+ * How many sheets the docket has in it: one per interior, and none on a climb.
+ *
+ * A function beside the array above rather than a `#define`, because the climb
+ * count is a table's length and not a macro. It is here because it was about to
+ * be arithmetic in two files — [sector_tally.c](sector_tally.c) already derived
+ * it for the line the report prints, and [run_tally.c](run_tally.c) needed the
+ * same number for the RECORDS page — and "a number written down twice is checked
+ * or it is two numbers" is the rule this whole file exists under. Derived rather
+ * than written down for the reason the climb list is: a campaign that gains a
+ * floor gains a sheet with it.
+ */
+int campaign_docket_sheets(void);
+
+/*
+ * And how much of it exists at or below `sector` (1-based), which is the most a
+ * run standing on that floor can be holding.
+ *
+ * The whole-campaign answer above is this one asked about the last sector, so
+ * the two are one function rather than two spellings of `CAMPAIGN_SECTORS`
+ * minus the climbs. What wanted the general form is the staged clear the
+ * `--screen` cards show: its docket was a flat `SOAK_TALLY_DOCKET` of seven,
+ * printed on a report after sector one, where a run can be holding at most a
+ * single sheet. See the note on the fixture in
+ * [sector_tally.h](sector_tally.h).
+ */
+int campaign_docket_sheets_by(int sector);
 
 /*
  * The geometry the renderer lays out against and the fit checks measure. Both

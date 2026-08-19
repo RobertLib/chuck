@@ -262,6 +262,24 @@ typedef struct
      */
     int evidence_collected;
     /*
+     * Which sectors' sheets are already in the folder, one bit to a sector.
+     *
+     * The count above needed this the day a retry was made unlimited and
+     * nobody noticed. `campaign_accept_continue` says in as many words that
+     * "retrying the sector is always on offer", and the retry goes through
+     * `load_level`, which parses the map again — so the `*` is laid out again
+     * while `evidence_collected` carries on from where it was. Twelve sheets
+     * is a *set*, one to an interior, and the same sheet taken twice was two
+     * of them: measured, five retries of sector 1 give `evidence_collected`
+     * five, and `progress_note_evidence` banks it.
+     *
+     * A bitmask rather than a per-sector counter because the question is
+     * membership and nothing else asks it, and it is on the campaign rather
+     * than on the level for the reason the count beside it is: a sector's own
+     * copy is wiped by the very reload this exists to survive.
+     */
+    uint32_t docket_sheets_held;
+    /*
      * Whether any assist switch has been on at any point in this run.
      *
      * Sticky, and that is the whole of the rule: the assists take effect the
@@ -342,6 +360,31 @@ bool campaign_accept_continue(CampaignState *campaign);
 /* Returns true each time the score crosses an extra-life threshold, granting
  * the life; the shell turns the report into sound and HUD flash. */
 bool campaign_check_extra_life(CampaignState *campaign);
+
+/*
+ * The docket as a set rather than as a tally.
+ *
+ * `campaign_holds_docket_sheet` is what makes this floor's sheet a wasted
+ * pickup once the run already has it, and `campaign_take_docket_sheet` is the
+ * only thing that raises `evidence_collected` — so the count and the set
+ * cannot come apart, which is the whole reason the increment is not left at
+ * the call site. A sector outside the campaign is held by nobody and takes
+ * nothing: the mask is `CAMPAIGN_SECTORS` wide by assertion, so the only way
+ * in is a caller with a sector it invented.
+ */
+bool campaign_holds_docket_sheet(const CampaignState *campaign, int sector);
+void campaign_take_docket_sheet(CampaignState *campaign, int sector);
+
+/*
+ * What the clock pays for a sector finished in `elapsed_seconds`.
+ *
+ * Split out of `campaign_award_sector_bonus` because two other callers were
+ * doing the arithmetic in their heads and one of them got it wrong: the
+ * staged `--screen report`, `--screen cleared` and `--screen reveal` all
+ * printed `+1200 TIME` beside a clock of 01:31, and 1200 is what 01:14 pays.
+ * The press stills and the store page are cut from those frames.
+ */
+int campaign_time_bonus_for(float elapsed_seconds);
 
 /*
  * What finishing a sector pays, and the two numbers the report prints beside
@@ -479,6 +522,29 @@ typedef struct
 
 /* Clear all per-level simulation state while preserving the RNG stream. */
 void gameplay_state_begin_level(GameplayState *state);
+
+/*
+ * The restroom door, as one rule rather than three assignments in the shell.
+ *
+ * A `U` swaps two whole `GameplayState`s, so everything that belongs to the
+ * *man* rather than to the room has to be handed back across afterwards. The
+ * shell used to do that by hand for two of the three — `player_carry_loadout`
+ * and the hearts, under a comment saying "the door is not a heal" — and the
+ * third, the mercy window a hit has just opened, stayed behind with the frozen
+ * area. So a player who took a hit and stepped through arrived with no blink at
+ * all and could be hit again on the first frame, in rooms holding two men and a
+ * dog; and coming back out he was handed the sector's *old* window, banked at
+ * the moment he went in, however long he had spent inside. The blink is a
+ * property of the body, like the hearts, and it travels with them.
+ *
+ * It is here rather than in [game.c](game.c) for the reason
+ * `player_carry_loadout` is in [player.c](player.c): a doorway rule kept on the
+ * far side of the SDL boundary is a doorway rule no test can reach, which is
+ * where the flash charge went missing for six sectors.
+ */
+void gameplay_carry_through_doorway(GameplayState *arriving,
+                                    const Player *travelling,
+                                    float travelling_invuln);
 
 /* The assist choices as the numbers the simulation actually uses. */
 int gameplay_player_max_hp(const GameplayState *state);

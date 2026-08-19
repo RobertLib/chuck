@@ -42,9 +42,30 @@
  * disagree about how many rows there are — the failure the manual's mission
  * sheet had when its loop counted to a literal.
  */
+/*
+ * The OPTIONS row's detail read `SOUND, DISPLAY AND ASSIST` for a release after
+ * the sheet it describes stopped being that sheet. The options sheet is four
+ * pages now — AUDIO and DISPLAY on the first, with a row down to CONTROLS,
+ * DIFFICULTY and RECORDS — so ASSIST is two levels away and is not a heading
+ * anybody arrives at. Not a false sentence, which is why nothing caught it: the
+ * assist switches are still reachable through this row. Just a description of a
+ * layout that no longer exists, on the one line whose job is telling a player
+ * what is behind a door. `check_docs.py` derives figures out of `docs/` and
+ * `README.md` and has never read a header.
+ *
+ * It names no count on purpose. "AND THREE MORE SHEETS" would be a fifth copy of
+ * `SETTINGS_PAGE_COUNT` in a player-facing string, which is the drift this tree
+ * spends most of its history on. It avoids the word SHEETS for a sharper reason:
+ * `test_the_sheets_spell_the_tuning_they_quote` reads every pause detail that
+ * says SHEETS as a claim about `MANUAL_PAGE_COUNT` and requires exactly one row
+ * to make it. The first rewrite of this line said "THE SHEETS BEHIND IT" and
+ * failed that check — which is the check being right: two rows saying SHEETS on
+ * one sheet, meaning two different things, is how a count comes to be read off
+ * the wrong one.
+ */
 #define PAUSE_ROWS(ROW)                                                       \
     ROW(RESUME, "RESUME", "BACK TO THE SECTOR")                               \
-    ROW(SETTINGS, "OPTIONS", "SOUND, DISPLAY AND ASSIST")                     \
+    ROW(SETTINGS, "OPTIONS", "SOUND, DISPLAY AND EVERYTHING BEHIND THEM")     \
     ROW(MANUAL, "FIELD MANUAL", "THE TEN SHEETS, WITHOUT LEAVING THE RUN")    \
     ROW(ABANDON, "ABANDON RUN", "GIVE UP THIS RUN AND RETURN TO THE TITLE")
 

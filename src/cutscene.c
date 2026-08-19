@@ -59,6 +59,15 @@ static void draw_text(SDL_Renderer *r, float x, float y, float scale,
     SDL_SetRenderScale(r, 1.0f, 1.0f);
 }
 
+/* The run this file's own `draw_text` lays down, in pixels — the same
+ * arithmetic `render_sprite.c` and `chase_render.c` each keep locally, because
+ * every renderer here carries its own `draw_text` rather than sharing one. */
+static float text_width(const char *text, float scale)
+{
+    return (float)SDL_strlen(text) *
+           SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * scale;
+}
+
 static float clamp01(float value)
 {
     if (value < 0.0f)
@@ -871,11 +880,38 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
 
     if (time > 3.0f && time < 6.5f)
     {
+        /*
+         * The caption is right-aligned to the bracket it labels, and that is a
+         * fix rather than a taste.
+         *
+         * Drawn from `target_x + 3` it ran 200px to the right of a parked SUV
+         * and straight into the building's own parapet nameplate, which
+         * `render_tower` fixes at `win_w - 390 + 209` on very nearly the same
+         * baseline — so the last three cells of this line and the first three
+         * of `KESSLER TOWER` were printed one pixel apart, and the frame read
+         * `SAME SUV // KESSLER TOWEKESSLER TOWER` for the whole 3.5s the
+         * caption is up. Not a moment of it: the SUV has finished parking by
+         * the time this beat starts, so the overlap was every run and every
+         * seed, on the third screen of the game.
+         *
+         * Nothing in this tree could see it. Both strings are renderer
+         * literals on the far side of the SDL boundary, the sweep drew the
+         * frame every run so `make coverage` counted it, and `--shot` had
+         * never been pointed at this beat — the press kit photographs the
+         * kerb, not the arrival. It was read off a capture.
+         *
+         * Right-aligned rather than nudged, because a caption belongs to the
+         * bracket under it: end the label where the bracket ends and the pair
+         * travels together if the SUV's stop ever moves, which a hand-picked x
+         * would not.
+         */
         float pulse = 0.5f + 0.5f * sinf(time * 5.0f);
-        draw_target_brackets(r, target_x - 8.0f, 371.0f,
-                             167.0f, 72.0f, pulse);
-        draw_text(r, target_x + 3.0f, 351.0f, 1.0f,
-                  FX_RUST, "SAME SUV // KESSLER TOWER");
+        const char *label = "SAME SUV // KESSLER TOWER";
+        float bracket_x = target_x - 8.0f;
+        float bracket_w = 167.0f;
+        draw_target_brackets(r, bracket_x, 371.0f, bracket_w, 72.0f, pulse);
+        draw_text(r, bracket_x + bracket_w - text_width(label, 1.0f),
+                  351.0f, 1.0f, FX_RUST, label);
     }
 
     if (time > 7.1f && time < 10.8f)
@@ -898,8 +934,9 @@ static void render_cinematic_ui(SDL_Renderer *r, float time,
         char hint[32];
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f,
                   1.0f, skip,
-                  pad_hint(pad, hint, sizeof(hint), "$A / $START TO SKIP",
-                           "ENTER / SPACE TO SKIP"));
+                  pad_hint(pad, hint, sizeof(hint),
+                           PAD_CONFIRM_PAD " TO SKIP",
+                           PAD_CONFIRM_KEYS " TO SKIP"));
     }
 }
 
@@ -1224,8 +1261,9 @@ static void render_kerb_ui(SDL_Renderer *r, float time, int win_w, int win_h,
                           (Uint8)(106.0f + pulse * 38.0f), 255};
         char hint[32];
         draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f, 1.0f, skip,
-                  pad_hint(pad, hint, sizeof(hint), "$A / $START TO SKIP",
-                           "ENTER / SPACE TO SKIP"));
+                  pad_hint(pad, hint, sizeof(hint),
+                           PAD_CONFIRM_PAD " TO SKIP",
+                           PAD_CONFIRM_KEYS " TO SKIP"));
     }
 }
 
@@ -1460,10 +1498,16 @@ void level_transition_init(LevelTransition *transition,
     transition->time_bonus = time_bonus;
     transition->clean_bonus = clean_bonus;
     transition->docket_sheets = docket_sheets < 0 ? 0 : docket_sheets;
-    /* Derived off the campaign's shape, exactly as `sector_tally_set` does it,
-     * so the two screens cannot come to disagree about how big the collection
-     * is. One sheet to an interior, none on a climb. */
-    transition->docket_total = CAMPAIGN_SECTORS - CAMPAIGN_CLIMB_SECTOR_COUNT;
+    /* Through the same function `sector_tally_set` and the RECORDS page read it
+     * from, so the screens cannot come to disagree about how big the collection
+     * is. One sheet to an interior, none on a climb.
+     *
+     * This used to spell the arithmetic out again, under a comment claiming
+     * "exactly as `sector_tally_set` does it" — which is a sentence whose whole
+     * content is that two copies agree, and this file has a page on what those
+     * are worth. `campaign_docket_sheets` already existed; what was missing was
+     * the call. */
+    transition->docket_total = campaign_docket_sheets();
     if (transition->docket_sheets > transition->docket_total)
         transition->docket_sheets = transition->docket_total;
 }
@@ -1665,7 +1709,8 @@ static float transition_door_open(float time)
 
 static void render_transition_corridor(SDL_Renderer *r, float time,
                                        int win_w, int win_h,
-                                       float door_x, float ground_y)
+                                       float door_x, float ground_y,
+                                       int next_sector)
 {
     color_rect(r, (SDL_Color){14, 22, 28, 255},
                0.0f, 151.0f, (float)win_w, (float)win_h - 151.0f);
@@ -1773,8 +1818,26 @@ static void render_transition_corridor(SDL_Renderer *r, float time,
                door_x - 7.0f, TRANSITION_DOOR_INNER_TOP,
                3.0f, ground_y - TRANSITION_DOOR_INNER_TOP);
 
+    /*
+     * The plate over the stair door, and it was the literal `"02"` for as long
+     * as this screen existed.
+     *
+     * The report is shown after six sectors and the number in the top right of
+     * the same frame is `next_level`, so on five of those six the door Chuck
+     * walks through was labelled 02 under a caption reading SECTOR 05 — two
+     * numbers about the same door, two hundred pixels apart, disagreeing. It
+     * shipped, in an ordinary run, on every report but the first.
+     *
+     * Nothing in the tree could see it and the reason is the sweep: `--screen
+     * report` staged the clear of sector one whatever `--level` said, and
+     * sector one is the *one* sector this literal is right for. A frame drawn
+     * by the gate on the only floor that agrees with it is a frame nobody has
+     * a reason to read.
+     */
+    char plate[8];
+    SDL_snprintf(plate, sizeof(plate), "%02d", next_sector);
     draw_text(r, door_x + 37.0f, TRANSITION_DOOR_TOP - 17.0f, 1.0f,
-              (SDL_Color){143, 151, 137, 255}, "02");
+              (SDL_Color){143, 151, 137, 255}, plate);
 }
 
 static void draw_transition_door_foreground(SDL_Renderer *r,
@@ -1824,8 +1887,9 @@ static void render_transition_action_ui(SDL_Renderer *r, float time,
                   (SDL_Color){(Uint8)(100.0f + pulse * 42.0f),
                               (Uint8)(108.0f + pulse * 42.0f),
                               (Uint8)(106.0f + pulse * 38.0f), 255},
-                  pad_hint(pad, hint, sizeof(hint), "$A / $START: SKIP",
-                           "SPACE / ENTER: SKIP"));
+                  pad_hint(pad, hint, sizeof(hint),
+                           PAD_CONFIRM_PAD " TO SKIP",
+                           PAD_CONFIRM_KEYS " TO SKIP"));
     }
 }
 
@@ -1841,7 +1905,8 @@ void level_transition_render(SDL_Renderer *r,
     float hostage_x = group_x + 35.0f;
 
     render_transition_report(r, transition, win_w);
-    render_transition_corridor(r, time, win_w, win_h, door_x, ground_y);
+    render_transition_corridor(r, time, win_w, win_h, door_x, ground_y,
+                               transition->next_level + 1);
 
     if (time >= 0.35f && group_x < (float)win_w + 40.0f)
     {
@@ -2481,8 +2546,9 @@ static void render_outro_ui(SDL_Renderer *r, float time,
                   (SDL_Color){(Uint8)(101.0f + pulse * 40.0f),
                               (Uint8)(109.0f + pulse * 40.0f),
                               (Uint8)(108.0f + pulse * 38.0f), 255},
-                  pad_hint(pad, hint, sizeof(hint), "$A / $START: SKIP",
-                           "SPACE / ENTER: SKIP"));
+                  pad_hint(pad, hint, sizeof(hint),
+                           PAD_CONFIRM_PAD " TO SKIP",
+                           PAD_CONFIRM_KEYS " TO SKIP"));
     }
 }
 

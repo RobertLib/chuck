@@ -118,6 +118,39 @@ static void draw_text_centered(SDL_Renderer *r, float center_x, float y,
     draw_text(r, center_x - text_width(text, scale) * 0.5f, y, scale, color, text);
 }
 
+/*
+ * The way out of the drive, offered twice on the same screen.
+ *
+ * Both prompts are one function because they had drifted into two spellings —
+ * see `PAD_CONFIRM_KEYS` in [pad_hint.h](pad_hint.h) — and `offer` is the only
+ * thing that differs between them, which is what is being skipped rather than
+ * how.
+ *
+ * Right-aligned rather than at a fixed x, and that is not tidying: the two used
+ * to sit at `win_w - 180` and `win_w - 196`, two magic numbers each measured by
+ * hand against the string that happened to be there. Naming both keys makes the
+ * longer of the two 31 characters, which is 248px and straight off the edge of
+ * the 196. Measured off the drawn line there is nothing left to keep in step —
+ * and with the shorter of the two the arithmetic lands on exactly the old
+ * position, `168 + 12 == 180`, which is what says the margin below is the one
+ * that was always there.
+ */
+#define CHASE_PROMPT_MARGIN 12.0f
+
+static void draw_skip_prompt(SDL_Renderer *r, int win_w, int win_h, float blink,
+                             const PadHints *pad, const char *offer)
+{
+    char pad_form[64];
+    char key_form[64];
+    char spelled[64];
+    SDL_snprintf(pad_form, sizeof(pad_form), "%s%s", PAD_CONFIRM_DRIVE, offer);
+    SDL_snprintf(key_form, sizeof(key_form), "%s%s", PAD_CONFIRM_KEYS, offer);
+    const char *line =
+        pad_hint(pad, spelled, sizeof(spelled), pad_form, key_form);
+    draw_text(r, (float)win_w - text_width(line, 1.0f) - CHASE_PROMPT_MARGIN,
+              (float)win_h - 31.0f, 1.0f, fx_dim(FX_STEEL_LT, blink), line);
+}
+
 /* ---- Cars ------------------------------------------------------------ */
 
 /*
@@ -1087,11 +1120,7 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
         draw_text_centered(r, center_x, view->view_top + 14.0f, 2.0f,
                            fx_dim(FX_CREAM, fade), caption);
         float blink = 0.45f + 0.55f * sinf(chase->time * 2.0f);
-        char hint[32];
-        draw_text(r, (float)win_w - 180.0f, (float)win_h - 31.0f, 1.0f,
-                  fx_dim(FX_STEEL_LT, blink),
-                  pad_hint(pad, hint, sizeof(hint), "$Y TO SKIP",
-                           "ENTER / SPACE TO SKIP"));
+        draw_skip_prompt(r, win_w, win_h, blink, pad, " TO SKIP");
     }
 
     if (chase->phase == CHASE_PHASE_FAILED)
@@ -1111,11 +1140,7 @@ static void render_overlays(SDL_Renderer *r, const ChaseView *view,
         chase->attempts >= CHASE_SKIP_AFTER_ATTEMPTS)
     {
         float blink = 0.45f + 0.55f * sinf(chase->time * 2.0f);
-        char hint[32];
-        draw_text(r, (float)win_w - 196.0f, (float)win_h - 31.0f, 1.0f,
-                  fx_dim(FX_STEEL_LT, blink),
-                  pad_hint(pad, hint, sizeof(hint), "$Y: SKIP THE DRIVE",
-                           "ENTER: SKIP THE DRIVE"));
+        draw_skip_prompt(r, win_w, win_h, blink, pad, " TO SKIP THE DRIVE");
     }
 
     if (chase->phase == CHASE_PHASE_ARRIVAL && chase->phase_time > 1.4f)

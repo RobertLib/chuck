@@ -13,8 +13,24 @@
 #include "pause_sheet.h"
 #include "particle.h"
 #include "progress.h"
+#include "screenshot.h"
 #include "sector_tally.h"
 #include "settings.h"
+
+/*
+ * How many poses `--screen aftermath --page N` can stage.
+ *
+ * Written here once because it was written down twice: the `switch (page)` in
+ * `soak_stage_aftermath` and the pose list in [../tools/soak.sh](../tools/soak.sh),
+ * which agreed on five while a comment above the list said four. The sweep
+ * derives the figure off this line the way it already derives the options
+ * sheet's page count off `SETTINGS_PAGE_COUNT`, so a pose is walked by having
+ * been added rather than by somebody remembering to extend a bash array.
+ *
+ * A pose earns a number when it is the only route to a drawing — see the switch
+ * for which renderer each one reaches.
+ */
+#define AFTERMATH_POSE_COUNT 7
 
 typedef enum
 {
@@ -108,6 +124,60 @@ typedef struct
      */
     bool soaking;
     float soak_seconds_left;
+
+    /*
+     * Whether this run belongs to a script rather than to a person, which is
+     * the whole of what decides that it touches nobody's disk.
+     *
+     * Set when `--shot` or `--soak` is on the line, because those two switches
+     * have no other caller: one produces an artifact and one exits by itself,
+     * and both were reading and writing the settings and progress of whoever
+     * ran them. That is not a small leak. `game_init` applies the saved
+     * `fullscreen`, `screenshot_write` reads back the *window* rather than the
+     * logical frame, and the two together meant a capture came out at the
+     * runner's display size: measured, 800x552 with the flag off and 1024x706
+     * with it on, the second pre-scaled by a non-integer 1.28 — which is
+     * exactly the pixel-art damage `tools/press_kit.sh` goes to trouble to
+     * avoid, applied before its own `-resize 200%` ever runs. The MANIFEST it
+     * writes into every press kit said the captures were taken "at the window
+     * the game opens (800x552) and the settings it ships with", while the same
+     * script's header said it "reads and writes the settings and progress of
+     * whoever runs it". Both sentences in one file, seventy lines apart, and
+     * only one of them could be true.
+     *
+     * This is the argument `--seed` is already written under, finished: a
+     * capture is a measurement and a measurement has to be repeatable, and a
+     * seed only pins the half of the frame that comes out of the RNG. The other
+     * half is the runner's own CRT filter, reduced motion, assists and records.
+     *
+     * The other direction matters just as much and is what the soak sweep was
+     * doing: `make soak` and `make sanitize` banked their own numbers into the
+     * developer's `progress.cfg` — `--screen cleared` finishes a sector — so a
+     * test gate quietly rewrote the player's records. A gate must not.
+     *
+     * A run driven by a hand is left exactly as it was: `--level` is the
+     * editor's playtest button and the title screen is somebody's evening, and
+     * both of those are the player's display and the player's save.
+     */
+    bool scripted;
+
+    /* The capture `--shot` asked for, if any. Beside the soak budget because it
+     * is the same kind of request; they spend different clocks on purpose, and
+     * `ShotPlan` says why. */
+    ShotPlan shot;
+
+    /*
+     * Whether the frame on screen was staged by `--screen` rather than played
+     * into.
+     *
+     * `soak_freeze_staged_frame` holds a staged world still by entering
+     * `STATE_PAUSED` — the one state whose own comment is "time stands still" —
+     * which also draws the pause sheet over it. Right state, wrong picture: the
+     * aftermath exists to *show* the bodies, the alarm light and the crawl, and
+     * all of them were behind a menu. Nothing is lost by skipping the sheet here,
+     * because `--screen pause` is the name that draws it.
+     */
+    bool staged_frame;
 } PlatformState;
 
 typedef struct
@@ -185,6 +255,31 @@ typedef struct
      * handed out on eleven of the seventeen clears with nothing on screen to
      * connect either to. */
     SectorTally sector_tally;
+
+    /*
+     * The clock the presentation animates on.
+     *
+     * Banked once per drawn frame from the same `elapsed` the simulation is fed,
+     * which is the whole point of it: five things in
+     * [game_render.c](game_render.c) — the backdrop, the interior world, the
+     * facade world, the ACCESS lamp and the TRAIL meter — read
+     * `SDL_GetTicksNS()` directly, and a capture replaces `elapsed` with a
+     * synthetic `1 / --shot-fps` step so that a burst plays back at the rate it
+     * was asked for. Those five did not get the message. Measured over a
+     * five-frame burst, the world moved by 40, 17 and 6 pixels of difference at
+     * 20, 60 and 200 fps — scaling with the rate as designed — while the TRAIL
+     * meter moved 12, 13 and 17, which is to say by however long the machine
+     * happened to take. So `make press` produced GIFs whose HUD and backdrop
+     * animate at the capture host's speed rather than the GIF's, and rebuilding
+     * the press kit on another machine produced different pictures from the same
+     * commit.
+     *
+     * It is a wall clock rather than a simulation clock on purpose: it is
+     * advanced whatever state the game is in, so the backdrop and the strip keep
+     * breathing behind a pause sheet the way they always have. What changes is
+     * only that a capture's frames are now spaced by the capture's own rate.
+     */
+    float render_clock;
 } PresentationState;
 
 typedef struct
@@ -220,28 +315,35 @@ typedef struct
      * disk when the sheet is closed, so a run is never what a preference
      * belongs to. */
     Settings settings;
-    /* Which of the sheet's two pages is open, where its cursor is standing, and
-     * — on the controls page — which of the row's two key slots the caret is
+    /* Which of the sheet's three pages is open, where its cursor is standing,
+     * and — on the controls page — which of the row's two key slots the caret is
      * on and whether the next key pressed is being taken rather than obeyed. */
     SettingsPage settings_page;
     int settings_cursor;
     int settings_bind_slot;
     bool settings_capturing;
     /*
-     * The records row has been pressed once and is waiting to be pressed again.
+     * Which action row has been pressed once and is waiting to be pressed again,
+     * or `SETTING_NONE`.
      *
-     * The only row on either sheet whose action cannot be undone, so it is the
-     * only one that is armed rather than taken — the same reasoning that keeps
-     * the pause cursor off ABANDON RUN. Anything other than a second press on
-     * the same row disarms it, which is what the armed detail line promises;
-     * `settings_disarm_records` is the one place that clears it so no input path
-     * can leave the sheet armed behind the player's back.
+     * A row whose action cannot be undone is armed rather than taken — the same
+     * reasoning that keeps the pause cursor off ABANDON RUN. Anything other than
+     * a second press on the same row disarms it, which is what the armed detail
+     * line promises; `settings_disarm_action_row` is the one place that clears it
+     * so no input path can leave the sheet armed behind the player's back.
+     *
+     * **It was a `bool` naming the records row, and that is why the second such
+     * row shipped without an arm at all.** `RESET CONTROLS` destroys as much and
+     * asked nothing; see `SETTINGS_RECORDS_ARMED_DETAIL` in
+     * [settings.h](settings.h). An id rather than a flag per row means the sheet
+     * has one thing to remember however many rows arm, and which rows those are
+     * is `settings_row_armed_detail`'s answer rather than a list kept here.
      */
-    bool settings_records_armed;
+    SettingId settings_armed_row;
     int pause_cursor;
     /*
      * The pause sheet's ABANDON row, armed rather than taken — the same shape as
-     * `settings_records_armed` above and for a stronger reason: that row throws
+     * `settings_armed_row` above and for a stronger reason: that row throws
      * away records the player can rebuild, this one throws away the run they are
      * standing in. See `PAUSE_ABANDON_ARMED` in [pause_sheet.h](pause_sheet.h)
      * for the two shortcuts that used to reach it on a single press, one of them
@@ -277,8 +379,23 @@ typedef struct
 #endif
 } Game;
 
-bool game_init(Game *game);
-bool game_init_seeded(Game *game, uint64_t seed);
+/*
+ * Who is driving, which the two `game_init` entry points below need before they
+ * open a window or read a file. See `PlatformState.scripted` for why it is a
+ * question about the run rather than a question about the switch.
+ *
+ * Spelled as an enum rather than passed as a `bool`, so that `game_init(game,
+ * GAME_RUN_SCRIPT)` says at the call site which of the two a reader is looking
+ * at. There is one call site and it is in [main.c](main.c).
+ */
+typedef enum
+{
+    GAME_RUN_PLAYER = 0,
+    GAME_RUN_SCRIPT
+} GameRunKind;
+
+bool game_init(Game *game, GameRunKind run);
+bool game_init_seeded(Game *game, uint64_t seed, GameRunKind run);
 void game_handle_event(Game *game, const SDL_Event *event);
 void game_update(Game *game, float dt);
 void game_render(Game *game);
@@ -304,6 +421,10 @@ void game_pause_move_cursor(Game *game, int delta);
  * drop a run on one press. See `PAUSE_ABANDON_ARMED` in pause_sheet.h. */
 void game_pause_arm_abandon(Game *game);
 void game_pause_activate(Game *game);
+/* Pause because the window stopped being the one in front. See the note in
+ * [game.c](game.c): the world runs off `SDL_AppIterate` and not off input, so
+ * this is the difference between alt-tabbing and losing a life. */
+void game_pause_on_focus_lost(Game *game);
 
 /* The options sheet. It opens from the title screen or from pause and returns
  * to whichever opened it, and every change it makes is felt at once: a volume
@@ -381,8 +502,28 @@ bool game_start_at_level(Game *game, int level_index);
  * bodies, the opened patch, the alarm lighting, the particles and the bazooka.
  * See `soak_stage_aftermath`.
  *
- * False, and a line saying why, for a name this build does not know.
+ * `GAME_SCREEN_UNKNOWN` for a name this build does not know, and
+ * `GAME_SCREEN_REFUSED` — with a line already logged saying which — for a name it
+ * knows and a request it cannot honour. Two answers rather than one, because one
+ * `bool` fed one message: `game_soak_screen` turns a request down for nine
+ * different reasons and only one of them is the name, so `--screen manual --page
+ * 99` printed "Sheet 99 is outside the manual's 10" and then had its caller
+ * append the list of screen names — telling the caller their screen name was
+ * wrong while `manual` sat in the list it had just printed. That is the SPAWNS
+ * parser's own defect on the one switch whose whole job is telling a script which
+ * names exist. A malformed name and an impossible request are two faults and want
+ * two sentences.
  */
+typedef enum
+{
+    GAME_SCREEN_STAGED = 0,
+    /* This build has no screen by that name; the caller owes the list. */
+    GAME_SCREEN_UNKNOWN,
+    /* The name is real and the request is not. Whatever refused it has already
+     * said so, and in terms the caller can act on. */
+    GAME_SCREEN_REFUSED
+} GameScreenResult;
+
 /*
  * `page` is the sheet `--page N` asked for, 1-based, or nought for "whatever the
  * screen opens on". Only the manual reads it — it is the one screen name that
@@ -403,8 +544,18 @@ bool game_start_at_level(Game *game, int level_index);
  * are the ones with a `U` in them, which the sweep greps out of the maps rather
  * than keeping a list of.
  */
-bool game_soak_screen(Game *game, const char *name, int page,
-                      int level_index);
+GameScreenResult game_soak_screen(Game *game, const char *name, int page,
+                                  int level_index);
+
+/*
+ * Bank one drawn frame's worth of time on the presentation clock.
+ *
+ * Called from `SDL_AppIterate` with the same `elapsed` the simulation is about
+ * to be stepped by — after the frame-time clamp and after a capture has
+ * substituted its own step, so what the animations see is what the world sees.
+ * See `PresentationState.render_clock`.
+ */
+void game_advance_render_clock(Game *game, float elapsed);
 
 /* The furthest sector any run has reached, 0-based, and 0 when nobody has got
  * past the lobby — which is also what the title screen reads to decide whether
@@ -444,6 +595,10 @@ void game_input_shutdown(Game *game);
  * in the player's hands. One answer, so no two screens can disagree about
  * which set of hints the frame is wearing. */
 const PadHints *game_pad_hints(const Game *game);
+
+/* And the set to spell a stored binding with, which is never NULL: see the
+ * note beside it in [game_input.c](game_input.c). */
+const PadHints *game_pad_spelling(const Game *game);
 
 /* Read current keyboard and gamepad state into `game->input`. */
 void game_read_input(Game *game);

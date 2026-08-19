@@ -154,6 +154,30 @@ const PadHints *game_pad_hints(const Game *game)
   return game->platform.gamepad_active ? &game->platform.pad : NULL;
 }
 
+/*
+ * The spelling to print for a *stored* pad binding, whether or not a pad is in
+ * the room.
+ *
+ * `game_pad_hints` answers NULL with nothing plugged in, and for a prompt that
+ * is exactly right: a keyboard player is told the key. A binding row on the
+ * options sheet is not a prompt — it reports what the pad slot holds, and the
+ * slot holds it with the pad in a drawer. Handed NULL, `pad_hint` copies its
+ * `key_form` through verbatim, and the only key form a `$A` template has is
+ * itself, so the sheet printed `$A`, `$B`, `$X`, `$Y`, `$LB` and `$RB` as
+ * literal text to every player who had no controller — which is the default
+ * way this game is played. The d-pad rows were fine throughout, because their
+ * names carry no token, so the sheet looked half-right rather than broken.
+ *
+ * The set is always initialised — `game_input_init` applies the Xbox letters
+ * before a pad has said anything — so this is the honest answer to "what is
+ * this button called" when nobody is holding one, and it is the answer the
+ * manual's own control sheet has always given.
+ */
+const PadHints *game_pad_spelling(const Game *game)
+{
+  return &game->platform.pad;
+}
+
 static bool gamepad_button(const Game *game, SDL_GamepadButton button)
 {
   return game->platform.gamepad != NULL &&
@@ -439,7 +463,7 @@ static bool handle_settings_gamepad(Game *game, SDL_GamepadButton button,
                                     PadFace face)
 {
   /*
-   * An armed pad cap takes the very next button, and it has to come first: the
+   * An armed capture takes the very next button, and it has to come first: the
    * d-pad and A below are how the sheet is *navigated*, so testing them before
    * this would make the four directions and the confirm the five buttons a
    * player could never bind — which on a pad is most of the ones worth having.
@@ -447,8 +471,22 @@ static bool handle_settings_gamepad(Game *game, SDL_GamepadButton button,
    * The same rule the keyboard's capture keeps, arrived at from the other
    * side: once armed, the next press means itself rather than what it does.
    * START and BACK are unbindable and so cancel, which is the pad's ESC.
+   *
+   * **Armed at all, rather than armed on a pad cap**, and the difference is a
+   * whole half of the rule. This read `capturing && slot_is_pad`, so a button
+   * pressed while a *key* cap was armed fell straight through to the
+   * navigation below — which made `game_settings_capture_pad`'s own mirror
+   * guard, whose comment says in as many words that "a pad press while a key
+   * cap is armed cancels", unreachable from its only caller. What actually
+   * happened was worse than nothing happening: d-pad left or right on a
+   * binding row is `game_settings_adjust`, which walks `settings_bind_slot`
+   * along the row, so two nudges carried an armed *key* capture onto a *pad*
+   * cap the player never chose — after which the next keyboard press cancelled
+   * and the next button wrote a binding nobody asked for. Up or down carried it
+   * to another action entirely. The keyboard half has swallowed the whole
+   * keyboard while armed since it was written; this is the other half of it.
    */
-  if (game->settings_capturing && game_settings_slot_is_pad(game))
+  if (game->settings_capturing)
   {
     game_settings_capture_pad(game, pad_capture_button(game, button));
     return true;
@@ -647,9 +685,15 @@ static void menu_stick_step(Game *game)
    * player never touched the d-pad. The stick is not on the bindable list for
    * the same reason it is not a control the sheet offers — it is an axis, and
    * it always moves you.
+   *
+   * **Any armed capture, not only one armed on a pad cap.** This asked
+   * `slot_is_pad` as well, so a resting thumb still walked the cursor and the
+   * caret while a *key* capture was up — which needed no deliberate press at
+   * all, and is the same half-rule `handle_settings_gamepad` was carrying. A
+   * button is answered by the capture; the stick is never answered by it. Both
+   * halves are uniform now, in both directions.
    */
-  if (game->state == STATE_SETTINGS && game->settings_capturing &&
-      game_settings_slot_is_pad(game))
+  if (game->state == STATE_SETTINGS && game->settings_capturing)
   {
     return;
   }

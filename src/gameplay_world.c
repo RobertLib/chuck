@@ -377,6 +377,8 @@ void gameplay_provoke_enemy(GameplayState *state, int enemy_index)
         enemy->raising_alarm = false;
         enemy->alarm_switch_index = -1;
         enemy->alarm_use_timer = 0.0f;
+        enemy->alarm_run_timer = 0.0f;
+        enemy->alarm_switches_tried = 0;
         enemy->encounter_decided = true;
         enemy->encounter_lost_timer = GUARD_ENCOUNTER_RESET_TIME;
         enemy->talking = false;

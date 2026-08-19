@@ -7,6 +7,7 @@
 #include "gameplay_interaction.h"
 #include "gameplay_physics.h"
 #include "gameplay_world.h"
+#include "intel.h"
 #include "level_art.h"
 #include "version.h"
 
@@ -185,16 +186,6 @@ static void reset_sublevel_visit(Game *game)
     game->in_sublevel = false;
     game->main_level_cam_x = 0.0f;
     game->main_level_cam_y = 0.0f;
-}
-
-static void transfer_player_loadout(Player *destination,
-                                    const Player *source)
-{
-    destination->bullets = source->bullets;
-    destination->grenades = source->grenades;
-    destination->bazooka_rockets = source->bazooka_rockets;
-    destination->active_weapon = source->active_weapon;
-    destination->facing = source->facing;
 }
 
 /* Hand the shell-owned assist choices to a simulation as plain flags. The
@@ -376,13 +367,12 @@ static bool enter_restroom(Game *game)
         return false;
 
     Player travelling_player = game->gameplay.player;
+    float travelling_mercy = game->gameplay.invuln_timer;
     game->main_level_cam_x = game->presentation.cam_x;
     game->main_level_cam_y = game->presentation.cam_y;
     swap_gameplay_areas(game);
-    transfer_player_loadout(&game->gameplay.player, &travelling_player);
-    /* Hearts travel with the loadout: the door is not a heal. */
-    game->gameplay.player.hp = travelling_player.hp;
-    game->gameplay.teleport_cooldown = TELEPORT_COOLDOWN;
+    gameplay_carry_through_doorway(&game->gameplay, &travelling_player,
+                                   travelling_mercy);
     game_events_clear(&game->gameplay.events);
     game_events_sound(&game->gameplay.events, SFX_DOOR);
     particle_system_clear(&game->presentation.particles);
@@ -397,10 +387,10 @@ static bool leave_restroom(Game *game)
         return false;
 
     Player travelling_player = game->gameplay.player;
+    float travelling_mercy = game->gameplay.invuln_timer;
     swap_gameplay_areas(game);
-    transfer_player_loadout(&game->gameplay.player, &travelling_player);
-    game->gameplay.player.hp = travelling_player.hp;
-    game->gameplay.teleport_cooldown = TELEPORT_COOLDOWN;
+    gameplay_carry_through_doorway(&game->gameplay, &travelling_player,
+                                   travelling_mercy);
     game_events_clear(&game->gameplay.events);
     game_events_sound(&game->gameplay.events, SFX_DOOR);
     particle_system_clear(&game->presentation.particles);
@@ -485,8 +475,15 @@ static bool load_level(Game *game, int index, LevelEntry entry)
          * `game_start_at_level`'s 1-based one, so a mistyped `--level 99` was
          * answered by two numbers, neither of them together and one of them
          * never typed. */
-        SDL_Log("Sector %d is outside the campaign (1-%zu)", index + 1,
-                EMBEDDED_LEVEL_COUNT);
+        /* The count is cast rather than printed with `%zu`. It is a `size_t`
+         * and `%zu` is what C says, and SDL's own printf implements it — but the
+         * format attribute SDL puts on `SDL_Log` is checked by gcc against the
+         * *platform's* printf, and on Windows that archetype has never heard of
+         * `z`. So a correct line produced two warnings on the mingw build and
+         * none on the clang one. A campaign length fits an `int` with room for
+         * every tower anybody will build. */
+        SDL_Log("Sector %d is outside the campaign (1-%d)", index + 1,
+                (int)EMBEDDED_LEVEL_COUNT);
         return false;
     }
 
@@ -564,14 +561,17 @@ static bool continue_game(Game *game)
     return true;
 }
 
-bool game_init(Game *game)
+bool game_init(Game *game, GameRunKind run)
 {
-    return game_init_seeded(game, (uint64_t)time(NULL));
+    return game_init_seeded(game, (uint64_t)time(NULL), run);
 }
 
-bool game_init_seeded(Game *game, uint64_t seed)
+bool game_init_seeded(Game *game, uint64_t seed, GameRunKind run)
 {
     SDL_zerop(game);
+    /* Before the two loads below, because it is what decides whether they read
+     * anything at all — see `pref_file_path`. */
+    game->platform.scripted = run == GAME_RUN_SCRIPT;
     rng_seed(&game->gameplay.rng, seed);
     /* Before the window and before the audio device, because both of them are
      * opened to match what the player last chose. */
@@ -595,7 +595,8 @@ bool game_init_seeded(Game *game, uint64_t seed)
      * a scaling decision taken away from the player by omission rather than
      * on purpose.
      */
-    if (!SDL_CreateWindowAndRenderer("Chuck", 800, 552, SDL_WINDOW_RESIZABLE,
+    if (!SDL_CreateWindowAndRenderer("Chuck", VIEW_W, VIEW_H,
+                                     SDL_WINDOW_RESIZABLE,
                                      &game->platform.window, &game->platform.renderer))
     {
         SDL_Log("SDL_CreateWindowAndRenderer failed: %s", SDL_GetError());
@@ -606,7 +607,8 @@ bool game_init_seeded(Game *game, uint64_t seed)
     /* Use a fixed logical presentation so the game's coordinate system stays
      * consistent when the window is resized or when toggling fullscreen.
      * This makes the game look identical but scaled when entering fullscreen. */
-    SDL_SetRenderLogicalPresentation(game->platform.renderer, 800, 552, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    SDL_SetRenderLogicalPresentation(game->platform.renderer, VIEW_W, VIEW_H,
+                                     SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
     /*
      * Vsync if the renderer will give it, and a frame floor of our own if it
@@ -643,7 +645,14 @@ bool game_init_seeded(Game *game, uint64_t seed)
                 SDL_GetError(), (double)hz);
     }
 
-    SDL_srand(SDL_GetTicksNS());
+    /* SDL's own stream off the same seed as the simulation's, rather than off
+     * the wall clock beside it. The camera shake, the particles and the title
+     * screen's starfield draw from this one, so a run pinned by `--seed` was
+     * still not repeatable while these two disagreed about where randomness
+     * comes from — and repeatability is the whole of what that switch is for.
+     * An ordinary run is seeded from `time(NULL)` through `game_init`, which is
+     * as arbitrary as the tick count it replaces. */
+    SDL_srand(seed);
 
     campaign_reset(&game->campaign, game->settings.challenge.veteran);
     if (!load_level(game, 0, LEVEL_ENTRY_RUN_START))
@@ -666,10 +675,21 @@ bool game_init_seeded(Game *game, uint64_t seed)
     game_apply_volumes(game);
     audio_play_music(&game->platform.audio, MUSIC_INTRO);
 
-    /* The window was created windowed; if the file says otherwise this is
+    /*
+     * The window was created windowed; if the file says otherwise this is
      * where it is put right, once the renderer's logical presentation is set
-     * so the first fullscreen frame is already letterboxed correctly. */
-    if (game->settings.fullscreen)
+     * so the first fullscreen frame is already letterboxed correctly.
+     *
+     * A scripted run stays windowed whatever the file said, and that is not
+     * tidiness — it is what makes `--shot` write the same picture on every
+     * machine. `screenshot_write` reads back the render target, which under
+     * letterbox presentation is the *window*: fullscreen, the capture comes out
+     * at the display's size with the logical frame scaled into it by whatever
+     * non-integer factor that display implies, and pixel art does not survive
+     * one of those. Windowed, the window is VIEW_W x VIEW_H and the capture is
+     * the logical frame exactly. `tools/soak.sh` holds it.
+     */
+    if (game->settings.fullscreen && !game->platform.scripted)
         game_set_fullscreen(game, true);
 
     /* Initialise particle system */
@@ -876,6 +896,36 @@ static int soak_aftermath_sector(void)
 }
 
 /*
+ * The first boundary in the campaign where the tally actually rides a reveal.
+ *
+ * Only a sector that leaves by a window gets one: `try_finish_current_level`
+ * sends every other floor to the report, and the report clears the band. So the
+ * frame this screen exists to draw is the reveal of the sector *after* a window,
+ * and staging it anywhere else is a picture of something the game never shows —
+ * which is the same lesson `cleared` learned by being staged on sector 1.
+ *
+ * Derived rather than written down, for the reason `soak_aftermath_sector` is:
+ * which sectors leave by a window is a property of the maps and has moved once
+ * already.
+ */
+static int soak_reveal_sector(void)
+{
+    for (size_t i = 1; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        static Level probe;
+        Rng rng;
+        rng_seed(&rng, 20260822u + (uint64_t)i);
+        if (!level_load_data(&probe, EMBEDDED_LEVELS[i - 1].name,
+                             EMBEDDED_LEVELS[i - 1].data,
+                             EMBEDDED_LEVELS[i - 1].size, &rng))
+            continue;
+        if (probe.map.has_window)
+            return (int)i;
+    }
+    return 1;
+}
+
+/*
  * Point the camera at the staged frame and stop the clock, which both halves of
  * `soak_stage_aftermath` end with and neither may skip.
  *
@@ -895,6 +945,9 @@ static int soak_aftermath_sector(void)
  */
 static bool soak_freeze_staged_frame(Game *game)
 {
+    /* Said out loud to the renderer: the state that freezes the frame is also the
+     * state that draws a menu over it. See `PlatformState.staged_frame`. */
+    game->platform.staged_frame = true;
     snap_camera_to_player(game);
     game->pause_return_state = STATE_PLAYING;
     game->pause_cursor = PAUSE_ITEM_RESUME;
@@ -906,6 +959,22 @@ static bool soak_freeze_staged_frame(Game *game)
 static bool soak_stage_aftermath(Game *game, int page)
 {
     GameplayState *g = &game->gameplay;
+
+    /*
+     * A page this screen has no pose for is refused rather than rounded down to
+     * the first one, which is what the `default` arm below would otherwise do.
+     * The manual has said this about its own sheets since `--page` existed; the
+     * aftermath did not, so `--page 99` drew pose 1 and the sweep logged
+     * `aftermath pose 99 ok` — a check reporting coverage it does not have, on
+     * the switch written to end exactly that. The one caller is a script and a
+     * script is owed an exit code.
+     */
+    if (page > AFTERMATH_POSE_COUNT)
+    {
+        SDL_Log("Pose %d is outside the aftermath's %d", page,
+                AFTERMATH_POSE_COUNT);
+        return false;
+    }
 
     /*
      * The map, all of it. `load_level` leaves the reveal at its first tile and an
@@ -961,18 +1030,42 @@ static bool soak_stage_aftermath(Game *game, int page)
         return soak_freeze_staged_frame(game);
     }
 
-    /* A body, and a dog beside it. The first of each, because which one it is
-     * decides nothing about what gets drawn. */
+    /*
+     * A body, and a dog beside it. The first of each, because which one it is
+     * decides nothing about what gets drawn.
+     *
+     * **Scored and tallied as well as laid out**, which is the half this
+     * staging did without for as long as it existed. Two men and a dog are
+     * `2 * ENEMY_SCORE + DOG_SCORE`, and writing `dead = true` by hand skips
+     * the path that says so — so the strip above the bodies read `SCORE
+     * 0000000`, on a floor with two corpses and a blown wall on it. That is
+     * the impossible pair this file has already corrected three times on the
+     * tally band's own fixture (the elapsed-and-best, the docket over sector
+     * one, the hostile count on a two-man floor) and never once here, on the
+     * one staging that actually **ships**: `02-alarm` and `13-duct` in
+     * [tools/press_kit.sh](../tools/press_kit.sh) are both this screen, and a
+     * seven-digit field sitting at nought beside the bodies it was paid for is
+     * a frame the game cannot produce. A fixture with a stated rule owes that
+     * rule to every field in it — and every assertion this screen has is a
+     * width, which a wrong number is exactly as wide as a right one.
+     *
+     * Through the same tally `gameplay_record_neutralized` keeps, so the crew
+     * situation the net reads agrees with the floor too.
+     */
     int downed_men = 0;
     for (int i = 0; i < g->enemy_count && downed_men < 2; ++i)
     {
         g->enemies[i].dead = true;
+        gameplay_record_neutralized(g, &game->campaign);
+        game->campaign.score += ENEMY_SCORE;
         downed_men++;
     }
     int downed_dogs = 0;
     for (int i = 0; i < g->dog_count && downed_dogs < 1; ++i)
     {
         g->dogs[i].dead = true;
+        gameplay_record_neutralized(g, &game->campaign);
+        game->campaign.score += DOG_SCORE;
         downed_dogs++;
     }
 
@@ -1108,6 +1201,60 @@ static bool soak_stage_aftermath(Game *game, int page)
         }
     }
 
+    /*
+     * And the rung poses go onto a rung, for the reason the crawl goes into a
+     * duct: `draw_player` takes its climbing branch off `on_ladder`, which is a
+     * flag rather than a place, so setting it where the man is standing drew him
+     * gripping a ladder that was not there. Page 4 has done that since it was
+     * written and nothing said so — a counter cannot tell a frame that was drawn
+     * from a frame anybody could read, and until `--shot` existed nobody had
+     * looked at this one.
+     *
+     * Before the particles and the rocket below, so his own smoke follows him,
+     * which is the same ordering the duct block above is careful about.
+     *
+     * The rung *nearest where he already is*, not the first one the scan meets,
+     * and for the same reason the patch above is chosen that way: this screen is
+     * one frame of where the fight happened, so the bodies, the opened wall and
+     * the alarm have to stay in shot with him. Taking the first ladder on the map
+     * walked him to the far corner of the floor and left the scene behind — which
+     * is the mistake the `%` search already has a paragraph about, made again one
+     * block down. A rung with another above it, so he is on a run rather than on
+     * its last tile; a floor with no ladder on it stages the pose where it always
+     * did.
+     */
+    if (page == 4 || page == 6 || page == 7)
+    {
+        int rung_row = -1;
+        int rung_col = -1;
+        float best_rung = 0.0f;
+        for (int row = 1; row < g->level.map.height - 1; ++row)
+            for (int col = 1; col < g->level.map.width - 1; ++col)
+            {
+                if (!level_is_ladder(&g->level, col, row) ||
+                    !level_is_ladder(&g->level, col, row - 1))
+                {
+                    continue;
+                }
+                float dx = (float)col * TILE_SIZE - g->player.x;
+                float dy = (float)row * TILE_SIZE - g->player.y;
+                float d2 = dx * dx + dy * dy;
+                if (rung_row < 0 || d2 < best_rung)
+                {
+                    best_rung = d2;
+                    rung_row = row;
+                    rung_col = col;
+                }
+            }
+        if (rung_row >= 0)
+        {
+            g->player.x = (float)rung_col * TILE_SIZE +
+                          (TILE_SIZE - PLAYER_W) * 0.5f;
+            g->player.y = (float)rung_row * TILE_SIZE;
+            g->player.facing = 1;
+        }
+    }
+
     /* Smoke, sparks and dust, which is the emitting half of `particle.c` and the
      * half no soak had ever called. */
     float px = g->player.x + PLAYER_W * 0.5f;
@@ -1175,6 +1322,49 @@ static bool soak_stage_aftermath(Game *game, int page)
         g->player.shot_vertical = 0;
         rocket->active = false;
         break;
+    case 6:
+    case 7:
+        /*
+         * On a rung, mid-throw, with the thing that is about to leave his hand
+         * drawn in it — `draw_thrown_in_hand`, which no gate reached at all.
+         *
+         * It is the whole of the fix that gave it a reason to exist: the ladder
+         * throw pose put a *grenade* in his hand for all three throwables, and
+         * `draw_flashbang`'s own comment insists a charge "has to be told from a
+         * grenade at a glance, because one of the two is about to kill whoever is
+         * standing next to it". The simulation half of that fix got tests; the
+         * drawing half — the half the argument is actually about — was executed
+         * by nothing, because no headless run has ever *carried* a charge, and
+         * `make coverage-shell` said so while the prose here claimed the only
+         * things left were menu transitions.
+         *
+         * Two pages, because the function has an arm per throwable and the call
+         * site has one branch per aim. Page 6 is the charge on a vertical aim,
+         * page 7 the bolt thrown level — between them the flash arm, the decoy
+         * arm and both sides of the `shot_vertical` branch. The grenade is the
+         * fall-through of both, which is exactly why it was the only one ever
+         * drawn.
+         *
+         * `grenade_throwing` is what `draw_player` reads to take this branch at
+         * all, and it is shared by all three throwables on purpose — the pose is
+         * one animation. `throwing_weapon` is the prop, and keeping the two
+         * apart is the bug this stages the picture of.
+         */
+        g->player.on_ladder = true;
+        g->player.active_weapon = page == 6 ? PLAYER_WEAPON_FLASH
+                                            : PLAYER_WEAPON_DECOY;
+        g->player.bazooka_rockets = 0;
+        g->player.bazooka_firing = false;
+        g->player.grenade_throwing = true;
+        g->player.throwing_weapon = g->player.active_weapon;
+        g->player.action_timer = PLAYER_KNIFE_ACTION_TIME;
+        /* Carried, so the strip draws the row as well: the HUD reads the counts
+         * rather than the pose, and a charge in the hand with nought on the
+         * counter is a frame the game cannot reach. */
+        g->player.flashbangs = page == 6 ? 1 : 0;
+        g->player.shot_vertical = page == 6 ? -1 : 0;
+        rocket->active = false;
+        break;
     default:
         /* Standing and shooting sideways. */
         g->player.shot_vertical = 0;
@@ -1215,13 +1405,25 @@ static bool soak_stage_aftermath(Game *game, int page)
     return soak_freeze_staged_frame(game);
 }
 
-bool game_soak_screen(Game *game, const char *name, int page,
-                      int level_index)
+GameScreenResult game_soak_screen(Game *game, const char *name, int page,
+                                  int level_index)
 {
-    /* The screens with a world behind them. `--level`'s own entry point, so
-     * nothing is banked and the record is not moved by a sweep. */
-    static const char *const NEEDS_LEVEL[] = {"report", "cleared", "pause",
-                                              "continue", "gameover",
+    /*
+     * The screens with a world behind them, through `--level`'s own entry point.
+     *
+     * This used to close "so nothing is banked and the record is not moved by a
+     * sweep", and the last four words were carrying it: the *sweep* passes
+     * `--soak` beside every one of these, and a scripted run has no files (see
+     * `PlatformState.scripted`). A hand running `--screen cleared` had them, and
+     * that card runs its timer down into `advance_level`, which banks — which is
+     * where this developer's `furthest_sector 2` and `best_score 3230` came from,
+     * a test gate's own figures sitting in a player's save. `--screen` makes the
+     * run a scripted one now, so the sentence is true of the switch rather than
+     * of one caller of it. A comment that is right about the common path reads as
+     * a rule; this file has that lesson on it more than once.
+     */
+    static const char *const NEEDS_LEVEL[] = {"report", "cleared", "reveal",
+                                              "pause", "continue", "gameover",
                                               "restroom", "aftermath"};
     bool needs_level = false;
     for (size_t i = 0; i < SDL_arraysize(NEEDS_LEVEL) && !needs_level; ++i)
@@ -1243,15 +1445,25 @@ bool game_soak_screen(Game *game, const char *name, int page,
         int wanted = level_index;
         if (wanted < 0)
         {
-            /* The aftermath is the one screen whose default cannot be sector 1:
-             * it needs a patch to open and a dog to put down, and the lobby has
-             * neither. Every other card wants only a world behind it. */
-            wanted = SDL_strcmp(name, "aftermath") == 0
-                         ? soak_aftermath_sector()
-                         : 0;
+            /* Two screens whose default cannot be sector 1. The aftermath needs
+             * a patch to open and a dog to put down, and the lobby has neither.
+             * And the cleared card is only ever reached on the *last* sector —
+             * `try_finish_current_level` sends every other floor to the report
+             * or straight through a window — so staged on sector 1 it was drawn
+             * over a world the state cannot occur in, and the run-down of its
+             * timer then loaded sector 2 behind it. Every other card wants only
+             * a world behind it. */
+            if (SDL_strcmp(name, "aftermath") == 0)
+                wanted = soak_aftermath_sector();
+            else if (SDL_strcmp(name, "cleared") == 0)
+                wanted = (int)EMBEDDED_LEVEL_COUNT - 1;
+            else if (SDL_strcmp(name, "reveal") == 0)
+                wanted = soak_reveal_sector();
+            else
+                wanted = 0;
         }
         if (!game_start_at_level(game, wanted))
-            return false;
+            return GAME_SCREEN_REFUSED;
     }
 
     if (SDL_strcmp(name, "abduction") == 0)
@@ -1271,7 +1483,7 @@ bool game_soak_screen(Game *game, const char *name, int page,
         if (game->state != STATE_MANUAL)
         {
             SDL_Log("Could not open the manual from this state");
-            return false;
+            return GAME_SCREEN_REFUSED;
         }
         /* One screen name, ten drawings, and a headless run turns no sheet. See
          * `parse_screen_page` in main.c: without this the sweep covered
@@ -1283,7 +1495,7 @@ bool game_soak_screen(Game *game, const char *name, int page,
             {
                 SDL_Log("Sheet %d is outside the manual's %d", page,
                         MANUAL_PAGE_COUNT);
-                return false;
+                return GAME_SCREEN_REFUSED;
             }
             /*
              * Turned to rather than jumped to, which costs nothing and covers
@@ -1299,7 +1511,7 @@ bool game_soak_screen(Game *game, const char *name, int page,
                 if (!manual_turn_page(&game->presentation.manual, 1))
                 {
                     SDL_Log("The manual refused to turn to sheet %d", page);
-                    return false;
+                    return GAME_SCREEN_REFUSED;
                 }
             }
         }
@@ -1308,11 +1520,13 @@ bool game_soak_screen(Game *game, const char *name, int page,
     {
         game_open_settings(game);
         /*
-         * `--page 2` is the controls page, which is the sheet's own second half
-         * and was unreachable by this sweep: `draw_setting_keys` — every key cap
-         * and pad cap on it — was sanitizer-compiled and never executed. The
-         * same argument as the manual's `--page`, on the other sheet that is one
-         * screen name standing for more than one drawing.
+         * `--page 2` is the controls page, which was unreachable by this sweep:
+         * `draw_setting_keys` — every key cap and pad cap on it — was
+         * sanitizer-compiled and never executed. The same argument as the
+         * manual's `--page`, on the other sheet that is one screen name standing
+         * for more than one drawing. It stood for two pages when that was
+         * written and stands for `SETTINGS_PAGE_COUNT` of them, which is why the
+         * bound below is the enum rather than a number.
          */
         if (page > 0)
         {
@@ -1320,7 +1534,7 @@ bool game_soak_screen(Game *game, const char *name, int page,
             {
                 SDL_Log("Page %d is outside the options sheet's %d", page,
                         (int)SETTINGS_PAGE_COUNT);
-                return false;
+                return GAME_SCREEN_REFUSED;
             }
             settings_open_page(game, (SettingsPage)(page - 1));
         }
@@ -1329,22 +1543,191 @@ bool game_soak_screen(Game *game, const char *name, int page,
         game_enter_state(game, STATE_OUTRO);
     else if (SDL_strcmp(name, "credits") == 0)
         game_enter_state(game, STATE_CREDITS);
+    else if (SDL_strcmp(name, "resume") == 0)
+    {
+        /*
+         * The title screen with a run to come back to, which is a *world state*
+         * rather than a screen — the same kind of entry point as `aftermath`.
+         *
+         * It exists because the chip's coverage used to be an accident of whose
+         * machine the sweep ran on. `intro.c` gates five things on
+         * `resume_offered` — the chip's own width, the row's centring, the hit
+         * plate and the drawing — and all of them come off
+         * `progress.furthest_sector`, which was read from the runner's disk. A
+         * developer who had played to sector 2 drew the chip every sweep; a
+         * clean checkout drew it never, and neither of them could tell which
+         * they were doing. `--shot`/`--soak` take the shipped defaults now (see
+         * `PlatformState.scripted`), so without this the answer would have been
+         * a *guaranteed* never, which is worse only in that it is quieter.
+         *
+         * A sector rather than the last one, because what the chip has to fit is
+         * a two-digit number beside the START plate, and the widest of those is
+         * what a full campaign leaves behind.
+         */
+        game->progress.furthest_sector = (int)EMBEDDED_LEVEL_COUNT - 1;
+        game_enter_state(game, STATE_INTRO);
+    }
     else if (SDL_strcmp(name, "report") == 0)
     {
-        /* Numbers a real clear could produce, including both bonuses and a
-         * record it did not beat, so every branch of the field draws. */
-        level_transition_init(&game->presentation.level_transition, 0, 1,
-                              74.0f, 2400, 6, 0, 1200, SECTOR_CLEAN_BONUS,
-                              91.0f, false, 7);
+        /*
+         * Numbers a real clear could produce, including both bonuses and a
+         * record it did not beat, so every branch of the field draws.
+         *
+         * The run has to be the *slower* of the two, and it was the quicker one
+         * for as long as this staging existed: 74 against a best of 91 with
+         * `best_is_new` false is a frame saying the player beat the record and
+         * that the record stands, which is the one thing
+         * `sector_tally_format`'s own comment forbids — it spells `NEW BEST`
+         * rather than print a time the run has just replaced. Nothing failed,
+         * because the code was right and only the staged pair was impossible;
+         * what it cost is that `--shot` is where the press stills and the store
+         * page come from, so the contradiction was in the pictures rather than
+         * in the game. A counter cannot tell a frame that was drawn from a
+         * frame anybody could read.
+         */
+        /*
+         * **And it is the clear of whatever sector `--level` named**, which for
+         * a release it was not: the two sector numbers were the literals `0`
+         * and `1`, so every report this switch has ever drawn was sector one's,
+         * whatever was asked for and whatever world was loaded behind it.
+         *
+         * What that cost is the table. The report is where six of
+         * `TRANSITION_INTEL`'s sixteen rows are given a whole screen — the arc
+         * the plot rests on — and five of the six had never been rasterized by
+         * anything: the fit check measures how *wide* a row is and
+         * `INTEL_ARC_SECTORS` pins which sectors reach one, and neither of
+         * those puts a line on the glass. `--screen reveal`, one branch below,
+         * was given exactly this treatment a release earlier for exactly this
+         * reason, and its own comment closes "a placement is not covered
+         * because its twin is". This is the twin.
+         *
+         * A sector that shows no report is refused rather than staged, because
+         * every other correction to these screens has been toward a staged
+         * frame being one the game can produce — the impossible clock pair
+         * above, the reveal's off-by-one sector, the continue card's hearts.
+         * Both halves of the question are read off the same two things
+         * `try_finish_current_level` reads: is there a next sector, and does
+         * this one leave by its window.
+         */
+        int completed = game->campaign.current_level;
+        int next = completed + 1;
+        if ((size_t)next >= EMBEDDED_LEVEL_COUNT)
+        {
+            SDL_Log("Sector %d is the last of the campaign, so nothing is "
+                    "reported after it",
+                    completed + 1);
+            return GAME_SCREEN_REFUSED;
+        }
+        if (game->gameplay.level.map.has_window)
+        {
+            SDL_Log("Sector %d leaves by its window and shows no report; its "
+                    "line rides the reveal of sector %d",
+                    completed + 1, next + 1);
+            return GAME_SCREEN_REFUSED;
+        }
+        int hostiles = sector_tally_soak_hostiles(
+            level_authored_hostiles(&game->gameplay.level.map));
+        level_transition_init(&game->presentation.level_transition,
+                              completed, next,
+                              SOAK_TALLY_ELAPSED, 2400, hostiles, 0,
+                              campaign_time_bonus_for(SOAK_TALLY_ELAPSED),
+                              SECTOR_CLEAN_BONUS, SOAK_TALLY_BEST, false,
+                              sector_tally_soak_docket(completed + 1));
         game_enter_state(game, STATE_LEVEL_TRANSITION);
     }
     else if (SDL_strcmp(name, "cleared") == 0)
     {
+        /*
+         * The way out is open, because the only way anybody reaches this card
+         * is by standing in it.
+         *
+         * `gameplay_player_reached_exit` answers the window first and then
+         * refuses a door the run has no card for, and the last sector has no
+         * `Y` — so a real clear of it has always had `exit_unlocked` set by the
+         * time `try_finish_current_level` runs. Staged without it the strip
+         * behind the card read a blinking red ACCESS LOCKED over SECTOR 17
+         * CLEAR: a floor finished through a door nobody had opened. Same class
+         * as the elapsed-and-best pair this screen's own fixture was corrected
+         * for and as the full hearts beside `x0` on the two end cards — a
+         * staged frame must be one the game can produce, and every assertion
+         * this card has is a *width*, which a wrong state is exactly as wide
+         * as a right one. Read off a capture; no gate on this side of the SDL
+         * boundary can see it.
+         */
+        game->gameplay.level.runtime.exit_unlocked = true;
         /* With a tally pending, because the line under this card is the half
-         * of it that only the last sector of a run ever reaches. */
-        sector_tally_set(&game->presentation.sector_tally, 0, 74.0f, 91.0f,
-                         false, 1200, SECTOR_CLEAN_BONUS, 7);
+         * of it that only the last sector of a run ever reaches. Named after
+         * the sector actually loaded rather than a hard-coded nought: this
+         * screen is staged on the last floor now, and a card reading SECTOR 01
+         * CLEAR over sector 17's HUD is a frame that contradicts itself. */
+        sector_tally_set(&game->presentation.sector_tally,
+                         game->campaign.current_level, SOAK_TALLY_ELAPSED,
+                         SOAK_TALLY_BEST, false,
+                         campaign_time_bonus_for(SOAK_TALLY_ELAPSED),
+                         SECTOR_CLEAN_BONUS,
+                         sector_tally_soak_docket(
+                             game->campaign.current_level + 1),
+                         intel_line(game->campaign.current_level));
+        /* And the strip's own SCORE field, which the band contradicts at
+         * nought — see `sector_tally_soak_score`. */
+        game->campaign.score =
+            sector_tally_soak_score(game->campaign.current_level + 1);
         game_enter_state(game, STATE_LEVEL_CLEARED);
+    }
+    else if (SDL_strcmp(name, "reveal") == 0)
+    {
+        /*
+         * The sector coming up, with the tally riding over it — which is where
+         * ten of `TRANSITION_INTEL`'s sixteen lines and eleven of the seventeen
+         * clears' numbers actually land, and it was a frame no gate drew.
+         *
+         * `cleared` was the only staged screen that put a tally on the glass,
+         * and it is the *other* placement: the card grows the band downward
+         * under a verdict panel, this grows it upward off the bottom edge of
+         * the frame with the map rising behind it. Verifying one and calling
+         * the band checked is how the card came to print its story line through
+         * `SHE IS TWENTY FEET AWAY` — a placement is not covered because its
+         * twin is.
+         *
+         * Staged on whatever sector `--level` names, because which line is
+         * carried is the sector's own — and on `soak_reveal_sector` when it
+         * names none, which is the first boundary in the campaign that really
+         * carries a band rather than sector one, where a report clears it.
+         *
+         * **The band belongs to the sector below the one being revealed**, and
+         * for as long as this screen existed it did not. `sector_tally_set` was
+         * handed `current_level`, which is the sector the reveal is *of*, so
+         * every frame this screen has ever drawn said `SECTOR 10 CLEAR` over the
+         * reveal of sector 10 with the HUD beside it also reading 10 — a pairing
+         * the game cannot produce, since `load_level` has already stepped the
+         * counter by the time this state is entered. It is the impossible
+         * time-and-best pair the report's own fixture was corrected for, one
+         * screen over: a staged frame is where the press stills and the store
+         * page come from, and a counter cannot tell a frame that was drawn from a
+         * frame anybody could read.
+         *
+         * Sector 1 gets no band at all, which is the truthful answer rather than
+         * a special case: nothing has been cleared yet. It is not what the sweep
+         * draws — `soak_reveal_sector` picks the first boundary that really
+         * carries one — so a hand asking for `--level 1` is asking to see that.
+         */
+        if (game->campaign.current_level > 0)
+            sector_tally_set(&game->presentation.sector_tally,
+                             game->campaign.current_level - 1,
+                             SOAK_TALLY_ELAPSED, SOAK_TALLY_BEST, false,
+                             campaign_time_bonus_for(SOAK_TALLY_ELAPSED),
+                             SECTOR_CLEAN_BONUS,
+                             sector_tally_soak_docket(
+                                 game->campaign.current_level),
+                             intel_line(game->campaign.current_level - 1));
+        /* Same field, same reason: an interior reveal draws the sector strip
+         * behind this band, and a climb's does not — so leaving it at nought
+         * was a frame that only happened to be honest on the sectors the sweep
+         * stages. */
+        if (game->campaign.current_level > 0)
+            game->campaign.score =
+                sector_tally_soak_score(game->campaign.current_level);
+        game_enter_state(game, STATE_LEVEL_START);
     }
     else if (SDL_strcmp(name, "pause") == 0)
         game_toggle_pause(game);
@@ -1366,35 +1749,62 @@ bool game_soak_screen(Game *game, const char *name, int page,
          * recurring defect committed by the switch written to end it.
          */
         game->campaign.lives = 0;
+        /* And the hearts with them, because the strip is drawn over this card
+         * and `gameplay_damage_player` is the only way anybody arrives here:
+         * hp reaches nought and `finish_player_death` leaves it there. Staged
+         * with the lives alone the frame read three full hearts beside `x0`,
+         * which is a run that has everything to lose and nothing left to lose
+         * it with — the impossible-pair defect the report's own fixture was
+         * corrected for, on the card beside it. */
+        game->gameplay.player.hp = 0;
         if (!campaign_begin_continue(&game->campaign))
         {
             SDL_Log("Could not offer the continue prompt");
-            return false;
+            return GAME_SCREEN_REFUSED;
         }
         game_enter_state(game, STATE_CONTINUE);
     }
     else if (SDL_strcmp(name, "gameover") == 0)
+    {
+        /*
+         * Staged exactly as the continue card above is, and for the same
+         * reason — which is a sentence that had to be written twice because it
+         * was only ever acted on once.
+         *
+         * The only way anybody reaches this card is the continue countdown
+         * running out (`campaign_update_continue` in `update_scene`), so the
+         * lives are gone and `finish_player_death` has left the hearts at
+         * nought. Staged with neither, the strip drawn over `GAME OVER` read
+         * three full hearts and `x3`: a run with everything still to lose, on
+         * the card that says the run is finished. The prompt beside it was
+         * corrected for exactly this, four lines up, in the same function — one
+         * half of a symmetric defect, in the paragraph written to record the
+         * other half.
+         */
+        game->campaign.lives = 0;
+        game->gameplay.player.hp = 0;
         game_enter_state(game, STATE_GAME_OVER);
+    }
     else if (SDL_strcmp(name, "restroom") == 0)
     {
         if (!enter_restroom(game))
         {
             SDL_Log("Could not open the restroom off sector %d",
                     game->campaign.current_level + 1);
-            return false;
+            return GAME_SCREEN_REFUSED;
         }
     }
     else if (SDL_strcmp(name, "aftermath") == 0)
     {
         if (!soak_stage_aftermath(game, page))
-            return false;
+            return GAME_SCREEN_REFUSED;
     }
     else
     {
         SDL_Log("Unknown screen '%s'", name);
-        return false;
+        return GAME_SCREEN_UNKNOWN;
     }
-    return true;
+    return GAME_SCREEN_STAGED;
 }
 
 static void advance_level(Game *game)
@@ -1436,12 +1846,16 @@ static void finish_player_death(Game *game)
     }
     else
     {
-        /* A death costs the walk back, never the kit: the grenade and the
-         * rocket saved for the hard part survive it, and the sidearm is
-         * topped back up as the consolation. */
+        /* A death costs the walk back, never the kit: everything Chuck was
+         * carrying for the hard part survives it, and the sidearm is topped
+         * back up as the consolation. What "everything" is is
+         * `player_carry_loadout`'s to say rather than this comment's — it was
+         * a list of two here, in prose and in code, and the third thing on it
+         * was the flash charge, which is the one item in the game whose entire
+         * subject is a floor having gone wrong. */
         Player fallen = game->gameplay.player;
         player_reset(&game->gameplay.player, &game->gameplay.level);
-        transfer_player_loadout(&game->gameplay.player, &fallen);
+        player_carry_loadout(&game->gameplay.player, &fallen);
         game->gameplay.player.bullets = MAX_AMMO;
         game->gameplay.player.hp = gameplay_player_max_hp(&game->gameplay);
         /* Progress already banked is kept: the climb resumes from the last
@@ -1465,6 +1879,10 @@ static void clear_edge_input(Game *game)
 
 void game_toggle_pause(Game *game)
 {
+    /* Played on from here, so the frame is no longer a staged one. See
+     * `PlatformState.staged_frame`. */
+    game->platform.staged_frame = false;
+
     if (game->state == STATE_PAUSED)
     {
         audio_play(&game->platform.audio, SFX_MENU_PAGE);
@@ -1491,6 +1909,48 @@ void game_toggle_pause(Game *game)
     game_enter_state(game, STATE_PAUSED);
 }
 
+/*
+ * The window has gone out from under a sector somebody was playing.
+ *
+ * Nothing in this game handled a window event of any kind, and the world is
+ * driven by `SDL_AppIterate` rather than by input — so alt-tabbing, switching
+ * desktops or clicking on something else left the floor running: the patrols
+ * walked, the alarm counted, the fans turned, and the man standing still in the
+ * middle of it took whatever was coming. Measured with nothing pressed, over 64
+ * seeds a sector: ten of the twelve interiors cost a heart inside thirty
+ * seconds, the earliest at 3.83s, and sectors 6, 8 and 17 cost the whole life on
+ * 64, 64 and 59 of the 64. Ten seconds of reading an email is a life on three
+ * floors of twelve; only sectors 2 and 5 never touch a man who is not there.
+ *
+ * The argument is already written down four lines from the key that makes it:
+ * ESC pauses "instead of being thrown away; an accidental ESC must never cost
+ * the run". A window losing focus is the same accident with the hand nowhere
+ * near the keyboard, and it was the one this game answered by playing on.
+ *
+ * Through `game_toggle_pause` rather than beside it, so the states in which
+ * there is a run to protect are named once: that function is a no-op in every
+ * state that is not one, which is what makes this three lines instead of a
+ * second copy of the list.
+ *
+ * A **scripted** run is exempt, and that exemption is the whole reason this can
+ * be a rule rather than a risk: `--shot`, `--soak` and `--screen` have nobody at
+ * the keyboard, a pause sheet drawn over a capture is a picture of a menu, and a
+ * soak that paused itself would spend its budget on a still frame. See
+ * `GameRunKind`.
+ *
+ * Focus coming *back* deliberately does not resume. The player decides when they
+ * are looking again; a sector that starts moving the instant the window lights
+ * up is the same defect with a smaller window.
+ */
+void game_pause_on_focus_lost(Game *game)
+{
+    if (game == NULL || game->platform.scripted)
+        return;
+    if (game->state == STATE_PAUSED)
+        return;
+    game_toggle_pause(game);
+}
+
 void game_pause_move_cursor(Game *game, int delta)
 {
     if (game->state != STATE_PAUSED || delta == 0)
@@ -1498,7 +1958,7 @@ void game_pause_move_cursor(Game *game, int delta)
     game->pause_cursor = (game->pause_cursor + delta + PAUSE_ITEM_COUNT) %
                          PAUSE_ITEM_COUNT;
     /* Walking away from the armed row disarms it, which is what the detail line
-     * promises and is the same rule `settings_disarm_records` keeps. */
+     * promises and is the same rule `settings_disarm_action_row` keeps. */
     game->pause_abandon_armed = false;
     audio_play(&game->platform.audio, SFX_MENU_PAGE);
 }
@@ -1605,8 +2065,23 @@ void game_set_fullscreen(Game *game, bool on)
  * of either file that needs a platform at all, which is why it is here and not
  * in [settings.c](settings.c) or [progress.c](progress.c).
  */
-static bool pref_file_path(char *out, size_t cap, const char *name)
+static bool pref_file_path(const Game *game, char *out, size_t cap,
+                           const char *name)
 {
+    /*
+     * A script's run has no files, and this is the one place that has to know
+     * it.
+     *
+     * Both loads below apply their defaults *before* asking for a path and both
+     * saves return the moment they do not get one, so refusing here is the
+     * whole of "the shipped defaults, and nobody's disk written" — six call
+     * sites, no new branch at any of them. Putting it anywhere else would have
+     * been six places to remember, which is how the leak got past a release in
+     * the first place. See `PlatformState.scripted`.
+     */
+    if (game->platform.scripted)
+        return false;
+
     char *dir = SDL_GetPrefPath(CHUCK_APP_ORG, CHUCK_APP_NAME);
     if (dir == NULL)
         return false;
@@ -1615,17 +2090,17 @@ static bool pref_file_path(char *out, size_t cap, const char *name)
     return written > 0 && (size_t)written < cap;
 }
 
-static bool settings_file_path(char *out, size_t cap)
+static bool settings_file_path(const Game *game, char *out, size_t cap)
 {
-    return pref_file_path(out, cap, "settings.cfg");
+    return pref_file_path(game, out, cap, "settings.cfg");
 }
 
 /* Two files rather than one, because they answer different questions: the
  * settings are what the player decided, the progress is what happened. Wiping
  * a campaign must not cost somebody their volume levels. */
-static bool progress_file_path(char *out, size_t cap)
+static bool progress_file_path(const Game *game, char *out, size_t cap)
 {
-    return pref_file_path(out, cap, "progress.cfg");
+    return pref_file_path(game, out, cap, "progress.cfg");
 }
 
 static void game_load_settings(Game *game)
@@ -1633,7 +2108,7 @@ static void game_load_settings(Game *game)
     settings_defaults(&game->settings);
 
     char path[1024];
-    if (!settings_file_path(path, sizeof(path)))
+    if (!settings_file_path(game, path, sizeof(path)))
         return;
 
     size_t size = 0;
@@ -1651,7 +2126,7 @@ static void game_load_settings(Game *game)
 void game_save_settings(const Game *game)
 {
     char path[1024];
-    if (!settings_file_path(path, sizeof(path)))
+    if (!settings_file_path(game, path, sizeof(path)))
         return;
 
     /*
@@ -1676,7 +2151,7 @@ static void game_load_progress(Game *game)
     progress_defaults(&game->progress);
 
     char path[1024];
-    if (!progress_file_path(path, sizeof(path)))
+    if (!progress_file_path(game, path, sizeof(path)))
         return;
 
     size_t size = 0;
@@ -1696,7 +2171,7 @@ static void game_load_progress(Game *game)
 static void game_save_progress(const Game *game)
 {
     char path[1024];
-    if (!progress_file_path(path, sizeof(path)))
+    if (!progress_file_path(game, path, sizeof(path)))
         return;
 
     /* Room for the two headline numbers and a line per tracked sector. It was
@@ -1767,6 +2242,17 @@ static void game_record_run_score(Game *game)
         game_save_progress(game);
 }
 
+void game_advance_render_clock(Game *game, float elapsed)
+{
+    /* Guarded against a step that is not a number so that one bad frame cannot
+     * poison every animation in the game for the rest of the process: the five
+     * readers feed this straight into `sinf`, and a NaN here would stay a NaN
+     * for good. */
+    if (game == NULL || !(elapsed > 0.0f))
+        return;
+    game->presentation.render_clock += elapsed;
+}
+
 int game_resume_sector(const Game *game)
 {
     return game->progress.furthest_sector;
@@ -1804,16 +2290,19 @@ bool game_resume_campaign(Game *game)
 }
 
 /*
- * Forget that the records row was pressed.
+ * Forget that an action row was pressed.
  *
  * Called from every input the sheet accepts other than a second press on the row
  * itself, which is what makes "anything else keeps them" true rather than a
  * hopeful sentence on a detail line. One function so that a new input on this
- * sheet has one thing to remember instead of a flag to find.
+ * sheet has one thing to remember instead of a flag to find — and one field, so
+ * that a second row that needs arming cannot be the one nobody remembered to
+ * clear. It was `settings_disarm_records` and a `bool`, and the row next door
+ * spent a release taking nine bindings away on one press.
  */
-static void settings_disarm_records(Game *game)
+static void settings_disarm_action_row(Game *game)
 {
-    game->settings_records_armed = false;
+    game->settings_armed_row = SETTING_NONE;
 }
 
 void game_open_settings(Game *game)
@@ -1834,7 +2323,7 @@ void game_open_settings(Game *game)
     game->settings_cursor = settings_first_row(SETTINGS_PAGE_MAIN);
     game->settings_bind_slot = 0;
     game->settings_capturing = false;
-    settings_disarm_records(game);
+    settings_disarm_action_row(game);
     audio_play(&game->platform.audio, SFX_MENU_PAGE);
     game_enter_state(game, STATE_SETTINGS);
 }
@@ -1844,7 +2333,7 @@ void game_close_settings(Game *game)
     if (game->state != STATE_SETTINGS)
         return;
     game->settings_capturing = false;
-    settings_disarm_records(game);
+    settings_disarm_action_row(game);
     audio_play(&game->platform.audio, SFX_MENU_BACK);
     game_save_settings(game);
     if (game->settings_return_state == STATE_PAUSED)
@@ -1859,7 +2348,7 @@ void game_settings_move_cursor(Game *game, int delta)
         return;
     game->settings_cursor =
         settings_move_cursor(game->settings_page, game->settings_cursor, delta);
-    settings_disarm_records(game);
+    settings_disarm_action_row(game);
     /* The caret goes back to the first key of whatever row was arrived at: it
      * belongs to the row rather than to the sheet, and carrying it across would
      * put it on the second slot of a row the player is seeing for the first
@@ -1884,7 +2373,7 @@ static void settings_open_page(Game *game, SettingsPage page)
     game->settings_cursor = settings_first_row(page);
     game->settings_bind_slot = 0;
     game->settings_capturing = false;
-    settings_disarm_records(game);
+    settings_disarm_action_row(game);
     audio_play(&game->platform.audio, SFX_MENU_PAGE);
 }
 
@@ -1925,34 +2414,47 @@ void game_settings_confirm(Game *game)
         audio_play(&game->platform.audio, SFX_MENU_PAGE);
         break;
     case SETTING_ROW_ACTION:
-        if (row->id == SETTING_OPEN_CONTROLS)
+    {
+        /*
+         * Armed on the first press and spent on the second, for every row that
+         * cannot be undone rather than for the one somebody remembered. The
+         * detail line under the row says which of the two presses the player is
+         * looking at, so the sheet never asks for a confirmation it has not
+         * shown, and `settings_row_armed_detail` deciding *which* rows do this
+         * is what stopped `RESET CONTROLS` being the row that asked nothing.
+         *
+         * The gate is above the actions rather than inside each of them, which
+         * is what makes it impossible to add a destructive row that skips it:
+         * the only way past this `break` is to have been armed already.
+         */
+        if (settings_row_armed_detail(row->id) != NULL &&
+            game->settings_armed_row != row->id)
         {
-            settings_open_page(game, SETTINGS_PAGE_CONTROLS);
+            game->settings_armed_row = row->id;
+            audio_play(&game->platform.audio, SFX_MENU_PAGE);
+            break;
+        }
+
+        SettingsPage opens = settings_row_opens(row->id);
+        if (opens != SETTINGS_PAGE_COUNT)
+        {
+            settings_open_page(game, opens);
         }
         else if (row->id == SETTING_BINDINGS_RESET)
         {
             keybind_defaults(&game->settings.bindings);
+            settings_disarm_action_row(game);
             audio_play(&game->platform.audio, SFX_CARD_TARGET);
         }
         else if (row->id == SETTING_RECORDS_RESET)
         {
-            /* Armed on the first press and spent on the second. The detail line
-             * under the row says which of the two the player is looking at, so
-             * the sheet never asks for a confirmation it has not shown. */
-            if (!game->settings_records_armed)
-            {
-                game->settings_records_armed = true;
-                audio_play(&game->platform.audio, SFX_MENU_PAGE);
-            }
-            else
-            {
-                progress_clear_records(&game->progress);
-                game_save_progress(game);
-                settings_disarm_records(game);
-                audio_play(&game->platform.audio, SFX_CARD_TARGET);
-            }
+            progress_clear_records(&game->progress);
+            game_save_progress(game);
+            settings_disarm_action_row(game);
+            audio_play(&game->platform.audio, SFX_CARD_TARGET);
         }
         break;
+    }
     case SETTING_ROW_SLIDER:
     case SETTING_ROW_TOGGLE:
         /* ENTER is a change input on these two, which is what lets a switch be
@@ -1960,6 +2462,10 @@ void game_settings_confirm(Game *game)
         game_settings_adjust(game, 1);
         break;
     case SETTING_ROW_HEADING:
+    case SETTING_ROW_READOUT:
+        /* Neither is a row the caret can be on — `settings_row_is_reachable`
+         * refuses both — so these are here to keep the switch exhaustive rather
+         * than because confirm can arrive on one. */
         break;
     }
 }
@@ -2060,7 +2566,7 @@ void game_settings_adjust(Game *game, int delta)
 {
     if (game->state != STATE_SETTINGS)
         return;
-    settings_disarm_records(game);
+    settings_disarm_action_row(game);
 
     int row_count = 0;
     const SettingRow *rows = settings_rows(game->settings_page, &row_count);
@@ -2119,11 +2625,30 @@ void game_settings_adjust(Game *game, int delta)
          * switches do — a switch that only took effect at the next doorway
          * would be a setting the player cannot see having changed anything.
          *
-         * The lives and the continues deliberately do *not*: they are handed
-         * out by `campaign_reset` at the start of a run, and reaching back into
-         * a run in progress to take two lives off somebody would be the one
-         * thing on this sheet that can cost a player something they already
-         * had. The row's own detail line says NEXT RUN for that reason.
+         * **And so do the lives, which this comment used to deny.** It read
+         * "the lives and the continues deliberately do *not*", on the argument
+         * that both are handed out by `campaign_reset` and that reaching back
+         * into a run to take two lives off somebody would be the one thing on
+         * this sheet that costs a player something they already had — and it
+         * finished by pointing at the row's own detail line as the proof. Every
+         * clause of that was wrong except the first. `campaign_reset` is not the
+         * only place lives are handed out; `campaign_accept_continue` is the
+         * other, it asks `campaign->veteran`, and `apply_assist_to_state` has
+         * kept that flag on this switch since the shipped bug where it did not.
+         * So one flip does exactly the thing the comment called unthinkable, one
+         * death later, and the line it cited as evidence was the second half of
+         * the same mistake rather than a check on it.
+         *
+         * Only `continues_remaining` is genuinely next-run. The behaviour is
+         * right and stays — `docs/screens.md` argues for it and
+         * `test_the_veteran_run_is_three_numbers_and_no_more` requires it,
+         * because a veteran continue handing back `PLAYER_LIVES` is the mode
+         * lasting exactly one mistake. What changed is the row, which now says
+         * THIS RUN TOO.
+         *
+         * The lesson is the one this tree keeps relearning: a comment that
+         * quotes a user-facing string as its justification has made that string
+         * part of the invariant, and nothing was holding either of them.
          */
         game_apply_assist_everywhere(game);
         break;
@@ -2142,8 +2667,11 @@ void game_settings_adjust(Game *game, int delta)
          * game_render, and the death that would have cost a life. */
         break;
     case SETTING_OPEN_CONTROLS:
+    case SETTING_OPEN_DIFFICULTY:
+    case SETTING_OPEN_RECORDS:
     case SETTING_BINDINGS_RESET:
     case SETTING_RECORDS_RESET:
+    case SETTING_READOUT_FIRST:
     case SETTING_BIND_FIRST:
         /* Not values: `settings_adjust` already refused them above, so this is
          * unreachable and is listed so that a tenth setting cannot be added
@@ -2208,6 +2736,35 @@ static void game_enter_state(Game *game, GameState next_state)
     }
     case STATE_LEVEL_START:
         level_reveal_init(&game->gameplay.level);
+        /*
+         * And it is held open long enough to read whatever is written over it.
+         *
+         * The between-sectors line is drawn while this state is on screen and
+         * nowhere else, and this state lasts exactly as long as the reveal — so
+         * the line's time on the glass was `width * height / 3000` seconds,
+         * 0.18s on the smallest sector and 0.43s on the tallest climb, for two
+         * lines and about 120 characters. Which is to say the plot beat for ten
+         * of the sixteen sector boundaries, and the `DOCKET n/12` that
+         * [docs/story.md](../docs/story.md) put there so a player could learn
+         * the count while there was still something to do about it.
+         *
+         * Held here rather than by letting the band ride on into play, and the
+         * reason is worth keeping: during the reveal nobody is drawn yet, and
+         * after it the player is standing at his spawn — which on the climbs and
+         * on four of the five interiors that carry this line is the bottom row
+         * of the map, directly behind a band pinned to the bottom edge. The
+         * first attempt did exactly that and hid the climber for the whole hold.
+         * A reveal is already the game saying "here is the floor"; nothing is
+         * behind it to hide.
+         *
+         * The cost is 3.8s of non-interactive time on the ten window
+         * transitions, against `LEVEL_TRANSITION_DURATION`'s 9.4s on the six
+         * that show the report instead — so this is the cheaper of the two
+         * beats, not a new expense.
+         */
+        if (game->presentation.sector_tally.pending)
+            level_reveal_hold_for(&game->gameplay.level,
+                                  SECTOR_TALLY_HOLD_TIME);
         break;
     case STATE_OUTRO:
         outro_cutscene_init(&game->presentation.outro_cutscene);
@@ -2229,7 +2786,7 @@ static void game_enter_state(Game *game, GameState next_state)
         break;
     }
     case STATE_LEVEL_CLEARED:
-        game->presentation.message_timer = 1.2f;
+        game->presentation.message_timer = LEVEL_CLEARED_DISPLAY_TIME;
         break;
     case STATE_GAME_OVER:
         game->presentation.message_timer = GAME_OVER_DISPLAY_TIME;
@@ -2735,12 +3292,20 @@ static bool try_finish_current_level(Game *game)
      * with it; the branch that *does* show a report clears it again, because a
      * screen that says all of this properly must not also be trailed by a
      * one-line summary of itself.
+     *
+     * **And the plot line rides with it**, off the same `intel_line` the report
+     * reads. Rescuing the bonuses and leaving the sentence behind was this
+     * file's own halfway fix: ten of the sixteen rows were written, measured,
+     * pinned against the maps and shown to nobody. Same call, same locals, so
+     * the two can no longer come apart — and NULL on the last sector, which has
+     * no row.
      */
     sector_tally_set(&game->presentation.sector_tally,
                      game->campaign.current_level,
                      game->campaign.level_elapsed_time, previous_best,
                      sector_time_is_new_best, time_bonus, clean_bonus,
-                     game->campaign.evidence_collected);
+                     game->campaign.evidence_collected,
+                     intel_line(game->campaign.current_level));
 
     if ((size_t)(game->campaign.current_level + 1) < EMBEDDED_LEVEL_COUNT)
     {

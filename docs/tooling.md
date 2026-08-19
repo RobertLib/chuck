@@ -202,13 +202,23 @@ pause, continue and game-over halves of
   a menu gains a row, and what would be under test is the event handlers rather
   than the renderers. `game_soak_screen` in [game.c](../src/game.c) holds the
   list — `abduction`, `chase`, `opening`, `manual`, `settings`, `pause`,
-  `report`, `cleared`, `continue`, `gameover`, `outro`, `credits`, `restroom`,
-  `aftermath` —
+  `report`, `cleared`, `reveal`, `continue`, `gameover`, `outro`, `credits`,
+  `resume`, `restroom`, `aftermath` —
   and `check_lists.py` holds it against the array in
   [tools/soak.sh](../tools/soak.sh), because those are two copies of one list and
   the direction that fails silently is the dangerous one: a screen the game knows
   and the script does not is compiled under the sanitizers, never run by them, and
   the sweep still reports clean.
+  **The sentence above is the fourth copy of that list and was stale by two.**
+  The write-up in `AGENTS.md` found the refusal message `--screen` prints, called
+  it the third, and closed with *"a list written down twice is usually written
+  down three times"* — while the page whose whole job is telling a reader which
+  screens exist sat one directory over with `reveal` and `resume` missing from
+  it. Both arrived after this paragraph was typed; both went into
+  `game_soak_screen`, `soak.sh` and the refusal because the script holds those
+  three, and neither came here because nothing did. It is held now, which costs
+  the sentence a fixed shape — the names are the backticked words between "holds
+  the list" and the dash that closes the run.
 - **`--page N` is the same argument one level in.** `manual` is a single screen
   name standing for ten sheets, each with an illustration of its own, and nothing
   turns a sheet but a hand — so the sweep drew `illus_night` and the nine drawings
@@ -246,14 +256,154 @@ way, are 394 functions with nought unexecuted, which is the claim the `--screen`
 work makes, measured instead of remembered. It needs SDL and a few minutes and it
 is not a gate; what it is for is reading once, after adding a screen.
 
+## The press kit
+
+`make press` photographs the game. Twenty stills, five animations, a cover at the
+size itch.io asks for and a wallpaper, into `dist/press/` with a `MANIFEST.txt`
+saying what each file is and the command that produced it.
+
+**It exists because this repository holds no art.** Every pixel is drawn
+procedurally at runtime, which is the whole thesis of the thing — and it means
+there is no sprite sheet to crop and no folder of PNGs to hand a store page, a
+README or a bug report. The only place the art exists is the back buffer of a
+running process. So a store page can be *rebuilt* after a change to the art
+rather than re-photographed by hand and quietly left a version behind.
+
+`--shot PATH` is what reads it: the frame is captured in `game_render` on the line
+above the swap, because a presented back buffer holds whatever the driver left in
+it. BMP, because SDL writes one with nothing linked against it. The clock is
+synthetic — `1 / --shot-fps` seconds of world per drawn frame — so a burst is
+evenly spaced by construction and plays back at the rate it was asked for, which
+is what a GIF is; assembled from frames a software rasterizer produced at whatever
+pace it managed, a GIF stutters wherever the renderer did. It is a different clock
+from `--soak` on purpose: that one spends real seconds, because it is testing a
+process closing itself before a script gives up on it.
+
+**And all three of the numbers refuse what they cannot read, which took a second
+pass to be true of the one that mattered.** `--shot-frames`, `--shot-fps` and
+`--shot-at` used to go through `SDL_atof`, which cannot fail — it answers nought
+to `abc` exactly as it answers nought to `0`. The first two escaped by luck:
+`shot_plan_broke` refuses a count under one and a rate under `MIN_FRAME_RATE`, so
+a typo decayed to a value that happened to be out of range, and it read like a
+decision. **Nought is a perfectly legal lead-in**, so `--shot-at abc`
+photographed frame one, logged `Wrote 1 frame(s)`, exited nought and left a file
+on disk. That is the same class `--soak` and `--page` each got a third answer
+for, on the one switch in the binary that *produces* something rather than
+checking something — and the guard added for exactly this cannot see it, because
+`tools/soak.sh` counts the capture's files off the disk so that a capture writing
+**nowhere** cannot pass, and a capture of the wrong **moment** writes a file. All
+three read through `SDL_strtod` now, and anything not consumed whole is refused,
+`3s` included.
+
+**And underneath that was a worse one: `--shot-at nan` never came back.** `nan`
+and `inf` are read happily by any `strtod` and consumed whole, and every guard in
+`shot_plan_broke` is a `<` comparison — all false against a NaN. The lead-in was
+set to something that counts down forever, so the process captured nothing,
+reported nothing and never exited. Non-finite is refused in the parser rather
+than downstream, because downstream is eleven `<` comparisons and each of them is
+a place to forget one.
+
+**And a fourth thing had to be true before "rebuilt rather than re-photographed"
+meant anything: the same command had to produce the same picture.** It did not,
+for two independent reasons, and neither was visible in a single run.
+
+The clock above reaches the *simulation*, and five things in
+[game_render.c](../src/game_render.c) were not on it — the backdrop, the interior
+world, the facade world, the ACCESS lamp and the TRAIL meter all read
+`SDL_GetTicksNS()` directly. Measured over a five-frame burst, the world moved by
+40, 17 and 6 pixels of difference at 20, 60 and 200 fps, scaling with the
+requested rate exactly as the paragraph above promises; TRAIL moved 12, 13 and 17,
+which is to say by however long the machine happened to take to draw them. So a
+GIF's HUD and sky animated at the capture host's speed rather than the GIF's.
+`PresentationState.render_clock` banks the frame's own `elapsed` — the same figure
+the simulation is stepped by, after the clamp and after a capture has substituted
+its rate — and the five read that. It stays a wall clock rather than a simulation
+one on purpose, so the backdrop and the strip keep breathing behind a pause sheet
+the way they always have; what changes is only that a capture's frames are spaced
+by the capture's rate.
+
+The other reason was the night itself. The simulation's stream was seeded from
+`time(NULL)` and SDL's — which the camera shake, the particles and the title
+screen's starfield draw from — from the tick count beside it, so every run drew a
+different live card, guards in different places and different decoration variants.
+`--seed N` pins both, `press_kit.sh` passes `PRESS_SEED` (20220314 by default,
+overridable because the value is arbitrary and somebody re-cutting the store page
+may prefer a different arrangement), and the MANIFEST line names it — because that
+line is a promise that this is the command behind the file, and without the seed
+the command reproduces a different picture. Two press runs off one commit are now
+byte-identical in all 46 files, which is what makes a still diffable and a
+regression in one visible at all.
+
+**And a fifth thing, which was the whole of what "byte-identical" could promise
+until it was fixed: on one machine.** A seed pins the part of the frame that comes
+out of the RNG. The rest of it came out of the runner's own disk, because
+`game_init` reads `settings.cfg` and `progress.cfg` and applies the saved
+`fullscreen` — and a capture is the render target read back, which under letterbox
+presentation is the *window*. So a machine with the flag on wrote every frame at
+that display's size with the logical frame scaled into it by whatever non-integer
+factor the display implied: measured, **1024x706 against 800x552**, a 1.28 scale,
+and the glyph stems in the enlarged one are visibly uneven. That is the exact
+damage the cover pipeline below goes to trouble over — a single non-integer resize
+of pixel art either blurs it or breaks its stems — arriving before `-resize 200%`
+had run on any still. The CRT filter, reduced motion and the *assists* rode in the
+same way, so MORE HEARTS on meant five hearts in the HUD of every picture, and the
+records page showed that machine's times.
+
+The script said both things at once. Its header described reading and writing the
+runner's files as a feature ("the record sheet shows this machine's times"); the
+MANIFEST it writes into every kit said the captures were taken "at the window the
+game opens (800x552) and the settings it ships with". Seventy lines apart, in one
+file, and only one of them could be true.
+
+`--shot` (and `--soak`, and `--screen`) makes the run a **scripted** one now (`GameRunKind` in
+[game.h](../src/game.h)): shipped defaults, no saved fullscreen, neither file read
+nor written. One check in `pref_file_path` does the whole of it, because both
+loads apply their defaults before asking for a path and both saves stop the moment
+they do not get one. `tools/soak.sh` holds a capture's own BMP header to
+`VIEW_W`/`VIEW_H` off [game_config.h](../src/game_config.h), and the MANIFEST
+derives the same two numbers instead of spelling them — a resolution written into a
+shell script is a second copy of a `#define`. Reverted, the sweep prints
+`wrote a 1024x706 frame, not 800x552`.
+
+It runs the other way too, and that half was a gate rather than a picture: `make
+soak` and `make sanitize` banked their own numbers into the developer's
+`progress.cfg`, because `--screen cleared` finishes a sector. A test gate must not
+rewrite the player's records.
+
+`--seed` is also the one numeric switch here that had to be strict on its own
+account rather than by luck. Every other one decays to a value its own range check
+refuses; **nought is a perfectly good seed**, so `--seed abc` would have pinned
+nought and said nothing. It reads through `SDL_strtoull` with the end pointer
+checked, which catches `3s` with it.
+
+**What it found, which is the part worth keeping.** Three of the most interesting
+screens in the game could not be photographed at all. `--screen aftermath` stages
+a floor a few seconds after it went wrong — the bodies, the opened patch, the
+alarm lighting, the crawl — and freezes it by entering `STATE_PAUSED`, which is the
+one state whose own comment is "time stands still". Right state, wrong picture:
+the pause sheet was drawn over every one of them. Nothing is lost by skipping the
+sheet on a staged frame, because `--screen pause` is the name that draws it. Worth
+noticing *why* nobody had seen it: the soak sweep's job is to execute those draw
+calls and it did, under a menu, and a coverage counter cannot tell a frame that
+was drawn from a frame anybody could look at.
+
 ## The shipped macOS app
 
-`make app` builds `dist/Chuck.app`; `make notarize` gets it a ticket from Apple
-and cuts the DMG. Everything either one needs is in [packaging/](../packaging/),
-and the whole of it exists to close the gap between a binary that runs *here*
-and a binary that runs on somebody else's Mac. Four decisions carry it.
+`make mac` is the whole of it: compile both slices, wrap them in
+`dist/Chuck.app`, sign it, get it a ticket from Apple, staple that in, and cut
+the zip and the DMG. One target and one script,
+[packaging/build_macos.sh](../packaging/build_macos.sh), beside
+`build_linux.sh` and `build_windows.sh` and doing what those two do in the same
+four steps: the library, the game, the payload, the archive. It exists to close
+the gap between a binary that runs *here* and a binary that runs on somebody
+else's Mac. Five decisions carry it.
 
-**`make` and `make app` do not link the same SDL, and they must not.** The
+**`make app` is the same script stopped early** — `MACOS_BUNDLE_ONLY=1`, which
+gets the bundle built and signed without going near Apple. That is what the
+macOS CI job checks on every push, since everything before the network needs no
+account and everything after it needs a notary profile.
+
+**`make` and `make mac` do not link the same SDL, and they must not.** The
 development build takes Homebrew's, which is right for a machine with Homebrew
 on it and wrong for everybody else's: it is arm64 only and it is built for the
 macOS it was poured on — `minos 26.0` as this was written — so a bundle wrapped
@@ -272,7 +422,7 @@ install name is `@rpath/SDL3.framework/Versions/A/SDL3` and the link step writes
 `install_name_tool` surgery — which also means there is no path to a Homebrew
 directory left anywhere in the shipped Mach-O to work by accident on the
 developer's machine. The levels are already in the executable and the audio is
-synthesized at startup, so `Contents/Resources` holds nothing but the icon.
+synthesised at startup, so `Contents/Resources` holds nothing but the icon.
 
 **The build always signs, and it says which of the two ways it signed.** With a
 *Developer ID Application* certificate in the keychain it signs with that, under
@@ -281,15 +431,30 @@ what notarization requires. With no such certificate it signs ad-hoc and says
 so in as many words, because an unsigned build that prints nothing looks exactly
 like a build that succeeded until somebody else double-clicks it. An *Apple
 Development* certificate is not a substitute: it signs for your own devices and
-Apple will not notarize it. [packaging/notarize.sh](../packaging/notarize.sh)
-refuses to upload anything not signed with a Developer ID and prints how to get
-one, rather than letting Apple reject it twenty minutes later.
+Apple will not notarize it. The script refuses to upload an ad-hoc signature and
+prints how to get a real one, rather than letting Apple reject it twenty minutes
+later.
 
 **Both the app and the DMG are notarized and stapled.** A player may be handed
 either, and Gatekeeper checks whichever they got; stapling writes the ticket
 into the bundle so the first launch needs no network. Credentials live in a
 notarytool keychain profile (`xcrun notarytool store-credentials`), never in the
 repository.
+
+**And this used to be three targets and two scripts, which is how it shipped an
+archive nobody could open.** Building the bundle opens by deleting
+`dist/Chuck.app` and signing a fresh one, so it throws away whatever ticket was
+stapled into the last — and the step that cut the zip had that build as its
+prerequisite. So it destroyed the ticket it needed and packed the result: signed,
+passing `codesign --verify`, and refused by Gatekeeper on every Mac but the one
+that built it. `codesign --verify` cannot see the difference; notarization is a
+ticket and `xcrun stapler validate` is the question.
+The first fix added that question to the zip step and a fourth target naming the
+order the other three had to run in. The real fix was to stop splitting the job:
+one script, in order, with the mistake unreachable instead of guarded against —
+and the guard deleted again, because it has nothing left to ask. **A family of
+targets whose members do not do the same kind of thing is the smell**; here two
+of them built a platform and the third zipped what another one had made.
 
 The icon is drawn, not stored: [packaging/draw_icon.py](../packaging/draw_icon.py)
 paints the tower, its lit floors, the roof beacon and Chuck on the flank out of
@@ -301,6 +466,62 @@ in.
 The version, the bundle identifier and the app name are written once, in
 [version.h](../src/version.h): the binary hands them to `SDL_SetAppMetadata` (so
 the audio device, the window's owner and a crash report all name the game
-rather than "SDL Application") and `build_app.sh` greps them out of the same
+rather than "SDL Application") and `build_macos.sh` greps them out of the same
 header for `Info.plist`. `CFBundleVersion` is the commit count, which is a
 number that already rises with every build anybody is handed.
+
+## The three payloads
+
+`itch/README.md` is the operating manual for the store page — the fields, the
+pictures, the order to do things in. This is why the builds are shaped the way
+they are.
+
+**Each target writes one archive into `dist/` and stops.** Nothing here uploads
+anything or knows that an account exists; a person drags the file into the
+dashboard. itch.io's own `butler` would automate that and is deliberately not
+wired in — publishing is a decision somebody makes with a dashboard open, not
+something a build step does.
+
+**Each one can only be built where its libraries are.** The macOS bundle needs a
+Mac: two slices, a Developer ID signature and a framework Apple's notary service
+has to staple. The Windows archive is a cross-build with mingw-w64 and works on a
+Mac. The Linux one needs a Linux, because the SDL inside it is compiled against
+the userland it will run on — `.github/workflows/payloads.yml` is a button on the
+Actions tab that hands one back, and it exists for that reason alone.
+
+**The library travels in the payload on all three.** SDL3 is new enough that most
+distributions in use ship no package for it, so a Linux build that says "install
+libsdl3" is a build that does not run. Linux gets `lib/libSDL3.so.0` beside the
+binary and an rpath of `$ORIGIN/lib`, which the loader expands to wherever the
+executable actually is; Windows gets `SDL3.dll` next to the exe, where Windows
+looks first, and `-static-libgcc` so there is no compiler runtime DLL to be
+missing either. Both read the same pin `packaging/fetch_sdl3.sh` holds, out of
+that file rather than written down again: a shipped binary has to be traceable to
+the library it was linked against.
+
+**The archive's shape is part of the job.** Linux and Windows unpack into a single
+folder carrying the game's name and version, because the alternative on Windows is
+an exe and a DLL loose in a Downloads directory — which is the difference between
+the game finding SDL3.dll and not. The macOS one holds the bundle alone and is made
+with `ditto` rather than `zip`, for the reason
+[packaging/fetch_sdl3.sh](../packaging/fetch_sdl3.sh) uses `ditto`: a `.app` is
+symlinks and resource forks, and an archiver that flattens either hands somebody
+something that will not launch and cannot be diagnosed.
+
+**`.itch.toml` names the game** for the itch.io desktop app, which otherwise
+guesses which file in a build is the executable — and on a payload with a shared
+library beside the binary, a guess can land on `SDL3.dll`. The macOS archive has
+none: a bundle is already the obvious thing to launch, and anything added inside it
+would be a file the code signature does not cover, which is to say a broken
+signature on the platform that refuses to start those.
+
+**And the cross-build turned out to be a second opinion about the tree.** It is
+the only compiler in this project's life that is not clang. The first Windows build
+ever attempted stopped on `snprintf` called in a file with no `<stdio.h>` in it —
+clang's SDL headers happen to drag one in and mingw-w64's do not — and printed four
+more diagnostics clang does not have: two loop counters set and incremented and
+read by nothing, a `%zu` that is correct C and that gcc checks against the
+*platform's* printf rather than SDL's, and two format buffers whose worst case does
+not fit. None was a bug a player would have met and all five were real, in a tree
+whose conventions page calls itself warning-free. It was warning-free under one
+compiler.

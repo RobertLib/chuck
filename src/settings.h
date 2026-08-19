@@ -2,6 +2,7 @@
 #define CHUCK_SETTINGS_H
 
 #include "keybind.h"
+#include "run_tally.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -113,7 +114,23 @@ typedef enum
      */
     SETTING_ROW_BINDING,
     /* A row that just does something when confirmed; the controls reset. */
-    SETTING_ROW_ACTION
+    SETTING_ROW_ACTION,
+    /*
+     * A figure the game is reporting rather than a setting the player is
+     * changing, drawn where a toggle's switch goes.
+     *
+     * It is a row kind rather than a block the renderer draws under the table
+     * because everything that makes this sheet safe is per-row: the plate's
+     * height is added up from the rows, the fit check walks the rows, and the
+     * cursor walks the rows. A readout drawn outside the table would be a line
+     * on this plate that none of the three had an opinion about, which is how
+     * the sheet came to be drawn 50px off the bottom of the frame the last time
+     * something was added to it.
+     *
+     * The cursor steps over it, the way it steps over a heading: there is
+     * nothing to change. `settings_row_readout` says which figure.
+     */
+    SETTING_ROW_READOUT
 } SettingRowKind;
 
 /* Which field of `Settings` a row drives. */
@@ -129,10 +146,12 @@ typedef enum
     SETTING_SLOWER_GUARDS,
     SETTING_INFINITE_LIVES,
     SETTING_VETERAN,
-    /* The row on the main page that opens the controls page. It changes no
-     * value of its own, which is why it has an id at all: the cursor test
+    /* The rows on the main page that open the other three pages. They change no
+     * value of their own, which is why they have ids at all: the cursor test
      * refuses a reachable row whose id is SETTING_NONE. */
     SETTING_OPEN_CONTROLS,
+    SETTING_OPEN_DIFFICULTY,
+    SETTING_OPEN_RECORDS,
     /* The bindings, one row per action, and the row that puts them all back.
      * `SETTING_BIND_FIRST + action` is the id of an action's row, which is
      * what keeps nine near-identical enum values out of this list. */
@@ -141,26 +160,84 @@ typedef enum
      * resume chip alone; see `SETTINGS_RECORDS_ARMED_DETAIL` for why it takes
      * two presses. */
     SETTING_RECORDS_RESET,
-    SETTING_BIND_FIRST
+    /*
+     * The readouts, `SETTING_READOUT_FIRST + RunTallyRecord`, on the same
+     * argument `SETTING_BIND_FIRST` is built on: four near-identical enum values
+     * would be four places to forget a figure, and the mapping between a row and
+     * what it reports would then exist twice — once here and once in the
+     * renderer's switch. `settings_row_readout` is the only reading of it.
+     */
+    SETTING_READOUT_FIRST,
+    SETTING_BIND_FIRST = SETTING_READOUT_FIRST + RUN_TALLY_RECORD_COUNT
 } SettingId;
 
 /* The action a binding row drives, or `BIND_COUNT` for a row that is not
  * one. */
 BindAction settings_row_action(SettingId id);
 
+/* The figure a readout row reports, or `RUN_TALLY_RECORD_COUNT` for a row that
+ * is not one. */
+RunTallyRecord settings_row_readout(SettingId id);
+
+
 /*
- * The sheet has two pages, and that is a layout fact rather than a taste.
+ * Whether the cursor may land on a row of this kind.
  *
- * The plate is sized from its rows, and the main page already stands 516px tall
- * inside a 552px frame. Nine controls, each with two keys on it, do not go in
- * the 36px that are left — so they are a page of their own, reached from a row
+ * One reading, because there are two walks over the table that have to agree
+ * about it — `settings_first_row` and `settings_move_cursor` — and they were a
+ * `kind != SETTING_ROW_HEADING` each. A second unreachable kind would have had
+ * to be remembered in both, and remembering it in one of the two is a sheet that
+ * opens with the caret on a number.
+ */
+bool settings_row_is_reachable(SettingRowKind kind);
+
+/*
+ * The sheet has four pages, and that is a layout fact rather than a taste.
+ *
+ * The plate is sized from its rows and the frame is 552px tall, which leaves
+ * `SETTINGS_ROWS_TOP + SETTINGS_FOOTER_BAND + SETTINGS_FRAME_MARGIN` off the
+ * top of that for the title, the strap and the footer: about 430px of rows.
+ * A value row wants 40 and a heading 26 or 40, so a page is roughly eight rows
+ * and four headings before it has to start squeezing them.
+ *
+ * Nine controls, each with two keys and two buttons on it, were the first thing
+ * that plainly did not fit, and they became the second page — reached from a row
  * on the first, the way the manual and the options sheet are siblings hanging
  * off the title screen rather than one scrolling list.
+ *
+ * RECORDS is the third and it arrived the other way round: it was *added* to the
+ * main page, took it to 716px against a 536px budget, and the squeeze that was
+ * supposed to absorb that miscounted (see the note on the vertical geometry
+ * above). So the section that explains why an assist run banks nothing was the
+ * section drawn over the footer and off the bottom of the frame. It is a page of
+ * its own now, which puts the main page back inside its budget with air to
+ * spare, and `test_every_page_of_the_options_sheet_fits_the_frame_it_is_drawn_in`
+ * is what will say so about the fifth page rather than a player finding out.
+ *
+ * **And DIFFICULTY is the fourth, which is the split the note on `spare_rows`
+ * below spent a release asking for.** That note said the main page had one value
+ * row in hand and *none* with the mute warning up, at a squeeze of 0.68 against a
+ * floor of 0.6 — four pixels of air where the design allows seventeen — and that
+ * what the page needed was another split, which was "a decision about what a
+ * player should see rather than something a check can make". This is that
+ * decision. ASSIST and CHALLENGE went together because the code already says they
+ * belong together: `gameplay_enemy_speed_scale` reads both and resolves them
+ * against each other, and the comment on `ChallengeOptions` calls veteran "the
+ * other direction" of the same question. Splitting them apart and leaving one of
+ * them on the main page would have been the arbitrary cut.
+ *
+ * The main page keeps what a player changes on the way past — the two levels and
+ * the three display switches — and carries a row down to each of the other three.
+ * Measured after the split: **6** spare value rows instead of one, and no
+ * squeeze at all on either state of it — 502px of plate against a 552px frame,
+ * or 516 with the mute warning up.
  */
 typedef enum
 {
     SETTINGS_PAGE_MAIN,
     SETTINGS_PAGE_CONTROLS,
+    SETTINGS_PAGE_DIFFICULTY,
+    SETTINGS_PAGE_RECORDS,
     SETTINGS_PAGE_COUNT
 } SettingsPage;
 
@@ -205,6 +282,97 @@ typedef struct
 #define SETTINGS_CAP_GAP 8.0f
 #define SETTINGS_CAP_GROUP_GAP 14.0f
 #define SETTINGS_GLYPH_W 8.0f
+/* The other axis of the same glyph, and it is here for the reason the width is:
+ * a row's height has to be at least its own ink. [game_render.c](game_render.c)
+ * asserts both against `SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE` at compile time,
+ * the way [keybind.h](keybind.h)'s scancodes are asserted against SDL's — a
+ * number written down twice is checked or it is two numbers. */
+#define SETTINGS_GLYPH_H 8.0f
+
+/*
+ * Where a binding row's four caps sit, left to right, and it is a function
+ * rather than four lines of arithmetic in the renderer for two reasons.
+ *
+ * The first is the one every table of words in this tree already has: the check
+ * that measures the run used to lay it out a second time, "exactly as
+ * `draw_setting_keys` lays it out", which is two copies of a layout and the
+ * arrangement this repository keeps finding drifted.
+ *
+ * The second is a shipped bug, and it is the reason `pad` is in the struct. The
+ * caret walks `settings_bind_slot` from 0 to `BIND_TOTAL_SLOTS`, and slots 0 and
+ * 1 are the row's *keys* — the strap on the controls page says so
+ * (`TWO KEYS, THEN TWO PAD BUTTONS`), the manual's own control sheet draws the
+ * keyboard first, and the comment beside the renderer's loop claimed "a row
+ * reads keys-then-buttons in the order the caret walks them". It did not: the
+ * keyboard's run was pinned to the right margin and the pad's put to its left,
+ * so the sheet opened with the caret on the *third* cap from the left, LEFT
+ * moved nothing at all, and the two caps beside the label could only be reached
+ * by pressing RIGHT twice more. Nothing could see it — the fit check measures
+ * widths, the soak draws the frame and a counter cannot tell a frame that was
+ * drawn from a frame anybody could read.
+ *
+ * So the order is one thing now and `test_the_binding_caps_run_left_to_right`
+ * holds it: cap `i + 1` is to the right of cap `i`, the keys come first, and the
+ * run ends on the margin it is given.
+ */
+typedef struct
+{
+    float x;
+    float w;
+    bool pad; /* the two pad buttons, which spell themselves narrower */
+} SettingsCap;
+
+/*
+ * Fills `out` with one cap per `settings_bind_slot`, in caret order, and returns
+ * how many it wrote. `out` needs `BIND_TOTAL_SLOTS` entries and `right` is the
+ * plate's right control margin — the same one the sliders and switches end on.
+ */
+int settings_bind_caps(float right, SettingsCap *out);
+
+/*
+ * The sheet's *vertical* layout, and it is here because leaving it in the
+ * renderer cost the game a visible bug for a whole release.
+ *
+ * `test_every_word_on_the_options_sheet_fits_the_plate` measured every label,
+ * detail, strap, title and footer against `SETTINGS_PANEL_W` — and nothing at
+ * all against the frame's height, while its name said "fits the plate". The
+ * plate is sized from its rows, the rows outgrew the frame when the RECORDS
+ * section arrived, and the renderer's answer to that was a squeeze that scaled
+ * the *value* rows and then recomputed the budget as though the headings had
+ * shrunk with them. They cannot: a heading's height is its rule and its
+ * sentence. So the plate came out about 50px shorter than what was drawn on it,
+ * the RECORDS strap was printed over the footer prompt, and RESET RECORDS and
+ * its detail line were drawn off the bottom of the screen — on the one sheet
+ * whose whole job is reporting state, in the shot the store page is cut from.
+ *
+ * The layout is one function in [settings.c](settings.c) now
+ * (`settings_page_layout`), on the side of the boundary `make test` can reach,
+ * and the renderer lays the sheet out from what it returns. A page that no
+ * longer fits is then a failing test rather than a line nobody can see.
+ *
+ * `SETTINGS_ROW_DETAIL_DY` is where a row's second line sits under its first,
+ * so `SETTINGS_ROW_DETAIL_DY + SETTINGS_GLYPH_H` is the ink a row actually
+ * occupies and the floor its pitch may never go under. That is what
+ * `SETTINGS_SQUEEZE_MIN` is derived from rather than guessed at — it used to be
+ * a literal 0.6 with a comment saying "past this the labels touch", which was
+ * a measurement nobody had taken.
+ */
+#define SETTINGS_ROWS_TOP 66.0f
+#define SETTINGS_HEADING_H 26.0f
+#define SETTINGS_HEADING_DETAIL_H 40.0f
+#define SETTINGS_VALUE_H 40.0f
+/* A binding row carries no sentence under its label, so it needs no room for
+ * one. Nine of them at the full row height is 90px the controls page has
+ * nowhere to put. */
+#define SETTINGS_BIND_H 28.0f
+#define SETTINGS_ROW_DETAIL_DY 15.0f
+/* Below the last row: the footer prompt's own line and the air around it. */
+#define SETTINGS_FOOTER_BAND 38.0f
+/* The plate never runs to the edge of the frame. */
+#define SETTINGS_FRAME_MARGIN 16.0f
+/* One glyph of air between a detail line and the label under it. */
+#define SETTINGS_ROW_INK_H (SETTINGS_ROW_DETAIL_DY + SETTINGS_GLYPH_H)
+#define SETTINGS_SQUEEZE_MIN ((SETTINGS_ROW_INK_H + 1.0f) / SETTINGS_VALUE_H)
 
 /*
  * The four lines the sheet draws that are not rows of the table.
@@ -251,6 +419,70 @@ typedef struct
 
 /* One page of the sheet, in order. */
 const SettingRow *settings_rows(SettingsPage page, int *out_count);
+/*
+ * The words over a row, and **the only correct way to read them.**
+ *
+ * `row->label` is NULL on the RECORDS page's four readouts, because their names
+ * live with their values in [run_tally.c](run_tally.c) rather than being spelled
+ * out a second time here — see the note above `RECORD_ROWS` for what the second
+ * copy cost. Everything that draws or measures a row goes through this, so the
+ * renderer and the fit check cannot end up reading different fields.
+ */
+const char *settings_row_label(const SettingRow *row);
+
+/*
+ * How tall one page's plate is, and at what pitch its rows are drawn.
+ *
+ * `fits` is the whole point of the struct: it is false when the table is longer
+ * than the frame even with the rows squeezed to their ink, which is the state
+ * the sheet shipped in and the state no picture of it can be drawn out of. The
+ * renderer still draws such a page — refusing to would be a blank screen where
+ * there was a crowded one — but the suite refuses it, which is the right way
+ * round for a fault an author introduces and a player pays for.
+ *
+ * `squeeze` scales the rows that carry a label and a sentence. It deliberately
+ * does *not* scale the headings, because a heading's height is its rule plus
+ * its sentence and neither shrinks; the bug this replaced applied it to the
+ * rows and then subtracted it from the headings as well.
+ *
+ * `spare_rows` is the same question asked as a number instead of a cliff, and it
+ * is here because `fits` alone cannot say how close a page is to going over.
+ * Measured the day it was added: the controls page has nine rows in hand and the
+ * records page fifteen, and the main page has **one — or none with the mute
+ * warning up**, which is the line the AUDIO heading grows while `M` is down. So
+ * the sheet a player opens most is full: it is drawn at a squeeze of 0.68
+ * against a floor of 0.6, which is 4px of air between a detail line and the label
+ * under it where the design allows 17, and the next row added to it fails the
+ * build in the muted state.
+ *
+ * That is the honest state of the sheet rather than a fault — the gate does fire
+ * on the row that would break it, one release before a player sees anything. It
+ * is written down because a boolean that has been true for a long time reads as
+ * room, and the next person to add a row deserves to know they are adding it to a
+ * full page. What that page needs is a fourth split, the way `RECORDS` was split
+ * out of it, and that is a decision about what a player should see rather than
+ * something a check can make.
+ */
+typedef struct
+{
+    float plate_h;  /* the whole plate, title and footer band included */
+    float rows_h;   /* the run of rows inside it */
+    float value_h;  /* pitch of a slider, toggle or action row */
+    float bind_h;   /* pitch of a binding row */
+    float squeeze;  /* 1.0 when the page fits at its natural pitch */
+    bool fits;      /* false when even the floor is not enough */
+    /* How many more value rows this page could carry and still fit. Nought
+     * means the page is full; it is never negative on a page that fits. */
+    int spare_rows;
+} SettingsLayout;
+
+/*
+ * `muted` because the audio heading grows a line while the kill switch is down
+ * (`SETTINGS_MUTED_LINE`), which is a row height that depends on something
+ * outside the table — so the page has two heights and both have to fit.
+ */
+SettingsLayout settings_page_layout(SettingsPage page, bool muted,
+                                    float frame_h);
 
 /* What the page is titled and what its strap line says. */
 const char *settings_page_title(SettingsPage page);
@@ -278,17 +510,56 @@ bool settings_heading_governs_levels(const SettingRow *rows, int row_count,
                                      int index);
 
 /*
- * What the records row says once it is armed.
+ * What a row that cannot be undone says once it is armed.
  *
- * The only row on either sheet that cannot be undone, so it is the only one that
- * asks twice — the same reasoning the pause menu's cursor uses for never opening
- * on ABANDON RUN. It is a string here rather than in the renderer because it is
- * a word the player reads, which means the fit check has to be able to reach it:
- * `test_every_word_on_the_options_sheet_fits_the_plate` measures this line with
- * the rest of the table.
+ * A row that destroys something asks twice — the same reasoning the pause menu's
+ * cursor uses for never opening on ABANDON RUN. They are strings here rather
+ * than in the renderer because they are words the player reads, which means the
+ * fit check has to be able to reach them:
+ * `test_every_word_on_the_options_sheet_fits_the_plate` measures them with the
+ * rest of the table.
+ *
+ * **There were two such rows and one of them asked.** The comment here used to
+ * open "the only row on either sheet that cannot be undone", and one page over
+ * `RESET CONTROLS` put nine actions and four slots per action back to the
+ * defaults **on a single press**, in the same white as every other label, with
+ * no undo anywhere in the game. Records are a ratchet a player rebuilds by
+ * playing; a control scheme somebody has just spent five minutes on is gone.
+ * That is this tree's "fixing one half of a symmetric defect" shape with the
+ * halves two rows apart, and the sentence that read as the argument for the arm
+ * was also the reason nobody looked at the other row: **a comment claiming to
+ * have enumerated something is the last place anybody recounts.**
+ *
+ * So which rows arm is no longer a list. `settings_row_armed_detail` answers it
+ * — a row arms if and only if it has something to say once armed — and the
+ * renderer, `game.c`'s handler and the fit check all read that one answer.
+ * `test_every_action_row_either_opens_a_sheet_or_asks_twice` is what holds a
+ * third destructive row to it: an action that only navigates needs no
+ * confirmation, and anything else does.
  */
 #define SETTINGS_RECORDS_ARMED_DETAIL \
     "PRESS AGAIN TO CLEAR THEM. ANYTHING ELSE KEEPS THEM."
+#define SETTINGS_BINDINGS_ARMED_DETAIL \
+    "PRESS AGAIN TO PUT THEM BACK. ANYTHING ELSE KEEPS THEM."
+
+/*
+ * What this row says once it has been armed, or NULL if it does not arm.
+ *
+ * The single source of truth for "does this row ask twice", read by the sheet's
+ * input handler, by the renderer that swaps the detail line for it, and by the
+ * fit check that measures whichever line the player is actually looking at.
+ */
+const char *settings_row_armed_detail(SettingId id);
+
+/*
+ * The sheet this row opens, or `SETTINGS_PAGE_COUNT` if it opens none.
+ *
+ * `game.c` used to spell this as a three-way `if` over the three ids, which made
+ * "an action row either navigates or destroys" a fact about that function rather
+ * than about the table. Asked here, the property is checkable without a list of
+ * which row is which — see the test named above.
+ */
+SettingsPage settings_row_opens(SettingId id);
 
 /*
  * Whether any assist switch is on.

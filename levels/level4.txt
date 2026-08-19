@@ -12,8 +12,8 @@
 # C H iiA   ii  L  M    B dc  #  ii W L  m ZK  #
 ############################H################H##
 #                           H #              H #
-#                           H %              H #
-# S     B     M   G f   D A H % D i B   T *  H #
+#                           H #              H #
+# S     B     M   G f   D A H # D i B   T *  H #
 ################################################
 
 SPAWNS 0 1

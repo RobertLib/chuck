@@ -158,16 +158,46 @@ void player_reset(Player *player, const Level *level)
     player->action_timer = 0.0f;
     player->knife_attacking = false;
     player->grenade_throwing = false;
+    /* Only read while the flag above is up, but a reset leaves nothing
+     * half-said: the grenade is what the pose drew before there was anything
+     * else to draw. */
+    player->throwing_weapon = PLAYER_WEAPON_GRENADE;
     player->bazooka_firing = false;
     player->shot_vertical = 0;
+}
+
+/*
+ * The three things that are carried rather than spent, in one place.
+ *
+ * There are two rules in this game that move a loadout from one simulation to
+ * another — a sector boundary, which hands over only these, and a death or a
+ * restroom doorway, which hands over the clip and the weapon in the hand as
+ * well — and **both of them have to move all three**. Written out twice, they
+ * came apart at exactly the place a list of three written as a list of two
+ * always does: the flash charge was added to `player_begin_sector` below and
+ * not to the shell's own copy, so a death destroyed the one thing in the game
+ * that answers a floor having already gone wrong, and the restroom door took it
+ * off Chuck for the length of the visit. One `!` a floor, no respawn, on the
+ * six sectors that carry one.
+ *
+ * So the difference between the two rules is written down and the agreement is
+ * not written down at all: it is this function, called by both.
+ */
+static void carry_throwables(Player *destination, const Player *source)
+{
+    destination->grenades = source->grenades;
+    destination->bazooka_rockets = source->bazooka_rockets;
+    destination->flashbangs = source->flashbangs;
 }
 
 /*
  * Opening a sector, and the one thing the sector below is allowed to send with
  * him.
  *
- * **A grenade and a rocket cross the threshold; nothing else does.** The
- * facade is what settles it: nothing on a climb can be thrown or fired at all
+ * **The three carried things cross the threshold; nothing else does.** A
+ * grenade, a rocket and a flash charge — and this sentence said two of them for
+ * as long as there were three, which is the shape `carry_throwables` above
+ * exists to make impossible. The facade is what settles it: nothing on a climb can be thrown or fired at all
  * — the shell clears `shoot` for the whole of `update_facade_playing` and
  * [gameplay_climb.c](gameplay_climb.c) has no notion of a weapon — so the `N`
  * standing mid-wall on every one of the five climbs is a pickup whose entire
@@ -189,12 +219,39 @@ void player_begin_sector(Player *player, const Level *level,
     player_reset(player, level);
     if (previous == NULL)
         return;
-    player->grenades = previous->grenades;
-    player->bazooka_rockets = previous->bazooka_rockets;
-    /* And the flash travels with them, for the same reason: it cannot be
-     * thrown on a climb either, so one picked up mid-wall would be a detour
-     * that bought nothing. */
-    player->flashbangs = previous->flashbangs;
+    /* And the flash travels with the other two, for the same reason: it cannot
+     * be thrown on a climb either, so one picked up mid-wall would be a detour
+     * that bought nothing. See `carry_throwables` for why the three are one
+     * function rather than three assignments here. */
+    carry_throwables(player, previous);
+}
+
+/*
+ * The other doorway: a death, and the restroom door.
+ *
+ * Both of these put Chuck into a simulation that has just been reset — a
+ * respawn at the checkpoint, or the little map behind the `U` — and both of
+ * them are the *same man carrying on*, rather than a sector opening. So they
+ * hand over more than a sector boundary does: the clip, the weapon in the hand
+ * and the way he is facing, on top of the three things he is carrying.
+ *
+ * The hand travels here and deliberately does not travel across a sector
+ * boundary, and the two are not in conflict: "a pickup never arms itself" is a
+ * rule about *acquiring* something, and neither of these acquires anything.
+ * Being put back on your feet holding what you were holding is the continuity
+ * a respawn is for.
+ *
+ * It lives here, beside `player_begin_sector`, rather than in the shell where
+ * it used to — the two are one another's other half, and the half on the far
+ * side of the SDL boundary was the half no test could reach. That is where the
+ * flash charge went missing for six sectors.
+ */
+void player_carry_loadout(Player *destination, const Player *source)
+{
+    carry_throwables(destination, source);
+    destination->bullets = source->bullets;
+    destination->active_weapon = source->active_weapon;
+    destination->facing = source->facing;
 }
 
 /* True when the player box overlaps a ladder near its center or feet. */

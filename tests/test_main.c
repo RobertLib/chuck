@@ -673,16 +673,58 @@ static void test_campaign_levels_are_distinct_and_solvable(void)
     /* The climb gets longer and busier every time, and so does the walk. */
     int previous_interior = -1;
     int previous_climb = -1;
-    int previous_climb_height = -1;
+    float previous_climb_rise = -1.0f;
     for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
     {
         int budget = level_hazard_budget(&levels[i]);
         if (levels[i].map.mode == LEVEL_MODE_FACADE)
         {
             CHECK(budget > previous_climb);
-            CHECK(levels[i].map.height > previous_climb_height);
+            /*
+             * The wall the player actually climbs, spawn to window — not
+             * `map.height`, which is what this measured for as long as it
+             * existed and is a *proxy* for it.
+             *
+             * The two agree only while the spawn sits on the bottom row, and
+             * one of the five did not: sector 13 carried two blank rows under
+             * its `S`, so its map was 48 rows against sector 11's 46 and this
+             * check passed, while the climb was 45 tiles on both. The rule in
+             * `levels/LEGEND.md` says a climb's *height* must exceed the
+             * previous climb's, and the player is shown exactly this number —
+             * `WINDOW 45M` in the facade HUD read the same on the third wall
+             * and the fourth. A check measuring the map instead of the climb is
+             * this tree's oldest defect wearing the campaign's clothes.
+             *
+             * Computed the way `draw_facade_hud` computes it, so the assertion
+             * and the readout cannot come to disagree.
+             */
+            float rise = levels[i].map.start_y -
+                         (float)levels[i].map.window_row * (float)TILE_SIZE;
+            CHECK(rise > previous_climb_rise);
+            /*
+             * And the spawn is on the bottom row, which is what makes the proxy
+             * above and the quantity below the same number.
+             *
+             * The two come apart the moment a wall carries a blank row under its
+             * `S`, and that is exactly how the defect this test was rewritten for
+             * got in: sector 13 had two of them, so its map was taller than
+             * sector 11's while both climbs were 45 tiles. Rewriting the
+             * assertion to measure the rise fixed the check and left the
+             * condition it depends on unheld — and sector 7 was still sitting on
+             * one blank row, the only wall of the five that was, so `map.height`
+             * was rise + 2 there and rise + 1 everywhere else.
+             *
+             * Nothing was wrong with the map: the rise was right, the order was
+             * right, and the camera never showed the row. What was wrong is that
+             * the campaign had one wall where the cheap reading and the true one
+             * disagreed, on the pair of quantities that has already been
+             * confused once. Held here so a spare row arrives as a failure
+             * rather than as a proxy quietly going stale again.
+             */
+            CHECK(levels[i].map.start_y ==
+                  (float)(levels[i].map.height - 1) * (float)TILE_SIZE);
             previous_climb = budget;
-            previous_climb_height = levels[i].map.height;
+            previous_climb_rise = rise;
             continue;
         }
         CHECK(budget > previous_interior);
@@ -747,6 +789,397 @@ static void test_campaign_levels_are_distinct_and_solvable(void)
     }
 }
 
+
+/* How long one attempt is given. Two and a half seconds is a walk of ten tiles,
+ * a jump and a two-storey fall with room to spare, and every edge the model
+ * claims is one step of it. */
+#define EDGE_ATTEMPT_SECONDS 2.4f
+
+/* `EdgeScript` rows: after_vert, dir, vert, release_at, jump_at, crawl, door.
+ * Written as a macro so the table stays one list rather than a length and a
+ * body that can disagree about how long it is. */
+#define EDGE_SCRIPT_TABLE \
+        {0, 1, 0, -1.0f, -1.0f, false, false}, \
+        {0, -1, 0, -1.0f, -1.0f, false, false}, \
+        {0, 1, 0, 0.06f, -1.0f, false, false}, \
+        {-1, 1, 0, 0.06f, -1.0f, false, false}, \
+        {1, 1, 0, 0.06f, -1.0f, false, false}, \
+        {0, -1, 0, 0.06f, -1.0f, false, false}, \
+        {-1, -1, 0, 0.06f, -1.0f, false, false}, \
+        {1, -1, 0, 0.06f, -1.0f, false, false}, \
+        {0, 1, 0, 0.1f, -1.0f, false, false}, \
+        {-1, 1, 0, 0.1f, -1.0f, false, false}, \
+        {1, 1, 0, 0.1f, -1.0f, false, false}, \
+        {0, -1, 0, 0.1f, -1.0f, false, false}, \
+        {-1, -1, 0, 0.1f, -1.0f, false, false}, \
+        {1, -1, 0, 0.1f, -1.0f, false, false}, \
+        {0, 1, 0, 0.16f, -1.0f, false, false}, \
+        {-1, 1, 0, 0.16f, -1.0f, false, false}, \
+        {1, 1, 0, 0.16f, -1.0f, false, false}, \
+        {0, -1, 0, 0.16f, -1.0f, false, false}, \
+        {-1, -1, 0, 0.16f, -1.0f, false, false}, \
+        {1, -1, 0, 0.16f, -1.0f, false, false}, \
+        {0, 1, 0, 0.22f, -1.0f, false, false}, \
+        {-1, 1, 0, 0.22f, -1.0f, false, false}, \
+        {1, 1, 0, 0.22f, -1.0f, false, false}, \
+        {0, -1, 0, 0.22f, -1.0f, false, false}, \
+        {-1, -1, 0, 0.22f, -1.0f, false, false}, \
+        {1, -1, 0, 0.22f, -1.0f, false, false}, \
+        {0, 1, 0, 0.3f, -1.0f, false, false}, \
+        {-1, 1, 0, 0.3f, -1.0f, false, false}, \
+        {1, 1, 0, 0.3f, -1.0f, false, false}, \
+        {0, -1, 0, 0.3f, -1.0f, false, false}, \
+        {-1, -1, 0, 0.3f, -1.0f, false, false}, \
+        {1, -1, 0, 0.3f, -1.0f, false, false}, \
+        {0, 1, 0, 0.4f, -1.0f, false, false}, \
+        {-1, 1, 0, 0.4f, -1.0f, false, false}, \
+        {1, 1, 0, 0.4f, -1.0f, false, false}, \
+        {0, -1, 0, 0.4f, -1.0f, false, false}, \
+        {-1, -1, 0, 0.4f, -1.0f, false, false}, \
+        {1, -1, 0, 0.4f, -1.0f, false, false}, \
+        {0, 1, 0, -1.0f, 0.0f, false, false}, \
+        {0, 1, 0, 0.45f, 0.0f, false, false}, \
+        {0, -1, 0, -1.0f, 0.0f, false, false}, \
+        {0, -1, 0, 0.45f, 0.0f, false, false}, \
+        {0, 1, 0, -1.0f, 0.12f, false, false}, \
+        {0, 1, 0, 0.45f, 0.12f, false, false}, \
+        {0, -1, 0, -1.0f, 0.12f, false, false}, \
+        {0, -1, 0, 0.45f, 0.12f, false, false}, \
+        {0, 1, 0, -1.0f, 0.25f, false, false}, \
+        {0, 1, 0, 0.45f, 0.25f, false, false}, \
+        {0, -1, 0, -1.0f, 0.25f, false, false}, \
+        {0, -1, 0, 0.45f, 0.25f, false, false}, \
+        {0, 1, 0, -1.0f, 0.4f, false, false}, \
+        {0, 1, 0, 0.45f, 0.4f, false, false}, \
+        {0, -1, 0, -1.0f, 0.4f, false, false}, \
+        {0, -1, 0, 0.45f, 0.4f, false, false}, \
+        {0, 0, 0, -1.0f, 0.0f, false, false}, \
+        {0, 0, -1, -1.0f, -1.0f, false, false}, \
+        {0, 0, 1, -1.0f, -1.0f, false, false}, \
+        {0, 1, -1, -1.0f, -1.0f, false, false}, \
+        {0, -1, -1, -1.0f, -1.0f, false, false}, \
+        {0, 1, 1, -1.0f, -1.0f, false, false}, \
+        {0, -1, 1, -1.0f, -1.0f, false, false}, \
+        {0, 1, -1, 0.06f, -1.0f, false, false}, \
+        {0, -1, -1, 0.06f, -1.0f, false, false}, \
+        {0, 1, -1, 0.1f, -1.0f, false, false}, \
+        {0, -1, -1, 0.1f, -1.0f, false, false}, \
+        {0, 1, -1, 0.16f, -1.0f, false, false}, \
+        {0, -1, -1, 0.16f, -1.0f, false, false}, \
+        {0, 1, -1, 0.22f, -1.0f, false, false}, \
+        {0, -1, -1, 0.22f, -1.0f, false, false}, \
+        {0, 1, 0, 0.06f, -1.0f, true, false}, \
+        {0, -1, 0, 0.06f, -1.0f, true, false}, \
+        {0, 1, 0, 0.1f, -1.0f, true, false}, \
+        {0, -1, 0, 0.1f, -1.0f, true, false}, \
+        {0, 1, 0, 0.16f, -1.0f, true, false}, \
+        {0, -1, 0, 0.16f, -1.0f, true, false}, \
+        {0, 1, 0, 0.22f, -1.0f, true, false}, \
+        {0, -1, 0, 0.22f, -1.0f, true, false}, \
+        {0, 1, 0, -1.0f, -1.0f, true, false}, \
+        {0, -1, 0, -1.0f, -1.0f, true, false}, \
+        {0, 0, 0, -1.0f, -1.0f, false, true}, \
+        {0, 0, 0, -1.0f, -1.0f, false, false},
+
+/*
+ * The body delivers every route the model promises.
+ *
+ * `test_campaign_levels_are_distinct_and_solvable` above certifies all twelve
+ * interiors and all four washrooms with `route_flood` and `route_never_strands`,
+ * and everything downstream trusts it: the docket sheet's detour, the weak
+ * wall's saving, the reachability of every card and console, the editor's own
+ * verdict on an author's map. **What none of that asks is whether the
+ * simulation can actually make the moves.** The model's own header says
+ * "everything it reaches really is reachable", and until this test the evidence
+ * for that sentence was three mechanics driven one at a time — the 63 ladder
+ * runs, the three lift shafts, the three plates — out of a graph with five and a
+ * half thousand edges in it. The walk, the step up, the one-and-two-tile hole,
+ * the spike hop, the step off a ledge, the paired door and every duct edge were
+ * asked of nobody.
+ *
+ * So this asks each one: put the player on the source cell with the floor empty,
+ * try the presses a hand would try, and require that he ends up settled on the
+ * destination. It is the interior bot's question without the interior bot —
+ * following a route needs a ladder policy, a lift policy and a door policy and a
+ * greedy one reaches the way out on a minority of the twelve, which measures the
+ * bot. One edge at a time measures the map.
+ *
+ * **What is skipped is skipped by rule rather than by list**, which is the whole
+ * of why this can be a gate. Three things in the building move on their own and
+ * the model knowingly abstracts them: a lift deck (its shaft edges mean "wait
+ * for it", and a deck parked in a column also catches a fall short of where the
+ * model says it lands), a moving plate (its row is floor to the model and one
+ * tile of travelling steel to the game), and a crate — which is not skipped at
+ * all but *removed*, because the model has never counted one as floor, so the
+ * map it certifies is the map without them. Everything else has to be delivered.
+ * Measured: 5771 edges, 219 of them mover-dependent, and nought undelivered.
+ *
+ * The counts are printed on a failure and there is a guard on the skip fraction,
+ * because the way this check would rot is not a false alarm — it is somebody
+ * widening `mover_involved` until the sweep asks nothing. A bound that silently
+ * swallowed the campaign would read exactly like a clean run.
+ */
+static bool edge_cell_in_duct(const Level *level, int col, int row)
+{
+    /* `route_in_duct` is static to level_route.c, and the predicate is one
+     * comparison; a second copy of a *rule* would be worth objecting to, and a
+     * second copy of "is this tile a vent" is not. */
+    return col >= 0 && row >= 0 && col < level->map.width &&
+           row < level->map.height &&
+           level->map.tiles[row][col] == TILE_VENT;
+}
+
+static bool edge_cell_has_a_mover(const GameplayState *state,
+                                  const RouteMap *route, int col, int row)
+{
+    if (route_in_shaft(route, col, row))
+        return true;
+    for (int i = 0; i < state->level.runtime.moving_platform_count; ++i)
+    {
+        const MovingPlatform *plate =
+            &state->level.runtime.moving_platforms[i];
+        /* The plate's row and the row a rider stands in, across its whole run
+         * and a tile either side of the ends. */
+        if (row != plate->row && row != plate->row - 1)
+            continue;
+        int left = (int)floorf(plate->left_limit / TILE_SIZE) - 1;
+        int right = (int)floorf(plate->right_limit / TILE_SIZE) + 2;
+        if (col >= left && col <= right)
+            return true;
+    }
+    return false;
+}
+
+/* The presses a hand would try, most likely first.
+ *
+ * `release_at` lets go of the direction, and `after_vert` is what is held once
+ * it has — which is not a refinement but the difference between reaching a
+ * ladder and being pushed off it: holding right *and* up walks onto the rungs,
+ * gets lifted a few pixels and then carried straight off the far side, so
+ * "walk to the foot of it, then climb" has to be sayable. The taps are there
+ * for the same kind of reason at the other end: a step off a ledge with the
+ * direction still held lands a tile further along than the model's landing,
+ * because a 32px fall carries about a tile of walking speed with it. */
+typedef struct
+{
+    int after_vert;
+    int dir;
+    int vert;
+    float release_at;
+    float jump_at;
+    bool crawl;
+    bool door;
+} EdgeScript;
+
+static bool edge_attempt(GameplayState *state, const LevelRuntime *pristine,
+                         int from_col, int from_row, bool crawl_start,
+                         int want_col, int want_row,
+                         const EdgeScript *script)
+{
+    /* Restored rather than reloaded: an attempt can move a panel, a deck or a
+     * plate, and the next one has to start from the authored map. The tiles are
+     * const, so the runtime is the whole of what an attempt can perturb. */
+    state->level.runtime = *pristine;
+
+    float height = crawl_start ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+    bool on_a_rung =
+        state->level.map.tiles[from_row][from_col] == TILE_LADDER;
+    memset(&state->player, 0, sizeof(state->player));
+    state->player.x =
+        from_col * (float)TILE_SIZE + ((float)TILE_SIZE - PLAYER_W) * 0.5f;
+    state->player.y = (from_row + 1) * (float)TILE_SIZE - height;
+    state->player.crawling = crawl_start;
+    state->player.hp = PLAYER_MAX_HP;
+    state->player.facing = 1;
+    state->player.on_ground = !on_a_rung;
+    state->player.on_ladder = on_a_rung;
+    if (on_a_rung)
+    {
+        /* A ladder cell is somewhere the player *hangs*. Staged as a floor he
+         * falls off it, and the model's move then reads as the game refusing
+         * it — a staging bug wearing a defect's clothes. */
+        state->player.y = from_row * (float)TILE_SIZE;
+        state->player.crawling = false;
+    }
+    state->teleport_cooldown = 0.0f;
+
+    int jump_step = script->jump_at < 0.0f ? -1
+                                           : (int)(script->jump_at / SIM_STEP_DT);
+    for (int step = 0; step < SIM_STEPS(EDGE_ATTEMPT_SECONDS); ++step)
+    {
+        Input input = {0};
+        bool holding = script->release_at < 0.0f ||
+                       step * SIM_STEP_DT < script->release_at;
+        input.left = holding && script->dir < 0;
+        input.right = holding && script->dir > 0;
+        int vertical = holding ? script->vert : script->after_vert;
+        input.up = vertical < 0;
+        input.down = vertical > 0 || script->crawl;
+        if (jump_step >= 0 && step == jump_step)
+            input.jump = true;
+        if (jump_step >= 0 && step >= jump_step)
+            input.jump_held = true;
+        if (script->door && step == 0)
+            input.use_door = true;
+
+        state->events.count = 0;
+        bool was_grounded = state->player.on_ground;
+        gameplay_carry_player_on_elevator(state, SIM_STEP_DT);
+        gameplay_resolve_player_crush(state);
+        float fall =
+            player_update(&state->player, &state->level, &input, SIM_STEP_DT);
+        level_update_elevators(&state->level, SIM_STEP_DT);
+        level_update_falling_platforms(&state->level, SIM_STEP_DT);
+        level_update_moving_platforms(&state->level, SIM_STEP_DT);
+        gameplay_ride_platforms(state, SIM_STEP_DT);
+        gameplay_handle_player_landing(state, was_grounded, fall);
+        gameplay_use_door(state, &input);
+        /* No crate pass, because the crates are off: see the staging below
+         * for why the model's map is the map without them. */
+        gameplay_combat_update_hazards(state);
+
+        float h = state->player.crawling ? (float)PLAYER_CRAWL_H
+                                         : (float)PLAYER_H;
+        int col = (int)((state->player.x + PLAYER_W * 0.5f) / TILE_SIZE);
+        int row = (int)((state->player.y + h * 0.5f) / TILE_SIZE);
+        /* Settled rather than merely passing through: a cell the player is
+         * carried across in mid-air is not a cell he can continue a route
+         * from. */
+        if (col == want_col && row == want_row &&
+            (state->player.on_ground || state->player.on_ladder))
+            return true;
+        if (state->player.hp <= 0)
+            return false;
+    }
+    return false;
+}
+
+static void test_the_body_delivers_every_route_the_model_promises(void)
+{
+    static GameplayState state;
+    static RouteMap route;
+    static LevelRuntime pristine;
+
+    static const EdgeScript SCRIPTS[] = {
+        EDGE_SCRIPT_TABLE
+    };
+    const int script_count = (int)(sizeof(SCRIPTS) / sizeof(SCRIPTS[0]));
+
+    int claimed = 0;
+    int mover_dependent = 0;
+    int undelivered = 0;
+
+    for (size_t index = 0;
+         index < EMBEDDED_LEVEL_COUNT + EMBEDDED_SUBLEVEL_COUNT; ++index)
+    {
+        const EmbeddedLevelData *source =
+            index < EMBEDDED_LEVEL_COUNT
+                ? &EMBEDDED_LEVELS[index]
+                : &EMBEDDED_SUBLEVELS[index - EMBEDDED_LEVEL_COUNT];
+        memset(&state, 0, sizeof(state));
+        rng_seed(&state.rng, 4909u + index);
+        gameplay_state_begin_level(&state);
+        Rng load = state.rng;
+        REQUIRE(level_load_data(&state.level, source->name, source->data,
+                                source->size, &load));
+        if (state.level.map.mode == LEVEL_MODE_FACADE)
+            continue; /* the walls have their own bot, in facade_bot_reaches_window */
+        gameplay_ai_spawn_level_entities(&state);
+        /* An empty floor: what is under test is the geometry, and a guard who
+         * shoots the subject measures the roster. */
+        state.enemy_count = 0;
+        state.dog_count = 0;
+        state.level.runtime.crate_count = 0;
+        for (int r = 0; r < state.level.map.height; ++r)
+            for (int c = 0; c < state.level.map.width; ++c)
+                state.level.reveal.tiles_visible[r][c] = true;
+        state.level.reveal.done = true;
+        pristine = state.level.runtime;
+
+        route_map_init(&route, &state.level);
+        route_flood(&route, route_player_start(&route));
+
+        for (int r = 0; r < state.level.map.height; ++r)
+        {
+            for (int c = 0; c < state.level.map.width; ++c)
+            {
+                if (!route_reaches(&route, c, r))
+                    continue;
+                bool duct = edge_cell_in_duct(&state.level, c, r);
+                if (!route_standing(&route, c, r) && !duct &&
+                    !route_in_shaft(&route, c, r))
+                    continue;
+
+                RouteCell next[ROUTE_MAX_NEIGHBOURS];
+                int count = route_neighbours(&route, c, r, next);
+                for (int k = 0; k < count; ++k)
+                {
+                    if (next[k].col == c && next[k].row == r)
+                        continue;
+                    ++claimed;
+
+                    bool mover = edge_cell_has_a_mover(&state, &route, c, r) ||
+                                 edge_cell_has_a_mover(&state, &route,
+                                                       next[k].col,
+                                                       next[k].row);
+                    /* A drop is resolved by falling down the destination's own
+                     * column, so a deck anywhere in it catches the player short
+                     * of the landing the model names. */
+                    for (int row = r; row <= next[k].row && !mover; ++row)
+                        mover = route_in_shaft(&route, next[k].col, row);
+                    if (mover)
+                    {
+                        ++mover_dependent;
+                        continue;
+                    }
+
+                    bool delivered = false;
+                    for (int s = 0; s < script_count && !delivered; ++s)
+                    {
+                        /* Inside trunking the crawl is the only move there is,
+                         * so an upright script there is not a press a hand
+                         * would make. */
+                        if (duct && !SCRIPTS[s].crawl)
+                            continue;
+                        delivered = edge_attempt(&state, &pristine, c, r,
+                                                 duct, next[k].col,
+                                                 next[k].row, &SCRIPTS[s]);
+                    }
+                    if (!delivered)
+                    {
+                        ++undelivered;
+                        if (undelivered <= 8)
+                        {
+                            fprintf(stderr,
+                                    "  %s claims (%d,%d) -> (%d,%d)%s and no "
+                                    "press delivers it\n",
+                                    source->name, c, r, next[k].col,
+                                    next[k].row, duct ? " [in a duct]" : "");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (undelivered != 0)
+    {
+        fprintf(stderr,
+                "  %d of %d model edges undelivered (%d were mover-dependent "
+                "and skipped)\n", undelivered, claimed, mover_dependent);
+    }
+    CHECK(undelivered == 0);
+
+    /* The sweep measured something, and the skip did not swallow it. Neither is
+     * a target: the first would fail if the campaign stopped loading and the
+     * second is the guard against somebody widening `edge_cell_has_a_mover`
+     * until this test asks nothing, which is the only way a check like this
+     * rots. A quarter is far above the 3.8% the shipped campaign produces, so
+     * it fires on a change of kind rather than on a map moving. */
+    CHECK(claimed > 0);
+    CHECK(mover_dependent * 4 < claimed);
+}
+
 /*
  * A floor has to be able to seat the men it can send for.
  *
@@ -795,9 +1228,36 @@ static void test_every_sector_can_seat_the_reinforcements_it_can_call(void)
                          ? level.map.terminal_count *
                                TERMINAL_REINFORCEMENT_MAX_COUNT
                          : 0;
-        int men = level.map.enemy_count + called;
+        /*
+         * And the other way men come out of a door, which this check omitted
+         * for as long as it existed: the `SPAWNS` line. It is the
+         * *deterministic* path — `game.c` copies it into `door_spawns` at level
+         * start and `gameplay_ai_update_spawns` drips it out on a timer with no
+         * alarm and no console involved — and it lands in the same
+         * `spawn_enemy_from_door` as the console's men, taking the same slots
+         * off the same array and rolling the same handler.
+         *
+         * Leaving it out was not a rounding error. Driven with the drip wired
+         * up the way the shell wires it, sector 14 reaches **21** of
+         * `MAX_ENEMIES` and this check computed 18 — so the floor's headroom
+         * was three slots while the assertion said six, and the ratchet at the
+         * bottom of this test was being evaluated on the understated figure.
+         *
+         * It hid because the one line that connects the map's `SPAWNS` to the
+         * runtime counter is in `game.c`, on the shell side:
+         * `stage_sector_at_its_spawn` never sets `door_spawns`, so no test in
+         * this file has ever seen a shipped floor's drip. That is the
+         * `level_update_moving_platforms` lesson one directory over — a
+         * mechanic is not exercised because its module is linked, it is
+         * exercised because something in the test binary starts it.
+         */
+        int dripped = 0;
+        for (int d = 0; d < level.map.door_count; ++d)
+            dripped += level.map.door_spawn_counts[d];
+        int arrivals = called + dripped;
+        int men = level.map.enemy_count + arrivals;
         /* Every arrival can bring a handler, so the dogs answer the same sum. */
-        int with_dogs = dogs + called;
+        int with_dogs = dogs + arrivals;
 
         CHECK(men <= MAX_ENEMIES);
         CHECK(with_dogs <= MAX_DOGS);
@@ -838,6 +1298,32 @@ static void test_every_sector_can_seat_the_reinforcements_it_can_call(void)
  *
  * Several seeds, because which way a patrol faces when the sector loads is a
  * seeded choice and one seed would pin whichever answer it happened to draw.
+ *
+ * **And it counted to seventeen while asking twelve, which is this file's own
+ * recurring defect in the one place it had already been found once.** The loop
+ * below walks `EMBEDDED_LEVEL_COUNT` and therefore reads as covering the whole
+ * campaign; the stepper it drove was the *interior* frame, and a climb has no
+ * men on it, so the five walls answered by having nobody to answer with. What
+ * a wall can cost a heart with is `gameplay_climb_update`, which nothing here
+ * called. Measured once it did: **sector 15 took a heart 1.25s after the
+ * player arrived on it, on 94 of 256 seeds, with nothing pressed** — its
+ * lowest bird entry sat three rows above the spawn and four columns across,
+ * the closest hazard-to-spawn pairing on any of the five, and a bird is the
+ * one facade hazard with no windup to announce it. The other four walls were
+ * clean at 256 seeds with the earliest hit at 7.5s. The `v` moved to the row
+ * the thrower is on, six above the spawn, which is where sectors 11 and 13
+ * keep theirs; that is 0 of 256 and the first heart at 14.3s.
+ *
+ * Three things are worth keeping. The rule was already written down and
+ * already checked — what was missing was that the check could not see a third
+ * of the campaign, which is worse than a missing check because the loop bound
+ * says otherwise. `test_the_whole_frame_survives_a_monkey_on_the_controls` had
+ * *the same hole in the same five sectors* and was fixed by driving both
+ * modes; this one was not, one screen over, which is the "fixing one half of a
+ * symmetric defect" shape this tree keeps finding. And the facade authoring
+ * rules in [levels/LEGEND.md](../levels/LEGEND.md) say where an `r` and a `v`
+ * go on the window grid and nothing about how far the lowest one is from `S`,
+ * so there was no sentence for a map to disagree with either.
  */
 #define SPAWN_GRACE_SECONDS 3.0f
 #define SPAWN_GRACE_SEEDS 16
@@ -847,7 +1333,13 @@ static void test_every_sector_can_seat_the_reinforcements_it_can_call(void)
  * clock. Deliberately not the whole frame — see
  * `test_the_whole_frame_survives_a_monkey_on_the_controls` for that — because
  * what this measures is what the *floor* does, and a stationary player moves
- * no crate and rides no lift. */
+ * no crate and rides no lift.
+ *
+ * `gameplay_combat_update_hazards` is in the list because the sentence above
+ * says "the hazards he is standing in" and for a while it was the only clause
+ * of it nothing delivered — a spike bed or a fan blade laid over a spawn was
+ * exactly the kind of thing this check exists to refuse and the one thing it
+ * could not see. Every interior passes with it in. */
 static void step_the_floor_around_a_still_player(GameplayState *state,
                                                  CampaignState *campaign)
 {
@@ -856,8 +1348,30 @@ static void step_the_floor_around_a_still_player(GameplayState *state,
     gameplay_ai_update_movement(state, SIM_STEP_DT);
     gameplay_ai_update_combat(state, SIM_STEP_DT);
     gameplay_combat_update_enemy_bullets(state, campaign, SIM_STEP_DT);
+    gameplay_combat_update_hazards(state);
     gameplay_combat_check_contacts(state, campaign);
     gameplay_update_alarm(state, SIM_STEP_DT);
+}
+
+/*
+ * The same question on the outside of the building, in `update_facade_playing`'s
+ * own order.
+ *
+ * A climb runs none of the passes above — no men, no alarm, no floor hazards —
+ * and everything that can cost a heart out here is inside
+ * `gameplay_climb_update`: the thrown objects, the birds, and a fall the wind
+ * can start. `gameplay_collect_items` is in the list because the shell has it
+ * there, not because a still climber reaches anything.
+ */
+static void step_the_wall_around_a_still_player(GameplayState *state,
+                                                CampaignState *campaign)
+{
+    Input nothing;
+    memset(&nothing, 0, sizeof(nothing));
+    state->events.count = 0;
+    gameplay_climb_update_player(state, &nothing, SIM_STEP_DT);
+    gameplay_climb_update(state, SIM_STEP_DT);
+    gameplay_collect_items(state, campaign, SIM_STEP_DT);
 }
 
 /* A sector loaded and staged the way the shell stages it, with the player put
@@ -881,6 +1395,128 @@ static bool stage_sector_at_its_spawn(GameplayState *state,
     return true;
 }
 
+/* Which map an index over the campaign and the washrooms together names, so a
+ * failure can say so rather than printing a sector number the campaign does not
+ * have. */
+static const char *any_map_name(size_t index)
+{
+    return index < EMBEDDED_LEVEL_COUNT
+               ? EMBEDDED_LEVELS[index].name
+               : EMBEDDED_SUBLEVELS[index - EMBEDDED_LEVEL_COUNT].name;
+}
+
+/* The same staging over the campaign *and* the four washrooms, indexed the way
+ * `test_the_body_delivers_every_route_the_model_promises` indexes them. The
+ * rooms are the maps this suite has historically simulated least, and they are
+ * the ones that put a crate, a dog and a hard wall on the same row. */
+static bool stage_any_map_at_its_spawn(GameplayState *state,
+                                       CampaignState *campaign,
+                                       size_t index, uint64_t seed)
+{
+    const EmbeddedLevelData *source =
+        index < EMBEDDED_LEVEL_COUNT
+            ? &EMBEDDED_LEVELS[index]
+            : &EMBEDDED_SUBLEVELS[index - EMBEDDED_LEVEL_COUNT];
+    memset(state, 0, sizeof(*state));
+    memset(campaign, 0, sizeof(*campaign));
+    rng_seed(&state->rng, seed);
+    gameplay_state_begin_level(state);
+    Rng load = state->rng;
+    if (!level_load_data(&state->level, source->name, source->data,
+                         source->size, &load))
+        return false;
+    gameplay_ai_spawn_level_entities(state);
+    player_reset(&state->player, &state->level);
+    state->player.hp = gameplay_player_max_hp(state);
+    return true;
+}
+
+/*
+ * And the sum above, driven rather than added up.
+ *
+ * The test before this one is arithmetic on the map, which is the right shape
+ * for a ceiling — but arithmetic is what was wrong with it, and an arithmetic
+ * fix checked by more arithmetic is a check agreeing with itself. This one
+ * starts the drip the way the shell starts it and counts what the floor
+ * actually fills up to.
+ *
+ * The wiring is one line of `game.c` — `door_spawns[i] = door_spawn_counts[i]`
+ * — and it is the whole reason no test in this file had ever seen a shipped
+ * floor's `SPAWNS`. The alarm is forced on and every console booked, because
+ * what a ceiling has to survive is the worst hand a player can deal it, not the
+ * one a seed happens to.
+ *
+ * `gameplay_ai_update_movement` is in the loop for a reason worth writing down:
+ * without it the arrivals stand in the doorway they came out of,
+ * `spawn_enemy_from_door` refuses to put anybody where a live man already is,
+ * and the floor stops filling at two. A harness that jams the door measures the
+ * jam rather than the ceiling — the first draft of this test read 14 on sector
+ * 14 and would have passed a `MAX_ENEMIES` of 16.
+ *
+ * Three things are asserted and the third is the one that matters. That nothing
+ * overruns the arrays. That the sum above is an *upper bound* on what the
+ * simulation reaches, which is what makes the cheap check trustworthy. And that
+ * some floor demonstrably fills past what the console path alone explains —
+ * because that is the assertion the old formula fails, and it names no number
+ * for anybody to move.
+ */
+static void test_the_reinforcement_drip_fills_the_floor_it_is_wired_to(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+    int floors_the_drip_reaches = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        REQUIRE(stage_sector_at_its_spawn(&state, &campaign, i, 900 + i));
+        if (state.level.map.mode == LEVEL_MODE_FACADE)
+            continue;
+
+        int called = state.level.map.door_count > 0
+                         ? state.level.map.terminal_count *
+                               TERMINAL_REINFORCEMENT_MAX_COUNT
+                         : 0;
+        int dripped = 0;
+        for (int d = 0; d < state.level.map.door_count; ++d)
+            dripped += state.level.map.door_spawn_counts[d];
+
+        int authored_dogs = state.dog_count;
+        int bound_men = state.enemy_count + called + dripped;
+        int bound_dogs = authored_dogs + called + dripped;
+
+        /* game.c's own line, and the alarm the consoles are answered under. */
+        for (int d = 0; d < state.level.map.door_count; ++d)
+            state.door_spawns[d] = state.level.map.door_spawn_counts[d];
+        state.terminal_alarm_timer = 600.0f;
+        state.terminal_reinforcements_pending = called;
+        /* Out of every doorway, so nothing is refused for standing in one. */
+        state.player.x = -4.0f * TILE_SIZE;
+        state.player.y = -4.0f * TILE_SIZE;
+
+        int peak_men = state.enemy_count;
+        int peak_dogs = state.dog_count;
+        for (int step = 0; step < SIM_STEPS(120.0f); ++step)
+        {
+            state.events.count = 0;
+            gameplay_ai_update_spawns(&state, SIM_STEP_DT);
+            gameplay_ai_update_movement(&state, SIM_STEP_DT);
+            if (state.enemy_count > peak_men)
+                peak_men = state.enemy_count;
+            if (state.dog_count > peak_dogs)
+                peak_dogs = state.dog_count;
+        }
+
+        CHECK(peak_men <= MAX_ENEMIES);
+        CHECK(peak_dogs <= MAX_DOGS);
+        CHECK(peak_men <= bound_men);
+        CHECK(peak_dogs <= bound_dogs);
+        if (peak_men > state.level.map.enemy_count + called)
+            floors_the_drip_reaches++;
+    }
+
+    CHECK(floors_the_drip_reaches > 0);
+}
+
 static void test_a_sector_gives_the_player_a_moment_to_read_it(void)
 {
     static GameplayState state;
@@ -894,10 +1530,16 @@ static void test_a_sector_gives_the_player_a_moment_to_read_it(void)
                                               7000u * (uint64_t)(seed + 1) + i));
             int full = state.player.hp;
 
+            bool on_the_wall =
+                state.level.map.mode == LEVEL_MODE_FACADE;
+
             float lost_at = -1.0f;
             for (int step = 0; step < SIM_STEPS(SPAWN_GRACE_SECONDS); ++step)
             {
-                step_the_floor_around_a_still_player(&state, &campaign);
+                if (on_the_wall)
+                    step_the_wall_around_a_still_player(&state, &campaign);
+                else
+                    step_the_floor_around_a_still_player(&state, &campaign);
                 if (state.player.hp < full || state.player.dying)
                 {
                     lost_at = (float)step * SIM_STEP_DT;
@@ -909,16 +1551,146 @@ static void test_a_sector_gives_the_player_a_moment_to_read_it(void)
              * far inside the window it went. The fix is a character in a map:
              * the nearest guard on the spawn floor wants to be about twelve
              * tiles off rather than eight, which is what the four moves this
-             * test was written with all were — sectors 5, 6, 8 and 14. */
+             * test was written with all were — sectors 5, 6, 8 and 14. On a
+             * climb it is the lowest `r` or `v`, which wants to be six rows
+             * above the `S` rather than three — sector 15's was three.
+             *
+             * **Three seconds is the floor's window and the wall wants a
+             * longer one**, which this check cannot see and stated as though
+             * it could: sector 7 cost a heart at 7.18s and passed here every
+             * time. A gust moves a climber who is not moving, so what a wall
+             * owes is its first gust rather than a moment's reading — see
+             * `test_a_climb_does_not_bite_before_its_first_gust_blows_out`
+             * below, which is the rule, and treat this line as the part of it
+             * that is common to both sides of the glass. */
             if (lost_at >= 0.0f)
                 fprintf(stderr,
                         "  sector %d costs a heart %.1fs after the reveal "
                         "(seed %d), inside the %.1fs the player is given to "
-                        "read the floor\n",
-                        (int)i + 1, lost_at, seed, SPAWN_GRACE_SECONDS);
+                        "read the %s\n",
+                        (int)i + 1, lost_at, seed, SPAWN_GRACE_SECONDS,
+                        on_the_wall ? "wall" : "floor");
             CHECK(lost_at < 0.0f);
         }
     }
+}
+
+/*
+ * The wall's own grace, which is longer than the floor's and is a different
+ * question.
+ *
+ * The check above asks what a sector does to a player who has not had time to
+ * read it, and three seconds is the right window for that on both sides of the
+ * glass. It is the wrong window for the *wall*, and sector 7 is how that was
+ * found: it took a heart off a climber who pressed nothing at 7.18s on 45 of
+ * 256 seeds, which is outside every check in this file and twice as early as
+ * the two tallest climbs in the game (13 and 15 both wait about fifteen
+ * seconds, and 3 and 11 never bite at all). The second wall of the campaign was
+ * the harshest one in it, and the curve ran backwards with every gate green.
+ *
+ * What makes a wall different is that **it moves the player**. A floor does
+ * nothing at all to somebody standing still; a gust carries a passive climber
+ * three to five tiles sideways, which is what walked him into a thrower's arc.
+ * So the window is the wall's own first gust, derived from the cycle in
+ * [gameplay_climb.c](../src/gameplay_climb.c) rather than picked: calm, then
+ * the warning, then the gust — at `FACADE_WIND_CALM_MAX` so it is "the first
+ * gust has blown itself out" on every seed and not just on the lucky ones.
+ * Until that has happened the wall has not yet shown the player the one thing
+ * it does, and a heart lost to the lesson is a heart lost to nothing.
+ *
+ * The bound is honest rather than tuned, which is worth saying because a
+ * window is exactly the kind of number somebody fits to the answer they want:
+ * measured at 11.05s the old sector 7 fails 23 of 256 seeds and every other
+ * climb passes, and measured at 15s the figures are **identical** — nothing at
+ * all appears in between, so the boundary is the map's and not the constant's.
+ *
+ * Two things this deliberately does not do. It does not name a sector, so a
+ * sixth climb is checked by having been added to the campaign. And it does not
+ * say where a hazard may go: measured one source at a time, a thrower is
+ * dangerous anywhere inside `FACADE_HAZARD_WAKE_RANGE` if it is near the spawn
+ * column — but how near depends on which cornice is between the two, which is
+ * a fact about the floor plan and not about the tile.
+ * [levels/LEGEND.md](../levels/LEGEND.md) carries the advice; this carries the
+ * rule.
+ *
+ * **And the seed count was the whole of what this could see, which is not the
+ * same thing as the rule it states.** It ran 64 seeds off one arithmetic
+ * family (`7000 * (n + 1) + i`), and the event it exists to catch turned out to
+ * be rarer than that by two orders of magnitude: sector 13 cost a passive
+ * climber a heart at 8.06s — inside a window of 11.05s — on about one seed in
+ * three thousand, measured at 4096 seeds across four independent families and
+ * confirmed at 1 of 2048 on this test's own. Every gate was green over it and
+ * this one could not have gone red at any sample it was taking.
+ *
+ * The mechanism is the one written up two clauses above, arriving at the
+ * hazard the clause exempts. A gust carries a passive climber five to six tiles
+ * sideways; `LEGEND.md` said in as many words that "a bird costs nothing from
+ * six rows up at *any* column", which was a 128-seed reading and is false at
+ * 4096 — drifted out from under the cornice that was sheltering him, a climber
+ * six rows under a `v` is in its line, and a bird is the one hazard out here
+ * with no windup to answer. Sector 13's lowest `v` moved four columns; it is
+ * nought at 4096 on all four families now and the wall's thirty-second profile
+ * is unchanged (59 hearts against 63, the same 42 deaths), which is what says
+ * this was a grace fix rather than a difficulty one.
+ *
+ * 2048 is an order of magnitude off the measured rate rather than the seed that
+ * happened to catch today's map — fitting the number to that seed is the shape
+ * this file warns about everywhere else. It costs about 0.8s of a suite that
+ * runs in a second and a half, and it is worth saying plainly that a sample is
+ * still a sample: what this check can promise at 2048 is that a wall does not
+ * bite *often*, and the campaign is at nought rather than at few.
+ */
+#define FACADE_GRACE_SECONDS                                       \
+    (FACADE_WIND_CALM_MAX + FACADE_WIND_WARN_TIME + FACADE_WIND_GUST_TIME)
+#define FACADE_GRACE_SEEDS 2048
+
+static void test_a_climb_does_not_bite_before_its_first_gust_blows_out(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+    int climbs = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        REQUIRE(stage_sector_at_its_spawn(&state, &campaign, i, 7000u + i));
+        if (state.level.map.mode != LEVEL_MODE_FACADE)
+            continue;
+        climbs++;
+
+        for (int seed = 0; seed < FACADE_GRACE_SEEDS; ++seed)
+        {
+            REQUIRE(stage_sector_at_its_spawn(&state, &campaign, i,
+                                              7000u * (uint64_t)(seed + 1) + i));
+            int full = state.player.hp;
+
+            float lost_at = -1.0f;
+            for (int step = 0; step < SIM_STEPS(FACADE_GRACE_SECONDS); ++step)
+            {
+                step_the_wall_around_a_still_player(&state, &campaign);
+                if (state.player.hp < full || state.player.dying)
+                {
+                    lost_at = (float)step * SIM_STEP_DT;
+                    break;
+                }
+            }
+            /* Said out loud before the check, because `CHECK` prints the
+             * expression and the expression names neither the wall nor how far
+             * inside the window it went. The fix is a character in a map, and
+             * which character depends on what hit him: a `v` wants to be six
+             * rows above the `S`, and an `r` wants to be out of the spawn's own
+             * column — sector 7's was standing in it. */
+            if (lost_at >= 0.0f)
+                fprintf(stderr,
+                        "  sector %d costs a heart %.2fs into the climb "
+                        "(seed %d), before its first gust has blown out at "
+                        "%.2fs\n",
+                        (int)i + 1, lost_at, seed, FACADE_GRACE_SECONDS);
+            CHECK(lost_at < 0.0f);
+        }
+    }
+    /* And it walked the walls rather than none of them, which is the hole the
+     * check above had for as long as it existed. */
+    CHECK(climbs == CAMPAIGN_CLIMB_SECTOR_COUNT);
 }
 
 /*
@@ -1002,6 +1774,549 @@ static void test_the_grace_period_is_not_an_empty_building(void)
     CHECK(unwatched == UNWATCHED_SPAWNS_ALLOWED);
 }
 
+/*
+ * A patrol goes on being one.
+ *
+ * Every other check in this file about the men asks what a floor *does* — who
+ * notices, who comes, how many it can seat. None of them asked whether it is
+ * still doing it a minute later, and the answer on the five most crowded
+ * interiors was no.
+ *
+ * `hemmed_in` counted a dog or another guard as a side, exactly as it counted
+ * masonry, and handed the pair to `enemy_update` as one flag meaning "no
+ * horizontal escape". The walker zeroes the step on that flag **and** gates
+ * every one of its reversals on it, so a man with a body against each side
+ * could no longer walk or turn. Two guards who met therefore stopped, the next
+ * man along walked into them and stopped, and the clump that made was
+ * *absorbing*. Measured with the player put where he cannot be seen and
+ * nothing pressed, over `update_playing`'s own order: a worst unbroken stall
+ * of **133.9s on sector 17**, 102.8s on sector 10 and 36-56s on 12, 14 and 16,
+ * with all twelve of sector 14's men in one two-tile pile inside ninety
+ * seconds. A floor the quiet route is played by *watching* had stopped moving,
+ * and every gate in the tree was green over it — the soak sweep draws these
+ * frames every run, and a counter cannot tell a frame that was drawn from a
+ * floor anybody was patrolling.
+ *
+ * **The pile is staged rather than waited for**, which is the same move
+ * `--screen aftermath` makes and for the same reason: the campaign reaches
+ * this state by itself, but it takes seventy to a hundred and fifty-five
+ * seconds of random diffusion to get there, and a gate that has to simulate
+ * that is a gate nobody runs. Staged — every man on the floor put on the spot
+ * where the first of them stands, which is the state the trace ends in — the
+ * check is thirty seconds a sector and eight hundredths of a second in all.
+ * Driven the slow way it says the same thing: 133.9s before, 9.9s after.
+ *
+ * The bound is what a man may legitimately hold still for and nothing else.
+ * One conversation, which is the longest of them; the cooldown after it, as
+ * the allowance for a hesitation at a ledge or a ladder head, which is the one
+ * term here that no clock counts; a net check, which can follow without a step
+ * in between; and a full pass of the slowest lift on the floor, because a man
+ * who has just missed a deck waits for it to come back. Measured against it
+ * the campaign's worst is 8.3s of an 11.2s budget, so the lift term is
+ * insurance rather than slack being spent — no shipped sector needs it.
+ */
+static void test_a_patrol_does_not_stop_being_one(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+    int floors = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        REQUIRE(stage_sector_at_its_spawn(&state, &campaign, i, 1000u + i));
+        if (state.level.map.mode == LEVEL_MODE_FACADE)
+            continue;
+        if (state.enemy_count < 2)
+            continue;
+        floors++;
+
+        /* Out of sight and topped up, because what a floor does about a man it
+         * can see is a different question and `test_a_sector_notices_a_man_
+         * standing_in_it` is the one that asks it. */
+        state.player.x = -8.0f * TILE_SIZE;
+        state.player.y = -8.0f * TILE_SIZE;
+
+        float lift_round_trip = 0.0f;
+        for (int k = 0; k < state.level.runtime.elevator_count; ++k)
+        {
+            const Elevator *lift = &state.level.runtime.elevators[k];
+            float trip = 2.0f * (lift->bot_limit - lift->top_limit) /
+                         ELEVATOR_SPEED;
+            if (trip > lift_round_trip)
+                lift_round_trip = trip;
+        }
+        float bound = ENEMY_TALK_DURATION + ENEMY_TALK_COOLDOWN +
+                      ENEMY_RADIO_DURATION + lift_round_trip;
+
+        /* The pile: everybody where the first man is standing, facing
+         * alternately, which is how the trace found them. */
+        float pile_x = state.enemies[0].x;
+        float pile_y = state.enemies[0].y;
+        for (int e = 0; e < state.enemy_count; ++e)
+        {
+            state.enemies[e].x = pile_x;
+            state.enemies[e].y = pile_y;
+            state.enemies[e].vx = 0.0f;
+            state.enemies[e].vy = 0.0f;
+            state.enemies[e].dir = (e % 2) ? 1 : -1;
+        }
+
+        float last_x[MAX_ENEMIES];
+        int still[MAX_ENEMIES];
+        for (int e = 0; e < MAX_ENEMIES; ++e)
+        {
+            last_x[e] = 0.0f;
+            still[e] = 0;
+        }
+        for (int e = 0; e < state.enemy_count; ++e)
+            last_x[e] = state.enemies[e].x;
+
+        float worst = 0.0f;
+        int worst_man = 0;
+        for (int step = 0; step < SIM_STEPS(30.0f); ++step)
+        {
+            state.player.hp = gameplay_player_max_hp(&state);
+            level_update_elevators(&state.level, SIM_STEP_DT);
+            level_update_moving_platforms(&state.level, SIM_STEP_DT);
+            step_the_floor_around_a_still_player(&state, &campaign);
+            for (int e = 0; e < state.enemy_count; ++e)
+            {
+                if (state.enemies[e].dead)
+                {
+                    still[e] = 0;
+                    continue;
+                }
+                /* A pixel, because a walking man covers a quarter of one in a
+                 * step and the question is whether he is walking at all. */
+                if (fabsf(state.enemies[e].x - last_x[e]) > 1.0f)
+                {
+                    last_x[e] = state.enemies[e].x;
+                    still[e] = 0;
+                }
+                else if (++still[e] * SIM_STEP_DT > worst)
+                {
+                    worst = still[e] * SIM_STEP_DT;
+                    worst_man = e;
+                }
+            }
+        }
+        if (worst > bound)
+            fprintf(stderr,
+                    "  sector %zu: a guard stood on one spot for %.1fs "
+                    "against a %.1fs budget (man %d of %d)\n",
+                    i + 1, (double)worst, (double)bound, worst_man,
+                    state.enemy_count);
+        CHECK(worst <= bound);
+    }
+    /* Every interior — a count rather than a list, so a new floor is walked
+     * by having been added. The two-man floors are in it too: a pair is the
+     * smallest pile there is and it is the one the bug started from. */
+    CHECK(floors == 12);
+}
+
+/*
+ * And the other way a patrol stops being one, on the same staging.
+ *
+ * The test above asks whether a man is still walking. It cannot ask whether he
+ * is walking *somewhere*, and the fix that ended the pile put the opposite
+ * failure in its place: the body reversal turns a man away from whoever is
+ * standing where he is walking, which walks him out until his neighbour is
+ * just clear of a 4px probe — and that equilibrium parks a body exactly on the
+ * boundary, where a fraction of a pixel of drift makes the flag flicker. With
+ * a man on each side the two flags alternate and the rule fires on whichever
+ * is momentarily set, so he reverses at the frame rate without going anywhere.
+ * Measured on the roof at eight men to a storey: three reversals in 21ms with
+ * his x unchanged to two decimals, a worst guard flipping his facing 9.92
+ * times a second, and the dogs with him at 8.33 — `dog_anchor_x` is derived
+ * from the handler's facing, so a shuddering handler throws his animal's post
+ * from one side of him to the other every frame.
+ *
+ * It is not only a picture: a facing is what `enemy_has_los` reads, so four men
+ * on the last floor of the campaign had a sight cone sweeping both ways at 9Hz
+ * — which is to say they could not be flanked. Every gate was green over it.
+ * The soak sweep draws these floors every run, `make coverage` counts every
+ * line of the walker as executed, and this is the first defect on this page
+ * that `--shot` is no use against either: a photograph of a shuddering man and
+ * a photograph of a walking one are the same photograph.
+ *
+ * **Spinning is a turn that goes nowhere**, which is the metric
+ * `test_dog_escapes_ladder_perch_without_spinning` already had to reach for and
+ * for the same reason: a plain count of turns cannot be made to work here. A
+ * man on the narrowest shelf a tile grid can leave him legitimately shuffles
+ * three or four times a second, so any cap loose enough for pacing is loose
+ * enough for the shudder. Counted as turns that cover less ground than the
+ * probe that caused them, the campaign reads **one** per man-second on all
+ * twelve interiors — that one being the wall and the unsafe edge answering a
+ * single tile from two probes, which is the pair `enemy_can_advance` was
+ * written about — against 8 to 68 with the debounce removed.
+ *
+ * The bound is `ENEMY_BODY_TURN_COOLDOWN`'s own: a turn and its undoing at the
+ * pace the debounce sets, and nothing else in the walker may add to it.
+ */
+static void test_a_patrol_that_meets_another_does_not_shudder(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+    int floors = 0;
+    /* A reversal and its undoing, at the pace the debounce allows. */
+    const float bound = 2.0f / ENEMY_BODY_TURN_COOLDOWN;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        REQUIRE(stage_sector_at_its_spawn(&state, &campaign, i, 1000u + i));
+        if (state.level.map.mode == LEVEL_MODE_FACADE)
+            continue;
+        if (state.enemy_count < 2)
+            continue;
+        floors++;
+
+        state.player.x = -8.0f * TILE_SIZE;
+        state.player.y = -8.0f * TILE_SIZE;
+
+        /* The same pile the test above stages, because it is the same state:
+         * the equilibrium this defect lives in is what a crowd settles into. */
+        float pile_x = state.enemies[0].x;
+        float pile_y = state.enemies[0].y;
+        for (int e = 0; e < state.enemy_count; ++e)
+        {
+            state.enemies[e].x = pile_x;
+            state.enemies[e].y = pile_y;
+            state.enemies[e].vx = 0.0f;
+            state.enemies[e].vy = 0.0f;
+            state.enemies[e].dir = (e % 2) ? 1 : -1;
+        }
+
+        /* One counter per man per half-second, read as overlapping pairs, so a
+         * burst that straddles a boundary is still one burst. */
+        enum { BUCKETS = 60 };
+        static int dead[MAX_ENEMIES][BUCKETS];
+        float turn_x[MAX_ENEMIES];
+        int facing[MAX_ENEMIES];
+        long turns = 0;
+        memset(dead, 0, sizeof(dead));
+        for (int e = 0; e < state.enemy_count; ++e)
+        {
+            turn_x[e] = state.enemies[e].x;
+            facing[e] = state.enemies[e].dir;
+        }
+
+        for (int step = 0; step < SIM_STEPS(30.0f); ++step)
+        {
+            state.player.hp = gameplay_player_max_hp(&state);
+            level_update_elevators(&state.level, SIM_STEP_DT);
+            level_update_moving_platforms(&state.level, SIM_STEP_DT);
+            step_the_floor_around_a_still_player(&state, &campaign);
+            int bucket = (int)((float)step * SIM_STEP_DT * 2.0f);
+            if (bucket >= BUCKETS)
+                bucket = BUCKETS - 1;
+            for (int e = 0; e < state.enemy_count; ++e)
+            {
+                Enemy *man = &state.enemies[e];
+                if (man->dead || man->dir == facing[e])
+                    continue;
+                turns++;
+                if (fabsf(man->x - turn_x[e]) < ENEMY_SIDE_PROBE)
+                    dead[e][bucket]++;
+                turn_x[e] = man->x;
+                facing[e] = man->dir;
+            }
+        }
+
+        int worst = 0;
+        int worst_man = 0;
+        for (int e = 0; e < state.enemy_count; ++e)
+        {
+            for (int b = 0; b + 1 < BUCKETS; ++b)
+            {
+                if (dead[e][b] + dead[e][b + 1] > worst)
+                {
+                    worst = dead[e][b] + dead[e][b + 1];
+                    worst_man = e;
+                }
+            }
+        }
+        if ((float)worst > bound)
+            fprintf(stderr,
+                    "  sector %zu: a guard reversed %d time(s) in a second "
+                    "without covering the probe that turned him, against a "
+                    "bound of %.2f (man %d of %d)\n",
+                    i + 1, worst, (double)bound, worst_man,
+                    state.enemy_count);
+        CHECK((float)worst <= bound);
+        /* And the floor has to have been walked at all, or a change that
+         * freezes everybody passes this by having nothing to count. Its twin
+         * above holds the other end of that. */
+        CHECK(turns > 0);
+    }
+    CHECK(floors == 12);
+}
+
+/*
+ * And the animals, which had the same fault for two different reasons.
+ *
+ * A dog's post is its handler, so the post moves — and a handler who takes a
+ * ladder leaves the animal on the storey below with an anchor it now has to
+ * walk the length of the floor to reach. What it meets on the way it cannot
+ * see. The three questions asked before a step all look at the *floor* — is
+ * there one, can I drop to it, can I jump to it — and there was no fourth
+ * about what is in front of the animal's chest, which is a rule a guard has
+ * had since he was written.
+ *
+ * So masonry stopped the walk in `level_move`, and the line at the foot of
+ * `update_dog` noticed the step come back zeroed and answered by setting
+ * `DOG_RETURN`: the order to walk at the wall again. A crate did not even get
+ * that far — it is settled *after* the walk by `gameplay_resolve_dog_crates`,
+ * which puts the animal back where it started, so the step does not come back
+ * zeroed and nothing in the frame notices at all. Measured with the player
+ * nowhere near: unbroken stalls of 53 to 150 seconds on five of the ten
+ * sectors carrying a `W`, and on sector 6 an animal pressed into a box from
+ * thirty seconds in to the end of the run. A dog that has stopped is a floor
+ * with one fewer thing on it that can catch anybody.
+ *
+ * Staged the same way the pile above is, and for the same reason: the
+ * campaign reaches this by itself in under a minute, but only when a handler
+ * happens to climb. Handing every dog a post at `x = 0` — inside the left wall,
+ * so it can never be arrived at — makes each of them walk the length of its
+ * own storey past everything authored on it, which is both mechanisms at once
+ * on every shipped floor. Driven the slow way instead it says the same thing:
+ * 53-150s before, 4.6s after, that last being the animal's own idle beat.
+ *
+ * The bound is `DOG_TURN_COOLDOWN`, because with a post that cannot be reached
+ * there is no idling at one: everything that holds this animal still is a
+ * decision about which way to face, and that is the debounce the decision
+ * already has. Measured across twenty-six stagings the campaign's worst is
+ * nought.
+ */
+static void test_a_guard_dog_does_not_stop_being_one(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+    int floors = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        REQUIRE(stage_sector_at_its_spawn(&state, &campaign, i, 2000u + i));
+        if (state.level.map.mode == LEVEL_MODE_FACADE || state.dog_count == 0)
+            continue;
+        floors++;
+
+        state.player.x = -8.0f * TILE_SIZE;
+        state.player.y = -8.0f * TILE_SIZE;
+
+        float last_x[MAX_DOGS];
+        int still[MAX_DOGS];
+        for (int d = 0; d < MAX_DOGS; ++d)
+        {
+            last_x[d] = 0.0f;
+            still[d] = 0;
+        }
+        for (int d = 0; d < state.dog_count; ++d)
+            last_x[d] = state.dogs[d].x;
+
+        float worst = 0.0f;
+        int worst_dog = 0;
+        for (int step = 0; step < SIM_STEPS(20.0f); ++step)
+        {
+            /* Re-applied every step because `update_dog` puts the post back on
+             * the handler the moment it looks at him. */
+            for (int d = 0; d < state.dog_count; ++d)
+            {
+                state.dogs[d].owner = -1;
+                state.dogs[d].guard_x = 0.0f;
+            }
+            state.player.hp = gameplay_player_max_hp(&state);
+            level_update_elevators(&state.level, SIM_STEP_DT);
+            level_update_moving_platforms(&state.level, SIM_STEP_DT);
+            step_the_floor_around_a_still_player(&state, &campaign);
+            for (int d = 0; d < state.dog_count; ++d)
+            {
+                if (state.dogs[d].dead)
+                {
+                    still[d] = 0;
+                    continue;
+                }
+                if (fabsf(state.dogs[d].x - last_x[d]) > 1.0f)
+                {
+                    last_x[d] = state.dogs[d].x;
+                    still[d] = 0;
+                }
+                else if (++still[d] * SIM_STEP_DT > worst)
+                {
+                    worst = still[d] * SIM_STEP_DT;
+                    worst_dog = d;
+                }
+            }
+        }
+        if (worst > DOG_TURN_COOLDOWN)
+            fprintf(stderr,
+                    "  sector %zu: a dog stood on one spot for %.1fs against "
+                    "a %.1fs budget (dog %d of %d)\n",
+                    i + 1, (double)worst, (double)DOG_TURN_COOLDOWN,
+                    worst_dog, state.dog_count);
+        CHECK(worst <= DOG_TURN_COOLDOWN);
+    }
+    /* The ten interiors carrying a `W` — a count rather than a list. */
+    CHECK(floors == 10);
+}
+
+/*
+ * And the third body on these floors, which had no rule about a crate at all.
+ *
+ * The two above are about a body that has stopped moving. This one is about a
+ * body that never stopped for anything: `janitor_side_blocked` asked about
+ * masonry, a door and a lift shaft, and a crate is the one solid thing on an
+ * interior that is not a tile — so a rule written in tiles could not see it
+ * whatever it asked. Measured before the clause that fixes it: on the four
+ * floors carrying both a `J` and a `B`, up to 19% of a two-minute visit had the
+ * man with the mop standing inside a box, at the full 26px of his own width,
+ * with nobody pressing anything.
+ *
+ * **A guard doing the same thing is deliberate and this is not**, which is the
+ * whole of why it is a defect rather than a second copy of a decision. The note
+ * beside `gameplay_resolve_enemy_crates` says a guard is drawn *after* the
+ * crates, so his overlap reads as the foreground route past one instead of
+ * mounting every box on the floor. The janitor is on the ambient-staff layer,
+ * drawn before the floor props for reasons of its own — he passes behind
+ * counters, planting and ladder rails — so the same overlap is the crate drawn
+ * over *him*, and 26 into a 28-wide box leaves the top four pixels of his head
+ * and nothing else. Nothing in the tree could have said so: the sweep drew
+ * these floors every run and `make coverage` counts a man inside a box exactly
+ * as it counts a man beside one.
+ *
+ * Three assertions, and the second is the one that makes the first safe.
+ *
+ * He keeps out of them. He *gets out* of one that lands on him — nothing stops
+ * a crate arriving, because `move_crate_x` asks `crate_blocking_enemy` about
+ * the men and a janitor is not one, which is right, since he may never block
+ * anything. With the new clause applied blindly the strip ahead of him is
+ * inside that box in both directions and he turns on the spot for ever:
+ * measured, sixty seconds and never clear, on all five floors. The bound is
+ * one full beat of his own loop plus the ground it takes to step clear of a
+ * box, which is what the escape actually costs; the campaign's worst is 6.02s
+ * against it. And he still walks, or a change that simply froze him would pass
+ * the first two by having nothing to count.
+ */
+static void test_the_man_with_the_mop_keeps_out_of_the_boxes(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+    /* A beat of mopping, the pause after it and the walk it takes to clear a
+     * box he is standing in the middle of. */
+    const float escape_bound =
+        JANITOR_MOP_TIME_MIN + JANITOR_MOP_TIME_SPREAD +
+        JANITOR_PAUSE_TIME_MIN + JANITOR_PAUSE_TIME_SPREAD +
+        (float)(CRATE_W + JANITOR_W) / JANITOR_WALK_SPEED;
+    int floors = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT + EMBEDDED_SUBLEVEL_COUNT; ++i)
+    {
+        REQUIRE(stage_any_map_at_its_spawn(&state, &campaign, i, 4400u + i));
+        /* Read whether or not anything fails, so the helper is not a function
+         * only a failing build executes — which is exactly what `make coverage`
+         * reports on, and it reported on this one. */
+        const char *map = any_map_name(i);
+        REQUIRE(map != NULL);
+        if (state.level.map.mode == LEVEL_MODE_FACADE ||
+            state.janitor_count == 0 ||
+            state.level.runtime.crate_count == 0)
+            continue;
+        floors++;
+
+        /* Off the floor, so nothing here is a measurement of what a player
+         * happened to be standing near. */
+        state.player.x = -8.0f * TILE_SIZE;
+        state.player.y = -8.0f * TILE_SIZE;
+
+        float travelled = 0.0f;
+        float previous = state.janitors[0].x;
+        for (int step = 0; step < SIM_STEPS(60.0f); ++step)
+        {
+            step_the_floor_around_a_still_player(&state, &campaign);
+            travelled += fabsf(state.janitors[0].x - previous);
+            previous = state.janitors[0].x;
+            for (int j = 0; j < state.janitor_count; ++j)
+            {
+                const Janitor *man = &state.janitors[j];
+                for (int c = 0; c < state.level.runtime.crate_count; ++c)
+                {
+                    const Crate *crate = &state.level.runtime.crates[c];
+                    if (!crate->active)
+                        continue;
+                    if (gameplay_boxes_overlap(man->x, man->y,
+                                               JANITOR_W, JANITOR_H,
+                                               crate->x, crate->y,
+                                               CRATE_W, CRATE_H))
+                        fprintf(stderr,
+                                "  %s: the janitor is standing inside a crate "
+                                "%.1fs in\n",
+                                map,
+                                (double)((float)step * SIM_STEP_DT));
+                    CHECK(!gameplay_boxes_overlap(man->x, man->y,
+                                                  JANITOR_W, JANITOR_H,
+                                                  crate->x, crate->y,
+                                                  CRATE_W, CRATE_H));
+                }
+            }
+        }
+        /* One tile of ground in a minute is a floor's worth of nothing; the
+         * real figure is nearer thirty. */
+        CHECK(travelled > TILE_SIZE);
+
+        /* And now the box arrives on him, which is a thing a shove or a fall
+         * can do and no rule prevents. Dropped at five different points of his
+         * loop, because what he owes is an exit from whichever beat he is in. */
+        for (int phase = 0; phase < 5; ++phase)
+        {
+            REQUIRE(stage_any_map_at_its_spawn(&state, &campaign, i,
+                                               4400u + i));
+            state.player.x = -8.0f * TILE_SIZE;
+            state.player.y = -8.0f * TILE_SIZE;
+            for (int step = 0;
+                 step < SIM_STEPS(2.0f + (float)phase * 1.3f); ++step)
+                step_the_floor_around_a_still_player(&state, &campaign);
+
+            Crate *crate = &state.level.runtime.crates[0];
+            crate->active = true;
+            crate->x = state.janitors[0].x - 1.0f;
+            crate->y = state.janitors[0].y + (float)(JANITOR_H - CRATE_H);
+
+            float inside = 0.0f;
+            float worst = 0.0f;
+            for (int step = 0; step < SIM_STEPS(30.0f); ++step)
+            {
+                step_the_floor_around_a_still_player(&state, &campaign);
+                if (gameplay_boxes_overlap(state.janitors[0].x,
+                                           state.janitors[0].y,
+                                           JANITOR_W, JANITOR_H,
+                                           crate->x, crate->y,
+                                           CRATE_W, CRATE_H))
+                {
+                    inside += SIM_STEP_DT;
+                    if (inside > worst)
+                        worst = inside;
+                }
+                else
+                    inside = 0.0f;
+            }
+            if (worst > escape_bound)
+                fprintf(stderr,
+                        "  %s: a crate landed on the janitor at beat %d and he "
+                        "was still in it %.2fs later, against a %.2fs "
+                        "budget\n",
+                        map, phase, (double)worst,
+                        (double)escape_bound);
+            CHECK(worst <= escape_bound);
+        }
+    }
+    /* Six maps carry both a `J` and a `B`: sectors 2, 5, 6, 9 and 10, and the
+     * lobby's washroom. Asserted as a count rather than as a list, so a map that
+     * gains a janitor is measured by having gained one. The room is in here
+     * because the four washrooms are the maps this suite has historically
+     * simulated least and the crate is 5.2% of a visit to that one; see
+     * `test_a_crate_never_shoves_a_body_into_the_building`. */
+    CHECK(floors == 6);
+}
+
 /* Every tile the box covers is masonry, which is a thing that can happen to a
  * corpse settling into a slab and must never happen to anything alive: a guard
  * in that state is invisible, unshootable and standing in a wall. */
@@ -1063,6 +2378,16 @@ static void test_the_whole_frame_survives_a_monkey_on_the_controls(void)
     static CampaignState campaign;
     int interiors = 0;
     int climbs = 0;
+    /* The longest unbroken run of steps with the mercy window up, in steps, and
+     * how many times it came up at all. See the note in the interior branch
+     * below: a window that never closes is a latched timer, and a latched timer
+     * is a monkey that cannot be hit twice. */
+    int longest_mercy = 0;
+    int mercy_windows = 0;
+    /* How many windows were opened by a hit landing on the very step the last
+     * one ran out. See the sampling note below: they are why this counts
+     * windows rather than frames-with-the-timer-up. */
+    int mercy_rearms = 0;
 
     for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
     {
@@ -1077,6 +2402,8 @@ static void test_the_whole_frame_survives_a_monkey_on_the_controls(void)
          * seeded choice the simulation makes. */
         Rng thumbs;
         rng_seed(&thumbs, 4242u + i);
+        int mercy_run = 0;
+        float previous_mercy = 0.0f;
 
         float world_w = (float)state.level.map.width * TILE_SIZE;
         float world_h = (float)state.level.map.height * TILE_SIZE;
@@ -1119,6 +2446,39 @@ static void test_the_whole_frame_survives_a_monkey_on_the_controls(void)
             }
             else
             {
+                /*
+                 * `update_playing`'s order, and it opens on the same two lines
+                 * the facade branch above opens on — which for a release it did
+                 * not.
+                 *
+                 * The mercy window is decremented in [game.c](../src/game.c) and
+                 * nowhere else: no pass in the SDL-free tree touches
+                 * `invuln_timer`, so a harness that rebuilds the frame here has
+                 * to rebuild that too. The facade branch does. This one did not,
+                 * so on the twelve interiors — the floors with all the men, the
+                 * dogs, the mines, the fans and the spikes on them — the timer
+                 * latched at `INVULN_TIME` on the first hit and never expired.
+                 *
+                 * Measured: 110 hits and 7 deaths where the real frame produces
+                 * 803 and 236, over twelve interiors at eight seeds and sixty
+                 * seconds. Eight of the twelve never saw a single death. So the
+                 * death, the checkpoint restore below and the whole non-mercy
+                 * side of `gameplay_combat_check_contacts` were reached by
+                 * nothing, on the half of the campaign that can hurt anybody —
+                 * while this test's name says it drives the whole frame.
+                 *
+                 * That is `level_update_moving_platforms` one more time: a step
+                 * whose only caller is the shell is a step the suite does not
+                 * take by linking the module. And it is this file's own
+                 * recurring defect, a check reporting coverage it does not have.
+                 * The guard is below: a mercy window that outlasts
+                 * `INVULN_TIME` is a latched timer, and no count of deaths has
+                 * to be guessed at for it to fire.
+                 */
+                campaign.level_elapsed_time += SIM_STEP_DT;
+                if (state.invuln_timer > 0.0f)
+                    state.invuln_timer -= SIM_STEP_DT;
+
                 bool was_grounded = state.player.on_ground;
                 float previous_x = state.player.x;
                 float previous_y = state.player.y;
@@ -1155,6 +2515,48 @@ static void test_the_whole_frame_survives_a_monkey_on_the_controls(void)
                 gameplay_combat_check_contacts(&state, &campaign);
                 gameplay_update_alarm(&state, SIM_STEP_DT);
             }
+
+            /*
+             * How long *one* window has been up, sampled once a frame in both
+             * modes — which is not the same quantity as how many frames in a
+             * row the timer was positive, and reading it as though it were is
+             * how this counter came to be able to report 2.4s of a 1.2s rule.
+             *
+             * `gameplay_damage_player` re-arms the window from nought on every
+             * hit, and the decrement above runs before the contact pass. So on
+             * the step the timer reaches nought the player is hittable again
+             * *within the same frame*, and a hit there opens a second window
+             * with no frame in between for a once-a-frame sample to see. Two
+             * legitimate windows then read as one of twice the length: measured
+             * at 576 steps against a 288-step window in the penthouse
+             * washroom, where a dog and two men make it ordinary rather than
+             * lucky. The campaign's seeds have not produced one yet, which is
+             * the whole problem with leaving it — it is a false failure waiting
+             * for a map to move.
+             *
+             * A window is told from a continuation by the value rather than by
+             * the sign: inside one the timer only ever falls, so a *rise* is a
+             * re-arm and nothing else is. That needs no constant and no
+             * tolerance.
+             */
+            if (state.invuln_timer > 0.0f)
+            {
+                if (mercy_run == 0 || state.invuln_timer > previous_mercy)
+                {
+                    if (mercy_run != 0)
+                        ++mercy_rearms;
+                    ++mercy_windows;
+                    mercy_run = 0;
+                }
+                ++mercy_run;
+                if (mercy_run > longest_mercy)
+                    longest_mercy = mercy_run;
+            }
+            else
+            {
+                mercy_run = 0;
+            }
+            previous_mercy = state.invuln_timer;
 
             /* A death is an ordinary outcome for a monkey; the shell would
              * respawn him at the checkpoint, so this does the same rather than
@@ -1199,6 +2601,146 @@ static void test_the_whole_frame_survives_a_monkey_on_the_controls(void)
      * both halves of it, which is what the facade branch is here for. */
     CHECK(interiors == (int)EMBEDDED_LEVEL_COUNT - CAMPAIGN_CLIMB_SECTOR_COUNT);
     CHECK(climbs == CAMPAIGN_CLIMB_SECTOR_COUNT);
+
+    /*
+     * And the monkey got hit, and the mercy window it got closed again.
+     *
+     * The second half is the guard: `invuln_timer` is decremented in
+     * [game.c](../src/game.c) and by nothing in the SDL-free tree, so a branch
+     * of this harness that forgets it latches the timer for the rest of the run
+     * and the player becomes unhittable after one contact. That is what the
+     * interior branch did for a release, and no invariant above could see it —
+     * an unhittable player breaks nothing, he just stops exercising the death,
+     * the checkpoint restore and the non-mercy side of the contact pass.
+     *
+     * Asked as a duration rather than as a death count on purpose: how many
+     * times a given seed kills the monkey is a number somebody would have to
+     * guess at and re-guess whenever a map moved, while "no mercy window
+     * outlasts the window a hit opens" is a property of the frame. The slack is
+     * a step either side of the rounding.
+     *
+     * **And for a release it was the wrong window.** The cap was
+     * `INVULN_TIME`, which is 1.5s and is written by exactly one line in the
+     * tree — `finish_player_death` in [game.c](../src/game.c), on the shell
+     * side, which no harness in this file calls. What a hit opens is
+     * `PLAYER_HIT_INVULN`, 1.2s, and that is the only window a monkey can
+     * produce. So the comment above said "a step either side of the rounding"
+     * over 73 steps of slack, a quarter of the thing being measured, and the
+     * failure message quoted a constant the run could not contain. A window 20%
+     * too long passed.
+     *
+     * The two constants are both right and neither is a duplicate — a respawn
+     * and a bruise are different events — but one of them is named for the
+     * mechanic and the other reads like the general case, and the general-
+     * sounding name is the one a reader reaches for. That is the whole of how
+     * this happened, so the cap is derived from the constant the *simulation*
+     * writes and nothing here mentions the other.
+     */
+    if (mercy_windows == 0)
+        fprintf(stderr, "  the monkey was never hit at all\n");
+    CHECK(mercy_windows > 0);
+    int mercy_cap = (int)(PLAYER_HIT_INVULN / SIM_STEP_DT) + 2;
+    if (longest_mercy > mercy_cap)
+        fprintf(stderr,
+                "  a mercy window ran %d steps against the %d that %.2fs of "
+                "PLAYER_HIT_INVULN allows: either the window is longer than the "
+                "constant that opens it, or the timer is latched and the player "
+                "cannot be hit twice (%d of %d windows were re-arms)\n",
+                longest_mercy, mercy_cap, PLAYER_HIT_INVULN, mercy_rearms,
+                mercy_windows);
+    CHECK(longest_mercy <= mercy_cap);
+}
+
+/*
+ * Every interior puts a blast in the player's reach, counting behind the
+ * washroom door.
+ *
+ * Ten of the twelve lay out an `N` or a `Z` on the floor plan. Two do not —
+ * sector 1 and sector 5 — and both of them have a `U`, and every washroom hands
+ * out a grenade. So the rule is one rule rather than ten floors and two
+ * exceptions: **a floor with no explosive on its plan has a door to one**, and
+ * on sector 5 that is the whole point of the detour.
+ *
+ * It is written down because a measured outlier that nobody has explained is
+ * indistinguishable from an oversight. Sector 5 is the only interior above a
+ * hazard budget of 20 with neither a grenade nor a rocket on its map — sectors 2
+ * and 4 below it carry both — so a reader counting supply finds it, and the next
+ * one either raises it again or "fixes" it by adding a grenade to the plant hall
+ * and quietly deletes the reason its washroom is worth the walk.
+ *
+ * A reachability question rather than a sector list, so it cannot go stale the
+ * way a list does: a floor that loses its washroom fails here, and so does a new
+ * interior drawn with neither. What it deliberately does not assert is *which*
+ * floors take which route — that would be the list again.
+ */
+static void test_every_interior_can_reach_a_blast(void)
+{
+    static Level level;
+    static Level room;
+    int on_the_plan = 0;
+    int behind_the_door = 0;
+
+    for (size_t index = 0; index < EMBEDDED_LEVEL_COUNT; ++index)
+    {
+        Rng rng;
+        rng_seed(&rng, 7311u + index);
+        REQUIRE(level_load_data(&level, EMBEDDED_LEVELS[index].name,
+                                EMBEDDED_LEVELS[index].data,
+                                EMBEDDED_LEVELS[index].size, &rng));
+        if (level.map.mode == LEVEL_MODE_FACADE)
+            continue;
+
+        int explosives = 0;
+        for (int i = 0; i < level.runtime.item_count; ++i)
+        {
+            ItemType type = level.runtime.items[i].type;
+            if (type == ITEM_GRENADE || type == ITEM_BAZOOKA)
+                ++explosives;
+        }
+        if (explosives > 0)
+        {
+            ++on_the_plan;
+            continue;
+        }
+
+        /* No blast on the plan, so the door has to be the answer. Resolved the
+         * way the shell resolves it, off the sector's own theme, rather than by
+         * an index into the sublevel table — which is what makes this a claim
+         * about the map rather than about the order of a list. */
+        REQUIRE(level.map.has_sublevel_entrance);
+        const char *wanted = level_theme_sublevel(level.map.theme);
+        REQUIRE(wanted != NULL);
+
+        bool found = false;
+        for (size_t s = 0; s < EMBEDDED_SUBLEVEL_COUNT && !found; ++s)
+        {
+            if (strstr(EMBEDDED_SUBLEVELS[s].name, wanted) == NULL)
+                continue;
+            Rng room_rng;
+            rng_seed(&room_rng, 7411u + s);
+            REQUIRE(level_load_data(&room, EMBEDDED_SUBLEVELS[s].name,
+                                    EMBEDDED_SUBLEVELS[s].data,
+                                    EMBEDDED_SUBLEVELS[s].size, &room_rng));
+            for (int i = 0; i < room.runtime.item_count; ++i)
+            {
+                ItemType type = room.runtime.items[i].type;
+                if (type == ITEM_GRENADE || type == ITEM_BAZOOKA)
+                    found = true;
+            }
+        }
+        CHECK(found);
+        if (found)
+            ++behind_the_door;
+    }
+
+    /* Both halves, because either alone is a rule about a campaign this is not.
+     * Nought behind the door would mean the interesting case is untested and the
+     * loop above proved only that ten floors carry a grenade; nought on the plan
+     * would mean the whole campaign had been moved behind detour doors. */
+    CHECK(on_the_plan > 0);
+    CHECK(behind_the_door > 0);
+    CHECK(on_the_plan + behind_the_door ==
+          (int)EMBEDDED_LEVEL_COUNT - CAMPAIGN_CLIMB_SECTOR_COUNT);
 }
 
 /*
@@ -1751,6 +3293,97 @@ static FILE *silence_stderr(void)
 }
 
 /*
+ * A refusal names the rule that was broken.
+ *
+ * `level_load_data` explains itself because that explanation is how an author
+ * finds out why the map they just drew will not load, and two of its sentences
+ * could not be reached at all. The destination rule — how many `E`, `Y` and `R`
+ * a mode allows — was asked *before* the three rules about how many of each
+ * there may be, and every arm of it already requires `window_count` to be
+ * nought or one. So `Y` twice was refused by the sum rather than by the rule
+ * about `Y`, the sentence naming that rule was compiled and never printed, and
+ * what an author read was `invalid destinations for its mode (E=1, Y=2, R=0)` —
+ * three figures, one complaint, and no saying which.
+ *
+ * A count and a sum are two faults and want two sentences; this is the SPAWNS
+ * parser's own defect one file over, and the `--screen` switch's before that.
+ * The property is the one those two fixes ended up asserting: a map broken by
+ * exactly one rule is turned down by *that* rule. There is no list of which
+ * sentence is right — each case asks only that its own word appears — so a
+ * reworded message still passes and a reordered check does not.
+ */
+static void test_a_refused_map_says_which_rule_it_broke(void)
+{
+    static Level level;
+    struct
+    {
+        const char *what;
+        const char *word;
+        const char *map;
+    } cases[] = {
+        /* Two windows on an interior: the destination arm tolerates one, so
+         * this is the case that used to answer with the sum. */
+        {"two windows", "window",
+         "##########\n"
+         "#S  Y  Y #\n"
+         "#       E#\n"
+         "##########\n"},
+        {"two sublevel entrances", "entrance",
+         "##########\n"
+         "#S  U  U #\n"
+         "#       E#\n"
+         "##########\n"},
+        {"two sublevel returns", "return",
+         "##########\n"
+         "#S  R  R #\n"
+         "#        #\n"
+         "##########\n"},
+        /* And the sum itself, which must go on answering for what it is for:
+         * an interior with no way out at all. */
+        {"no way out", "destinations",
+         "##########\n"
+         "#S       #\n"
+         "#        #\n"
+         "##########\n"},
+    };
+
+    fflush(stderr);
+    int saved_stderr = dup(STDERR_FILENO);
+    for (size_t c = 0; c < sizeof(cases) / sizeof(cases[0]); ++c)
+    {
+        FILE *capture = tmpfile();
+        REQUIRE(capture != NULL);
+        fflush(stderr);
+        dup2(fileno(capture), STDERR_FILENO);
+
+        Rng rng;
+        rng_seed(&rng, 7u);
+        bool loaded = level_load_data(&level, "refusal", cases[c].map,
+                                      strlen(cases[c].map), &rng);
+        fflush(stderr);
+        if (saved_stderr >= 0)
+            dup2(saved_stderr, STDERR_FILENO);
+
+        char said[512];
+        size_t got = 0;
+        rewind(capture);
+        got = fread(said, 1, sizeof(said) - 1, capture);
+        said[got] = '\0';
+        fclose(capture);
+
+        if (loaded || strstr(said, cases[c].word) == NULL)
+            fprintf(stderr,
+                    "  %s: loaded=%d, refusal did not name \"%s\": %s",
+                    cases[c].what, (int)loaded, cases[c].word,
+                    got ? said : "(nothing said)\n");
+        CHECK(!loaded);
+        CHECK(strstr(said, cases[c].word) != NULL);
+    }
+    if (saved_stderr >= 0)
+        close(saved_stderr);
+}
+
+/*
  * Nonsense is refused rather than crashed on.
  *
  * Every other test in this file hands the loader a map somebody meant. The
@@ -1832,7 +3465,23 @@ static void test_the_loader_and_the_editor_survive_nonsense(void)
                 break;
             for (int col = 0; col < width; ++col)
                 text[length++] = alphabet[rng_range(&rng, (int)sizeof(alphabet) - 1)];
-            text[length++] = '\n';
+            /*
+             * Every row but sometimes the last one gets its newline.
+             *
+             * A map file whose last line has no terminator is ordinary — an
+             * editor that does not add one, a hand-truncated file, a paste —
+             * and `level_load_data` has a branch for exactly it, the one that
+             * counts a final unterminated row into the map's width and height.
+             * Measured on a coverage build it was nought against 5 970 calls:
+             * three thousand files nobody meant, and every one of them ended
+             * in a newline, so the arm the corpus exists to reach was compiled
+             * and never run. The corpus was generating the tidy half of its own
+             * question.
+             *
+             * One row in eight, so the terminated case stays the common one.
+             */
+            if (row + 1 < height || rng_range(&rng, 8) != 0)
+                text[length++] = '\n';
         }
         const char *tail = tails[rng_range(&rng, (int)(sizeof(tails) /
                                                        sizeof(tails[0])))];
@@ -1885,6 +3534,136 @@ static void test_the_loader_and_the_editor_survive_nonsense(void)
      * making only one kind of file and this has stopped being a sweep. */
     CHECK(refused_any > 0);
     CHECK(parsed_any > 0);
+}
+
+/*
+ * And the same sweep over the two files that belong to the player.
+ *
+ * The test above hands the loader and the editor three thousand files nobody
+ * meant, on the argument that the one input the editor exists to open is a file
+ * half-finished or not a map at all — and it was the only generated corpus in the
+ * suite. `settings_parse` and `progress_parse` had a dozen hand-picked bad lines
+ * each and nothing else, which is the wrong way round twice over. **These are the
+ * only two parsers in the game that read a file the game did not write**: a map
+ * is embedded in the binary and cannot be corrupted by anything short of a
+ * corrupted binary, while the settings and the progress live in
+ * `SDL_GetPrefPath` and are as damaged as a disk that filled up, a process killed
+ * mid-write, or somebody with an editor and an opinion about `challenge_veteran`.
+ * A hand-picked line proves the case somebody thought of.
+ *
+ * Two properties, and the second is the one hand-picked lines cannot reach:
+ *
+ * - **Neither parser may fall over**, which is worth exactly what it is worth
+ *   under `make sanitize` — a hundred thousand passes over `strtol`, `strtod`,
+ *   the key matcher and the two clamps with ASan and UBSan watching. The
+ *   `sector_time` row is the interesting one, because it is the only row in
+ *   either file that carries two numbers and reads the second one out of
+ *   whatever the first one left behind.
+ * - **The round trip has to be a fixed point.** Parse rubbish, serialise what
+ *   came out, parse that, serialise again: the last two have to be identical
+ *   bytes. That is what says a damaged file cannot be *half* accepted — a value
+ *   that survives parsing but not serialising, or one that comes back different
+ *   the second time, is a setting that changes by itself on the launch after the
+ *   one that repaired the file. Nothing in the suite was asking that of a value
+ *   that arrived broken; `test_progress_file_damage_is_not_a_reset` asks it of
+ *   values that arrive intact.
+ *
+ * Deterministic for the reason the loader's sweep is, and the corpus is built
+ * out of the two files' own key names plus the numbers most likely to break
+ * arithmetic: past `INT_MAX`, past a `long`, negative, `nan`, `inf`, an
+ * exponent no `float` holds, and a digit run with junk welded onto the end.
+ */
+static void test_the_players_own_two_files_survive_nonsense(void)
+{
+    /* The keys both parsers know, then the tokens a value could be. Written as
+     * one alphabet rather than two, because a `progress` key in a settings file
+     * is exactly the mistake a shared save directory invites, and neither parser
+     * may care. */
+    static const char *const words[] = {
+        "music", "sfx", "fullscreen", "crt", "reduced_motion", "more_hearts",
+        "slower_guards", "infinite_lives", "challenge_veteran",
+        "bind_jump", "bind_left", "bind_attack", "bind_use",
+        "pad_jump", "pad_left", "pad_next_weapon",
+        "furthest_sector", "best_score", "best_evidence", "sector_time",
+        "LSHIFT", "SPACE", "A", "B", "DP_UP", "-", "=", "?",
+        "0", "1", "-1", "17", "18", "100000",
+        /* Past every width the two files parse with. `strtol` saturates and
+         * sets ERANGE, `strtod` gives HUGE_VAL, and both of those have to land
+         * inside a clamp rather than inside an `int`. */
+        "2147483647", "2147483648", "-2147483649", "99999999999999999999",
+        "12.5", "-0.0001", "999999999999.9", "1e400", "-1e400",
+        "nan", "inf", "-inf", "0x10", "1x2", "3nonsense", "..", "%d",
+    };
+
+    static char text[8 * 1024];
+    static char first[8 * 1024];
+    static char second[8 * 1024];
+    static char third[8 * 1024];
+    Rng rng;
+    rng_seed(&rng, 20260820);
+
+    int settings_unstable = 0;
+    int progress_unstable = 0;
+    const int rounds = 4000;
+    for (int round = 0; round < rounds; ++round)
+    {
+        size_t length = 0;
+        int lines = 1 + rng_range(&rng, 6);
+        for (int line = 0; line < lines; ++line)
+        {
+            int fields = 1 + rng_range(&rng, 4);
+            for (int field = 0; field < fields; ++field)
+            {
+                const char *word =
+                    words[rng_range(&rng, (int)(sizeof(words) /
+                                                sizeof(words[0])))];
+                size_t word_length = strlen(word);
+                if (length + word_length + 2 >= sizeof(text))
+                    break;
+                memcpy(text + length, word, word_length);
+                length += word_length;
+                /* Sometimes no separator at all, because `bind_jumpSPACE` is a
+                 * line a truncated write produces and neither parser may read
+                 * it as a key it knows. */
+                if (rng_range(&rng, 4) != 0)
+                    text[length++] = rng_range(&rng, 8) == 0 ? '\t' : ' ';
+            }
+            if (length + 2 < sizeof(text))
+                text[length++] = '\n';
+        }
+        text[length] = '\0';
+
+        /* Defaults first, so what a damaged line cannot do is leave a field
+         * holding whatever was in memory. */
+        Settings settings;
+        settings_defaults(&settings);
+        settings_parse(&settings, text);
+        settings_serialize(&settings, first, sizeof(first));
+
+        Settings again;
+        settings_defaults(&again);
+        settings_parse(&again, first);
+        settings_serialize(&again, second, sizeof(second));
+        settings_unstable += strcmp(first, second) != 0;
+
+        Progress progress;
+        progress_defaults(&progress);
+        progress_parse(&progress, text);
+        progress_serialize(&progress, first, sizeof(first));
+
+        Progress progress_again;
+        progress_defaults(&progress_again);
+        progress_parse(&progress_again, first);
+        progress_serialize(&progress_again, third, sizeof(third));
+        progress_unstable += strcmp(first, third) != 0;
+    }
+
+    /* A file the game wrote itself has to read back as itself, however it got
+     * that way — otherwise the launch after the one that repaired a damaged save
+     * changes the player's settings again, and neither launch did anything they
+     * asked for. */
+    CHECK(settings_unstable == 0);
+    CHECK(progress_unstable == 0);
 }
 
 /*
@@ -2181,11 +3960,53 @@ static void test_the_editor_has_nothing_to_say_about_the_shipped_campaign(void)
          */
         snprintf(doc.path, sizeof(doc.path), "%s", EMBEDDED_LEVELS[i].name);
         editor_validate(&doc, &level, parsed, &campaign, &report);
-        /* Notes are deliberately allowed: a note is "worth knowing before it
-         * becomes one of the above", which is guidance and not a defect. */
+        /*
+         * Notes too, and this line used to say the opposite.
+         *
+         * It read "notes are deliberately allowed: a note is worth knowing
+         * before it becomes one of the above, which is guidance and not a
+         * defect" — and that reasoning is still exactly right *about the editor*,
+         * where a note is advice to an author drawing a map and must not refuse
+         * their build. It was doing double duty as a reason for the shipped
+         * campaign to carry them, which is a different claim, and one that cost
+         * a release: sector 13's spawn sat off the painted-window grid, alone in
+         * all seventeen maps, and the only thing in the tree that knew was a tool
+         * nobody runs over levels they are not editing.
+         *
+         * This is the turn the weak wall's rule already took. That check counted
+         * no sectors on purpose, because a ratchet on a number is a number people
+         * learn to move; once the campaign was clean it asked the property
+         * instead. So does this. "The shipped campaign has nothing said about it"
+         * is not a figure anybody can nudge — it is the state the maps are in, and
+         * a note appearing in it is either a map worth a tile's edit or a rule
+         * worth arguing with, both of which want somebody's attention rather than
+         * a line of output in a green build.
+         *
+         * The editor keeps every severity it had; nothing here changes what an
+         * author is told while drawing.
+         */
+        /*
+         * Named before it is counted, because a failure here used to print
+         * `report.warnings == 0` and nothing else — seventeen maps and no
+         * saying which. Whoever hit it had to bisect the campaign to find out
+         * what the editor had said, which is a gate reporting that something is
+         * wrong and withholding the one fact it holds.
+         */
+        for (int f = 0; f < report.count; ++f)
+        {
+            if (report.findings[f].severity == ED_SEV_ERROR ||
+                report.findings[f].severity == ED_SEV_WARN ||
+                report.findings[f].severity == ED_SEV_NOTE)
+            {
+                printf("%s (%d,%d): %s\n", EMBEDDED_LEVELS[i].name,
+                       report.findings[f].col, report.findings[f].row,
+                       report.findings[f].text);
+            }
+        }
         CHECK(report.errors == 0);
         CHECK(report.warnings == 0);
-        /* And the report itself did not overflow, or the two counts above are
+        CHECK(report.notes == 0);
+        /* And the report itself did not overflow, or the counts above are
          * measuring less than the map actually said. */
         CHECK(report.dropped == 0);
     }
@@ -2210,6 +4031,23 @@ static void test_the_editor_has_nothing_to_say_about_the_shipped_campaign(void)
         editor_validate(&doc, &level, parsed, &no_campaign, &report);
         CHECK(report.errors == 0);
         CHECK(report.warnings == 0);
+        /*
+         * Notes are allowed here and forbidden for the sectors above, and the
+         * asymmetry is the point rather than an oversight.
+         *
+         * Each of these four carries exactly one: "No THEME line, so the map
+         * loads as RESTROOM". That is the tool reporting a default, and these
+         * are the maps the default exists *for* — a restroom is what a sector's
+         * `U` falls back to, so naming the theme would be writing down the thing
+         * that is already true by being omitted. A sector always names its
+         * theme, which is why nothing up there has an excuse.
+         *
+         * Held as a count rather than by matching the sentence: one note each,
+         * so a *second* one arriving is a failure even though this known one is
+         * not. Matching the text would pin the tool's wording, which is the kind
+         * of check that goes stale the first time somebody rewords a message.
+         */
+        CHECK(report.notes == 1);
         CHECK(report.dropped == 0);
     }
 }
@@ -2282,6 +4120,250 @@ static void test_editor_report_catches_broken_maps(void)
                   NULL, &report);
     CHECK(report_mentions(&report, ED_SEV_WARN, "no wall under it"));
 
+    /*
+     * A camera hangs, and the editor never said so.
+     *
+     * `level_load_data` drops a camera with no slab above it and the comment
+     * beside that loop claims the editor "says so while it is being drawn". It
+     * did not. `editor_symbol_hangs` answers for the clock `w` and the camera
+     * `I`, and its only caller sits inside `check_decorations`, which filters to
+     * the four decoration groups — so the clock was caught and the camera, an
+     * `ED_GROUP_FITTINGS`, was never asked. One function answering for two
+     * things, reached from a place that can only ever see one of them.
+     */
+    validate_text("############\n"
+                  "#S        E#\n"
+                  "#    I     #\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "there is none"));
+
+    /*
+     * And a camera can be bolted up watching nothing at all, which is the half
+     * that was live on the shipped campaign.
+     *
+     * A one-tile-high space is the case that matters, because it is the one an
+     * author draws on purpose. `camera_sees_player` refuses anything at or above
+     * the lens, and a standing player in the mounting's own row has his centre
+     * level with it to the pixel — so the beam is blind to the only floor within
+     * reach. Sector 12 hung both of its cameras exactly there, over the roof of
+     * a duct run, where each watched nought cells a standing player could
+     * occupy against five to fourteen for every other camera in the game.
+     */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "############\n"
+                  "#    I     #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "fitting rather than an obstacle"));
+
+    /*
+     * The control, and it is what makes the assertion above about the mounting
+     * rather than about the fixture: give the same camera a storey with a floor
+     * two rows under it and the finding goes. Without this the check would be
+     * satisfied by a rule that flagged every camera ever drawn.
+     */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "############\n"
+                  "#    I     #\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "fitting rather than an obstacle"));
+
+    /*
+     * And trunking under the lens is the shipped shape rather than a contrived
+     * one: a duct answers `level_is_solid`, so the floor the beam would land on
+     * is masonry and the storey below it is out of shot behind it.
+     */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "############\n"
+                  "#    I     #\n"
+                  "#==========#\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "fitting rather than an obstacle"));
+
+    /*
+     * And a camera pointed down a rung column is watching somebody, which is
+     * the arm of `doc_can_stand` the campaign does not happen to exercise.
+     *
+     * Measured, every shipped camera watches masonry-floored ground, so the
+     * narrow rule — floor is the solid tile below — flags nothing on the
+     * campaign and would silently forbid this map. A ladder carries a man with
+     * no floor under him at all; the fixture is here so the arm is driven
+     * rather than assumed.
+     */
+    validate_text("##############\n"
+                  "#S          E#\n"
+                  "##############\n"
+                  "#   I        #\n"
+                  "#     H      #\n"
+                  "#     H      #\n"
+                  "#     H      #\n"
+                  "#     H      #\n"
+                  "#     H      #\n"
+                  "#     H      #\n"
+                  "##############\n",
+                  NULL, &report);
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "fitting rather than an obstacle"));
+
+    /*
+     * And the other claim `levels/LEGEND.md` makes about the fitting, which was
+     * prose beside the one above: *"`CAMERA_RANGE` is five and a half tiles, so
+     * a mounting more than five storeys above the floor it is meant to watch is
+     * watching nothing."* Seven storeys of open shaft here, so the only ground
+     * under the lens is 224px away against a range of 176 — true today of no
+     * shipped map, which is exactly why it wanted a fixture rather than a
+     * sentence.
+     */
+    validate_text("##############\n"
+                  "#S          E#\n"
+                  "##############\n"
+                  "#   I        #\n"
+                  "#            #\n"
+                  "#            #\n"
+                  "#            #\n"
+                  "#            #\n"
+                  "#            #\n"
+                  "#            #\n"
+                  "#            #\n"
+                  "##############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "fitting rather than an obstacle"));
+
+    /*
+     * And the sweep's own reach, pinned as a relationship rather than through a
+     * map — because on a tile grid it is dominated by the range and the sight
+     * line, and the one offset it does exclude sits 0.2% outside the limit.
+     * `camera_watches_cell` keeps the clause because it is the lens's own rule;
+     * this is what says so if either constant moves. Five tiles across and one
+     * down is out of shot, four across and one down is in it, which is the whole
+     * of what the arc decides that nothing else already has.
+     */
+    CHECK(atan2f(5.0f * TILE_SIZE, (float)TILE_SIZE) >
+          CAMERA_SWEEP_ARC + CAMERA_CONE_HALF_ANGLE);
+    CHECK(atan2f(4.0f * TILE_SIZE, (float)TILE_SIZE) <=
+          CAMERA_SWEEP_ARC + CAMERA_CONE_HALF_ANGLE);
+
+    /*
+     * A falling panel over a drop the player cannot survive, which the shipped
+     * archive carried: the fall is measured from the row *above* the panel,
+     * because a man standing on one has his feet on its top edge, so six open
+     * rows below it is 192px against a `PLAYER_FATAL_FALL_HEIGHT` of 160. An
+     * error rather than a warning, on `check_opened_walls_leave_a_way_out`'s
+     * argument: this is not a floor that plays differently from how it reads,
+     * it is a floor that can eat a run.
+     */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "#####F######\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "kills outright"));
+
+    /*
+     * Shallower and the same panel is a shortcut again, which is what makes the
+     * assertion above about the drop rather than about panels. The boundary is
+     * worth writing down because the first draft of this fixture sat on the
+     * wrong side of it: `route_survivable_fall` is a strict `<`, so four open
+     * rows below the panel is 160px measured from the row above and is
+     * *refused*. Three is 128px and is the deepest drop a panel may make.
+     */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "#####F######\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(!report_mentions(&report, ED_SEV_ERROR, "kills outright"));
+
+    /*
+     * And one row deeper is refused, which is the pair that pins *where the
+     * fall is measured from* rather than just that it is measured. Four open
+     * rows is 160px from the row above the panel and 128px from the panel's own
+     * row, so a check that forgot the player stands on the panel's top edge
+     * passes the deep fixture above and this one too — the off-by-one was the
+     * whole of sector 9's 192-against-160, so it gets an assertion rather than
+     * a comment.
+     */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "#####F######\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_ERROR, "kills outright"));
+
+    /*
+     * And a fan in the panel's own column, which is the roof's shape and the
+     * half of the pair `check_fans` structurally cannot see: all five of its
+     * questions look *down* from the blades, so a hole in the slab directly
+     * above one is nobody's business. A heart every time the mechanic is used,
+     * so a warning rather than an error.
+     */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "#####F######\n"
+                  "#    O     #\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "in the drop of the panel"));
+
+    /*
+     * One column over still catches him, which is why the span is ±1 and not
+     * the panel's own column: the band reaches `CEILING_FAN_BLADE_LENGTH` each
+     * way from the fan's centre and the falling box is 26 wide in a 32 tile.
+     * Measured by sweeping every x a player can rest on a panel at.
+     */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "#####F######\n"
+                  "#   O      #\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "in the drop of the panel"));
+
+    /* Two columns over and the blades clear him, which is the fix the roof took
+     * rather than a fan removed — and the control that stops this rule flagging
+     * every fan on the same storey as a panel. */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "#####F######\n"
+                  "#  O       #\n"
+                  "#          #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "in the drop of the panel"));
+
+    /* And a spike bed at the bottom of the drop, for the same reason. */
+    validate_text("############\n"
+                  "#S       E##\n"
+                  "#####F######\n"
+                  "#          #\n"
+                  "#    ^     #\n"
+                  "############\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "onto a spike bed"));
+
     /* A weak wall nothing in the sector can open is scenery. */
     validate_text("############\n"
                   "#S   %    E#\n"
@@ -2289,7 +4371,7 @@ static void test_editor_report_catches_broken_maps(void)
                   "\n"
                   "THEME LAB\n",
                   NULL, &report);
-    CHECK(report_mentions(&report, ED_SEV_WARN, "nothing to open them with"));
+    CHECK(report_mentions(&report, ED_SEV_WARN, "no blast to open them"));
 
     /* Give it a grenade and the warning goes; the route model still refuses to
      * walk through the patch, which is what keeps it a shortcut. */
@@ -2299,8 +4381,56 @@ static void test_editor_report_catches_broken_maps(void)
                   "\n"
                   "THEME LAB\n",
                   NULL, &report);
-    CHECK(!report_mentions(&report, ED_SEV_WARN, "nothing to open them with"));
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "no blast to open them"));
     CHECK(report_mentions(&report, ED_SEV_ERROR, "way out cannot be reached"));
+
+    /*
+     * And a gas canister beside the patch is an opener too, which this check
+     * denied for as long as it existed.
+     *
+     * It asked for an `N` or a `Z` and said "nothing to open them with" — a
+     * claim about the floor, false on any floor with a canister next to the
+     * patch, because every blast in the game goes through `apply_blast` and all
+     * four of them take a `%` out. Since the campaign is held to nought
+     * warnings, that did not merely misinform: it forbade a design the game
+     * supports, and the better one of the two, since shooting the canister
+     * beside a patch spends no explosive at all.
+     */
+    validate_text("#############\n"
+                  "#S  L%    E #\n"
+                  "#############\n"
+                  "\n"
+                  "THEME LAB\n",
+                  NULL, &report);
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "no blast to open them"));
+
+    /* Out of its reach, and it is scenery again — so the rule is a distance
+     * rather than a count of canisters on the map. */
+    validate_text("###################\n"
+                  "#S L         %   E#\n"
+                  "###################\n"
+                  "\n"
+                  "THEME LAB\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "no blast to open them"));
+
+    /*
+     * And a mine beside it is *not* an opener, which is the other half of asking
+     * the mechanic rather than reading a list of four.
+     *
+     * A mine takes a patch out when it goes off, but nothing sets one off except
+     * the player's own weight or somebody else's blast — it cannot be shot. So
+     * the only way through this wall is standing on two of three hearts, and an
+     * author told the patch was provided for would have been told the wrong
+     * thing.
+     */
+    validate_text("#############\n"
+                  "#S  X%    E #\n"
+                  "#############\n"
+                  "\n"
+                  "THEME LAB\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "no blast to open them"));
 
     /* On a wall there is nothing to set a blast off with, so a patch there
      * never opens. */
@@ -2341,6 +4471,138 @@ static void test_editor_report_catches_broken_maps(void)
                   "THEME FACADE_MOON\n",
                   NULL, &report);
     CHECK(report_mentions(&report, ED_SEV_ERROR, "cannot be climbed to"));
+
+    /*
+     * Mines, which had no rule at all until they had these.
+     *
+     * The `X` costs two of three hearts — an ordinary blast, the same one that
+     * opens a `%` — and it was the only hazard in the building nothing asked a
+     * question about: five checks for the fan, one for the spike bed, none for
+     * the charge. It is also invisible to the route model, which knows a spike
+     * and has no notion that a mine exists, so a certified path runs straight
+     * over every one of them.
+     *
+     * None of these forbids a mine anywhere. Each is a mine whose own answers —
+     * see it and walk round it, hop it, set it off from a distance — have been
+     * taken away by something else on the plan, which is the one thing no rule
+     * about a single tile can see.
+     */
+    /* Blades in the mine's own column: ducking them lands on the charge and
+     * hopping the charge lands in them. */
+    validate_text("##############\n"
+                  "#            #\n"
+                  "#  A O    A  #\n"
+                  "#S   X      E#\n"
+                  "##############\n"
+                  "\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "Blades over this mine"));
+
+    /* One column across and both answers are back. */
+    validate_text("##############\n"
+                  "#            #\n"
+                  "#  A O    A  #\n"
+                  "#S    X     E#\n"
+                  "##############\n"
+                  "\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "Blades over this mine"));
+
+    /* Against the rungs, where the step off has nowhere to land. */
+    validate_text("##############\n"
+                  "#  A     H  A#\n"
+                  "####H#####H###\n"
+                  "#S      XH  E#\n"
+                  "##############\n"
+                  "\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "two columns off the ladder"));
+
+    /* And the top of a riser is the same arrival read off the row below — this
+     * is the half that looking only at the mine's own row missed. */
+    validate_text("##############\n"
+                  "#  A     X  A#\n"
+                  "##########H###\n"
+                  "#S         #E#\n"
+                  "##############\n"
+                  "\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "two columns off the ladder"));
+
+    /* Two abreast is a floor cut in half at twice a spike bed's price. */
+    validate_text("##############\n"
+                  "#  A      A  #\n"
+                  "#S    XX    E#\n"
+                  "##############\n"
+                  "\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "Two mines abreast"));
+
+    /* One apart is hoppable and says nothing. */
+    validate_text("##############\n"
+                  "#  A      A  #\n"
+                  "#S    X X   E#\n"
+                  "##############\n"
+                  "\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "Two mines abreast"));
+
+    /* Only the player's weight arms an `X`, and weight arrives on a floor. */
+    validate_text("##############\n"
+                  "#  A  X   A  #\n"
+                  "#S          E#\n"
+                  "##############\n"
+                  "\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_NOTE, "Nothing directly under this mine"));
+
+    /*
+     * A floor that sends for more men than it can seat, out of the door rather
+     * than out of a console.
+     *
+     * `SPAWNS` is the deterministic half of `spawn_enemy_from_door` and it was
+     * in neither seating sum, so the warning below could not fire for it at
+     * all: the old check was gated on `called > 0`, which is a console count,
+     * and a map whose whole over-subscription came out of this line produced
+     * exactly the report of a map with `SPAWNS 0 0` on it. Nothing bounds the
+     * value either — the loader refuses a token that is not a number and then
+     * accepts any `int` that fits.
+     *
+     * No console anywhere on this map, on purpose: that is the arrangement the
+     * old guard was blind to, so it is the one worth pinning.
+     */
+    validate_text("##############\n"
+                  "#S  D    D  E#\n"
+                  "#MMMMMMMMMM  #\n"
+                  "##############\n"
+                  "\n"
+                  "SPAWNS 40 40\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(report_mentions(&report, ED_SEV_WARN, "out of SPAWNS"));
+    /* And the dogs, which had no arrival line at all — every one of those
+     * eighty arrivals rolls for a handler. */
+    CHECK(report_mentions(&report, ED_SEV_WARN, "a handler with each of"));
+
+    /* The same map, sending for nobody, keeps quiet — so the warning is about
+     * the line rather than about the doors being there. */
+    validate_text("##############\n"
+                  "#S  D    D  E#\n"
+                  "#MMMMMMMMMM  #\n"
+                  "##############\n"
+                  "\n"
+                  "SPAWNS 0 0\n"
+                  "THEME OFFICE\n",
+                  NULL, &report);
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "out of SPAWNS"));
+    CHECK(!report_mentions(&report, ED_SEV_WARN, "a handler with each of"));
 }
 
 /*
@@ -2917,6 +5179,181 @@ static void test_chase_kerb_scrape_bleeds_speed_without_damage(void)
 }
 
 /*
+ * The other kerb, and the other direction on the stick.
+ *
+ * `test_chase_kerb_scrape_bleeds_speed_without_damage` holds `input.right` and
+ * nothing else, so for as long as the prologue has existed the left half of
+ * `steer_and_clamp` was compiled and never run: measured on a coverage build,
+ * `input->left` and the whole `x < low` clamp beside it were nought while their
+ * mirror images ran two hundred thousand times. Two lines, one test between
+ * them, on the first thing a player of this game does.
+ *
+ * Nothing was wrong with either — verified before this was written, which is
+ * worth saying plainly. What was missing is that the suite would not have
+ * noticed the loss: a sign flipped in the clamp, or a `low` that read `high`,
+ * puts the car through the left kerb and off the road, and every assertion in
+ * the file would still have passed.
+ *
+ * The assertions are the mirror of the right kerb's, plus the one that only the
+ * left side can make: the clamp is a floor, so the car's x may never go under
+ * it, and the drag must not carry the speed through nought.
+ */
+static void test_chase_left_kerb_holds_the_car_on_the_road(void)
+{
+    Chase chase;
+    chase_init(&chase, 31);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+
+    const float low = CHASE_CAR_WIDTH * 0.5f + CHASE_KERB_MARGIN;
+    Input input = {0};
+    input.left = true;
+    bool heard_tyres = false;
+    float lowest_x = chase.player.x;
+    float slowest = chase.player.speed;
+    for (int i = 0; i < SIM_STEPS(10.0f); ++i)
+    {
+        chase_clear_traffic(&chase);
+        chase_step(&chase, &input);
+        if (events_have_sound(&chase.events, GAME_EVENT_SOUND, SFX_CHASE_TIRES))
+            heard_tyres = true;
+        if (chase.player.x < lowest_x)
+            lowest_x = chase.player.x;
+        if (chase.player.speed < slowest)
+            slowest = chase.player.speed;
+    }
+
+    CHECK(heard_tyres);
+    CHECK(chase.player.integrity == CHASE_INTEGRITY);
+    /* Reached the kerb, and never crossed it. */
+    CHECK(lowest_x <= low + 0.01f);
+    CHECK(lowest_x >= low - 0.01f);
+    /* Grinding it costs speed, the same as the other side. */
+    CHECK(chase.player.speed < CHASE_CRUISE_SPEED);
+    /* And the drag has a floor: a car reversing up the street is not a thing
+     * the drive has any way to draw or to end. */
+    CHECK(slowest > 0.0f);
+}
+
+/*
+ * Ramming the SUV is not a way to stop them, only a way to lose the car.
+ *
+ * That sentence is the comment above the branch in `check_player_collisions`
+ * that answers it, and the branch was executed by nothing at all — nought
+ * against two hundred thousand runs of the traffic collision beside it. It is
+ * the one interaction a player will certainly try, because the whole beat is a
+ * car chasing a car: the fiction's answer is that Chuck cannot catch them here,
+ * and this is the code that makes that true.
+ *
+ * So the assertion is the rule rather than the mechanism. Shoving the SUV costs
+ * integrity, hands the SUV a boost away, and ends the attempt as a wreck — it
+ * never closes the gap and it never reaches the building.
+ */
+static void test_chase_ramming_the_suv_only_loses_the_car(void)
+{
+    Chase chase;
+    chase_init(&chase, 77);
+    chase_skip_departure(&chase);
+    chase_clear_traffic(&chase);
+
+    int hits = 0;
+    bool boosted = false;
+    bool crashed = false;
+    int integrity = chase.player.integrity;
+    Input input = {0};
+    input.gas = true;
+    for (int i = 0; i < SIM_STEPS(60.0f); ++i)
+    {
+        chase_clear_traffic(&chase);
+        /* Put the bonnet in the SUV's boot, which is the one thing a player
+         * holding the throttle on the same line will eventually manage. The
+         * mercy window is what makes this several presses rather than one. */
+        chase.player.x = chase.target.x;
+        if (chase_gap(&chase) > CHASE_SUV_LENGTH)
+            chase.player.y = chase.target.y - CHASE_SUV_LENGTH;
+        int before = chase.player.integrity;
+        chase_step(&chase, &input);
+        if (chase.player.integrity < before)
+        {
+            hits++;
+            if (chase.target.boost_timer > 0.0f)
+                boosted = true;
+            if (events_have_sound(&chase.events, GAME_EVENT_SOUND,
+                                  SFX_CHASE_CRASH))
+                crashed = true;
+        }
+        if (chase.phase != CHASE_PHASE_PURSUIT)
+            break;
+    }
+
+    /* It cost the car every point it had ... */
+    CHECK(hits == integrity);
+    CHECK(chase.player.integrity == 0);
+    CHECK(crashed);
+    /* ... the SUV was handed a boost away each time rather than slowed ... */
+    CHECK(boosted);
+    /* ... and what it ended in is a wreck, not an arrival. */
+    CHECK(chase.phase == CHASE_PHASE_FAILED);
+    CHECK(chase.phase != CHASE_PHASE_ARRIVAL);
+    CHECK(chase.phase != CHASE_PHASE_DONE);
+}
+
+/*
+ * And the drive reaches its end, which nothing asked.
+ *
+ * `CHASE_PHASE_DONE` and `chase_route_progress`'s answer for it were both
+ * unexecuted: every chase test in this file drives a handful of seconds and
+ * asserts on a state in the middle. `test_chase_always_ends_even_for_a_player_who_only_accelerates`
+ * is the nearest and it stops at the outcome rather than at the phase, so the
+ * last beat of the prologue — the two cars braking onto their marks and the
+ * pursuit closing — was reached by nobody.
+ *
+ * What it asks is that the beat is finite and that it lands: ARRIVAL is passed
+ * through rather than skipped, DONE is reached, and the progress readout the HUD
+ * draws is full when it gets there rather than still counting.
+ */
+static void test_chase_runs_all_the_way_to_the_kerb(void)
+{
+    Chase chase;
+    chase_init(&chase, 4242);
+    chase_skip_departure(&chase);
+
+    bool saw_arrival = false;
+    bool saw_done = false;
+    ChaseOutcome outcome = CHASE_RUNNING;
+    int frames = 0;
+    Input input = {0};
+    for (; frames < SIM_STEPS(600.0f); ++frames)
+    {
+        input.gas = true;
+        /* Take the skip whenever the drive offers it, which is what a player
+         * who has failed it often enough does — and the only way the beat ends
+         * for somebody who cannot keep up. */
+        input.use_door = chase.attempts >= CHASE_SKIP_AFTER_ATTEMPTS;
+        outcome = chase_step(&chase, &input);
+        if (chase.phase == CHASE_PHASE_ARRIVAL)
+            saw_arrival = true;
+        if (chase.phase == CHASE_PHASE_DONE)
+        {
+            saw_done = true;
+            break;
+        }
+    }
+
+    CHECK(saw_arrival);
+    CHECK(saw_done);
+    CHECK(outcome == CHASE_REACHED_BUILDING);
+    /* The readout is full at the kerb. It answers 1.0 for both of the last two
+     * phases, so this is a claim about the beat having finished rather than
+     * about the arithmetic. */
+    CHECK(chase_route_progress(&chase) > 0.999f);
+    /* And once it is done it stays done, however many frames the shell spends
+     * before it changes state. */
+    CHECK(chase_step(&chase, &input) == CHASE_REACHED_BUILDING);
+    CHECK(chase.phase == CHASE_PHASE_DONE);
+}
+
+/*
  * The car is driven with two pedals of its own. The shell folds the letter
  * under each thumb into them — A into `gas`, B into `brake` — alongside the
  * stick and the arrows, and the drive reads nothing else: a raw direction
@@ -3407,6 +5844,41 @@ static void test_score_pays_out_extra_lives(void)
     campaign.score = 5 * EXTRA_LIFE_SCORE_STEP;
     CHECK(campaign_check_extra_life(&campaign));
     CHECK(campaign.lives == MAX_LIVES);
+
+    /*
+     * And the cap has to swallow *every* milestone the score is already past,
+     * which is the half the block above could not see.
+     *
+     * It lands the score exactly on a threshold, so there was never a spare
+     * one to bank — and the claim being made is about a run that is several
+     * ahead. Every caller is `while (campaign_check_extra_life(...))`, the
+     * drain stops on the first `false`, and one step of catch-up per call left
+     * the threshold behind the score indefinitely: the next death took the
+     * count off the cap and the next point scored handed a life straight back.
+     * Measured on the shipped code, a run parked at nine lives four milestones
+     * clear got two of them returned over its next two deaths, on a rule whose
+     * own comment said it must not bank them.
+     *
+     * Driven the way the shell drives it — drain, then die, then score — so the
+     * assertion is about the rule and not about one call.
+     */
+    campaign.lives = MAX_LIVES;
+    campaign.score = 20 * EXTRA_LIFE_SCORE_STEP;
+    while (campaign_check_extra_life(&campaign))
+        ; /* the shell's own loop */
+    CHECK(campaign.lives == MAX_LIVES);
+    /* Nothing left to cash: the threshold is past the score. */
+    CHECK(campaign.next_extra_life_score > campaign.score);
+    for (int death = 0; death < 4; ++death)
+    {
+        CHECK(campaign.lives > 1);
+        campaign.lives--;
+        int before = campaign.lives;
+        campaign.score += 10;
+        while (campaign_check_extra_life(&campaign))
+            ;
+        CHECK(campaign.lives == before);
+    }
 }
 
 /*
@@ -4343,13 +6815,25 @@ static void test_player_dies_from_a_high_fall(void)
  * lift lifted his head into a floor slab: the wall arrived above him rather
  * than beside him, so nothing had pushed him clear, and the crush check killed
  * him for it. Every position the platform will accept has to reach the top.
+ *
+ * **"The top" is asked of the lift rather than written down**, and the literal
+ * that used to be here is the reason this test could not see the bug it sits
+ * next to. It read `player.y < 2.0f * TILE_SIZE`, which on this map means "got
+ * above the shaft" — and getting above the shaft is precisely what a lift must
+ * not do: `top_limit` reserved no headroom, so the deck parked flush with the
+ * top of the highest `V` and stood a one-tile-tall rider entirely in the tile
+ * beyond it. Here that tile is deliberately open air, so nothing happened and
+ * the assertion passed; on sector 6 it is masonry, and it killed the player and
+ * left guards standing inside the ceiling. Same shape as the frame counts
+ * AGENTS.md writes up: a number somebody had already divided, with the meaning
+ * lost in the division. `top_limit` is the answer, so the check asks for it.
  */
 static void test_elevator_carries_an_off_centre_rider_through_a_slab(void)
 {
     static const char data[] =
         "##########\n"
-        "#        #\n" /* the storey the lift tops out in */
-        "#   V    #\n"
+        "#        #\n"
+        "#   V    #\n" /* the storey the lift tops out in */
         "####V#####\n" /* the slab the shaft is drilled through */
         "#   V    #\n"
         "# S V   E#\n"
@@ -4389,8 +6873,10 @@ static void test_elevator_carries_an_off_centre_rider_through_a_slab(void)
             player_update(&state.player, &state.level, &idle, SIM_STEP_DT);
             level_update_elevators(&state.level, SIM_STEP_DT);
             gameplay_ride_platforms(&state, SIM_STEP_DT);
-            topped_out = state.player_on_elevator == 0 &&
-                         state.player.y < 2.0f * TILE_SIZE;
+            topped_out =
+                state.player_on_elevator == 0 &&
+                state.level.runtime.elevators[0].y <=
+                    state.level.runtime.elevators[0].top_limit + 0.5f;
         }
 
         tried++;
@@ -4398,6 +6884,168 @@ static void test_elevator_carries_an_off_centre_rider_through_a_slab(void)
     }
     CHECK(tried > 40);
     CHECK(arrived == tried);
+
+    /* And the top of the travel is inside the shaft rather than past it, which
+     * is the fact the old literal was standing in for. A rider parked at the top
+     * stands in the highest `V` and touches nothing above it. */
+    GameplayState parked = {0};
+    rng_seed(&parked.rng, 91);
+    REQUIRE(level_load_data(&parked.level, "shaft", data, strlen(data),
+                            &parked.rng));
+    REQUIRE(parked.level.runtime.elevator_count == 1);
+    const Elevator *lift = &parked.level.runtime.elevators[0];
+    int top_row = (int)floorf(lift->top_limit / TILE_SIZE) - 1;
+    CHECK(parked.level.map.tiles[top_row][shaft_col] == TILE_ELEVATOR_SHAFT);
+    CHECK(lift->top_limit - (float)PLAYER_H >=
+          (float)top_row * TILE_SIZE - 0.01f);
+}
+
+/*
+ * A lift carries its rider to the top of its own run and no further, and the
+ * shipped campaign is where that has to be true.
+ *
+ * This is the check the bug it guards did not have, and it is worth saying which
+ * gates were green over that bug rather than only what it was. The soak sweep
+ * drew sector 6 on every run. `make coverage` counted every line of the lift.
+ * Both elevator tests passed — and both of them use a fixture map with *air*
+ * above the shaft, so the over-travel they were asserting had nothing to hit.
+ * The suite's own monkey asserts exactly the invariant that was broken, "nothing
+ * alive inside masonry", and never reached it: it drives one seed for six
+ * seconds and the lift's cycle is ten and a half. At ninety seconds a guard
+ * stands inside sector 6's ceiling with the player pressing nothing at all —
+ * three of them at once — for the best part of a second of every cycle.
+ *
+ * So the question is asked of the maps that ship rather than of a map written to
+ * ask it. Two halves, because the defect had two:
+ *
+ *  - the deck's top of travel leaves a rider's height of shaft above it, which
+ *    is `top_limit` in level.c; and
+ *  - riding to that top costs nothing, which is the clamp in
+ *    `gameplay_carry_player_on_elevator`. Neither is sufficient alone: with the
+ *    headroom and without the clamp the overshoot lands one row lower and
+ *    crushes him against the same slab, which is how the first attempt at this
+ *    fix still killed the player.
+ *
+ * It asks the tile type rather than `level_is_solid`, because air above a shaft
+ * is just as wrong as masonry and does not look it — that is the reading
+ * `route_in_shaft` has always taken, and the reason two of the three shipped
+ * shafts hid this instead of failing.
+ */
+static void test_a_lift_stops_inside_its_own_shaft(void)
+{
+    static Level level;
+    Rng rng;
+    int shafts = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        rng_seed(&rng, 700 + (uint64_t)i);
+        REQUIRE(level_load_data(&level, EMBEDDED_LEVELS[i].name,
+                                EMBEDDED_LEVELS[i].data,
+                                EMBEDDED_LEVELS[i].size, &rng));
+
+        for (int e = 0; e < level.runtime.elevator_count; ++e)
+        {
+            const Elevator *lift = &level.runtime.elevators[e];
+            ++shafts;
+
+            /* Where the tallest thing a lift carries stands with the deck parked
+             * at the top of its run. */
+            float rider_y = lift->top_limit - (float)ELEVATOR_RIDER_H;
+            int top = (int)floorf(rider_y / TILE_SIZE);
+            int bottom = (int)floorf(
+                (rider_y + (float)ELEVATOR_RIDER_H - 1.0f) / TILE_SIZE);
+            REQUIRE(top >= 0 && bottom < level.map.height);
+            for (int row = top; row <= bottom; ++row)
+            {
+                CHECK(level.map.tiles[row][lift->col] ==
+                      TILE_ELEVATOR_SHAFT);
+                CHECK(!level_is_solid(&level, lift->col, row));
+            }
+
+            /* And the run is the right way up, which the clamp in level.c makes
+             * a fact about the numbers rather than about these maps. */
+            CHECK(lift->top_limit <= lift->bot_limit);
+        }
+    }
+
+    /* It read something. The count is deliberately not pinned: how many lifts
+     * the campaign carries is a level-design choice, and a ratchet on it would
+     * be a number somebody learns to move. That it is not nought is the whole
+     * of what this line is for — a campaign that had lost every shaft would
+     * otherwise satisfy every assertion above by making none of them. */
+    CHECK(shafts > 0);
+}
+
+/*
+ * And riding one to the top of its run costs nothing, on every shaft that ships.
+ *
+ * The half above is geometry and this half is the frame: `top_limit` can be
+ * perfect and the rider still die, because the carry runs a pass before the lift
+ * does and used to integrate its velocity without the lift's own clamp. One
+ * pixel past the stop is a different row to the crush check, and on sector 6
+ * that row is the ceiling — an outright death rather than a heart, because that
+ * is what an elevator crush is.
+ */
+static void test_riding_a_lift_to_the_top_of_its_run_costs_nothing(void)
+{
+    static GameplayState state;
+    Input idle = {0};
+    int ridden = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        rng_seed(&state.rng, 730 + (uint64_t)i);
+        REQUIRE(level_load_data(&state.level, EMBEDDED_LEVELS[i].name,
+                                EMBEDDED_LEVELS[i].data,
+                                EMBEDDED_LEVELS[i].size, &state.rng));
+
+        for (int e = 0; e < state.level.runtime.elevator_count; ++e)
+        {
+            Elevator *lift = &state.level.runtime.elevators[e];
+
+            /* Boarded centred and at the bottom of the run, which is where the
+             * lift starts; the off-centre positions are the other test's
+             * subject and it drives all of them. */
+            player_reset(&state.player, &state.level);
+            state.player.x = (float)lift->col * TILE_SIZE +
+                             ((float)TILE_SIZE - (float)PLAYER_W) * 0.5f;
+            state.player.y = lift->y - (float)PLAYER_H;
+            state.player.vx = 0.0f;
+            state.player.vy = 0.0f;
+            state.player.on_ground = true;
+            state.player.dying = false;
+            state.player.hp = gameplay_player_max_hp(&state);
+            state.invuln_timer = 0.0f;
+            int hearts = state.player.hp;
+
+            /* Long enough for the deck to reach the top of the longest run in
+             * the campaign and come back down, so the reversal is in it too. */
+            bool reached_top = false;
+            for (int step = 0; step < SIM_STEPS(20.0f); ++step)
+            {
+                /* update_playing's order for the passes a lift touches. */
+                gameplay_carry_player_on_elevator(&state, SIM_STEP_DT);
+                gameplay_resolve_player_crush(&state);
+                player_update(&state.player, &state.level, &idle,
+                              SIM_STEP_DT);
+                level_update_elevators(&state.level, SIM_STEP_DT);
+                gameplay_ride_platforms(&state, SIM_STEP_DT);
+                if (lift->y <= lift->top_limit + 0.5f)
+                    reached_top = true;
+            }
+
+            /* Nothing pressed, so nothing but the lift can have touched him. */
+            CHECK(reached_top);
+            CHECK(!state.player.dying);
+            CHECK(state.player.hp == hearts);
+            /* And he is still on it rather than having been left behind by it
+             * — a rider shaken off at the top is a lift nobody can use. */
+            CHECK(state.player_on_elevator == e);
+            ++ridden;
+        }
+    }
+    CHECK(ridden > 0);
 }
 
 /* Being squeezed aside is not the same as having nowhere to go: a player whose
@@ -4806,6 +7454,280 @@ static void test_a_shaft_is_left_by_its_mouths(void)
     CHECK(player.y < floor_y - (float)TILE_SIZE);
 }
 
+/*
+ * What the crawl takes away, and — the half that was written down wrong — what
+ * it does not.
+ *
+ * `docs/gameplay.md` spent a release saying *"a crawl already denies the
+ * sidearm, the hack, and hauling a body"*, in the section explaining what a duct
+ * costs. One of those three is true. The other two are this test.
+ *
+ * **The sidearm is not denied; it is the reason the posture exists.** The
+ * manual's movement sheet sells the crawl as "the only way to hit something
+ * sitting on the floor" and its combat sheet says "Crawl and shoot a GAS
+ * CANISTER", because a standing round leaves the hand at `PLAYER_H * 0.35` and
+ * passes over anything sixteen tall on the floor —
+ * `test_the_shot_line_is_chest_high` is the other end of that. So the page
+ * describing the duct denied by name the mechanic two player-facing sheets are
+ * built on, which is the "two documents, one question, two answers" smell
+ * pointing at a page rather than at a screen for once.
+ *
+ * **The hack is not denied either, and nothing was ever going to deny it.**
+ * `gameplay_prepare_terminal` gates the hack on `on_ground && !on_ladder` and
+ * says nothing about posture; a crawler's box centre sits 7px below an upright
+ * one's against a tolerance of `TILE_SIZE * 0.65`, so both are in range of a
+ * console in the row they are standing in. What is actually true is narrower and
+ * is about the tile rather than the man: a `T` cannot be *inside* trunking,
+ * because a console needs a tile and the duct is the wall.
+ *
+ * **Hauling a body is denied, explicitly**, which is why the third clause
+ * survived: `player_can_drag` lists `!player->crawling` in as many words. The
+ * upright control beside it is what makes that an assertion about the posture
+ * rather than about the fixture.
+ *
+ * Asked of the simulation rather than of the prose, because a sentence is not
+ * something `make test` can read — the same reason the veteran row's own
+ * behaviour is pinned here and its wording is pinned in `check_docs.py`.
+ */
+static void test_what_the_crawl_takes_away(void)
+{
+    /* The console sits in the row the player stands in, which is what a `T` is:
+     * a fixture on the wall at chest height above its own floor. */
+    static const char data[] =
+        "##############\n"
+        "#            #\n"
+        "#S    T     E#\n"
+        "##############\n";
+
+    /* The sidearm, lying down. */
+    {
+        GameplayState state = {0};
+        CampaignState campaign = {0};
+        rng_seed(&state.rng, 4711);
+        REQUIRE(level_load_data(&state.level, "crawl claims", data,
+                                strlen(data), &state.rng));
+        player_reset(&state.player, &state.level);
+        state.player.facing = 1;
+        state.player.on_ground = true;
+        state.player.crawling = true;
+        state.player.bullets = MAX_AMMO;
+        state.player.active_weapon = PLAYER_WEAPON_PISTOL;
+
+        Input fire = {.shoot = true, .down = true};
+        gameplay_combat_handle_player_action(&state, &campaign, &fire);
+
+        int in_the_air = 0;
+        for (int i = 0; i < MAX_BULLETS; ++i)
+            if (state.bullets[i].active)
+                in_the_air++;
+        /* A round left the clip *and* reached the world. Spending one without
+         * putting one in the air is the shape of a dead press, and it is what a
+         * shot inside trunking does — see the test below. */
+        CHECK(state.player.bullets == MAX_AMMO - 1);
+        CHECK(in_the_air == 1);
+        CHECK(state.player.crawling);
+    }
+
+    /* The console, lying down, against the same console standing up. */
+    for (int crawling = 0; crawling < 2; ++crawling)
+    {
+        GameplayState state = {0};
+        CampaignState campaign = {0};
+        rng_seed(&state.rng, 4712);
+        REQUIRE(level_load_data(&state.level, "crawl claims", data,
+                                strlen(data), &state.rng));
+        REQUIRE(state.level.map.terminal_count == 1);
+        player_reset(&state.player, &state.level);
+        state.player.on_ground = true;
+
+        const Terminal *console = &state.level.map.terminals[0];
+        float height = crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+        state.player.x = console->col * (float)TILE_SIZE +
+                         ((float)TILE_SIZE - PLAYER_W) * 0.5f;
+        state.player.y = (float)(console->row + 1) * TILE_SIZE - height;
+        state.player.crawling = crawling != 0;
+
+        Input use = {.interact = true, .down = crawling != 0};
+        gameplay_prepare_terminal(&state, &use, SIM_STEP_DT);
+        /* Asked before the hack finishes, because
+         * `gameplay_player_near_active_terminal` stops answering the moment
+         * `terminal_hacked` is set — the prompt has to go away when there is
+         * nothing left to press. */
+        CHECK(state.terminal_in_range);
+        CHECK(state.terminal_hacking);
+
+        float held = 0.0f;
+        while (held < TERMINAL_HACK_TIME + 1.0f &&
+               !state.level.runtime.terminal_hacked)
+        {
+            state.player.on_ground = true;
+            gameplay_prepare_terminal(&state, &use, SIM_STEP_DT);
+            gameplay_advance_terminal(&state, &campaign, SIM_STEP_DT);
+            held += SIM_STEP_DT;
+        }
+        CHECK(state.level.runtime.terminal_hacked);
+    }
+
+    /* And the body, which is the one the page had right. */
+    for (int crawling = 0; crawling < 2; ++crawling)
+    {
+        GameplayState state = {0};
+        rng_seed(&state.rng, 4713);
+        REQUIRE(level_load_data(&state.level, "crawl claims", data,
+                                strlen(data), &state.rng));
+        player_reset(&state.player, &state.level);
+        state.player.on_ground = true;
+        float height = crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+        state.player.y = state.player.y + (float)PLAYER_H - height;
+        state.player.crawling = crawling != 0;
+
+        state.enemy_count = 1;
+        state.enemies[0].dead = true;
+        state.enemies[0].x = state.player.x;
+        state.enemies[0].y = state.player.y;
+
+        Input grab = {.interact = true, .down = crawling != 0};
+        gameplay_update_body_drag(&state, &grab);
+        /* Upright takes hold of it; on his elbows he cannot. */
+        CHECK(state.player.dragging == (crawling == 0));
+    }
+}
+
+/*
+ * A shot fired from inside a shaft reaches nothing, and the launcher charges two
+ * hearts for finding that out.
+ *
+ * `levels/LEGEND.md` listed firing among the things a player "cannot" do from
+ * inside a duct, beside standing and hauling a body. Those two are refused —
+ * `level_blocks_stance` and `player_can_drag` — and this one never was: the
+ * trigger works, the round leaves the clip, and trunking still answers
+ * `level_is_solid`, so it stops in the tile the man is lying in.
+ *
+ * That is the same defect as the JUMP clause of the same sentence, which was
+ * prose describing the route model and was fixed in the code because the game
+ * was wrong. This one is fixed in the sentence, because the game is right: a
+ * rocket fired with the muzzle inside masonry does exactly this anywhere in the
+ * building, and `docs/gameplay.md` has said since `apply_blast` was unified that
+ * the player is in reach of his own blast. What makes a shaft worth a paragraph
+ * is that it is the one place the muzzle is *always* in masonry — there is no
+ * stepping back from it — so the cost is certain rather than a mistake.
+ *
+ * The open-floor control is the whole test. Without it every assertion here is
+ * satisfied by a fixture where nothing works.
+ */
+static void test_a_shot_from_inside_a_shaft_reaches_nothing(void)
+{
+    /* Row 2 is a duct run with the storey's own slab under it; row 1 is the air
+     * above the lid, which is where the control shot is taken from. */
+    static const char data[] =
+        "##############\n"
+        "#S          E#\n"
+        "#  ========  #\n"
+        "##############\n";
+
+    for (int inside = 0; inside < 2; ++inside)
+    {
+        GameplayState state = {0};
+        CampaignState campaign = {0};
+        rng_seed(&state.rng, 5150);
+        REQUIRE(level_load_data(&state.level, "shaft fire", data,
+                                strlen(data), &state.rng));
+        player_reset(&state.player, &state.level);
+        state.player.facing = 1;
+        state.player.on_ground = true;
+        state.player.crawling = true;
+        state.player.hp = gameplay_player_max_hp(&state);
+        /* Lying in the middle of the run, or lying on the floor above its lid. */
+        int row = inside ? 2 : 1;
+        state.player.x = 6.0f * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+        state.player.y = (float)(row + 1) * TILE_SIZE - (float)PLAYER_CRAWL_H;
+
+        state.player.bullets = MAX_AMMO;
+        state.player.active_weapon = PLAYER_WEAPON_PISTOL;
+        Input fire = {.shoot = true, .down = true};
+        gameplay_combat_handle_player_action(&state, &campaign, &fire);
+        /* The clip pays and a round exists, either way: the trigger is not
+         * refused in a shaft, which is the whole finding. */
+        CHECK(state.player.bullets == MAX_AMMO - 1);
+        REQUIRE(state.bullets[0].active);
+
+        /* How far it got, rather than whether it is still up: a round that dies
+         * against the far wall and a round that dies where it was born are both
+         * "gone", and the difference between them is the point. */
+        float born = state.bullets[0].x;
+        float furthest = born;
+        for (int step = 0; step < SIM_STEPS(1.0f); ++step)
+        {
+            gameplay_combat_update_player_bullets(&state, &campaign,
+                                                  SIM_STEP_DT);
+            if (state.bullets[0].active)
+                furthest = state.bullets[0].x;
+        }
+        float travelled = fabsf(furthest - born);
+
+        if (inside)
+        {
+            /* Nowhere to go: the trunking it is lying in stops it on the first
+             * step, so the round covers no ground at all. */
+            CHECK(travelled < 1.0f);
+        }
+        else
+        {
+            /* And on the lid the same press crosses most of the room. */
+            CHECK(travelled > 4.0f * TILE_SIZE);
+        }
+    }
+
+    /* The launcher, which is the half that costs hearts. */
+    for (int inside = 0; inside < 2; ++inside)
+    {
+        GameplayState state = {0};
+        CampaignState campaign = {0};
+        rng_seed(&state.rng, 5151);
+        REQUIRE(level_load_data(&state.level, "shaft fire", data,
+                                strlen(data), &state.rng));
+        player_reset(&state.player, &state.level);
+        state.player.facing = 1;
+        state.player.on_ground = true;
+        state.player.crawling = true;
+        state.player.hp = gameplay_player_max_hp(&state);
+        int row = inside ? 2 : 1;
+        state.player.x = 6.0f * TILE_SIZE + (TILE_SIZE - PLAYER_W) * 0.5f;
+        state.player.y = (float)(row + 1) * TILE_SIZE - (float)PLAYER_CRAWL_H;
+
+        int full = state.player.hp;
+        state.player.bazooka_rockets = BAZOOKA_AMMO;
+        state.player.active_weapon = PLAYER_WEAPON_BAZOOKA;
+        Input fire = {.shoot = true, .down = true};
+        gameplay_combat_handle_player_action(&state, &campaign, &fire);
+        CHECK(state.player.bazooka_rockets == 0);
+
+        /* The rocket is carried and impacted by the *bullet* pass rather than by
+         * `gameplay_combat_update_explosives`, which is what a warhead in flight
+         * is — the explosives pass owns the chain it then sets off. Getting that
+         * wrong is how the first draft of this test watched a rocket go off and
+         * asserted that nothing happened. */
+        for (int step = 0; step < SIM_STEPS(1.0f); ++step)
+        {
+            gameplay_combat_update_player_bullets(&state, &campaign,
+                                                  SIM_STEP_DT);
+            gameplay_combat_update_explosives(&state, &campaign, SIM_STEP_DT);
+        }
+
+        if (inside)
+        {
+            /* His own blast, at his own position. One hit however many charges a
+             * chain sets off, which is `gameplay_damage_player`'s mercy window
+             * rather than anything the shaft does. */
+            CHECK(state.player.hp < full);
+        }
+        else
+        {
+            /* Fired down a clear room, it costs him nothing. */
+            CHECK(state.player.hp == full);
+        }
+    }
+}
 
 /*
  * A jump off a ladder has to survive the climb key that is still held.
@@ -5843,6 +8765,153 @@ static void test_level_reveal_finishes(void)
             CHECK(level.reveal.tiles_visible[row][col]);
 }
 
+/* How long a reveal takes, driven at the rate the game drives it. */
+static float reveal_seconds(Level *level)
+{
+    int steps = 0;
+    while (!level->reveal.done && steps < SIM_STEPS(60.0f))
+    {
+        level_reveal_step(level, SIM_STEP_DT);
+        steps++;
+    }
+    return (float)steps * SIM_STEP_DT;
+}
+
+/*
+ * The reveal is the vehicle for the line written over it, so it lasts as long
+ * as the line and not as long as the map.
+ *
+ * This is the defect stated as a measurement. The between-sectors band
+ * ([sector_tally.h](../src/sector_tally.h)) is drawn while `STATE_LEVEL_START`
+ * is up and nowhere else, that state is exactly this animation, and this
+ * animation is `width * height / REVEAL_BATCH` ticks of a per-tile interval —
+ * so the time a player had to read two lines and about 120 characters was
+ * **0.18s on sector 1 and 0.43s on the tallest climb**, and which of those they
+ * got depended on how big the next floor happened to be.
+ *
+ * Three things are asserted and the second is the one that matters.
+ *
+ * That a stretched reveal lasts what it was asked for, on every shipped map.
+ * That the **spread** across those maps collapses — because "it depended on the
+ * map" is the actual bug, and a check that only asserted a duration per map
+ * would pass a stretch that was still proportional to the tile count. The
+ * unstretched spread is measured in the same loop and required to be wide, so
+ * this cannot quietly become a test of two identical numbers.
+ * And that the stretch is one-way: asked for less than the map's own snappy
+ * default it changes nothing, which is what keeps every sector that carries no
+ * line — a fresh run, a continue, the six boundaries that show the report —
+ * opening exactly as fast as it did before.
+ */
+static void test_a_stretched_reveal_lasts_the_same_on_every_map(void)
+{
+    static Level level;
+    Rng rng;
+    float plain_min = 1e9f, plain_max = 0.0f;
+    float held_min = 1e9f, held_max = 0.0f;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        rng_seed(&rng, 4000u + i);
+        REQUIRE(level_load_data(&level, EMBEDDED_LEVELS[i].name,
+                                EMBEDDED_LEVELS[i].data,
+                                EMBEDDED_LEVELS[i].size, &rng));
+
+        level_reveal_init(&level);
+        float plain = reveal_seconds(&level);
+        if (plain < plain_min)
+            plain_min = plain;
+        if (plain > plain_max)
+            plain_max = plain;
+
+        level_reveal_init(&level);
+        level_reveal_hold_for(&level, SECTOR_TALLY_HOLD_TIME);
+        float held = reveal_seconds(&level);
+        if (held < held_min)
+            held_min = held;
+        if (held > held_max)
+            held_max = held;
+
+        /* A tick of the stretched interval is the granularity, and it is one
+         * `SECTOR_TALLY_HOLD_TIME` divided by the tile count — coarsest on the
+         * smallest map, which is where the tolerance has to come from. */
+        if (held < SECTOR_TALLY_HOLD_TIME - 0.1f ||
+            held > SECTOR_TALLY_HOLD_TIME + 0.1f)
+            fprintf(stderr,
+                    "  sector %d holds its reveal %.3fs against the %.2fs the "
+                    "line over it needs\n",
+                    (int)i + 1, held, SECTOR_TALLY_HOLD_TIME);
+        CHECK(held > SECTOR_TALLY_HOLD_TIME - 0.1f);
+        CHECK(held < SECTOR_TALLY_HOLD_TIME + 0.1f);
+
+        /* One-way. Asked for a tenth of the default it must not hurry. */
+        level_reveal_init(&level);
+        float before = level.reveal.interval;
+        level_reveal_hold_for(&level, plain * 0.1f);
+        CHECK(level.reveal.interval == before);
+    }
+
+    /* The bug, and the fix, as two spreads. */
+    CHECK(plain_max - plain_min > 0.2f);
+    CHECK(held_max - held_min < 0.05f);
+}
+
+/*
+ * The band between sectors is readable on both screens that draw it.
+ *
+ * `SECTOR_TALLY_HOLD_TIME` exists because the line had no time of its own: it is
+ * drawn while `STATE_LEVEL_START` is up, that state lasted exactly as long as
+ * the tile reveal, and how long anybody had to read the plot therefore depended
+ * on how big the next floor happened to be. The reveal was stretched to hold it.
+ *
+ * **The other placement was left at 1.2 seconds.** The same band rides the card
+ * that ends the campaign — the seventeenth floor's stopwatch, the record beside
+ * it, both bonuses and `DOCKET n/12`, ninety characters of it under
+ * `THE ROOF IS HIS` — and `STATE_LEVEL_CLEARED` runs down on a timer no press
+ * can extend before cutting to the outro. The losing card held for three
+ * seconds. Every gate was green: the fit checks measure whether a line is too
+ * *wide*, the sweep draws the frame so `make coverage` counts it, and `--shot`
+ * proves the pixels are there. None of the three can see how long anybody had
+ * to read them, which is the defect the constant was written for, one screen
+ * over.
+ *
+ * Asked of the two placements together rather than as a number, and with the
+ * length of the thing being read measured beside them, so that this cannot pass
+ * by the band becoming empty.
+ */
+static void test_the_tally_band_is_readable_wherever_it_is_drawn(void)
+{
+    static Level level;
+    Rng rng;
+
+    /* What is actually on the glass: a real clear's worth of it, on the last
+     * sector, which is the only floor the card is ever reached on. */
+    SectorTally tally;
+    sector_tally_set(&tally, (int)EMBEDDED_LEVEL_COUNT - 1, 91.0f, 74.0f,
+                     false, 1200, SECTOR_CLEAN_BONUS, 7, NULL);
+    char line[SECTOR_TALLY_MAX];
+    int written = sector_tally_format(&tally, line, sizeof(line));
+    CHECK(written > 40);
+
+    /* Placement one: the reveal, measured rather than read off a field. */
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        rng_seed(&rng, 4600u + i);
+        REQUIRE(level_load_data(&level, EMBEDDED_LEVELS[i].name,
+                                EMBEDDED_LEVELS[i].data,
+                                EMBEDDED_LEVELS[i].size, &rng));
+        level_reveal_init(&level);
+        level_reveal_hold_for(&level, SECTOR_TALLY_HOLD_TIME);
+        CHECK(reveal_seconds(&level) > SECTOR_TALLY_HOLD_TIME - 0.1f);
+    }
+
+    /* Placement two: the card. One number for both, or it is two numbers with
+     * nothing holding them together. */
+    CHECK(LEVEL_CLEARED_DISPLAY_TIME >= SECTOR_TALLY_HOLD_TIME);
+    /* And the card a run *loses* on has always held for longer than a beat;
+     * the one it wins on may not hold for less. */
+    CHECK(LEVEL_CLEARED_DISPLAY_TIME >= GAME_OVER_DISPLAY_TIME - 0.5f);
+}
+
 static void test_event_buffer_reports_overflow(void)
 {
     GameEventBuffer events = {0};
@@ -6121,8 +9190,12 @@ static void test_guards_choose_attack_or_alarm_and_operate_switch(void)
     enemy->x = switch_x - ENEMY_W * 0.5f;
     enemy->y = switch_y - ENEMY_H * 0.5f;
     enemy->on_ground = true;
-    enemy->raising_alarm = true;
-    enemy->alarm_switch_index = 0;
+    /* Committed through the floor's own entry point rather than by setting the
+     * flag: the run carries a budget and a hand-staged one carries nought,
+     * which is a state the game cannot produce. */
+    gameplay_ai_send_to_alarm(&state, 0, 0);
+    CHECK(enemy->raising_alarm);
+    CHECK(enemy->alarm_run_timer >= ALARM_RUN_MIN_TIME);
 
     gameplay_ai_update_movement(&state, ALARM_SWITCH_USE_TIME);
     CHECK(gameplay_alarm_active(&state));
@@ -6130,6 +9203,205 @@ static void test_guards_choose_attack_or_alarm_and_operate_switch(void)
     CHECK(!enemy->raising_alarm);
     CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
                             SFX_TERMINAL_ALARM));
+}
+
+/*
+ * The run for the switch is the only "go somewhere" state in this AI that used
+ * to have no exit but arrival, and that is what this asks about.
+ *
+ * Every other one is bounded. A suspicion expires at `ENEMY_INVESTIGATE_TIME`
+ * and the guard turns on the spot and drops back to patrol; an encounter
+ * expires at `GUARD_ENCOUNTER_RESET_TIME`; the alarm itself calms at
+ * `ALARM_CALM_TIME`. `raising_alarm` cleared on arrival, on a flash in the
+ * face, on a takedown, on the alarm going up some other way, and on nothing
+ * else — and `update_body_discovery`'s own comment closed the case with "the
+ * moment anybody reaches a switch the alarm goes up", which is a rationale
+ * resting on its own success.
+ *
+ * The walk has no pathfinder in it. `enemy_update_walking` only follows the
+ * target's column once the guard is already on its floor, and otherwise keeps
+ * his patrol direction so the ladder rule can find a way up — right for
+ * chasing Chuck, who is nearly always on the same storey, and a coin flip for
+ * a fixed point three floors away. Measured over the twelve interiors, 151 of
+ * 388 staged commitments never left the state in three minutes: a guard at
+ * sector 1's upper corridor walked *down* to the lobby floor and paced it for
+ * the whole run with the switch four rows above where he started.
+ *
+ * What that cost is not one lost man, and this is the half worth keeping.
+ * `another_guard_is_raising_alarm` holds the roll to one runner at a time, so a
+ * runner who never arrives mutes the *floor*: a body left where somebody would
+ * find it committed a guard in 231 of 368 seeds and raised the alarm in 134,
+ * and a committed man ignores the player for targeting as well
+ * (`if (!switch_pursuit)`), so he is not even a pursuer any more. `GUARD_BODY_ALARM_CHANCE`
+ * is 65, which is how often the quiet route's whole risk was being handed to a
+ * man who might spend the rest of the sector walking.
+ *
+ * The bound is the guard's own budget rather than a number picked here, which
+ * is what makes this a check on the clock and not on the maps: whatever
+ * `guard_run_to_alarm` gave him, by the end of it he has arrived, or given up,
+ * or moved on to a switch he has not failed at yet. Both outcomes are required
+ * to occur, because a campaign where every commitment arrives would satisfy
+ * every line of this without the clock existing at all.
+ */
+static void test_a_run_for_the_alarm_is_not_a_state_with_no_exit(void)
+{
+    int arrived = 0, expired = 0, posts = 0;
+    for (size_t index = 0; index < EMBEDDED_LEVEL_COUNT; ++index)
+    {
+        static GameplayState state;
+        static CampaignState campaign;
+        if (!stage_sector_at_its_spawn(&state, &campaign, index, 4409u))
+            continue;
+        if (state.level.map.mode != LEVEL_MODE_INTERIOR ||
+            state.level.map.alarm_switch_count <= 0)
+            continue;
+        int guards = state.enemy_count;
+        for (int guard = 0; guard < guards; ++guard)
+        {
+            if (!stage_sector_at_its_spawn(&state, &campaign, index, 4409u))
+                break;
+            /* Out of the building, so nothing he does is a reaction to the
+             * player: what is under test is the errand, not the encounter. */
+            state.player.x = -10000.0f;
+            state.player.y = -10000.0f;
+            Enemy *runner = &state.enemies[guard];
+            gameplay_ai_send_to_alarm(&state, guard, 0);
+            REQUIRE(runner->raising_alarm);
+            CHECK(runner->alarm_run_timer >= ALARM_RUN_MIN_TIME);
+            posts++;
+
+            /* The errand's own ceiling, derived the way `alarm_run_budget`
+             * derives it: one try per switch, and no try may outlast a walk
+             * along the floor at the pace this man walks. */
+            float pace = ENEMY_WALK_SPEED * enemy_kind_speed(runner->kind);
+            float per_switch = (float)state.level.map.width *
+                               (float)TILE_SIZE / pace;
+            if (per_switch < ALARM_RUN_MIN_TIME)
+                per_switch = ALARM_RUN_MIN_TIME;
+            /* One *try*, not the whole errand: that the tries are distinct
+             * and therefore finitely many is asked next door, on a fixture
+             * where none of them can be reached at all. */
+            int steps = SIM_STEPS(per_switch) + SIM_STEPS(1.0f);
+
+            int first = runner->alarm_switch_index;
+            bool settled = false;
+            for (int i = 0; i < steps && !settled; ++i)
+            {
+                step_the_floor_around_a_still_player(&state, &campaign);
+                if (gameplay_alarm_active(&state))
+                {
+                    arrived++;
+                    settled = true;
+                }
+                else if (!runner->raising_alarm ||
+                         runner->alarm_switch_index != first)
+                {
+                    /* Given up, or moved on to a switch he has not failed at
+                     * yet. Either way this try is over, which is the whole of
+                     * what a clock on it means. */
+                    expired++;
+                    settled = true;
+                }
+            }
+            if (!settled)
+                fprintf(stderr,
+                        "%s guard %d ran at one switch for more than the %.1fs "
+                        "it takes to walk the floor\n",
+                        EMBEDDED_LEVELS[index].name, guard, (double)per_switch);
+            CHECK(settled);
+        }
+    }
+    CHECK(posts > 0);
+    /* Neither outcome may be the only one, or the check has stopped being about
+     * the clock: all-arrived would pass with no clock at all, and all-expired
+     * would mean the campaign no longer delivers the threat the manual sells. */
+    CHECK(arrived > 0);
+    CHECK(expired > 0);
+}
+
+/*
+ * And the other half: that the tries are distinct, so there are finitely many
+ * of them.
+ *
+ * A clock on its own does not bound the errand. A man with two switches to
+ * choose from and no memory of which he has already failed at picks the near
+ * one, times out, picks the near one again from wherever he now stands, and
+ * shuttles for the rest of the sector with a fresh budget every time — the same
+ * one-way door with a timer bolted to it. `alarm_switches_tried` is the memory,
+ * and `nearest_alarm_switch` takes it as the set to skip.
+ *
+ * Three switches on a shelf with no way up to it, because a fixture where one
+ * of them is reachable measures the arrival rather than the giving up. The
+ * bound is the same one the sweep above derives, three times over, which is the
+ * whole claim: one try each, and then he goes back to his floor.
+ */
+static void test_a_guard_tries_each_alarm_switch_once_and_then_gives_up(void)
+{
+    static const char data[] =
+        "############\n"
+        "#  A A A   #\n"
+        "############\n"
+        "#S   M    E#\n"
+        "############\n";
+    Level level;
+    Rng seed_stream;
+    rng_seed(&seed_stream, 7u);
+    REQUIRE(level_load_data(&level, "unreachable-switches", data,
+                            sizeof(data) - 1, &seed_stream));
+    REQUIRE(level.map.alarm_switch_count == 3);
+
+    static GameplayState state;
+    static CampaignState campaign;
+    memset(&state, 0, sizeof(state));
+    memset(&campaign, 0, sizeof(campaign));
+    state.level = level;
+    rng_seed(&state.rng, 31u);
+    gameplay_ai_spawn_level_entities(&state);
+    REQUIRE(state.enemy_count == 1);
+    /* Out of the building: what is under test is the errand. */
+    state.player.x = -10000.0f;
+    state.player.y = -10000.0f;
+
+    Enemy *runner = &state.enemies[0];
+    gameplay_ai_send_to_alarm(&state, 0, 0);
+    REQUIRE(runner->raising_alarm);
+
+    float pace = ENEMY_WALK_SPEED * enemy_kind_speed(runner->kind);
+    float per_switch = (float)state.level.map.width * (float)TILE_SIZE / pace;
+    if (per_switch < ALARM_RUN_MIN_TIME)
+        per_switch = ALARM_RUN_MIN_TIME;
+    int steps = SIM_STEPS(per_switch * (float)state.level.map.alarm_switch_count) +
+                SIM_STEPS(1.0f);
+
+    int last = runner->alarm_switch_index;
+    uint32_t seen = 1u << last;
+    int commitments = 1;
+    bool repeated = false;
+    bool gave_up = false;
+    for (int i = 0; i < steps && !gave_up; ++i)
+    {
+        step_the_floor_around_a_still_player(&state, &campaign);
+        if (!runner->raising_alarm)
+            gave_up = true;
+        else if (runner->alarm_switch_index != last)
+        {
+            uint32_t bit = 1u << runner->alarm_switch_index;
+            if ((seen & bit) != 0)
+                repeated = true;
+            seen |= bit;
+            last = runner->alarm_switch_index;
+            commitments++;
+        }
+    }
+    CHECK(gave_up);
+    CHECK(!repeated);
+    /* Every switch offered a try, and none of them twice. */
+    CHECK(commitments == state.level.map.alarm_switch_count);
+    CHECK(runner->alarm_switch_index < 0);
+    CHECK(runner->alarm_switches_tried == 0);
+    /* And nobody pulled anything, which is what makes the rest of it a
+     * measurement of the giving up rather than of an arrival. */
+    CHECK(!gameplay_alarm_active(&state));
 }
 
 static void test_alarm_increases_guard_aggression_and_search(void)
@@ -6453,6 +9725,120 @@ static void test_a_finished_hack_is_never_silent(void)
     CHECK(opens.events.items[0].data.sound.effect == SFX_EXIT_UNLOCKED);
 }
 
+/*
+ * A mine is a beat rather than a hit, and nothing had ever let the beat run.
+ *
+ * `MINE_TRIGGER_DELAY` is the whole mechanic: the step arms it, the blast comes
+ * a moment later, and the comment in [gameplay_combat.c](../src/gameplay_combat.c)
+ * spends three lines on what that moment is for — "long enough to run out of
+ * and long enough for whoever is chasing him to run into". Two hearts of three,
+ * which is the most expensive tile in the game.
+ *
+ * `test_mine_damage_emits_feedback` covers the feedback and swallows the delay
+ * in one `MINE_TRIGGER_DELAY + 0.01f` step, so the arm-to-blast window has
+ * never existed in this suite: measured, the branch that holds a triggered mine
+ * with time still on its clock was executed nought times. That is the
+ * conventions page's own "a frame count is nearly always a duration somebody
+ * has already divided by a rate" one file over — a duration handed to the
+ * simulation as a single step is not a duration, it is an instant.
+ *
+ * So all three claims are driven here at `SIM_STEP_DT`, and the escape is the
+ * one that needs a control beside it: `PLAYER_WALK_SPEED` for
+ * `MINE_TRIGGER_DELAY` is 60.8px against a `MINE_RADIUS` of 36, so walking off
+ * clears it by a comfortable margin and standing still on the same fixture does
+ * not — which is what makes it an assertion about the beat rather than about
+ * where the mine happens to be.
+ */
+static void test_a_mine_is_a_beat_rather_than_a_hit(void)
+{
+    static const char data[] =
+        "####################\n"
+        "#S      X         E#\n"
+        "####################\n";
+    static GameplayState state;
+    static CampaignState campaign;
+
+    /* Stood on and stayed on: armed for its own delay, then two hearts. */
+    memset(&state, 0, sizeof(state));
+    memset(&campaign, 0, sizeof(campaign));
+    rng_seed(&state.rng, 5u);
+    Rng load = state.rng;
+    REQUIRE(level_load_data(&state.level, "minefield", data,
+                            sizeof(data) - 1, &load));
+    gameplay_ai_spawn_level_entities(&state);
+    player_reset(&state.player, &state.level);
+    state.player.hp = PLAYER_MAX_HP;
+    REQUIRE(state.mine_count == 1);
+    state.player.x = state.mines[0].x + MINE_W * 0.5f - PLAYER_W * 0.5f;
+
+    int armed = 0;
+    for (int i = 0; i < SIM_STEPS(2.0f) && state.mines[0].active; ++i)
+    {
+        state.events.count = 0;
+        gameplay_combat_update_explosives(&state, &campaign, SIM_STEP_DT);
+        if (state.mines[0].triggered && state.mines[0].active)
+            armed++;
+    }
+    /* A beat, not an instant: the arming and the blast are a delay apart. */
+    CHECK(armed >= SIM_STEPS(MINE_TRIGGER_DELAY) - 2);
+    CHECK(armed <= SIM_STEPS(MINE_TRIGGER_DELAY) + 2);
+    CHECK(!state.mines[0].active);
+    CHECK(state.player.hp == PLAYER_MAX_HP - EXPLOSION_DAMAGE);
+
+    /* Stood on and walked off: it still goes off, and it misses him. */
+    memset(&state, 0, sizeof(state));
+    memset(&campaign, 0, sizeof(campaign));
+    rng_seed(&state.rng, 5u);
+    load = state.rng;
+    REQUIRE(level_load_data(&state.level, "minefield", data,
+                            sizeof(data) - 1, &load));
+    gameplay_ai_spawn_level_entities(&state);
+    player_reset(&state.player, &state.level);
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.x = state.mines[0].x + MINE_W * 0.5f - PLAYER_W * 0.5f;
+    Input away;
+    memset(&away, 0, sizeof(away));
+    away.right = true;
+    for (int i = 0; i < SIM_STEPS(2.0f); ++i)
+    {
+        state.events.count = 0;
+        player_update(&state.player, &state.level, &away, SIM_STEP_DT);
+        gameplay_combat_update_explosives(&state, &campaign, SIM_STEP_DT);
+    }
+    CHECK(!state.mines[0].active);
+    CHECK(state.player.hp == PLAYER_MAX_HP);
+    CHECK(!state.player.dying);
+
+    /* And it does not ask who is standing over it when it finally goes off,
+     * which is the half of the delay that is a weapon rather than a warning. */
+    memset(&state, 0, sizeof(state));
+    memset(&campaign, 0, sizeof(campaign));
+    rng_seed(&state.rng, 5u);
+    load = state.rng;
+    REQUIRE(level_load_data(&state.level, "minefield", data,
+                            sizeof(data) - 1, &load));
+    gameplay_ai_spawn_level_entities(&state);
+    player_reset(&state.player, &state.level);
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.x = state.mines[0].x + MINE_W * 0.5f - PLAYER_W * 0.5f;
+    state.enemy_count = 1;
+    enemy_init(&state.enemies[0], state.mines[0].x, 1.0f * TILE_SIZE,
+               ENEMY_KIND_GUARD, &state.rng);
+    state.enemies[0].on_ground = true;
+    for (int i = 0; i < SIM_STEPS(1.0f); ++i)
+    {
+        state.events.count = 0;
+        /* He is off the tile a step later; the man following him is not. */
+        if (i == 1)
+            state.player.x = -5000.0f;
+        state.enemies[0].x = state.mines[0].x;
+        gameplay_combat_update_explosives(&state, &campaign, SIM_STEP_DT);
+    }
+    CHECK(!state.mines[0].active);
+    CHECK(state.enemies[0].dead);
+    CHECK(state.player.hp == PLAYER_MAX_HP);
+}
+
 static void test_mine_damage_emits_feedback(void)
 {
     GameplayState state = {0};
@@ -6523,6 +9909,343 @@ static void test_grenade_fuse_and_explosion_emit_sounds(void)
  * Both ends are held here, because the fix is only correct if it changed nothing
  * for the one who carries one and everything for the one who carries two.
  */
+/*
+ * Everything Chuck was carrying is still on him on the other side of a doorway,
+ * and the doorway is whichever of the three the game has.
+ *
+ * There are two rules that move a loadout: `player_begin_sector` for a sector
+ * boundary, and `player_carry_loadout` for the two that are the same man
+ * carrying on — a death at a checkpoint, and the restroom door. They were
+ * written out twice, one copy of them in the shell where nothing here could
+ * reach it, and they came apart exactly where a list of three written as a list
+ * of two always does. The flash charge — the one item in the game whose entire
+ * subject is a floor having *already* gone wrong — was destroyed by dying, on
+ * the six sectors that lay one out, and taken off him for the length of a
+ * restroom visit. One `!` a floor and no respawn, so a death spent it.
+ *
+ * **It asks the enum rather than a list of fields**, which is the only version
+ * of this check that cannot go stale the way the thing it checks went stale: a
+ * weapon that was in the pack before the doorway is in the pack after it, for
+ * every weapon `player_weapon_available` knows about. A fourth thing to carry
+ * is checked by having been added to `PlayerWeapon`.
+ */
+static void test_every_doorway_hands_over_the_whole_pack(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S      E#\n"
+        "##########\n";
+
+    static Level level;
+    Rng rng;
+    rng_seed(&rng, 4404);
+    REQUIRE(level_load_data(&level, "the-pack", data, strlen(data), &rng));
+
+    /* One of everything, and the hand on something that is not the sidearm, so
+     * every arm of `player_weapon_available` has something to answer with. */
+    Player loaded;
+    player_reset(&loaded, &level);
+    loaded.grenades = 1;
+    loaded.bazooka_rockets = 1;
+    loaded.flashbangs = 1;
+    loaded.bullets = 3;
+    loaded.facing = -1;
+    loaded.active_weapon = PLAYER_WEAPON_FLASH;
+
+    bool carried_before[PLAYER_WEAPON_COUNT];
+    for (int w = 0; w < PLAYER_WEAPON_COUNT; ++w)
+        carried_before[w] = player_weapon_available(&loaded, (PlayerWeapon)w);
+    /* The check is worth nothing if the fixture is not actually carrying the
+     * things it is about to ask after. */
+    CHECK(carried_before[PLAYER_WEAPON_GRENADE]);
+    CHECK(carried_before[PLAYER_WEAPON_BAZOOKA]);
+    CHECK(carried_before[PLAYER_WEAPON_FLASH]);
+
+    /* A sector boundary. */
+    Player next;
+    player_begin_sector(&next, &level, &loaded);
+    for (int w = 0; w < PLAYER_WEAPON_COUNT; ++w)
+        CHECK(!carried_before[w] ||
+              player_weapon_available(&next, (PlayerWeapon)w));
+
+    /* A death, in `finish_player_death`'s own order: reset the man, then hand
+     * him back what he was carrying. */
+    Player respawned;
+    player_reset(&respawned, &level);
+    player_carry_loadout(&respawned, &loaded);
+    for (int w = 0; w < PLAYER_WEAPON_COUNT; ++w)
+        CHECK(!carried_before[w] ||
+              player_weapon_available(&respawned, (PlayerWeapon)w));
+
+    /* The restroom door is the same call onto the room's own player. Asked of
+     * the way *in* rather than of the round trip, because the charge used to
+     * survive the round trip by never having left the frozen copy outside — so
+     * "he still has it when he comes out" is not the question. The question is
+     * whether he had it in the room, where the guards are. */
+    Player in_the_room;
+    player_reset(&in_the_room, &level);
+    player_carry_loadout(&in_the_room, &loaded);
+    for (int w = 0; w < PLAYER_WEAPON_COUNT; ++w)
+        CHECK(!carried_before[w] ||
+              player_weapon_available(&in_the_room, (PlayerWeapon)w));
+
+    /* And what the two rules deliberately disagree about, so that a change
+     * which quietly merges them fails here rather than in somebody's run: a
+     * sector opens on the pistol with a full clip, a respawn keeps the hand and
+     * the clip it had. */
+    CHECK(next.active_weapon == PLAYER_WEAPON_PISTOL);
+    CHECK(next.bullets == MAX_AMMO);
+    CHECK(respawned.active_weapon == PLAYER_WEAPON_FLASH);
+    CHECK(respawned.bullets == 3);
+    CHECK(respawned.facing == -1);
+}
+
+/*
+ * And the one thing on either side of that door whose behaviour nobody had
+ * chosen: the blink.
+ *
+ * A `U` exchanges two whole `GameplayState`s and the shell hands the *man* back
+ * across afterwards — the pack, and the hearts under a comment saying "the door
+ * is not a heal". `invuln_timer` is a field of the state rather than of the
+ * player, so it stayed behind with the frozen area, and it went wrong in both
+ * directions. Take a hit, step through, and the room was free to hit again on
+ * the very next frame: rooms holding two men and a dog, on a detour that costs
+ * a heart on every seed inside five seconds on one of the four. Come back out
+ * and the sector's *old* window resumed from wherever it had been banked,
+ * however long the visit had taken — a free blink on the way out to pay for the
+ * one taken away on the way in.
+ *
+ * The blink belongs to the body, like the hearts, so it travels with them, and
+ * the rule is one function in the core rather than three assignments in
+ * [game.c](../src/game.c) — which is also the only reason this test can reach
+ * it at all. `make coverage-shell` has `leave_restroom` down as executed by
+ * neither gate.
+ *
+ * Both worlds are driven through the same call, because the assertion has to be
+ * about the window rather than about the fixture: with the mercy handed over the
+ * guard standing on him costs nothing, and with it dropped — which is exactly
+ * what shipped — the same guard on the same frame takes a heart.
+ */
+static void test_the_doorway_hands_over_the_blink(void)
+{
+    /* The man who walked in: one heart already gone, the window that hit opened
+     * still running, and a pack on him. */
+    Player travelling = {0};
+    travelling.hp = PLAYER_MAX_HP - 1;
+    travelling.grenades = 1;
+    travelling.bazooka_rockets = 1;
+    travelling.flashbangs = 1;
+    travelling.bullets = 3;
+    travelling.facing = -1;
+    travelling.active_weapon = PLAYER_WEAPON_FLASH;
+
+    for (int handed_over = 0; handed_over < 2; ++handed_over)
+    {
+        GameplayState room = {0};
+        CampaignState campaign = {0};
+        /* Side-on contact, the shape `test_stomp_still_lands_during_the_mercy_window`
+         * already uses for "a guard is touching him and it is not a stomp". */
+        room.enemy_count = 1;
+        room.enemies[0] =
+            (Enemy){.x = 100.0f + (float)ENEMY_W - 3.0f, .y = 200.0f,
+                    .hp = ENEMY_HP};
+        room.player.x = 100.0f;
+        room.player.y = 200.0f;
+
+        gameplay_carry_through_doorway(
+            &room, &travelling, handed_over ? PLAYER_HIT_INVULN : 0.0f);
+
+        /* Whichever world this is, the two things that already travelled still
+         * do — so a change that carries the blink and drops the pack, or the
+         * hearts, fails here rather than in somebody's run. */
+        CHECK(room.player.hp == PLAYER_MAX_HP - 1);
+        CHECK(player_weapon_available(&room.player, PLAYER_WEAPON_FLASH));
+        CHECK(player_weapon_available(&room.player, PLAYER_WEAPON_GRENADE));
+        CHECK(player_weapon_available(&room.player, PLAYER_WEAPON_BAZOOKA));
+        CHECK(room.player.bullets == 3);
+        CHECK(room.player.facing == -1);
+        /* And the door underfoot is not read as one on the frame he arrives. */
+        CHECK(room.teleport_cooldown == TELEPORT_COOLDOWN);
+        /* The window is handed over rather than invented: nought in, nought
+         * out, so a doorway that simply granted one would fail the control
+         * below by making it pass. */
+        CHECK(room.invuln_timer ==
+              (handed_over ? PLAYER_HIT_INVULN : 0.0f));
+
+        gameplay_combat_check_contacts(&room, &campaign);
+
+        if (handed_over)
+            CHECK(room.player.hp == PLAYER_MAX_HP - 1);
+        else
+            CHECK(room.player.hp < PLAYER_MAX_HP - 1);
+        CHECK(!room.player.dying);
+    }
+}
+
+/*
+ * The row along the HUD that says what he is carrying, on both strips.
+ *
+ * Nothing in this repository could measure it, because it was literals inside
+ * [game_render.c](../src/game_render.c) — and it was wrong on both strips at
+ * once, in opposite directions. The wall drew the flash charge at 706 into a
+ * cartridge run that ends at 717, so a climber carrying one read a four-round
+ * clip off a readout whose own comment promises every pip is always lit. The
+ * floor drew no charge at all, on the twelve sectors where it is the only one
+ * of the three that can be thrown. Two strips, one question, two answers, and
+ * neither of them the right one.
+ *
+ * So the question is asked once, of both, and it is asked as geometry rather
+ * than as a list of positions: no glyph reaches into the one beside it, the row
+ * clears the cartridges to its left, and it stops before the rule that closes
+ * the block. Every width is measured from `x - 1`, which is where the outlines
+ * open; see the note in [game_config.h](../src/game_config.h).
+ */
+static void test_the_carried_row_gives_every_throwable_its_own_place(void)
+{
+    /* The three glyphs in the order `draw_hud_carried` lays them out. A slot
+     * has to hold the widest thing that can go in it, and the launcher is
+     * deliberately last because it is the widest of the three. */
+    const int ink[HUD_CARRY_SLOTS] = {HUD_FLASH_INK_W, HUD_GRENADE_INK_W,
+                                      HUD_ROCKET_INK_W};
+
+    for (int slot = 0; slot < HUD_CARRY_SLOTS; ++slot)
+    {
+        CHECK(ink[slot] > 0);
+        /* Nothing reaches into its neighbour. The last one has no neighbour and
+         * is measured against the end of the block below instead. */
+        if (slot + 1 < HUD_CARRY_SLOTS)
+            CHECK(ink[slot] <= HUD_CARRY_SLOT_W);
+    }
+    CHECK(HUD_CARRY_ROW_W ==
+          (HUD_CARRY_SLOTS - 1) * HUD_CARRY_SLOT_W + ink[HUD_CARRY_SLOTS - 1]);
+
+    /* Both strips, out of the same two facts: where the clip ends and where the
+     * block does. `- 1` on each origin because that is where the ink opens. */
+    static const struct
+    {
+        const char *what;
+        int ammo_x;
+        int carry_x;
+        int block_end;
+    } strips[] = {
+        {"sector", HUD_SECTOR_AMMO_X, HUD_SECTOR_CARRY_X, HUD_SECTOR_BLOCK_END},
+        {"facade", HUD_FACADE_AMMO_X, HUD_FACADE_CARRY_X, HUD_FACADE_BLOCK_END},
+    };
+
+    for (size_t i = 0; i < sizeof(strips) / sizeof(strips[0]); ++i)
+    {
+        int clip_end = strips[i].ammo_x - 1 +
+                       (MAX_AMMO - 1) * HUD_AMMO_PIP_PITCH +
+                       HUD_AMMO_PIP_INK_W;
+        int row_start = strips[i].carry_x - 1;
+        int row_end = row_start + HUD_CARRY_ROW_W;
+        /* Said out loud before the check, because `CHECK` prints the expression
+         * and the expression names neither the strip nor by how much. */
+        if (row_start < clip_end)
+            fprintf(stderr,
+                    "  the %s strip draws the carried row %d px inside its own "
+                    "clip\n",
+                    strips[i].what, clip_end - row_start);
+        if (row_end > strips[i].block_end)
+            fprintf(stderr,
+                    "  the %s strip runs %d px past the end of its block\n",
+                    strips[i].what, row_end - strips[i].block_end);
+        CHECK(row_start >= clip_end);
+        CHECK(row_end <= strips[i].block_end);
+    }
+
+    /* And the cartridges are still a run of separate cartridges rather than a
+     * smear, which is the other half of "measured from x - 1" and what makes
+     * the readings above mean anything at all. */
+    CHECK(HUD_AMMO_PIP_INK_W <= HUD_AMMO_PIP_PITCH);
+
+    /*
+     * And the rule that says which of the two numbers the label means.
+     *
+     * The strip prints one label over two readouts: the cartridges, which are
+     * always the pistol's, and this row. So `BAZOOKA` sat over six lit
+     * cartridges and read as six rockets, with the one rocket the player had
+     * three slots away and nothing joining the word to it.
+     *
+     * Two things to hold, and both are about the mark staying inside what is
+     * already measured above: it is a slot's own ink wide, so it cannot reach
+     * into the neighbour the loop above just cleared, and it sits inside the
+     * console rather than over the frame below it.
+     */
+    for (int slot = 0; slot < HUD_CARRY_SLOTS; ++slot)
+        CHECK(ink[slot] <= HUD_CARRY_SLOT_W ||
+              slot == HUD_CARRY_SLOTS - 1);
+    CHECK(HUD_CARRY_MARK_H >= 1);
+    if (HUD_CARRY_ROW_Y + HUD_CARRY_MARK_DROP + HUD_CARRY_MARK_H > HUD_HEIGHT)
+        fprintf(stderr,
+                "  the carried row's mark reaches %d px into a %d px strip\n",
+                HUD_CARRY_ROW_Y + HUD_CARRY_MARK_DROP + HUD_CARRY_MARK_H,
+                HUD_HEIGHT);
+    CHECK(HUD_CARRY_ROW_Y + HUD_CARRY_MARK_DROP + HUD_CARRY_MARK_H <=
+          HUD_HEIGHT);
+    /* And it is below the glyphs rather than through them: the shortest ink in
+     * the row is the rocket's, which is already dropped by its own offset. */
+    CHECK(HUD_CARRY_MARK_DROP >= HUD_CARRY_ROCKET_DROP + ROCKET_H);
+}
+
+/*
+ * A throw says which of the three left the hand.
+ *
+ * One pose and one flag for all three is deliberate — it is the same animation,
+ * a man lobbing something underarm, and a second flag would be a second thing
+ * every path that ends an action has to clear. That argument is about the
+ * *pose* and it was quietly doing duty for the *prop*: the ladder throw draws
+ * what is still in the hand, and it drew a grenade for the flash charge and for
+ * the bolt, with `draw_flashbang`'s own comment insisting the two have to be
+ * told apart at a glance because one of them is about to kill whoever is
+ * standing next to it.
+ *
+ * The renderer is on the far side of the boundary, so what is held here is the
+ * fact it reads: three throws, three answers.
+ */
+static void test_a_throw_says_what_left_the_hand(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#S      E#\n"
+        "##########\n";
+
+    static const struct
+    {
+        PlayerWeapon weapon;
+        int grenades;
+        int flashbangs;
+    } throws[] = {
+        {PLAYER_WEAPON_GRENADE, 1, 0},
+        {PLAYER_WEAPON_FLASH, 0, 1},
+        {PLAYER_WEAPON_DECOY, 0, 0},
+    };
+
+    for (size_t i = 0; i < sizeof(throws) / sizeof(throws[0]); ++i)
+    {
+        static GameplayState state;
+        CampaignState campaign = {0};
+        memset(&state, 0, sizeof(state));
+        rng_seed(&state.rng, 6100 + (uint64_t)i);
+        REQUIRE(level_load_data(&state.level, "in-hand", data, strlen(data),
+                                &state.rng));
+        player_reset(&state.player, &state.level);
+        state.player.grenades = throws[i].grenades;
+        state.player.flashbangs = throws[i].flashbangs;
+        state.player.active_weapon = throws[i].weapon;
+
+        Input input = {0};
+        input.shoot = true;
+        gameplay_combat_handle_player_action(&state, &campaign, &input);
+
+        /* It threw at all — otherwise the field below is whatever the reset
+         * left in it and the check passes on a press that did nothing. */
+        CHECK(state.player.grenade_throwing);
+        CHECK(state.player.action_timer > 0.0f);
+        CHECK(state.player.throwing_weapon == throws[i].weapon);
+    }
+}
+
 static void test_a_throw_spends_one_grenade(void)
 {
     static const char data[] =
@@ -6939,26 +10662,236 @@ static void test_a_pickup_never_arms_itself(void)
 }
 
 /*
+ * Twelve sheets is a set, and a retry does not make it thirteen.
+ *
+ * The docket is laid out one to an interior, `campaign_docket_sheets()` says
+ * so off the maps, and every screen that prints the count prints it against
+ * that total. Nothing held the count to it.
+ *
+ * A sector cannot hand out the same pickup twice, which is why nobody looked.
+ * A *continue* can. `campaign_accept_continue` says in as many words that
+ * "retrying the sector is always on offer" — it is unlimited, the score simply
+ * stops surviving past the third — and the retry goes through `load_level`,
+ * which parses the map again. So the `*` is laid out again while
+ * `CampaignState.evidence_collected` carries on from where it was: measured
+ * before the fix, five retries of sector 1 banked five sheets off a floor that
+ * holds one, and `progress_note_evidence` wrote it to the player's disk.
+ *
+ * `item_would_be_wasted`'s own comment is where it hid. `ITEM_EVIDENCE` sat
+ * with `ITEM_CARD` and `ITEM_GUN` under "paper cannot be wasted: there is no
+ * counter for it to be full of, and two sheets are two sheets", which is
+ * exactly right about the card and false about the docket in both clauses —
+ * one rationale covering two things and true of only one of them.
+ *
+ * Driven through a real reload of a shipped map rather than through a fixture,
+ * because a fixture cannot show the thing that makes this reachable: the map
+ * being parsed a second time into the same campaign. The control at the end is
+ * what makes it an assertion about the *set* rather than about the pickup —
+ * a second interior's sheet is still a second sheet.
+ */
+static void test_the_docket_counts_a_floor_s_sheet_once(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+
+    /* Which interiors carry a sheet at all, so the control below names a real
+     * second floor rather than an index somebody typed. */
+    int first = -1;
+    int second = -1;
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        CampaignState ignored;
+        REQUIRE(stage_sector_at_its_spawn(&state, &ignored, i, 4711u));
+        bool has_sheet = false;
+        for (int k = 0; k < state.level.runtime.item_count; ++k)
+            if (state.level.runtime.items[k].type == ITEM_EVIDENCE)
+                has_sheet = true;
+        if (!has_sheet)
+            continue;
+        if (first < 0)
+            first = (int)i;
+        else if (second < 0)
+            second = (int)i;
+    }
+    REQUIRE(first >= 0 && second >= 0);
+
+    /* `stage_sector_at_its_spawn` memsets the campaign, so the run is set up
+     * once here and the sector reloaded under it — which is the arrangement a
+     * continue produces and the whole of what this is about. */
+    memset(&campaign, 0, sizeof(campaign));
+    campaign_reset(&campaign, false);
+
+    for (int retry = 0; retry < 5; ++retry)
+    {
+        CampaignState scratch;
+        REQUIRE(stage_sector_at_its_spawn(&state, &scratch, (size_t)first,
+                                          4711u));
+        campaign.current_level = first;
+        Item *sheet = NULL;
+        for (int k = 0; k < state.level.runtime.item_count; ++k)
+            if (state.level.runtime.items[k].type == ITEM_EVIDENCE)
+                sheet = &state.level.runtime.items[k];
+        REQUIRE(sheet != NULL);
+        /* Walked over rather than assigned: what is under test is the pickup
+         * refusing, and a hand-set counter passes whatever the pickup does. */
+        state.player.x = sheet->x - PLAYER_W * 0.5f;
+        state.player.y = sheet->y - PLAYER_H * 0.5f;
+        gameplay_collect_items(&state, &campaign, 0.0f);
+        /* The first visit takes it; every retry leaves it lying there, which
+         * is the same answer a second grenade gets and reads the same way on
+         * the floor. */
+        CHECK(sheet->collected == (retry == 0));
+        CHECK(campaign.evidence_collected == 1);
+        CHECK(campaign.score == EVIDENCE_SCORE);
+    }
+
+    /* And the control: a different floor's sheet is a different sheet. */
+    CampaignState scratch;
+    REQUIRE(stage_sector_at_its_spawn(&state, &scratch, (size_t)second,
+                                      4711u));
+    campaign.current_level = second;
+    Item *sheet = NULL;
+    for (int k = 0; k < state.level.runtime.item_count; ++k)
+        if (state.level.runtime.items[k].type == ITEM_EVIDENCE)
+            sheet = &state.level.runtime.items[k];
+    REQUIRE(sheet != NULL);
+    state.player.x = sheet->x - PLAYER_W * 0.5f;
+    state.player.y = sheet->y - PLAYER_H * 0.5f;
+    gameplay_collect_items(&state, &campaign, 0.0f);
+    CHECK(sheet->collected);
+    CHECK(campaign.evidence_collected == 2);
+
+    /* Taking every sheet the campaign actually lays out comes to exactly the
+     * whole the two screens print against — which is the property, and the one
+     * a per-floor tally can never overshoot however many retries it took.
+     * Taken twice over, because the set has to be idempotent from a caller
+     * that has not asked first. */
+    CHECK(campaign.evidence_collected <= campaign_docket_sheets());
+    int floors_with_a_sheet = 0;
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        CampaignState ignored;
+        REQUIRE(stage_sector_at_its_spawn(&state, &ignored, i, 4711u));
+        bool has_sheet = false;
+        for (int k = 0; k < state.level.runtime.item_count; ++k)
+            if (state.level.runtime.items[k].type == ITEM_EVIDENCE)
+                has_sheet = true;
+        if (!has_sheet)
+            continue;
+        floors_with_a_sheet++;
+        campaign_take_docket_sheet(&campaign, (int)i);
+        campaign_take_docket_sheet(&campaign, (int)i);
+    }
+    CHECK(floors_with_a_sheet == campaign_docket_sheets());
+    CHECK(campaign.evidence_collected == campaign_docket_sheets());
+
+    /* A sector the campaign does not have is held by nobody and takes
+     * nothing — the arm the compile-time assertion in gameplay_state.c makes
+     * unreachable from the game, and the only one a caller can reach. */
+    campaign_take_docket_sheet(&campaign, -1);
+    campaign_take_docket_sheet(&campaign, CAMPAIGN_SECTORS);
+    CHECK(campaign.evidence_collected == campaign_docket_sheets());
+    CHECK(!campaign_holds_docket_sheet(&campaign, -1));
+    CHECK(!campaign_holds_docket_sheet(&campaign, CAMPAIGN_SECTORS));
+}
+
+/*
+ * And what the two screens that print it against a whole then say.
+ *
+ * `RUN_TALLY_RECORD_DOCKET` clamped its numerator to `PROGRESS_MAX_EVIDENCE`,
+ * which is ninety-nine, and printed it against `campaign_docket_sheets()`,
+ * which is twelve — so the RECORDS page and the manual's own THE RECORD sheet
+ * could read `13 / 12`, a fraction over its own whole. That is word for word
+ * the defect `RUN_TALLY_RECORD_SECTORS_TIMED` three cases below it was fixed
+ * for, with the reasoning sitting in the same switch: the numerator and the
+ * denominator have to be asked the same question.
+ *
+ * The file's ninety-nine stays, and deliberately: the slack is what lets a
+ * longer campaign ship without a new save format, exactly as
+ * `PROGRESS_MAX_TRACKED_SECTORS` does. What is fixed is the reader, because a
+ * file written by such a build — or by anybody with a text editor — reaches
+ * this row whatever the pickup does.
+ */
+static void test_no_record_prints_a_fraction_over_its_own_whole(void)
+{
+    char cell[32];
+    char expected[32];
+
+    /* Every value the file can store, including the ones only a foreign file
+     * can put there, and none of them may print a numerator past the whole. */
+    for (int value = 0; value <= PROGRESS_MAX_EVIDENCE; ++value)
+    {
+        REQUIRE(run_tally_format_record_value(RUN_TALLY_RECORD_DOCKET, value,
+                                              cell, sizeof(cell)) >= 0);
+        if (value <= 0)
+        {
+            CHECK(strcmp(cell, "--") == 0);
+            continue;
+        }
+        int shown = value < campaign_docket_sheets() ? value
+                                                     : campaign_docket_sheets();
+        snprintf(expected, sizeof(expected), "%d / %d", shown,
+                 campaign_docket_sheets());
+        CHECK(strcmp(cell, expected) == 0);
+    }
+
+    /* Its sibling, which already asked the question this way, so a change that
+     * un-fixes one of the two fails here rather than on somebody's sheet. */
+    Progress progress;
+    progress_defaults(&progress);
+    for (int i = 0; i < PROGRESS_MAX_TRACKED_SECTORS; ++i)
+        progress.best_sector_time[i] = 60.0f;
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_SECTORS_TIMED, &progress,
+                                    cell, sizeof(cell)) > 0);
+    snprintf(expected, sizeof(expected), "%d / %d", CAMPAIGN_SECTORS,
+             CAMPAIGN_SECTORS);
+    CHECK(strcmp(cell, expected) == 0);
+}
+
+/*
  * A pickup that would change nothing is left where it is.
  *
- * The three that cannot come back used to be spent on a counter that was
+ * The ones that cannot come back used to be spent on a counter that was
  * already full: walking over a second `N` while carrying a grenade set
  * `collected` with a nought respawn timer and played the pickup sound, so the
  * scarcest thing in the sector was destroyed by crossing a tile and announced
- * as a success. Sector 12 carries two grenades, sectors 10, 12 and 15 two
+ * as a success. Sector 12 carries two grenades, sectors 10, 12, 14, 16 and 17 two
  * medkits apiece, and every restroom hands out the grenade the campaign's own
  * budget is balanced on — so this was the middle of four maps, not a corner.
  *
  * The boxed magazine is deliberately not on the list and is checked here for
  * it: `ITEM_GUN` respawns, so taking one with a full clip costs nothing and
  * the box is back before it is wanted.
+ *
+ * **And the flash charge was the fourth of them and was not in here**, which is
+ * the shape the charge keeps arriving in: it was added after the grenade and the
+ * rocket, and every place those two are named as a pair it was left off the end
+ * of the pair. `item_would_be_wasted` has an arm for it; nothing drove that arm,
+ * because every test in the suite hands itself a charge by assigning
+ * `player.flashbangs` and no test had ever picked one up off a floor. Measured,
+ * `case ITEM_FLASHBANG:` in `gameplay_collect_items` was compiled and never
+ * executed — the "reached but never acted on" kind, on the one item in the game
+ * whose whole subject is a floor having already gone wrong. It also played the
+ * *grenade's* pickup sound, which is the same omission in the one sense that
+ * cannot see the drawing the rule about telling them apart is written about.
+ *
+ * The sector list two paragraphs up was stale in the bargain, and instructively:
+ * it read `10, 12 and 15`, 15 being a facade with a single medkit on it. That is
+ * the same wrong list `gameplay_interaction.c` was corrected for — and
+ * `check_docs.py` already holds *that* copy, keyed on this very sentence about
+ * the restrooms, while reading `tests/` for two other lists at the same time.
+ * So the script had the file, had the phrase, and this was simply a **third**
+ * copy nobody had added an entry for: the fix went to the source comment, the
+ * check went with it, and the test's paragraph sat two directories away
+ * repeating the old one. Held now, which is the only reason to write a list
+ * down at all.
  */
 static void test_a_pickup_that_would_be_wasted_is_left_alone(void)
 {
     static const char data[] =
-        "#################\n"
-        "#S N N Z Z K G E#\n"
-        "#################\n";
+        "#####################\n"
+        "#S N N Z Z ! ! K G E#\n"
+        "#####################\n";
     GameplayState state = {0};
     CampaignState campaign = {0};
     campaign.lives = MAX_LIVES;
@@ -6969,10 +10902,12 @@ static void test_a_pickup_that_would_be_wasted_is_left_alone(void)
 
     Item *grenade[2] = {NULL, NULL};
     Item *rocket[2] = {NULL, NULL};
+    Item *charge[2] = {NULL, NULL};
     Item *medkit = NULL;
     Item *ammo = NULL;
     int grenades_found = 0;
     int rockets_found = 0;
+    int charges_found = 0;
     for (int i = 0; i < state.level.runtime.item_count; ++i)
     {
         Item *item = &state.level.runtime.items[i];
@@ -6980,12 +10915,15 @@ static void test_a_pickup_that_would_be_wasted_is_left_alone(void)
             grenade[grenades_found++] = item;
         if (item->type == ITEM_BAZOOKA && rockets_found < 2)
             rocket[rockets_found++] = item;
+        if (item->type == ITEM_FLASHBANG && charges_found < 2)
+            charge[charges_found++] = item;
         if (item->type == ITEM_MEDKIT)
             medkit = item;
         if (item->type == ITEM_GUN)
             ammo = item;
     }
     REQUIRE(grenades_found == 2 && rockets_found == 2);
+    REQUIRE(charges_found == 2);
     REQUIRE(medkit != NULL);
 
     /* The first of each is taken normally. */
@@ -7001,6 +10939,20 @@ static void test_a_pickup_that_would_be_wasted_is_left_alone(void)
     CHECK(rocket[0]->collected);
     CHECK(state.player.bazooka_rockets == BAZOOKA_AMMO);
 
+    /* The charge off the floor, which is the only route to
+     * `case ITEM_FLASHBANG:` and had no caller in the suite at all. Announced
+     * with its own sound, because a one-shot taken in silence reads as a tile
+     * walked over, and announced with the *grenade's* it reads as the wrong
+     * thing picked up. */
+    state.player.x = charge[0]->x - PLAYER_W * 0.5f;
+    state.player.y = charge[0]->y - PLAYER_H * 0.5f;
+    state.events.count = 0;
+    gameplay_collect_items(&state, &campaign, 0.0f);
+    CHECK(charge[0]->collected);
+    CHECK(state.player.flashbangs == 1);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND,
+                            SFX_PICKUP_FLASH));
+
     /* The second of each is walked straight over and stays on the floor, so it
      * is still there when the first has actually been spent. */
     state.player.x = grenade[1]->x - PLAYER_W * 0.5f;
@@ -7013,9 +10965,15 @@ static void test_a_pickup_that_would_be_wasted_is_left_alone(void)
     gameplay_collect_items(&state, &campaign, 0.0f);
     CHECK(!rocket[1]->collected);
 
-    /* Spend them, come back, and both are collectable after all. */
+    state.player.x = charge[1]->x - PLAYER_W * 0.5f;
+    state.player.y = charge[1]->y - PLAYER_H * 0.5f;
+    gameplay_collect_items(&state, &campaign, 0.0f);
+    CHECK(!charge[1]->collected);
+
+    /* Spend them, come back, and all three are collectable after all. */
     state.player.grenades = 0;
     state.player.bazooka_rockets = 0;
+    state.player.flashbangs = 0;
     state.player.x = grenade[1]->x - PLAYER_W * 0.5f;
     state.player.y = grenade[1]->y - PLAYER_H * 0.5f;
     gameplay_collect_items(&state, &campaign, 0.0f);
@@ -7025,6 +10983,11 @@ static void test_a_pickup_that_would_be_wasted_is_left_alone(void)
     state.player.y = rocket[1]->y - PLAYER_H * 0.5f;
     gameplay_collect_items(&state, &campaign, 0.0f);
     CHECK(rocket[1]->collected);
+    state.player.x = charge[1]->x - PLAYER_W * 0.5f;
+    state.player.y = charge[1]->y - PLAYER_H * 0.5f;
+    gameplay_collect_items(&state, &campaign, 0.0f);
+    CHECK(charge[1]->collected);
+    CHECK(state.player.flashbangs == 1);
 
     /* The kit answers the hearts first and the spare lives second, so it is
      * only wasted when both are at their cap — and taken again the moment
@@ -7748,6 +11711,103 @@ static void test_a_reused_corpse_slot_is_forgotten_by_whoever_looked_at_it(void)
     (void)campaign;
 }
 
+/*
+ * And the animal's half of the same rule, which had one test between them and
+ * it was the guard's.
+ *
+ * `find_dog_slot` is `find_enemy_slot` written out a second time — the comment
+ * above it says so — and its recycling arm was **compiled and never run**. It
+ * is live code for the same reason the guard's is: every arrival out of a door
+ * rolls `DOG_DOOR_HANDLER_CHANCE` for a handler, from the `SPAWNS` drip as
+ * readily as from a console, so a floor can fill `MAX_DOGS` without an author
+ * drawing a single extra `W`.
+ *
+ * Both halves of the guard's argument apply here word for word. A dog's body is
+ * drawn (`draw_downed_dog`), so recycling the slot deletes a corpse off the
+ * floor in front of the player. And it is a *place*, because
+ * `update_body_discovery` sends a calm guard over to look at a fallen animal as
+ * readily as at a fallen man — so the bit has to be released or it belongs to
+ * the live dog taking the slot, which is the same silent cancellation the test
+ * above this one exists for. `W` is on ten of the seventeen sectors.
+ *
+ * The handler is a seeded roll and there is no way in from outside the module,
+ * so this walks seeds until one brings a dog rather than pinning whichever
+ * answer seed 4711 happens to draw. `REQUIRE` on having found one is the point
+ * of doing it that way: if the path ever stops being reachable, this fails
+ * loudly instead of quietly checking nothing.
+ */
+static void test_a_reused_dog_slot_is_forgotten_by_whoever_looked_at_it(void)
+{
+    static const char map[] =
+        "##########################\n"
+        "#S  D              D    E#\n"
+        "##########################\n"
+        "\n"
+        "SPAWNS 1 0\n";
+    const int reused = MAX_DOGS - 1;
+    const int untouched = 3;
+    bool a_handler_came = false;
+
+    for (uint64_t seed = 1; seed <= 64 && !a_handler_came; ++seed)
+    {
+        GameplayState state = {0};
+        CampaignState campaign = {0};
+        rng_seed(&state.rng, seed);
+        REQUIRE(level_load_data(&state.level, "full kennel", map, strlen(map),
+                                &state.rng));
+        player_reset(&state.player, &state.level);
+        REQUIRE(state.level.map.door_count == 2);
+
+        /* One man on the floor for the arrival to be counted beside, parked
+         * away from either doorway so the spawn is not refused for him. */
+        const float floor_y = 1.0f * TILE_SIZE;
+        enemy_init(&state.enemies[0], 20.0f * TILE_SIZE, floor_y,
+                   ENEMY_KIND_GUARD, &state.rng);
+        state.enemy_count = 1;
+
+        /* A full kennel, every one of them down. The furthest from Chuck is the
+         * one the handler's dog takes. */
+        for (int i = 0; i < MAX_DOGS; ++i)
+        {
+            dog_init(&state.dogs[i], (float)(i + 1) * 12.0f, floor_y, 0,
+                     &state.rng);
+            state.dogs[i].dead = true;
+        }
+        state.dog_count = MAX_DOGS;
+        state.dogs[reused].x = 22.0f * TILE_SIZE;
+        state.dogs[untouched].x = 4.0f * TILE_SIZE;
+
+        state.enemies[0].bodies_investigated =
+            enemy_body_bit(reused, true) | enemy_body_bit(untouched, true);
+
+        state.door_spawns[0] = 1;
+        state.door_timers[0] = 0.0f;
+        gameplay_ai_update_spawns(&state, SIM_STEP_DT);
+
+        if (state.dogs[reused].dead)
+            continue; /* this seed's arrival came without a handler */
+        a_handler_came = true;
+
+        /* No room was made: the animal stood in a dead one's place. */
+        CHECK(state.dog_count == MAX_DOGS);
+        /* And the memory of that body went with it. */
+        CHECK((state.enemies[0].bodies_investigated &
+               enemy_body_bit(reused, true)) == 0);
+        /* Only that one. A mask that cleared itself would disarm the rule
+         * outright, which is the bug the mask replaced. */
+        CHECK((state.enemies[0].bodies_investigated &
+               enemy_body_bit(untouched, true)) != 0);
+        CHECK(state.dogs[untouched].dead);
+        /* The dogs are filed after the guards in one mask, so the animal's bit
+         * must not have reached across into a man's. */
+        CHECK((state.enemies[0].bodies_investigated &
+               enemy_body_bit(reused, false)) == 0);
+        (void)campaign;
+    }
+
+    REQUIRE(a_handler_came);
+}
+
 /* A round is tested against the ground it crossed, not against where it landed.
  * Fired up a ladder it is 8px long and a dog is 16 tall, so one step at the
  * frame clamp carries it clean past the animal. */
@@ -8463,6 +12523,345 @@ static void test_the_route_model_promises_only_moves_the_player_can_make(void)
     CHECK(beds_promised >= 1);
 }
 
+/*
+ * A hall with a ledge `rise` tiles above the walk row and the way out on top of
+ * it, with two open rows over the ledge so the model has every clearance it asks
+ * for and the only question left is the height.
+ */
+/* The probe's own height, named because the checker below has to work out where
+ * the ledge's surface is and that is the second place this number would have
+ * been written. */
+#define STEP_UP_PROBE_H 7
+
+static void step_up_probe_build(char *out, size_t size, int rise)
+{
+    const int width = 20;
+    const int height = STEP_UP_PROBE_H;
+    const int floor = height - 1;
+    const int walk = floor - 1;
+    const int ledge_top = floor - rise;
+    size_t at = 0;
+    for (int row = 0; row < height; ++row)
+    {
+        for (int col = 0; col < width; ++col)
+        {
+            char c = ' ';
+            if (row == 0 || col == 0 || col == width - 1)
+                c = '#';
+            else if (row == floor)
+                c = '#';
+            else if (col >= 14 && row >= ledge_top)
+                c = '#';
+            else if (row == walk && col == 2)
+                c = 'S';
+            else if (row == ledge_top - 1 && col == 16)
+                c = 'E';
+            if (at + 1 < size)
+                out[at++] = c;
+        }
+        if (at + 1 < size)
+            out[at++] = '\n';
+    }
+    out[at] = '\0';
+}
+
+/* Every start position on the run-up, jumping the whole way: does the body ever
+ * end up standing on the ledge. One success is the claim — this asks whether the
+ * move exists, not whether it is easy. */
+static bool body_reaches_ledge(const char *data, int rise, int *made_it)
+{
+    const float ledge_feet =
+        (float)((STEP_UP_PROBE_H - 1 - rise) * TILE_SIZE) - PLAYER_H;
+    *made_it = 0;
+    for (float start = (float)TILE_SIZE; start < 13.0f * TILE_SIZE;
+         start += 1.0f)
+    {
+        static Level level;
+        Rng rng;
+        rng_seed(&rng, 5150);
+        if (!level_load_data(&level, "step up", data, strlen(data), &rng))
+            return false;
+        Player player;
+        player_reset(&player, &level);
+        player.x = start;
+
+        for (int step = 0; step < SIM_STEPS(4.0f); ++step)
+        {
+            Input in = {0};
+            in.right = true;
+            in.jump = true;
+            in.jump_held = true;
+            player_update(&player, &level, &in, SIM_STEP_DT);
+            if (player.on_ground && fabsf(player.y - ledge_feet) < 1.0f)
+            {
+                ++*made_it;
+                break;
+            }
+        }
+    }
+    return true;
+}
+
+/* Whether the model will route to the ledge at all, which on these probes is
+ * the same question as whether it will step up that far. */
+static bool model_reaches_ledge(const Level *level)
+{
+    static RouteMap route;
+    route_map_init(&route, level);
+    route_flood(&route, route_player_start(&route));
+    return route_reaches(&route, level->map.exit_col, level->map.exit_row);
+}
+
+/*
+ * A two-tile step up is the body's move and not the model's, and that asymmetry
+ * is a documented authoring rule rather than an oversight.
+ *
+ * `route_neighbours` offers a step up of one tile and no more, and
+ * [levels/LEGEND.md](../levels/LEGEND.md) listed the refusal under "three things
+ * that model deliberately will not do" with the sentence "anything the rules
+ * below say is out of reach really is out of reach". Half of that was false. The
+ * spike half is a claim about the body and the test above measures it; this half
+ * is a claim about the *model*, and the body can do what the model refuses — the
+ * jump apex is 68.7px against 64px of rise, which is 4.7px in hand.
+ *
+ * The suite already half knew. `test_the_jump_apex_does_not_depend_on_the_frame_rate`
+ * has asserted `apex > 2.0f * TILE_SIZE` since it was written — as a sanity guard,
+ * under a comment saying it proves the man left the floor and the ceiling did not
+ * catch him. The number in it is the whole of what LEGEND.md was denying, three
+ * directories away, in a line framed as being about something else.
+ *
+ * Which side to be on is not in question: a model that under-promises certifies
+ * fewer maps and never certifies an unplayable one, so it stays. What the wording
+ * cost was the other direction — an author reading it would believe a pocket two
+ * tiles up was somewhere the player cannot get, and nothing in the tree would
+ * have said otherwise. Measured, the wider move opens nought extra tiles on every
+ * shipped sector, so nothing in the campaign rests on either reading today.
+ *
+ * The margin is a little wider than the arithmetic suggests, and it is worth
+ * knowing why: a rise of 68.7px against 64 is 4.7px in hand, and the landing
+ * resolution adds one or two more — feet that end a step just inside the ledge
+ * tile are put on top of it. So the move survives a small retune and stops
+ * somewhere between 350 and 345 px/s of `PLAYER_JUMP_SPEED`, which is where this
+ * test starts failing.
+ *
+ * So both halves are pinned here: the body clears two tiles, the model refuses
+ * two tiles, and the one-tile case is the control that keeps this from passing on
+ * a broken jump. Retune `PLAYER_JUMP_SPEED` or `GRAVITY` far enough and the first
+ * assertion fails, which is the paragraph in LEGEND.md asking to be rewritten
+ * rather than a player finding out.
+ */
+static void test_a_two_tile_step_up_is_the_bodys_move_not_the_models(void)
+{
+    static char data[512];
+    static GameplayState state;
+
+    /* One tile: the model promises it and the body delivers it. */
+    step_up_probe_build(data, sizeof data, 1);
+    memset(&state, 0, sizeof(state));
+    rng_seed(&state.rng, 5150);
+    REQUIRE(level_load_data(&state.level, "one up", data, strlen(data),
+                            &state.rng));
+    CHECK(model_reaches_ledge(&state.level));
+    int one_up = 0;
+    REQUIRE(body_reaches_ledge(data, 1, &one_up));
+    CHECK(one_up > 0);
+
+    /* Two tiles: the model refuses it and the body does it anyway. */
+    step_up_probe_build(data, sizeof data, 2);
+    memset(&state, 0, sizeof(state));
+    rng_seed(&state.rng, 5150);
+    REQUIRE(level_load_data(&state.level, "two up", data, strlen(data),
+                            &state.rng));
+    CHECK(!model_reaches_ledge(&state.level));
+    int two_up = 0;
+    REQUIRE(body_reaches_ledge(data, 2, &two_up));
+    CHECK(two_up > 0);
+
+    /* And the far side of it, which is the arm that keeps the two above from
+     * being a test of nothing: the rise the body clears is two tiles and not
+     * three. That is what makes the model conservative by exactly one tile
+     * rather than wrong by any number of them, and it is the assertion that
+     * would fail if the jump were ever *raised* far enough to make a ledge three
+     * tiles up reachable — at which point the paragraph in LEGEND.md is wrong
+     * again, in the other direction. */
+    step_up_probe_build(data, sizeof data, 3);
+    int three_up = 0;
+    REQUIRE(body_reaches_ledge(data, 3, &three_up));
+    CHECK(three_up == 0);
+}
+
+/*
+ * The other half of that paragraph, and it was wrong in the same direction and
+ * for a reason worth writing down once.
+ *
+ * `test_a_two_tile_step_up_is_the_bodys_move_not_the_models` is about a rise.
+ * This is about a *hole*, and [levels/LEGEND.md](../levels/LEGEND.md) states
+ * both in the same bullet: "In a two-row band the ceiling caps it at one tile
+ * and the player only covers about 48px of ground — enough to clear a one-tile
+ * hole in the floor, not a two-tile one. Give him a second open row (~87px)
+ * before asking for a two-tile jump; anything wider needs a ladder." The
+ * field manual's `MOVEMENT` sheet says the same thing to the player, with no
+ * condition on it at all: "A jump clears a one-tile hole in the floor. Two
+ * tiles needs a ladder or a lift shaft."
+ *
+ * Both are a tile short, and the airborne figures they are built on are exactly
+ * right: measured, a jump under a two-row ceiling covers 47.8px of ground and
+ * one with a row to spare covers 86.1px. What the arithmetic forgets is the
+ * player's own box. A hole is not a thing to be *cleared*, it is a thing to be
+ * landed past, and `level_move` grounds a body while any part of it is over
+ * solid tile — so a `PLAYER_W`-wide man leaves the near lip with his left edge
+ * on it and lands the moment his right edge reaches the far one. The ground he
+ * has to cover is `hole - PLAYER_W`, not `hole`: 38px for two tiles and 70px
+ * for three, against the 47.8 and 86.1 he has.
+ *
+ * The spike bullet three lines below it in the same file gets the same 26px
+ * *right* — "clearing a single 32px spike means covering 58px of ground while
+ * the whole 26px-wide player box is above floor level" — because a spike does
+ * have to be cleared entirely. Two adjacent rules about the same body, one
+ * adding the box and one forgetting to subtract it, and only one of them was
+ * ever measured against the simulation.
+ *
+ * Nothing in the campaign rests on the wrong reading: the twelve interiors
+ * carry seventy-three one-tile gaps, two two-tile gaps — both with three open
+ * rows, where the old wording and the body agree — and four six-tile ones that
+ * are storey breaks rather than jumps. What it cost is what the step-up's
+ * paragraph says it costs: an author reading it would draw a two-tile gap in a
+ * corridor and call it a barrier, and nothing would tell them.
+ *
+ * The widths are asserted in both directions on purpose. Pinning only what the
+ * body *can* do would pass a jump retuned upward, at which point the prose is
+ * wrong again the other way — which is the mistake the first draft of
+ * `test_the_route_model_promises_only_moves_the_player_can_make` made.
+ */
+static void hole_probe_build(char *out, size_t size, int hole, int band)
+{
+    const int width = 26;
+    const int height = band + 2; /* ceiling row, the band, the floor row */
+    const int walk = height - 2;
+    const int floor_row = height - 1;
+    size_t at = 0;
+    for (int row = 0; row < height; ++row)
+    {
+        for (int col = 0; col < width; ++col)
+        {
+            char c = ' ';
+            if (row == 0 || col == 0 || col == width - 1)
+                c = '#';
+            else if (row == floor_row)
+                c = (col >= 8 && col < 8 + hole) ? ' ' : '#';
+            else if (row == walk)
+            {
+                if (col == 2)
+                    c = 'S';
+                else if (col == width - 3)
+                    c = 'E';
+            }
+            if (at + 1 < size)
+                out[at++] = c;
+        }
+        if (at + 1 < size)
+            out[at++] = '\n';
+    }
+    out[at] = '\0';
+}
+
+/* Run right and press jump, sweeping *when*: the moment of the press is the
+ * player's half of the move and one hand-picked frame proves nothing. */
+static bool body_crosses_hole(int hole, int band)
+{
+    for (int lead = -24; lead <= 34; ++lead)
+    {
+        static char data[2048];
+        static GameplayState state;
+        hole_probe_build(data, sizeof data, hole, band);
+        memset(&state, 0, sizeof(state));
+        rng_seed(&state.rng, 8311);
+        if (!level_load_data(&state.level, "hole", data, strlen(data),
+                             &state.rng))
+            return false;
+        player_reset(&state.player, &state.level);
+        int hearts = state.player.hp;
+        const float far_side = (float)((8 + hole) * TILE_SIZE);
+        bool jumped = false;
+        for (int step = 0; step < SIM_STEPS(8.0f); ++step)
+        {
+            Input in = {0};
+            in.right = true;
+            int foot_col =
+                (int)floorf((state.player.x + PLAYER_W + (float)lead) /
+                            TILE_SIZE);
+            int foot_row =
+                (int)floorf((state.player.y + PLAYER_H + 2.0f) / TILE_SIZE);
+            if (!jumped && state.player.on_ground &&
+                !level_is_solid(&state.level, foot_col, foot_row))
+            {
+                in.jump = true;
+                in.jump_held = true;
+                jumped = true;
+            }
+            else if (!state.player.on_ground)
+                in.jump_held = true;
+            player_update(&state.player, &state.level, &in, SIM_STEP_DT);
+            /* Across, on his feet, and for nothing: a hole is not a hazard. */
+            if (state.player.x > far_side && state.player.on_ground)
+                return state.player.hp == hearts;
+            if (state.player.y >
+                (float)(state.level.map.height * TILE_SIZE))
+                break;
+        }
+    }
+    return false;
+}
+
+static void test_a_jump_clears_a_wider_hole_than_the_model_will_route(void)
+{
+    /* A corridor: one row of headroom over the man, which is the band
+     * LEGEND.md's first sentence is about. */
+    CHECK(body_crosses_hole(1, 2));
+    CHECK(body_crosses_hole(2, 2));
+    CHECK(!body_crosses_hole(3, 2));
+
+    /* A hall: a second open row, which is its second sentence. */
+    CHECK(body_crosses_hole(1, 3));
+    CHECK(body_crosses_hole(2, 3));
+    CHECK(body_crosses_hole(3, 3));
+    CHECK(!body_crosses_hole(4, 3));
+
+    /* And more headroom buys nothing, because the ceiling stopped being the
+     * limit at three rows — which is what makes "a second open row" the whole
+     * of the condition rather than a step in a series. */
+    CHECK(body_crosses_hole(3, 5));
+    CHECK(!body_crosses_hole(4, 5));
+
+    /*
+     * The model refuses a tile earlier in both bands, which is the direction to
+     * be wrong in and is the reason this is written down rather than fixed:
+     * `route_neighbours` certifies every shipped map, and a model that
+     * under-promises certifies fewer floors and never certifies an unplayable
+     * one.
+     */
+    static char data[2048];
+    static Level level;
+    static RouteMap route;
+    for (int band = 2; band <= 3; ++band)
+    {
+        int widest = 0;
+        for (int hole = 1; hole <= 5; ++hole)
+        {
+            Rng rng;
+            rng_seed(&rng, 8311);
+            hole_probe_build(data, sizeof data, hole, band);
+            REQUIRE(level_load_data(&level, "hole", data, strlen(data), &rng));
+            route_map_init(&route, &level);
+            route_flood(&route, route_player_start(&route));
+            if (route_reaches(&route, level.map.exit_col, level.map.exit_row))
+                widest = hole;
+        }
+        /* One in a corridor, two in a hall — one behind the body each time. */
+        CHECK(widest == band - 1);
+    }
+}
+
 static void test_empty_pistol_uses_close_range_knife(void)
 {
     GameplayState state = {0};
@@ -8724,6 +13123,1198 @@ static void test_a_crate_is_a_floor_a_wall_and_a_brake(void)
     /* And it stopped short of where it was headed rather than at the far box:
      * friction, not a collision. */
     CHECK(near->x + CRATE_W < far->x - 1.0f);
+}
+
+/*
+ * The same box from the other three sides.
+ *
+ * `gameplay_resolve_player_crates` answers a crate four ways — landed on, met
+ * from the left, met from the right, and struck from underneath — and the test
+ * above drives exactly two of them. Measured, `direction = -1` and the whole
+ * underside arm had **never been executed by anything**: every crate test in
+ * this suite, its own bots included, walks `right`. That is the twin-with-one-
+ * test-between-them shape AGENTS.md keeps finding, on the one prop the player
+ * physically pushes around.
+ *
+ * Neither was broken — both were verified working before this was written, which
+ * is worth saying plainly. What they were is half a mechanic the suite would not
+ * have noticed the loss of, on a prop that is on eleven floors.
+ *
+ * The underside needs a crate with air beneath it, and that is a real
+ * configuration rather than a staged one: support is a box-against-tiles test,
+ * the box is `CRATE_W` = 28 against a 32 tile, so a crate shoved to the lip of a
+ * ledge stays up with a single pixel of tile under it and hangs the rest of
+ * itself over the drop. The test puts it there and then *asks the simulation
+ * whether it stays* — `on_ground` after a settle — so the scenario is one the
+ * game can hold rather than one the test invented. Then the jump is jumped
+ * rather than the flag set.
+ */
+/*
+ * A crate rests on the things the game draws as floor, and no moving one drives
+ * through it.
+ *
+ * `crate_position_clear` asked about masonry and other crates and nothing else,
+ * so a crate ignored every moving surface in the building. Two of the three were
+ * reachable by pushing on the shipped campaign, which is what makes this a bug
+ * rather than a tidy-up: on sector 6 a crate shoved off the walkway drops down
+ * the goods-lift shaft and the deck travels straight through it, and on sector 12
+ * one goes through a cracked panel as though it were not there. Measured before
+ * the fix, 19 and 83 simulation steps of visible overlap; after it, nought
+ * anywhere in the campaign.
+ *
+ * Nothing was ever certified on a crate — the route model has never counted one
+ * as floor — so no run was unfinishable. What it cost is the picture: the two
+ * things in this game drawn as floor, with a solid object falling through both,
+ * and no gate able to say so. The soak drew sector 6 and sector 12 every single
+ * run and `make coverage` counted every line of the lift, because *a counter
+ * cannot tell a frame that was drawn from a frame anybody could believe.*
+ *
+ * Four things are asked and the last is the one that keeps the first three
+ * honest.
+ *
+ * The campaign-wide property, driven rather than reasoned about: shove every
+ * crate on every sector both ways and require it never to share space with a
+ * deck, a panel or a platform. No sector list, so a map that grows a lift is
+ * covered by having been drawn.
+ *
+ * That a panel *holds* a crate rather than being refused as an obstacle, since
+ * support is the whole of what a panel does — it only ever falls away.
+ *
+ * That a crate on a panel does not arm it. `triggered` is Chuck's weight alone,
+ * the same rule a mine keeps, and a box that cracked the panel under it would
+ * spend the sector's one crossing of a gap on having been pushed.
+ *
+ * And the control, which is why this is not satisfied by a crate that cannot
+ * move at all: an ordinary floor still lets one travel. Every rule added above
+ * is a rule that could wedge a box in place, and "nothing overlaps" is exactly
+ * what a wedged box delivers — the same shape as the weak-wall check that could
+ * be satisfied by deleting the way out.
+ */
+static void test_a_crate_rests_on_what_the_player_does(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+
+    /* ---- nothing moving drives through a crate, anywhere in the campaign -- */
+    int pushable = 0;
+    for (size_t index = 0; index < EMBEDDED_LEVEL_COUNT; ++index)
+    {
+        for (int direction = -1; direction <= 1; direction += 2)
+        {
+            for (int which = 0; which < MAX_CRATES; ++which)
+            {
+                REQUIRE(stage_sector_at_its_spawn(&state, &campaign, index,
+                                                  909u + index));
+                if (which >= state.level.runtime.crate_count)
+                    break;
+                Crate *crate = &state.level.runtime.crates[which];
+                float from = crate->x;
+
+                for (int step = 0; step < SIM_STEPS(20.0f); ++step)
+                {
+                    /* Shoved while it has something under it and left to its own
+                     * momentum once it does not, which is what a player leaning
+                     * on one does. */
+                    if (crate->on_ground)
+                        crate->vx = (float)direction * CRATE_PUSH_SPEED;
+                    level_update_elevators(&state.level, SIM_STEP_DT);
+                    level_update_falling_platforms(&state.level, SIM_STEP_DT);
+                    level_update_moving_platforms(&state.level, SIM_STEP_DT);
+                    gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+                    state.events.count = 0;
+
+                    for (int i = 0; i < state.level.runtime.elevator_count; ++i)
+                    {
+                        const Elevator *lift =
+                            &state.level.runtime.elevators[i];
+                        CHECK(!gameplay_boxes_overlap(
+                            crate->x, crate->y, CRATE_W, CRATE_H,
+                            lift->col * (float)TILE_SIZE, lift->y,
+                            (float)TILE_SIZE, (float)ELEVATOR_PLAT_H));
+                    }
+                    for (int i = 0;
+                         i < state.level.runtime.fall_platform_count; ++i)
+                    {
+                        const FallPlatform *panel =
+                            &state.level.runtime.fall_platforms[i];
+                        if (panel->removed)
+                            continue;
+                        CHECK(!gameplay_boxes_overlap(
+                            crate->x, crate->y, CRATE_W, CRATE_H,
+                            panel->col * (float)TILE_SIZE, panel->y,
+                            (float)TILE_SIZE, (float)FALL_PLATFORM_H));
+                    }
+                    for (int i = 0;
+                         i < state.level.runtime.moving_platform_count; ++i)
+                    {
+                        const MovingPlatform *platform =
+                            &state.level.runtime.moving_platforms[i];
+                        CHECK(!gameplay_boxes_overlap(
+                            crate->x, crate->y, CRATE_W, CRATE_H, platform->x,
+                            platform->row * (float)TILE_SIZE,
+                            (float)TILE_SIZE, (float)MOVING_PLATFORM_H));
+                    }
+                }
+                if (fabsf(crate->x - from) > TILE_SIZE)
+                    ++pushable;
+            }
+        }
+    }
+    /* The control: the campaign's crates are still boxes somebody can move.
+     * Not a count of how many — that would be a number people learn to move —
+     * only that the rules above did not turn the whole set into scenery. */
+    CHECK(pushable > 0);
+
+    /* ---- a panel holds one, and a crate does not arm it ------------------- */
+    {
+        static const char data[] =
+            "############\n"
+            "#          #\n"
+            "#   B      #\n"
+            "#####F######\n"
+            "#S        E#\n"
+            "############\n";
+        memset(&state, 0, sizeof(state));
+        memset(&campaign, 0, sizeof(campaign));
+        rng_seed(&state.rng, 5150);
+        REQUIRE(level_load_data(&state.level, "crate on a panel", data,
+                                strlen(data), &state.rng));
+        REQUIRE(state.level.runtime.crate_count == 1);
+        REQUIRE(state.level.runtime.fall_platform_count == 1);
+        player_reset(&state.player, &state.level);
+
+        Crate *crate = &state.level.runtime.crates[0];
+        const FallPlatform *panel = &state.level.runtime.fall_platforms[0];
+        /* Shoved along the slab and off its end, onto the panel. */
+        for (int step = 0; step < SIM_STEPS(6.0f); ++step)
+        {
+            if (crate->on_ground)
+                crate->vx = CRATE_PUSH_SPEED;
+            level_update_falling_platforms(&state.level, SIM_STEP_DT);
+            gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+            state.events.count = 0;
+        }
+        /* It came to rest on top of the panel rather than through it or in mid
+         * air, and the panel is still there. */
+        CHECK(crate->on_ground);
+        CHECK(!panel->removed);
+        CHECK(!panel->triggered);
+        CHECK(crate->y + CRATE_H <= panel->y + FALL_PLATFORM_H + 1.0f);
+        CHECK(crate->y + CRATE_H >= panel->y - 1.0f);
+    }
+
+    /* ---- and a lift shaft refuses one outright --------------------------- */
+    {
+        static const char data[] =
+            "###########\n"
+            "#     V   #\n"
+            "#     V   #\n"
+            "# S B V  E#\n"
+            "###########\n";
+        memset(&state, 0, sizeof(state));
+        memset(&campaign, 0, sizeof(campaign));
+        rng_seed(&state.rng, 5151);
+        REQUIRE(level_load_data(&state.level, "crate at a shaft", data,
+                                strlen(data), &state.rng));
+        REQUIRE(state.level.runtime.crate_count == 1);
+        REQUIRE(state.level.runtime.elevator_count == 1);
+        player_reset(&state.player, &state.level);
+
+        Crate *crate = &state.level.runtime.crates[0];
+        int shaft_col = state.level.runtime.elevators[0].col;
+        for (int step = 0; step < SIM_STEPS(8.0f); ++step)
+        {
+            if (crate->on_ground)
+                crate->vx = CRATE_PUSH_SPEED;
+            level_update_elevators(&state.level, SIM_STEP_DT);
+            gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+            state.events.count = 0;
+        }
+        /* Stopped short of the shaft rather than parked in it or beyond it: a
+         * box shoved at a goods lift is a box against the shaft wall. */
+        CHECK(crate->x + CRATE_W <= shaft_col * (float)TILE_SIZE + 1.0f);
+    }
+}
+/*
+ * A crate never comes to rest in the rungs.
+ *
+ * The route model is what certifies every shipped map: `route_never_strands`
+ * says the way out is reachable from anywhere the player can get to, and it is
+ * run on the map **as authored**. A crate is not floor to it — that much is
+ * written down — and it is not wall to it either, which was not. A box is the
+ * one solid thing on a floor whose position the player decides, `CRATE_W` is 28
+ * against a 32 tile, and a ladder run ends at a slab with its mouth in the tile
+ * *above* the top rung. So a box shoved along the floor beside a ladder can
+ * cover most of the mouth while overlapping no ladder tile at all, and a
+ * climber is stopped by the underside of a crate exactly as he is by a ceiling.
+ *
+ * Measured before the fix, on sector 9: the box covers 22px of the column, a
+ * 26px body has 10px of gap, and the climb that makes two tiles with the box
+ * where the map puts it makes 31px with the box shoved eight tiles along the
+ * floor. Blocking that cell makes the way out unreachable from the spawn on
+ * four sectors — and a pushed crate outlives a death (`LevelRuntime` says so in
+ * its own comment), so dying does not undo it.
+ *
+ * Three parts, and the third is the one that keeps the first honest. The sweep
+ * asks a *positional* invariant, because that is what the fix enforces and it
+ * is cheap enough to ask of every crate on every map at every point a hand
+ * could stop pushing. The fixture reaches the fall — the one way into the rungs
+ * no horizontal rule can refuse — because an arm nothing can reach is an arm
+ * nobody has checked. And the last part asks the **simulation** whether a man
+ * gets up the ladder, on the shipped sector this was found on, with the control
+ * beside it: a check on a predicate the fix also computes is a check agreeing
+ * with itself.
+ */
+static bool crate_is_in_the_rungs(const Level *level, const Crate *crate)
+{
+    int left = (int)floorf(crate->x / TILE_SIZE);
+    int right = (int)floorf((crate->x + CRATE_W - 1.0f) / TILE_SIZE);
+    int top = (int)floorf(crate->y / TILE_SIZE) - 1;
+    int bottom = (int)floorf((crate->y + CRATE_H - 1.0f) / TILE_SIZE) + 1;
+
+    for (int row = top; row <= bottom; ++row)
+        for (int col = left; col <= right; ++col)
+            if (level_tile(level, col, row) == TILE_LADDER)
+                return true;
+    return false;
+}
+
+static void crate_only_frame(GameplayState *state, CampaignState *campaign)
+{
+    level_update_elevators(&state->level, SIM_STEP_DT);
+    level_update_falling_platforms(&state->level, SIM_STEP_DT);
+    level_update_moving_platforms(&state->level, SIM_STEP_DT);
+    gameplay_update_crates(state, campaign, SIM_STEP_DT);
+    state->events.count = 0;
+}
+
+/* Hold UP from (col,row) and report how far up the ladder the body got. */
+static float climb_from_the_floor(GameplayState *state,
+                                  CampaignState *campaign, int col, int row,
+                                  float seconds)
+{
+    Input up;
+    memset(&up, 0, sizeof(up));
+    up.up = true;
+    state->player.x = col * (float)TILE_SIZE +
+                      ((float)TILE_SIZE - (float)PLAYER_W) * 0.5f;
+    state->player.y = (row + 1) * (float)TILE_SIZE - (float)PLAYER_H;
+    state->player.vy = 0.0f;
+    state->player.on_ladder = false;
+    state->player.crawling = false;
+    float from = state->player.y;
+    for (int step = 0; step < SIM_STEPS(seconds); ++step)
+        step_player_over_crates(state, campaign, &up);
+    return from - state->player.y;
+}
+
+static void test_a_crate_never_comes_to_rest_in_the_rungs(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+
+    /* ---- every box on every map, wherever a hand might stop pushing ------ */
+    const EmbeddedLevelData *sets[2] = {EMBEDDED_LEVELS, EMBEDDED_SUBLEVELS};
+    size_t counts[2] = {EMBEDDED_LEVEL_COUNT, EMBEDDED_SUBLEVEL_COUNT};
+    int authored = 0;
+    int travelled = 0;
+
+    for (int which_set = 0; which_set < 2; ++which_set)
+    {
+        for (size_t index = 0; index < counts[which_set]; ++index)
+        {
+            const EmbeddedLevelData *map = &sets[which_set][index];
+            for (int which = 0; which < MAX_CRATES; ++which)
+            {
+                for (int direction = -1; direction <= 1; direction += 2)
+                {
+                    memset(&state, 0, sizeof(state));
+                    memset(&campaign, 0, sizeof(campaign));
+                    rng_seed(&state.rng, 4400u + index);
+                    gameplay_state_begin_level(&state);
+                    Rng load = state.rng;
+                    REQUIRE(level_load_data(&state.level, map->name, map->data,
+                                            map->size, &load));
+                    if (which >= state.level.runtime.crate_count)
+                        break;
+                    player_reset(&state.player, &state.level);
+                    Crate *crate = &state.level.runtime.crates[which];
+                    float from = crate->x;
+                    /* No crate anywhere is drawn in the rungs, which is what
+                     * makes this a rule about pushing rather than a rule
+                     * somebody has to go and satisfy. */
+                    CHECK(!crate_is_in_the_rungs(&state.level, crate));
+                    ++authored;
+
+                    /*
+                     * Asked on **every frame** rather than only where a hand
+                     * lets go, and that is the difference between a test of
+                     * this and a test of its own arithmetic. Checked at rest
+                     * alone, both halves of the rule pass with the other one
+                     * deleted: the shove-refusal is invisible because the
+                     * topple tidies up after it, and the topple is invisible
+                     * because the refusal keeps the box out. Neither mutation
+                     * fails, which means neither is tested.
+                     *
+                     * `on_ground` is the exemption and it is the only one: a
+                     * box in mid-air over a mouth is a box that has not landed
+                     * anywhere yet, which is the one state the fall fixture
+                     * below exists to walk through.
+                     */
+                    for (int step = 0; step < SIM_STEPS(12.0f); ++step)
+                    {
+                        if (step < SIM_STEPS(9.0f))
+                            crate->vx = (float)direction * CRATE_PUSH_SPEED;
+                        crate_only_frame(&state, &campaign);
+                        CHECK(!(crate->on_ground &&
+                                crate_is_in_the_rungs(&state.level, crate)));
+                    }
+                    if (fabsf(crate->x - from) > TILE_SIZE)
+                        ++travelled;
+                }
+            }
+        }
+    }
+    /* The control, and it is the mutation that matters: a rule that simply
+     * froze every box would satisfy every assertion above. */
+    CHECK(authored >= 40);
+    CHECK(travelled >= 20);
+
+    /* ---- and the one way in no horizontal rule can refuse: a fall -------- */
+    {
+        /*
+         * The one way into a ladder column that no horizontal rule can refuse.
+         * The run starts nine storeys below the floor the box is shoved along,
+         * so the shove is allowed and the fall goes down the column — which is
+         * the case `move_crate_x` is structurally blind to, since a fall does
+         * not change x.
+         *
+         * What clears it here is the box's own momentum carrying it out the far
+         * side rather than the topple; the fixture below is the one that
+         * exercises that, and this one is the reason it has to exist. Kept
+         * separate and kept tall: this is the only drop in the suite long
+         * enough to reach `MAX_FALL_SPEED`, and shortened it puts the crate's
+         * terminal-velocity clamp back on the list of lines nothing runs.
+         */
+        static const char data[] =
+            "##################\n"
+            "#                #\n"
+            "#S B             #\n"
+            "###### ###########\n"
+            "#                #\n"
+            "#                #\n"
+            "#                #\n"
+            "#                #\n"
+            "#                #\n"
+            "#                #\n"
+            "#                #\n"
+            "#      H         #\n"
+            "#      H        E#\n"
+            "##################\n";
+        memset(&state, 0, sizeof(state));
+        memset(&campaign, 0, sizeof(campaign));
+        rng_seed(&state.rng, 4411);
+        gameplay_state_begin_level(&state);
+        REQUIRE(level_load_data(&state.level, "a box down a hole", data,
+                                strlen(data), &state.rng));
+        REQUIRE(state.level.runtime.crate_count == 1);
+        player_reset(&state.player, &state.level);
+        Crate *crate = &state.level.runtime.crates[0];
+        bool ever_in_the_rungs = false;
+        for (int step = 0; step < SIM_STEPS(8.0f); ++step)
+        {
+            if (step < SIM_STEPS(1.4f))
+                crate->vx = CRATE_PUSH_SPEED;
+            crate_only_frame(&state, &campaign);
+            if (crate_is_in_the_rungs(&state.level, crate))
+                ever_in_the_rungs = true;
+        }
+        /* It got in there, which is what makes this fixture worth having, and
+         * it is not in there now. */
+        CHECK(ever_in_the_rungs);
+        CHECK(crate->on_ground);
+        CHECK(!crate_is_in_the_rungs(&state.level, crate));
+    }
+
+    /* ---- the near side walled a tile out, which is how sector 9 sat ----- */
+    {
+        /*
+         * The recess this stages is the geometry the padding above now keeps a
+         * *shove* out of, and a fall can still reach: a mouth with masonry one
+         * column to its left and open floor to its right. The box is placed
+         * rather than pushed, because what has to be exercised is the second
+         * half of `crate_topple_off_the_rungs` — the nearer side moves it a
+         * single pixel and stops against the wall, and the far side then has to
+         * be measured again from where it actually is. Measured from where it
+         * started, the far side falls a pixel short and the box stays in the
+         * rungs for ever with that function running on it 240 times a second.
+         */
+        static const char data[] =
+            "###############\n"
+            "#S            #\n"
+            "#####    ######\n"
+            "#             #\n"
+            "#    #H      E#\n"
+            "###############\n";
+        memset(&state, 0, sizeof(state));
+        memset(&campaign, 0, sizeof(campaign));
+        rng_seed(&state.rng, 4433);
+        gameplay_state_begin_level(&state);
+        REQUIRE(level_load_data(&state.level, "a mouth in a recess", data,
+                                strlen(data), &state.rng));
+        REQUIRE(state.level.runtime.crate_count == 0);
+        player_reset(&state.player, &state.level);
+
+        /* One box, put where a fall would have left it. */
+        Crate *crate = &state.level.runtime.crates[0];
+        memset(crate, 0, sizeof(*crate));
+        crate->active = true;
+        crate->x = 193.0f;
+        crate->y = 4.0f * TILE_SIZE - (float)CRATE_H;
+        state.level.runtime.crate_count = 1;
+        REQUIRE(level_tile(&state.level, 6, 4) == TILE_LADDER);
+        REQUIRE(level_tile(&state.level, 5, 4) == TILE_WALL);
+        REQUIRE(crate_is_in_the_rungs(&state.level, crate));
+
+        for (int step = 0; step < SIM_STEPS(2.0f); ++step)
+            crate_only_frame(&state, &campaign);
+
+        CHECK(crate->on_ground);
+        CHECK(!crate_is_in_the_rungs(&state.level, crate));
+    }
+
+    /* ---- and the body, on the floor this was found on ------------------- */
+    {
+        const int sector = 8;      /* sector 9, 0-based */
+        const int ladder_col = 30; /* the run the box used to sit over */
+        const int stand_row = 13;
+        float clear = 0.0f;
+        float shoved = 0.0f;
+
+        for (int pass = 0; pass < 2; ++pass)
+        {
+            memset(&state, 0, sizeof(state));
+            memset(&campaign, 0, sizeof(campaign));
+            rng_seed(&state.rng, 4422);
+            gameplay_state_begin_level(&state);
+            Rng load = state.rng;
+            REQUIRE(level_load_data(&state.level,
+                                    EMBEDDED_LEVELS[sector].name,
+                                    EMBEDDED_LEVELS[sector].data,
+                                    EMBEDDED_LEVELS[sector].size, &load));
+            player_reset(&state.player, &state.level);
+            REQUIRE(state.level.runtime.crate_count > 0);
+            REQUIRE(level_tile(&state.level, ladder_col, stand_row) ==
+                    TILE_LADDER);
+
+            if (pass == 1)
+            {
+                Crate *crate = &state.level.runtime.crates[0];
+                for (int step = 0; step < SIM_STEPS(20.0f); ++step)
+                {
+                    crate->vx = -CRATE_PUSH_SPEED;
+                    crate_only_frame(&state, &campaign);
+                }
+                for (int step = 0; step < SIM_STEPS(2.0f); ++step)
+                    crate_only_frame(&state, &campaign);
+            }
+
+            float climbed = climb_from_the_floor(&state, &campaign, ladder_col,
+                                                 stand_row, 6.0f);
+            if (pass == 0)
+                clear = climbed;
+            else
+                shoved = climbed;
+        }
+        /* The control first: the ladder is a ladder with the box where the map
+         * puts it. Then the same climb with the box shoved as far along that
+         * floor as it will go — 31px of a two-tile run before the fix. */
+        CHECK(clear >= 2.0f * TILE_SIZE - 1.0f);
+        CHECK(shoved >= clear - 1.0f);
+    }
+}
+
+/*
+ * A crate never shoves a body into the building.
+ *
+ * `gameplay_resolve_dog_crates` and the tail of `gameplay_resolve_player_crates`
+ * both put a body out from under a box by setting its x to one edge of the crate
+ * plus or minus its own width, and neither used to ask the building whether that
+ * was somewhere a body fits. **That shipped.** A crate is 28 wide against a 32
+ * tile and `crate_position_clear` reads its right edge as `x + w - 1`, so one
+ * shoved hard against a wall settles about a pixel inside the wall column; the
+ * ejection then set a dog's left edge to `crate->x + CRATE_W`, and a body 24
+ * wide starting a pixel inside a 32 tile is a body *wholly* inside it — the
+ * state `box_is_walled_in` exists to refuse, on an animal that is then
+ * invisible, unshootable and standing in a wall.
+ *
+ * What follows is worse than the overlap and is why this is an error rather than
+ * a picture. The next step of the animal's own walk back to its post runs
+ * `level_move`'s left clamp, which answers a solid left-edge column with
+ * `x = (col + 1) * TILE_SIZE` — one tile *further out* — and against a wall at
+ * the edge of the map that is off the map altogether, permanently, for the rest
+ * of the visit. Measured before the fix: reproducible by holding one direction,
+ * on sectors 4, 6, 8, 9, 10, 12, 16 and 17 and in the penthouse washroom, in as
+ * little as 0.02s, and found unaided by a monkey on the washroom — 2 runs of 256
+ * at 300s each — which is the one map with a crate, a dog and a hard wall on a
+ * single row.
+ *
+ * Two things about why nothing caught it. The suite's monkey keeps this exact
+ * invariant for dogs and does not run the four washrooms at all, and those are
+ * precisely the maps that put the three objects in a line. And a crate shoved at
+ * an animal is a *mechanic* — `gameplay_kill_dog_with_crate` is what a box
+ * dropped on one does — so the shove has to keep meaning something, which is why
+ * the fix ejects to the *other* side rather than nowhere and why the two
+ * controls at the end of this test are not decoration: a fix that simply stopped
+ * moving the dog passes every assertion above and quietly deletes the mechanic.
+ *
+ * The player is driven through the same rule for the same reason the crate's own
+ * three surfaces are: one shared answer cannot be right for one caller and wrong
+ * for the other. His side of it was never reproduced — `move_crate_x` stops a
+ * crate before it can carry him anywhere, because when pushing he is behind the
+ * box — and it is here so that stays true rather than because it did not.
+ */
+static void test_a_crate_never_shoves_a_body_into_the_building(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+
+    int maps_with_both = 0;
+    for (size_t index = 0;
+         index < EMBEDDED_LEVEL_COUNT + EMBEDDED_SUBLEVEL_COUNT; ++index)
+    {
+        const EmbeddedLevelData *source =
+            index < EMBEDDED_LEVEL_COUNT
+                ? &EMBEDDED_LEVELS[index]
+                : &EMBEDDED_SUBLEVELS[index - EMBEDDED_LEVEL_COUNT];
+
+        for (int shove = -1; shove <= 1; shove += 2)
+        {
+            memset(&state, 0, sizeof(state));
+            memset(&campaign, 0, sizeof(campaign));
+            rng_seed(&state.rng, 4111u + index);
+            gameplay_state_begin_level(&state);
+            Rng load = state.rng;
+            REQUIRE(level_load_data(&state.level, source->name, source->data,
+                                    source->size, &load));
+            if (state.level.map.mode == LEVEL_MODE_FACADE)
+                break;
+            gameplay_ai_spawn_level_entities(&state);
+            player_reset(&state.player, &state.level);
+            state.player.hp = gameplay_player_max_hp(&state);
+            if (state.level.runtime.crate_count == 0 || state.dog_count == 0)
+                break;
+            /* The men are not the subject and a provoked one only adds noise:
+             * `gameplay_resolve_enemy_crates` leaves a side overlap alone on
+             * purpose and has no ejection to get wrong. */
+            state.enemy_count = 0;
+            if (shove < 0)
+                ++maps_with_both;
+
+            /* Player, crate, animal, in that order along the shove, so the box
+             * arrives at whatever the row ends in with the dog in front of it.
+             * Staged rather than waited for: which side of a crate a patrol
+             * happens to be on is a seeded accident, and what is under test is
+             * the geometry once it is there. */
+            Crate *crate = &state.level.runtime.crates[0];
+            Dog *dog = &state.dogs[0];
+            state.player.x = shove > 0 ? crate->x - PLAYER_W - 1.0f
+                                       : crate->x + CRATE_W + 1.0f;
+            state.player.y = crate->y + CRATE_H - PLAYER_H;
+            state.player.vx = 0.0f;
+            state.player.vy = 0.0f;
+            state.player.on_ground = true;
+            dog->x = shove > 0 ? crate->x + CRATE_W + 1.0f
+                               : crate->x - DOG_W - 1.0f;
+            dog->y = crate->y + CRATE_H - DOG_H;
+            dog->vx = 0.0f;
+            dog->vy = 0.0f;
+            dog->on_ground = true;
+            dog->state = DOG_GUARD;
+            dog->guard_x = dog->x;
+
+            float world_w = state.level.map.width * (float)TILE_SIZE;
+            for (int step = 0; step < SIM_STEPS(30.0f); ++step)
+            {
+                Input input = {0};
+                input.right = shove > 0;
+                input.left = shove < 0;
+                state.events.count = 0;
+
+                bool was_grounded = state.player.on_ground;
+                float previous_x = state.player.x;
+                float previous_y = state.player.y;
+                float previous_h = state.player.crawling
+                                       ? (float)PLAYER_CRAWL_H
+                                       : (float)PLAYER_H;
+                float fall = player_update(&state.player, &state.level, &input,
+                                           SIM_STEP_DT);
+                level_update_moving_platforms(&state.level, SIM_STEP_DT);
+                gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+                gameplay_resolve_player_crates(&state, previous_x, previous_y,
+                                               previous_h);
+                gameplay_ride_platforms(&state, SIM_STEP_DT);
+                gameplay_handle_player_landing(&state, was_grounded, fall);
+                gameplay_ai_update_movement(&state, SIM_STEP_DT);
+
+                /* A dog killed by the box is the mechanic working, not the case
+                 * under test — there is nothing left to eject. */
+                if (dog->dead)
+                    break;
+
+                CHECK(!box_is_walled_in(&state, dog->x, dog->y, DOG_W, DOG_H));
+                CHECK(dog->x >= -0.5f);
+                CHECK(dog->x + DOG_W <= world_w + 0.5f);
+
+                float height = state.player.crawling ? (float)PLAYER_CRAWL_H
+                                                     : (float)PLAYER_H;
+                CHECK(!box_is_walled_in(&state, state.player.x, state.player.y,
+                                        PLAYER_W, height));
+                CHECK(state.player.x >= -0.5f);
+                CHECK(state.player.x + PLAYER_W <= world_w + 0.5f);
+            }
+        }
+    }
+    /* The campaign still puts the three objects together somewhere, so the sweep
+     * above measured something. Not how many floors — that would be a number
+     * somebody has to keep — only that it is not nought. */
+    CHECK(maps_with_both > 0);
+
+    /* ---- the mechanic survives the guard ---------------------------------- */
+    {
+        /* Open floor and nothing to be pressed against: the shove must still
+         * move the animal along, and must not leave it inside the box. This is
+         * the assertion that fails if the fix is "stop ejecting". */
+        static const char data[] =
+            "##################\n"
+            "#                #\n"
+            "#S    B W       E#\n"
+            "##################\n";
+        memset(&state, 0, sizeof(state));
+        memset(&campaign, 0, sizeof(campaign));
+        rng_seed(&state.rng, 6060);
+        REQUIRE(level_load_data(&state.level, "shove a dog along", data,
+                                strlen(data), &state.rng));
+        gameplay_ai_spawn_level_entities(&state);
+        player_reset(&state.player, &state.level);
+        state.player.hp = gameplay_player_max_hp(&state);
+        REQUIRE(state.level.runtime.crate_count == 1);
+        REQUIRE(state.dog_count == 1);
+        /* A `W` brings its handler, and a man is the one thing `move_crate_x`
+         * *does* stop — so leaving him on a fixture this narrow measures the
+         * guard blocking the box rather than the box reaching the animal. */
+        state.enemy_count = 0;
+
+        Crate *crate = &state.level.runtime.crates[0];
+        Dog *dog = &state.dogs[0];
+        dog->owner = -1;
+        dog->y = crate->y + CRATE_H - DOG_H;
+        dog->x = crate->x + CRATE_W + 1.0f;
+        dog->on_ground = true;
+        dog->state = DOG_GUARD;
+        dog->guard_x = dog->x;
+        state.player.x = crate->x - PLAYER_W - 1.0f;
+        state.player.y = crate->y + CRATE_H - PLAYER_H;
+        state.player.on_ground = true;
+        float dog_from = dog->x;
+
+        for (int step = 0; step < SIM_STEPS(1.0f); ++step)
+        {
+            Input input = {0};
+            input.right = true;
+            state.events.count = 0;
+            float previous_x = state.player.x;
+            float previous_y = state.player.y;
+            player_update(&state.player, &state.level, &input, SIM_STEP_DT);
+            gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+            gameplay_resolve_player_crates(&state, previous_x, previous_y,
+                                           (float)PLAYER_H);
+            gameplay_ai_update_movement(&state, SIM_STEP_DT);
+        }
+        REQUIRE(!dog->dead);
+        CHECK(dog->x - dog_from > TILE_SIZE);
+        CHECK(!gameplay_boxes_overlap(dog->x, dog->y, DOG_W, DOG_H, crate->x,
+                                      crate->y, CRATE_W, CRATE_H));
+        CHECK(!box_is_walled_in(&state, dog->x, dog->y, DOG_W, DOG_H));
+    }
+
+    /* ---- the other side is where it goes when the first one is a wall ----- */
+    {
+        /* The case the shipped bug was: the box arrives at the end of the row
+         * with the animal between it and the masonry, so the side it is leaving
+         * by does not exist. It has to come out *behind* the crate — dropping
+         * the second attempt in `eject_from_crate` leaves it overlapping the box
+         * instead, which satisfies every "not in a wall" assertion above while
+         * deleting the shove. */
+        static const char data[] =
+            "#############\n"
+            "#           #\n"
+            "#S   B  W  E#\n"
+            "#############\n";
+        memset(&state, 0, sizeof(state));
+        memset(&campaign, 0, sizeof(campaign));
+        rng_seed(&state.rng, 6062);
+        REQUIRE(level_load_data(&state.level, "a dog against the wall", data,
+                                strlen(data), &state.rng));
+        gameplay_ai_spawn_level_entities(&state);
+        player_reset(&state.player, &state.level);
+        state.player.hp = gameplay_player_max_hp(&state);
+        REQUIRE(state.level.runtime.crate_count == 1);
+        REQUIRE(state.dog_count == 1);
+        state.enemy_count = 0;
+
+        Crate *crate = &state.level.runtime.crates[0];
+        Dog *dog = &state.dogs[0];
+        float wall_x = (float)(state.level.map.width - 1) * TILE_SIZE;
+        dog->owner = -1;
+        dog->y = crate->y + CRATE_H - DOG_H;
+        dog->x = wall_x - DOG_W;
+        dog->on_ground = true;
+        dog->state = DOG_GUARD;
+        dog->guard_x = dog->x;
+        state.player.x = crate->x - PLAYER_W - 1.0f;
+        state.player.y = crate->y + CRATE_H - PLAYER_H;
+        state.player.on_ground = true;
+
+        int frames_inside_the_box = 0;
+        for (int step = 0; step < SIM_STEPS(6.0f); ++step)
+        {
+            Input input = {0};
+            input.right = true;
+            state.events.count = 0;
+            float previous_x = state.player.x;
+            float previous_y = state.player.y;
+            player_update(&state.player, &state.level, &input, SIM_STEP_DT);
+            gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+            gameplay_resolve_player_crates(&state, previous_x, previous_y,
+                                           (float)PLAYER_H);
+            gameplay_ai_update_movement(&state, SIM_STEP_DT);
+            if (dog->dead)
+                break;
+            CHECK(!box_is_walled_in(&state, dog->x, dog->y, DOG_W, DOG_H));
+            if (gameplay_boxes_overlap(dog->x, dog->y, DOG_W, DOG_H, crate->x,
+                                       crate->y, CRATE_W, CRATE_H))
+                ++frames_inside_the_box;
+        }
+        REQUIRE(!dog->dead);
+        /* Nought, and this is the assertion the second attempt in
+         * `eject_from_crate` exists for. Without it the animal is simply left
+         * where it was and the box slides over it — measured at 40 frames, a
+         * sixth of a second of a dog drawn inside a crate — before its own
+         * turn-at-a-dead-end logic walks it clear. Every other assertion here
+         * is satisfied by that, which is why the count is what is checked
+         * rather than the end state. */
+        CHECK(frames_inside_the_box == 0);
+        /* Out the back of the box rather than through the wall or inside the
+         * box: the crate has been driven right up to the masonry, so there is
+         * exactly one side left. */
+        CHECK(crate->x + CRATE_W >= wall_x - 1.5f);
+        CHECK(dog->x + DOG_W <= crate->x + 0.5f);
+        CHECK(!gameplay_boxes_overlap(dog->x, dog->y, DOG_W, DOG_H, crate->x,
+                                      crate->y, CRATE_W, CRATE_H));
+    }
+
+    /* ---- and the same rule holds for the man ------------------------------ */
+    {
+        /* Reached the other way round, because a player pushing a crate is
+         * always behind it. A box already coasting — `crate->vx` outlives the
+         * shove and decays by `CRATE_FRICTION` — arrives at somebody who got in
+         * front of it, which on flat ground means over it. The old code answered
+         * that with `crate->x + CRATE_W` and no question asked, which is the
+         * masonry. Nothing in the campaign was measured reaching this; the
+         * fixture is here so that stays a fact rather than an assumption.
+         */
+        static const char data[] =
+            "#############\n"
+            "#           #\n"
+            "#S   B     E#\n"
+            "#############\n";
+        memset(&state, 0, sizeof(state));
+        memset(&campaign, 0, sizeof(campaign));
+        rng_seed(&state.rng, 6063);
+        REQUIRE(level_load_data(&state.level, "a coasting crate", data,
+                                strlen(data), &state.rng));
+        gameplay_ai_spawn_level_entities(&state);
+        player_reset(&state.player, &state.level);
+        state.player.hp = gameplay_player_max_hp(&state);
+        REQUIRE(state.level.runtime.crate_count == 1);
+
+        Crate *crate = &state.level.runtime.crates[0];
+        float wall_x = (float)(state.level.map.width - 1) * TILE_SIZE;
+        state.player.x = wall_x - PLAYER_W;
+        (void)wall_x;
+        state.player.y = crate->y + CRATE_H - PLAYER_H;
+        state.player.on_ground = true;
+        crate->x = wall_x - PLAYER_W - CRATE_W - 2.0f;
+        crate->vx = CRATE_PUSH_SPEED;
+
+        for (int step = 0; step < SIM_STEPS(4.0f); ++step)
+        {
+            Input nothing = {0};
+            state.events.count = 0;
+            float previous_x = state.player.x;
+            float previous_y = state.player.y;
+            float previous_h = state.player.crawling ? (float)PLAYER_CRAWL_H
+                                                     : (float)PLAYER_H;
+            player_update(&state.player, &state.level, &nothing, SIM_STEP_DT);
+            gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+            gameplay_resolve_player_crates(&state, previous_x, previous_y,
+                                           previous_h);
+            float height = state.player.crawling ? (float)PLAYER_CRAWL_H
+                                                 : (float)PLAYER_H;
+            /* Not one pixel of him in the masonry, which is stricter than
+             * the campaign sweep above and is the assertion that has an
+             * opinion here: unchecked, the ejection puts his right edge 14px
+             * past the wall — half inside it rather than wholly, so
+             * `box_is_walled_in` is satisfied and the frame still draws a man
+             * standing in the stonework. The predicate is the one the fix uses,
+             * so the two cannot disagree about what "fits" means. */
+            CHECK(gameplay_box_tiles_clear(&state, state.player.x,
+                                           state.player.y, PLAYER_W, height,
+                                           player_stance(&state.player)));
+        }
+    }
+
+    /* ---- and a dog still stands on one ------------------------------------ */
+    {
+        /* The vertical arm shares nothing with the ejection, and it is here
+         * because the guard added above is a clearance test and a clearance test
+         * over the tile a crate occupies is the one that could plausibly take
+         * this away. */
+        static const char data[] =
+            "##################\n"
+            "#                #\n"
+            "#S    B         E#\n"
+            "##################\n";
+        memset(&state, 0, sizeof(state));
+        memset(&campaign, 0, sizeof(campaign));
+        rng_seed(&state.rng, 6061);
+        REQUIRE(level_load_data(&state.level, "a dog on a crate", data,
+                                strlen(data), &state.rng));
+        gameplay_ai_spawn_level_entities(&state);
+        REQUIRE(state.level.runtime.crate_count == 1);
+        Crate *crate = &state.level.runtime.crates[0];
+
+        REQUIRE(state.dog_count == 0);
+        state.dog_count = 1;
+        Dog *dog = &state.dogs[0];
+        memset(dog, 0, sizeof(*dog));
+        dog->hp = DOG_HP;
+        dog->owner = -1;
+        dog->dir = 1;
+        dog->x = crate->x + (CRATE_W - DOG_W) * 0.5f;
+        dog->y = crate->y - DOG_H - 20.0f;
+        dog->state = DOG_GUARD;
+        dog->guard_x = dog->x;
+
+        /* Only as far as the landing: once it is down the animal is free to
+         * wander off the box, which is not what this arm is about. */
+        bool landed = false;
+        for (int step = 0; step < SIM_STEPS(1.0f) && !landed; ++step)
+        {
+            state.events.count = 0;
+            gameplay_ai_update_movement(&state, SIM_STEP_DT);
+            landed = dog->on_ground;
+        }
+        CHECK(landed);
+        CHECK(fabsf(dog->y - (crate->y - DOG_H)) < 1.5f);
+    }
+}
+
+/*
+ * A moving platform carries whatever it is holding up, not just the player.
+ *
+ * `level_move` has always settled a guard, a dog or a janitor onto a plate — it
+ * treats one as the one-way platform it is, in the same block as the falling
+ * panel beside it — so the *support* was never the problem and a test that only
+ * asked "is he still at plate height" passed the whole time. Nothing carried
+ * him. `gameplay_ride_platforms` was the player's pass alone, so a body standing
+ * on a plate was left behind by it and dropped off the trailing edge 0.44s
+ * later, measured on sector 5.
+ *
+ * Which is reachable by design rather than by accident, and that is what
+ * separates this from the crate's version of the same limit.
+ * `enemy_floor_in_col` counts a platform as floor *on purpose*, under a comment
+ * about a pursuing guard not mistaking one for a gap — so the AI walks bodies
+ * onto plates, and it leaves them resting there for 716 frames on sector 14 and
+ * 1512 on sector 17 over twenty-four minutes of play a sector. Sector 17's plate
+ * is eleven tiles long and it is the roof. After the carry that figure is 3631,
+ * which is the same guards riding instead of falling.
+ *
+ * Driven in `update_playing`'s own order, because the ordering is the whole of
+ * what makes the carry correct: the plate steps, then this pass carries what is
+ * on it, then the bodies move. A harness that called the AI without
+ * `gameplay_ride_platforms` measured the old behaviour and reported it as
+ * unchanged, which is how this nearly went in unverified.
+ *
+ * The dog gets a fixture rather than a campaign sweep: `dog_has_floor_ahead`
+ * counts a plate as floor so an animal can walk onto one, but no shipped map
+ * puts a dog on a platform's storey, so nothing but a placed one reaches that
+ * arm. Leaving the arm out while keeping the guard's would only move the
+ * asymmetry this test exists to close.
+ */
+static void test_a_moving_platform_carries_what_it_holds_up(void)
+{
+    static GameplayState state;
+    static CampaignState campaign;
+
+    int plates = 0;
+    for (size_t index = 0; index < EMBEDDED_LEVEL_COUNT; ++index)
+    {
+        REQUIRE(stage_sector_at_its_spawn(&state, &campaign, index,
+                                          4141u + index));
+        if (state.level.runtime.moving_platform_count == 0)
+            continue;
+
+        for (int which = 0;
+             which < state.level.runtime.moving_platform_count; ++which)
+        {
+            REQUIRE(stage_sector_at_its_spawn(&state, &campaign, index,
+                                              4141u + index));
+            const MovingPlatform *plate =
+                &state.level.runtime.moving_platforms[which];
+            float plate_top = plate->row * (float)TILE_SIZE;
+            float plate_from = plate->x;
+            plates++;
+
+            /* One guard put on the plate the way the AI walks him onto it, and
+             * held still: what is under test is the plate's carry, and a guard
+             * with somewhere to be would walk off under his own steam. */
+            REQUIRE(state.enemy_count > 0);
+            Enemy *guard = &state.enemies[0];
+            guard->dead = false;
+            guard->climbing = false;
+            guard->talking = false;
+            guard->on_elevator = -1;
+            guard->x = plate->x + (TILE_SIZE - ENEMY_W) * 0.5f;
+            guard->y = plate_top - ENEMY_H;
+            guard->vx = 0.0f;
+            guard->vy = 0.0f;
+            guard->on_ground = true;
+            float guard_from = guard->x;
+
+            for (int step = 0; step < SIM_STEPS(1.0f); ++step)
+            {
+                state.events.count = 0;
+                level_update_moving_platforms(&state.level, SIM_STEP_DT);
+                gameplay_ride_platforms(&state, SIM_STEP_DT);
+                /* The plate is the only thing moving; the guard is pinned to
+                 * the height it left him at so this measures the carry rather
+                 * than the AI's opinion of where to stand. */
+                guard->vx = 0.0f;
+            }
+
+            /* The plate went somewhere, or the fixture is not measuring one. */
+            CHECK(fabsf(plate->x - plate_from) > (float)TILE_SIZE * 0.5f);
+            /* And it took him with it, to within the clearance test's own
+             * refusals — the rider meets masonry the plate stops short of, so
+             * this asks that he travelled most of the way rather than exactly
+             * as far. */
+            float plate_moved = plate->x - plate_from;
+            float guard_moved = guard->x - guard_from;
+            CHECK(guard_moved * plate_moved > 0.0f);
+            CHECK(fabsf(guard_moved) > fabsf(plate_moved) * 0.5f);
+            /* Still on it rather than dropped through it. */
+            CHECK(fabsf((guard->y + ENEMY_H) - plate_top) < 2.0f);
+        }
+    }
+    /* The campaign has plates and this walked them, rather than skipping a
+     * campaign that had quietly lost them. */
+    CHECK(plates >= 3);
+
+    /* ---- and an animal, which no shipped map puts on a plate ---- */
+    REQUIRE(stage_sector_at_its_spawn(&state, &campaign, 4, 909u));
+    REQUIRE(state.level.runtime.moving_platform_count > 0);
+    REQUIRE(state.dog_count > 0);
+    {
+        const MovingPlatform *plate = &state.level.runtime.moving_platforms[0];
+        float plate_top = plate->row * (float)TILE_SIZE;
+        float plate_from = plate->x;
+        Dog *dog = &state.dogs[0];
+        dog->dead = false;
+        dog->x = plate->x + (TILE_SIZE - DOG_W) * 0.5f;
+        dog->y = plate_top - DOG_H;
+        dog->vx = 0.0f;
+        dog->vy = 0.0f;
+        dog->on_ground = true;
+        float dog_from = dog->x;
+        for (int step = 0; step < SIM_STEPS(1.0f); ++step)
+        {
+            state.events.count = 0;
+            level_update_moving_platforms(&state.level, SIM_STEP_DT);
+            gameplay_ride_platforms(&state, SIM_STEP_DT);
+            dog->vx = 0.0f;
+        }
+        float plate_moved = plate->x - plate_from;
+        CHECK(fabsf(plate_moved) > (float)TILE_SIZE * 0.5f);
+        CHECK((dog->x - dog_from) * plate_moved > 0.0f);
+        CHECK(fabsf(dog->x - dog_from) > fabsf(plate_moved) * 0.5f);
+        CHECK(fabsf((dog->y + DOG_H) - plate_top) < 2.0f);
+    }
+}
+
+
+static void test_a_crate_is_shoved_from_either_side_and_stops_a_jump(void)
+{
+    /* ---- shoved leftwards ---------------------------------------------- */
+    {
+        static const char data[] =
+            "##############\n"
+            "#            #\n"
+            "#            #\n"
+            "#S   B     BE#\n"
+            "##############\n";
+        GameplayState state = {0};
+        CampaignState campaign = {0};
+        rng_seed(&state.rng, 4243);
+        REQUIRE(level_load_data(&state.level, "crate shoved left", data,
+                                strlen(data), &state.rng));
+        REQUIRE(state.level.runtime.crate_count == 2);
+        player_reset(&state.player, &state.level);
+
+        Crate *near = &state.level.runtime.crates[0];
+        Crate *far = &state.level.runtime.crates[1];
+        for (int i = 0; i < SIM_STEPS(1.0f); ++i)
+            gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+        REQUIRE(far->on_ground);
+        float near_start = near->x;
+        float far_start = far->x;
+
+        /* Stood to the right of the far box and walked into it, which is the
+         * mirror of the test above and the branch nothing had taken. */
+        state.player.x = far_start + CRATE_W + 2.0f;
+        state.player.y = far->y + CRATE_H - PLAYER_H;
+        state.player.vx = 0.0f;
+        state.player.vy = 0.0f;
+        state.player.on_ground = true;
+        Input walk_left = {.left = true};
+        for (int i = 0; i < SIM_STEPS(8.0f); ++i)
+            step_player_over_crates(&state, &campaign, &walk_left);
+
+        /* It travelled, leftwards, and by more than a nudge. */
+        CHECK(far->x < far_start - TILE_SIZE);
+        /* And it stopped *on* the near box rather than inside it: two boxes
+         * cannot share the ground, whichever way one of them arrived. */
+        CHECK(!gameplay_boxes_overlap(near->x, near->y, CRATE_W, CRATE_H,
+                                      far->x, far->y, CRATE_W, CRATE_H));
+        CHECK(far->x >= near_start + CRATE_W - 0.5f);
+        /* The near box is a wall here, not cargo — it may be nudged, but it is
+         * not carried along the floor. */
+        CHECK(fabsf(near->x - near_start) < 4.0f);
+        /* And the player is beside what he has been leaning on, not folded into
+         * it — the `direction < 0` arm of the same push-out. */
+        CHECK(!gameplay_boxes_overlap(state.player.x, state.player.y, PLAYER_W,
+                                      PLAYER_H, far->x, far->y, CRATE_W,
+                                      CRATE_H));
+        CHECK(state.player.x >= far->x + CRATE_W - 0.5f);
+    }
+
+    /* ---- struck from underneath ---------------------------------------- */
+    {
+        /* A ledge with a drop off its right-hand end, and headroom under the
+         * overhang for a jump to be worth making. */
+        static const char data[] =
+            "############\n"
+            "#          #\n"
+            "#          #\n"
+            "#   B      #\n"
+            "#  ####    #\n"
+            "#          #\n"
+            "#S        E#\n"
+            "############\n";
+        GameplayState state = {0};
+        CampaignState campaign = {0};
+        rng_seed(&state.rng, 4244);
+        REQUIRE(level_load_data(&state.level, "crate overhang", data,
+                                strlen(data), &state.rng));
+        REQUIRE(state.level.runtime.crate_count == 1);
+        player_reset(&state.player, &state.level);
+
+        Crate *crate = &state.level.runtime.crates[0];
+        for (int i = 0; i < SIM_STEPS(1.0f); ++i)
+            gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+        REQUIRE(crate->on_ground);
+
+        /* Shoved to the lip: the ledge ends at the right edge of column 6, and
+         * one pixel of tile under the box is all the support there is. */
+        const float ledge_edge = 7.0f * TILE_SIZE;
+        crate->x = ledge_edge - 4.0f;
+        crate->vx = 0.0f;
+        for (int i = 0; i < SIM_STEPS(1.0f); ++i)
+            gameplay_update_crates(&state, &campaign, SIM_STEP_DT);
+        /* The simulation's opinion, not the test's: it stays up, and it stays
+         * where it was put. A configuration the game refuses would make
+         * everything below a measurement of nothing. */
+        REQUIRE(crate->on_ground);
+        REQUIRE(fabsf(crate->x - (ledge_edge - 4.0f)) < 0.01f);
+        REQUIRE(crate->x + CRATE_W > ledge_edge);
+        float resting_y = crate->y;
+
+        /* Under the overhanging corner, on the floor, and jumping. */
+        state.player.x = ledge_edge + 1.0f;
+        state.player.y = 6.0f * TILE_SIZE - PLAYER_H;
+        state.player.vx = 0.0f;
+        state.player.vy = 0.0f;
+        state.player.on_ground = true;
+        float head_room = state.player.y;
+
+        bool struck = false;
+        float highest = state.player.y;
+        Input jump = {.jump = true, .jump_held = true};
+        for (int i = 0; i < SIM_STEPS(1.2f); ++i)
+        {
+            step_player_over_crates(&state, &campaign, &jump);
+            if (state.player.y < highest)
+                highest = state.player.y;
+            if (state.player.y <= crate->y + CRATE_H + 0.5f &&
+                state.player.y >= crate->y + CRATE_H - 2.0f &&
+                state.player.vy >= 0.0f)
+            {
+                struck = true;
+            }
+        }
+
+        /* He left the floor, met the underside, and stopped there rather than
+         * passing through it. */
+        CHECK(highest < head_room - 8.0f);
+        CHECK(struck);
+        CHECK(highest >= crate->y + CRATE_H - 2.0f);
+        /* And the box overhead is a ceiling rather than a trampoline: it did not
+         * move, and it is still on its pixel of ledge. */
+        CHECK(fabsf(crate->y - resting_y) < 0.5f);
+        CHECK(crate->on_ground);
+
+        /*
+         * And the box is what stopped him, measured rather than assumed.
+         *
+         * The same jump with the crate taken out of the world reaches its own
+         * apex, and the difference between the two is what the underside is
+         * worth. Without this the assertions above are satisfied by a jump that
+         * simply ran out of height at the right moment — which is the shape of
+         * mistake this file's own notes keep describing, an assertion that
+         * agrees with the bug because both take the same branch.
+         */
+        crate->active = false;
+        state.player.x = ledge_edge + 1.0f;
+        state.player.y = 6.0f * TILE_SIZE - PLAYER_H;
+        state.player.vx = 0.0f;
+        state.player.vy = 0.0f;
+        state.player.on_ground = true;
+        float unobstructed = state.player.y;
+        for (int i = 0; i < SIM_STEPS(1.2f); ++i)
+        {
+            step_player_over_crates(&state, &campaign, &jump);
+            if (state.player.y < unobstructed)
+                unobstructed = state.player.y;
+        }
+        /* A clear jump goes materially higher than a blocked one, and the gap is
+         * the crate. `PLAYER_JUMP_SPEED` against `GRAVITY` is about two tiles of
+         * apex and the overhang sits one tile up, so the shortfall is most of a
+         * tile — asked as "materially" rather than as a number, because the
+         * quantity belongs to the jump and not to this test. */
+        CHECK(unobstructed < highest - 8.0f);
+        CHECK(unobstructed < head_room - TILE_SIZE);
+    }
 }
 
 /*
@@ -9128,7 +14719,7 @@ static void test_enemy_uses_ladder_while_avoiding_crate(void)
     enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
                  level.map.start_x + PLAYER_W * 0.5f,
                  1.0f * TILE_SIZE + PLAYER_H * 0.5f,
-                 false, 1.0f, &rng);
+                 false, false, 1.0f, &rng);
 
     CHECK(enemy.climbing);
     CHECK(enemy.climb_dir == -1);
@@ -9161,13 +14752,13 @@ static void test_patrol_enemy_does_not_immediately_leave_ladder(void)
        side exit on the next frame, while still on the starting floor. */
     rng_seed(&rng, 389);
     enemy_update(&enemy, &level, SIM_STEP_DT, false, false,
-                 0.0f, 0.0f, false, 1.0f, &rng);
+                 0.0f, 0.0f, false, false, 1.0f, &rng);
     CHECK(enemy.climbing);
     CHECK(enemy.climb_dir == -1);
 
     float climb_start_y = enemy.y;
     enemy_update(&enemy, &level, SIM_STEP_DT, false, false,
-                 0.0f, 0.0f, false, 1.0f, &rng);
+                 0.0f, 0.0f, false, false, 1.0f, &rng);
 
     CHECK(enemy.climbing);
     CHECK(enemy.y < climb_start_y);
@@ -9227,14 +14818,14 @@ static void test_enemy_aligns_before_vertical_climb(void)
 
     enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
                  level.map.start_x + PLAYER_W * 0.5f,
-                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, 1.0f, &rng);
+                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, false, 1.0f, &rng);
     CHECK(enemy.climbing);
 
     float climb_start_y = enemy.y;
     float off_ladder_x = enemy.x;
     enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
                  level.map.start_x + PLAYER_W * 0.5f,
-                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, 1.0f, &rng);
+                 2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, false, 1.0f, &rng);
 
     CHECK(enemy.x > off_ladder_x);
     CHECK(fabsf(enemy.y - climb_start_y) < 0.01f);
@@ -9242,7 +14833,7 @@ static void test_enemy_aligns_before_vertical_climb(void)
     for (int frame = 0; frame < SIM_STEPS(4.0f) && enemy.climbing; ++frame)
         enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
                      level.map.start_x + PLAYER_W * 0.5f,
-                     2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, 1.0f, &rng);
+                     2.0f * TILE_SIZE + ENEMY_H * 0.5f, false, false, 1.0f, &rng);
 
     CHECK(!enemy.climbing);
     CHECK(fabsf(enemy.x - ladder_x) < 0.01f);
@@ -9252,7 +14843,7 @@ static void test_enemy_aligns_before_vertical_climb(void)
     enemy.dir = 1;
     enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
                  ladder_x + ENEMY_W * 0.5f,
-                 5.0f * TILE_SIZE + ENEMY_H * 0.5f, false, 1.0f, &rng);
+                 5.0f * TILE_SIZE + ENEMY_H * 0.5f, false, false, 1.0f, &rng);
     CHECK(enemy.climbing);
     CHECK(enemy.climb_dir == 1);
 
@@ -9260,7 +14851,7 @@ static void test_enemy_aligns_before_vertical_climb(void)
         enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
                      ladder_x + ENEMY_W * 0.5f,
                      5.0f * TILE_SIZE + ENEMY_H * 0.5f,
-                     false, 1.0f, &rng);
+                     false, false, 1.0f, &rng);
 
     CHECK(!enemy.climbing);
     CHECK(fabsf(enemy.x - ladder_x) < 0.01f);
@@ -9301,13 +14892,13 @@ static void test_enemy_climbs_out_of_the_hole_at_a_ladder_top(void)
 
     for (int frame = 0; frame < SIM_STEPS(10.0f) && !enemy.climbing; ++frame)
         enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
-                     target_x, target_y, false, 1.0f, &rng);
+                     target_x, target_y, false, false, 1.0f, &rng);
     CHECK(enemy.climbing);
     CHECK(enemy.climb_dir == -1);
 
     for (int frame = 0; frame < SIM_STEPS(10.0f) && enemy.climbing; ++frame)
         enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
-                     target_x, target_y, false, 1.0f, &rng);
+                     target_x, target_y, false, false, 1.0f, &rng);
 
     CHECK(!enemy.climbing);
     /* Standing on the slab, not inside the hole through it. */
@@ -9317,7 +14908,7 @@ static void test_enemy_climbs_out_of_the_hole_at_a_ladder_top(void)
     float stranded_x = enemy.x;
     for (int frame = 0; frame < SIM_STEPS(1.0f); ++frame)
         enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
-                     target_x, target_y, false, 1.0f, &rng);
+                     target_x, target_y, false, false, 1.0f, &rng);
     CHECK(enemy.x < stranded_x - TILE_SIZE);
 }
 
@@ -9353,12 +14944,12 @@ static void test_enemy_leaves_a_ladder_that_already_reaches_a_floor(void)
 
     for (int frame = 0; frame < SIM_STEPS(10.0f) && !enemy.climbing; ++frame)
         enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
-                     target_x, target_y, false, 1.0f, &rng);
+                     target_x, target_y, false, false, 1.0f, &rng);
     CHECK(enemy.climbing);
 
     for (int frame = 0; frame < SIM_STEPS(10.0f) && enemy.climbing; ++frame)
         enemy_update(&enemy, &level, SIM_STEP_DT, true, false,
-                     target_x, target_y, false, 1.0f, &rng);
+                     target_x, target_y, false, false, 1.0f, &rng);
 
     CHECK(!enemy.climbing);
     CHECK(fabsf(enemy.y - (3.0f * TILE_SIZE - ENEMY_H)) < 0.01f);
@@ -9408,19 +14999,54 @@ static void test_dog_escapes_ladder_perch_without_spinning(void)
     state.player.x = 10000.0f;
     state.player.y = 10000.0f;
 
+    /*
+     * Spinning is a turn that goes nowhere, so what is counted is the ground
+     * between turns rather than the turns.
+     *
+     * This used to assert `flips <= 3` over three seconds, and the number was
+     * measured on an animal that stopped: the post it is anchored to here is
+     * `x = 0`, which is inside the left wall, so it walked into the masonry,
+     * `level_move` zeroed the step, and the line at the foot of `update_dog`
+     * answered by setting `DOG_RETURN` — the order to walk at the wall again.
+     * Three flips was what a dog that had given up produced. Now that
+     * `dog_blocked_ahead` turns him instead, he works the nearest ground he
+     * can reach: about fifty pixels each way, six turns in three seconds,
+     * which is a pacing animal and exactly what this fixture should show for a
+     * post that cannot be arrived at.
+     *
+     * A tile between turns tells the two apart with room to spare — the legs
+     * measure a tile and a half, and the failure this is named after moved
+     * nothing at all — and it needs no cap anybody has to re-guess. A count
+     * cannot be made to work: `DOG_TURN_COOLDOWN` already bounds the rate at
+     * 2.5 a second, so any cap loose enough for pacing is loose enough for the
+     * spin.
+     */
     int flips = 0;
     int prev_dir = dog->dir;
+    float since_flip = dog->x;
+    float shortest_leg = -1.0f;
     for (int frame = 0; frame < SIM_STEPS(3.0f); ++frame)
     {
         gameplay_ai_update_movement(&state, SIM_STEP_DT);
-        if (dog->dir != prev_dir)
+        if (dog->dir == prev_dir)
+            continue;
+        /* The first change is the animal orienting itself on the frame it is
+         * handed the post, before it has had anywhere to walk. */
+        if (flips > 0)
         {
-            flips++;
-            prev_dir = dog->dir;
+            float leg = fabsf(dog->x - since_flip);
+            if (shortest_leg < 0.0f || leg < shortest_leg)
+                shortest_leg = leg;
         }
+        flips++;
+        prev_dir = dog->dir;
+        since_flip = dog->x;
     }
 
-    CHECK(flips <= 3);                          /* no frantic spinning */
+    /* Turning at all is the point — a dog that never turns is one that walked
+     * off — and every turn but the first has to have been earned. */
+    CHECK(flips >= 2);
+    CHECK(shortest_leg > (float)TILE_SIZE);
     CHECK(dog->y > perch_y + TILE_SIZE * 0.5f); /* dropped off the rung */
     CHECK(fabsf(dog->x - perch_x) > TILE_SIZE); /* left the ladder column */
 }
@@ -9530,6 +15156,157 @@ static void test_a_dog_turns_back_at_a_gap_it_cannot_clear(void)
 }
 
 /*
+ * The difficulty switches reach an animal in every state it has, not just the
+ * one it is dangerous in.
+ *
+ * `gameplay_enemy_speed_scale` is one number and the guard carries it
+ * everywhere, because it goes into `enemy_update` as the speed argument and
+ * `enemy_update` owns his whole walk. The dog picks its own speed out of four
+ * — patrol, roam, return, chase — and the scale was written into exactly one
+ * of them. So SLOWER GUARDS, whose row reads GUARDS AND DOGS MOVE AT 80%
+ * SPEED, moved a chasing dog at 132px/s and a returning one at the full 135,
+ * and VETERAN's faster crew left the animals patrolling at the ordinary pace.
+ *
+ * Nothing in the tree could see it: no test had ever measured a dog's speed
+ * with a switch on, and the row's words are the only place the promise is
+ * written down. This is the `settings_value_bool` shape one file over — a
+ * switch tested through the half of the mechanic somebody happened to look at.
+ *
+ * The check asks the *property* rather than the four numbers: whatever speed a
+ * dog moves at, the assist has to make it slower and veteran has to make it
+ * faster, in the same proportion, in every state. So a fifth dog state is
+ * covered by having been added rather than by being remembered here — which is
+ * the whole reason the scale moved to the one line the speed is spent on.
+ *
+ * Staged rather than played to. A chase needs a player in front of the animal,
+ * a return needs a post it has walked away from and a roam needs a target it
+ * has not reached, and waiting for a seed to produce all three is how a check
+ * ends up measuring whichever one it drew.
+ */
+static float dog_peak_speed_in(DogState staged, bool slow, bool veteran)
+{
+    static const char data[] =
+        "##########################\n"
+        "#                        #\n"
+        "#                        #\n"
+        "# S                    E #\n"
+        "##########################\n";
+    static GameplayState state;
+    memset(&state, 0, sizeof(state));
+    rng_seed(&state.rng, 12345);
+    if (!level_load_data(&state.level, "dog speed", data, strlen(data),
+                         &state.rng))
+        return -1.0f;
+    player_reset(&state.player, &state.level);
+    state.player.hp = 99;
+    state.assist_slow_enemies = slow;
+    state.veteran = veteran;
+
+    state.dog_count = 1;
+    Dog *dog = &state.dogs[0];
+    memset(dog, 0, sizeof(*dog));
+    dog->x = 10.0f * TILE_SIZE;
+    dog->y = 3.0f * TILE_SIZE + (float)(TILE_SIZE - DOG_H);
+    dog->owner = -1;
+    dog->dir = 1;
+    dog->on_ground = true;
+
+    if (staged == DOG_CHASE)
+    {
+        state.player.y = dog->y;
+    }
+    else
+    {
+        /* Off the map, so nothing is seen and the animal is left with whatever
+         * errand it was staged on. */
+        state.player.x = -600.0f;
+        state.player.y = -600.0f;
+        dog->guard_y = dog->y;
+        /* A post far enough away to keep it walking for the whole two seconds,
+         * which is DOG_RETURN's own speed; a roam target the same distance off
+         * is DOG_PATROL_SPEED, because the roam falls through to it. */
+        dog->guard_x = 22.0f * TILE_SIZE;
+        dog->roam_target_x = 22.0f * TILE_SIZE;
+        dog->state = staged;
+        dog->state_timer = 100.0f;
+    }
+
+    float peak = 0.0f;
+    for (int step = 0; step < SIM_STEPS(2.0f); ++step)
+    {
+        state.events.count = 0;
+        /* Held in front of it, so the chase is the state under test on every
+         * step rather than on the first one; and the roam is re-staged for the
+         * same reason, since `update_dog` drops out of it on its own timer. */
+        if (staged == DOG_CHASE)
+            state.player.x = dog->x + 5.0f * TILE_SIZE;
+        else if (staged == DOG_ROAM)
+        {
+            dog->state = DOG_ROAM;
+            dog->state_timer = 100.0f;
+        }
+        float before = dog->x;
+        DogState was = dog->state;
+        gameplay_ai_update_movement(&state, SIM_STEP_DT);
+        /* Only the steps taken in the state under test count, or a transition
+         * out of it would be read as the state's own speed. */
+        if (was != staged || dog->state != staged)
+            continue;
+        float speed = fabsf(dog->x - before) / SIM_STEP_DT;
+        if (speed > peak)
+            peak = speed;
+    }
+    return peak;
+}
+
+static void test_the_difficulty_switches_reach_a_dog_in_every_state(void)
+{
+    /* Every state the animal has a speed for. DOG_GUARD is standing still and
+     * has none, which is why it is not here and why the walk out of it is
+     * DOG_ROAM's. */
+    static const struct
+    {
+        DogState state;
+        const char *name;
+    } STATES[] = {
+        {DOG_CHASE, "chasing"},
+        {DOG_RETURN, "returning"},
+        {DOG_ROAM, "roaming"},
+    };
+
+    for (size_t i = 0; i < sizeof STATES / sizeof STATES[0]; ++i)
+    {
+        float plain = dog_peak_speed_in(STATES[i].state, false, false);
+        float assisted = dog_peak_speed_in(STATES[i].state, true, false);
+        float veteran = dog_peak_speed_in(STATES[i].state, false, true);
+
+        /* The staging reached the state at all, or the three numbers below are
+         * three readings of nothing. */
+        REQUIRE(plain > 0.0f);
+
+        if (assisted >= plain || veteran <= plain)
+            fprintf(stderr,
+                    "  a %s dog runs %.1f/%.1f/%.1f px/s plain/assisted/"
+                    "veteran: the switches do not reach this state\n",
+                    STATES[i].name, (double)plain, (double)assisted,
+                    (double)veteran);
+        CHECK(assisted < plain);
+        CHECK(veteran > plain);
+
+        /* And by the scale the sheet names rather than by some amount. A
+         * tenth of a pixel per second is the step's own rounding. */
+        CHECK(fabsf(assisted - plain * ASSIST_ENEMY_SPEED) < 0.1f);
+        CHECK(fabsf(veteran - plain * VETERAN_ENEMY_SPEED) < 0.1f);
+    }
+
+    /* And the two switches resolve the way the sheet says they do: a player
+     * with both on is a player who wants the help. */
+    CHECK(fabsf(dog_peak_speed_in(DOG_CHASE, true, true) -
+                dog_peak_speed_in(DOG_CHASE, false, false) *
+                    ASSIST_ENEMY_SPEED) < 0.1f);
+}
+
+/*
  * With nothing to chase, a dog works a patch around its handler.
  *
  * `dog_pick_roam_target` is the third of the three that had never run. It is
@@ -9554,8 +15331,30 @@ static void test_a_dog_with_nothing_to_chase_roams_around_its_handler(void)
     REQUIRE(state.dog_count == 1);
     Dog *dog = &state.dogs[0];
 
-    /* Nineteen tiles away, against a `DOG_VIEW_RANGE` of six: the animal has
-     * nothing to look at, which is the state this is about. */
+    /*
+     * Off the floor entirely, because "nothing to chase" has to be true for
+     * thirty seconds and not just for the first frame.
+     *
+     * This used to spawn him at the `S` and assert the distance once —
+     * nineteen tiles against a `DOG_VIEW_RANGE` of six — under a comment
+     * calling that "the state this is about". It is a state the fixture then
+     * left: the post this dog roams around is *its handler*, the handler
+     * patrols the whole twenty-four-tile corridor, and eight seconds in he had
+     * walked the animal to within six tiles of a man standing at the far end.
+     * The dog went to `DOG_CHASE` and stayed there for the remaining
+     * twenty-two, so the patch bound below — which is asserted on every step,
+     * chase included — was measuring a chase.
+     *
+     * It passed for one reason and the reason is the bug this fixture turned
+     * out to be sitting on: the handler reached the left wall with his own dog
+     * pressed against his other side, `hemmed_in` counted a body as a pin, and
+     * he **stopped there for twenty seconds**. A frozen handler is a `guard_x`
+     * that stops moving, and a `guard_x` that stops moving is a gap that stops
+     * growing. See `test_a_patrol_does_not_stop_being_one` for what that cost
+     * the campaign; what it cost here was a check that passed because of it.
+     */
+    state.player.x = -8.0f * TILE_SIZE;
+    state.player.y = -8.0f * TILE_SIZE;
     CHECK(fabsf(state.player.x - dog->x) > DOG_VIEW_RANGE);
 
     int roams = 0;
@@ -10649,6 +16448,152 @@ static void test_a_bolt_pulls_a_guard_to_where_it_landed(void)
 }
 
 /*
+ * A loaded weapon with nowhere to put what it fires still has to answer the
+ * trigger.
+ *
+ * `gameplay_combat_handle_player_action` has four of these arms and each one is
+ * the same three lines: the count is not nought, the slot search came back
+ * empty, so the press is dead and says so. Two of the four were covered — the
+ * launcher, because `MAX_ROCKETS` is one and the second press of a pair reaches
+ * it, and the bolt, because its limit is a clock rather than an array. The
+ * other three had never been executed by anything: `MAX_GRENADES` is eight,
+ * `MAX_FLASHBANGS` four and `MAX_BULLETS` eight, and no test had ever had that
+ * many of any of them in the air at once.
+ *
+ * It is worth having because of what the failure sounds like rather than what
+ * it costs. Nothing is spent and nothing is broken; the player presses fire and
+ * the game does nothing at all, which reads as the pad having missed the press
+ * — and the answer to that is to press it again, in a fight, while the reason
+ * it did not work is eight objects still travelling.
+ *
+ * Each arm is driven by actually filling the sky rather than by staging the
+ * slots, because "the slots are full" is the thing under test and a hand-set
+ * `active` flag would pass whatever the search does.
+ */
+static void test_a_full_sky_is_still_a_dead_press(void)
+{
+    static const char data[] =
+        "##############\n"
+        "#            #\n"
+        "#S          E#\n"
+        "##############\n";
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 909);
+    REQUIRE(level_load_data(&state.level, "dry", data, strlen(data),
+                            &state.rng));
+    player_reset(&state.player, &state.level);
+    state.player.facing = 1;
+
+    /*
+     * One more grenade than there are slots for, and the hand re-selects the
+     * pouch before each lob: `player_fall_back_to_sidearm` runs after every
+     * throw, so a grenade is one bumper press and one press of fire, every
+     * time. Throwing eight is eight of those, not one held trigger.
+     */
+    state.player.grenades = MAX_GRENADES + 1;
+    for (int i = 0; i < MAX_GRENADES; ++i)
+    {
+        state.player.active_weapon = PLAYER_WEAPON_GRENADE;
+        Input lob = {.shoot = true};
+        gameplay_combat_handle_player_action(&state, &campaign, &lob);
+        CHECK(state.grenades[i].active);
+    }
+    CHECK(state.player.grenades == 1);
+
+    state.player.active_weapon = PLAYER_WEAPON_GRENADE;
+    state.events.count = 0;
+    Input ninth = {.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &ninth);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_EMPTY_CLICK));
+    /* And the press cost nothing: a dead trigger that eats the round it could
+     * not throw is worse than a silent one. */
+    CHECK(state.player.grenades == 1);
+    CHECK(!events_have_sound(&state.events, GAME_EVENT_SOUND,
+                             SFX_GRENADE_THROW));
+
+    /* The charges, which are the same arm at a different cap. */
+    state.player.flashbangs = MAX_FLASHBANGS + 1;
+    for (int i = 0; i < MAX_FLASHBANGS; ++i)
+    {
+        state.player.active_weapon = PLAYER_WEAPON_FLASH;
+        Input lob = {.shoot = true};
+        gameplay_combat_handle_player_action(&state, &campaign, &lob);
+        CHECK(state.flashbangs[i].active);
+    }
+    CHECK(state.player.flashbangs == 1);
+
+    state.player.active_weapon = PLAYER_WEAPON_FLASH;
+    state.events.count = 0;
+    Input fifth = {.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &fifth);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_EMPTY_CLICK));
+    CHECK(state.player.flashbangs == 1);
+
+    /*
+     * And the sidearm, which is the one of the three that needs the whole
+     * scenario its own comment describes: `MAX_AMMO` is six and `MAX_BULLETS`
+     * is eight, so a full clip cannot fill the air by itself. What reaches it
+     * is a magazine picked up while the last rounds are still crossing a wide
+     * sector — so the magazines here are picked up the way they are in the
+     * game, off the floor, rather than added to the count by hand.
+     */
+    state.player.active_weapon = PLAYER_WEAPON_PISTOL;
+    state.player.bullets = MAX_AMMO;
+    for (int i = 0; i < MAX_AMMO; ++i)
+    {
+        Input shot = {.shoot = true};
+        gameplay_combat_handle_player_action(&state, &campaign, &shot);
+        CHECK(state.bullets[i].active);
+    }
+    CHECK(state.player.bullets == 0);
+    /* A dry clip puts the knife in his hand, which is what the pickup below
+     * undoes. */
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_KNIFE);
+
+    /* Two magazines off the floor: one raises the sidearm again, and the pair
+     * leave more rounds in the clip than there are slots left in the air, so
+     * the press below is refused by the sky rather than by the count. */
+    for (int pickup = 0; pickup < 2; ++pickup)
+    {
+        AmmoDrop *drop = &state.ammo_drops[0];
+        drop->active = false;
+        drop->x = state.player.x;
+        drop->y = state.player.y;
+        drop->vy = 0.0f;
+        drop->active = true;
+        gameplay_update_ammo_drops(&state, SIM_STEP_DT);
+        CHECK(!drop->active); /* it was taken, or the rest proves nothing */
+    }
+    CHECK(state.player.active_weapon == PLAYER_WEAPON_PISTOL);
+    CHECK(state.player.bullets == 2 * AMMO_DROP_BULLETS);
+
+    for (int i = MAX_AMMO; i < MAX_BULLETS; ++i)
+    {
+        Input shot = {.shoot = true};
+        gameplay_combat_handle_player_action(&state, &campaign, &shot);
+        CHECK(state.bullets[i].active);
+    }
+    /* Rounds still in the clip and every slot in the air busy, which is the
+     * state this arm exists for and the state nothing had ever been in. */
+    CHECK(state.player.bullets > 0);
+    for (int i = 0; i < MAX_BULLETS; ++i)
+        CHECK(state.bullets[i].active);
+
+    int loaded = state.player.bullets;
+    state.events.count = 0;
+    Input dry = {.shoot = true};
+    gameplay_combat_handle_player_action(&state, &campaign, &dry);
+    CHECK(events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_EMPTY_CLICK));
+    CHECK(state.player.bullets == loaded);
+    CHECK(!events_have_sound(&state.events, GAME_EVENT_SOUND, SFX_PLAYER_SHOT));
+    /* A press that fired nothing must not have told the floor it did, either:
+     * the shot is the loudest thing Chuck can do and this one did not happen. */
+    CHECK(!events_have_sound(&state.events, GAME_EVENT_SOUND,
+                             SFX_GRENADE_THROW));
+}
+
+/*
  * A bolt makes its noise where it hit the wall, not at the foot of it.
  *
  * The test above throws down a corridor, so the floor is always what stops the
@@ -11076,6 +17021,79 @@ static void test_janitor_cart_stays_clear_when_turning_at_wall(void)
 }
 
 /*
+ * A mop does not go down a lift shaft.
+ *
+ * `janitor_has_floor_ahead` asks about masonry and ladders and nothing else,
+ * which is deliberate: it is what keeps the one body with no ride of any kind
+ * off every moving surface in the building. A shaft slipped through it, because
+ * the tile is passable and the *lowest* one in a run has the storey's own floor
+ * underneath — so on sector 5 he walked into the bottom of the goods lift and
+ * the descending deck went through him, 15.9px of overlap in both axes for up to
+ * 0.70s, about twelve times a minute of play. Nothing carries a janitor and
+ * nothing crushes him, so the whole of it was a picture of a plate crossing a
+ * man's chest, drawn every run and looked at by nobody: a counter cannot tell a
+ * frame that was drawn from a frame anybody could read.
+ *
+ * The fixture puts the floor *under* the shaft on purpose, because a shaft with
+ * air below it was already refused by the floor test and would pass this with
+ * the rule taken out. The control is the other half: he still turns at ordinary
+ * masonry, so this is not satisfied by a janitor who has stopped walking.
+ */
+static void test_the_janitor_keeps_out_of_a_lift_shaft(void)
+{
+    static const char data[] =
+        "##########\n"
+        "#      V##\n"
+        "#S E J V##\n"
+        "##########\n";
+    GameplayState state = {0};
+    rng_seed(&state.rng, 2468);
+    CHECK(level_load_data(&state.level, "janitor shaft", data, strlen(data),
+                          &state.rng));
+    gameplay_ai_spawn_level_entities(&state);
+    CHECK(state.janitor_count == 1);
+    CHECK(state.level.runtime.elevator_count == 1);
+
+    /* The shaft's lowest tile stands on the map's own floor row, which is the
+     * arrangement that let him in. */
+    const Elevator *lift = &state.level.runtime.elevators[0];
+    CHECK(level_is_solid(&state.level, lift->col, 3));
+
+    Janitor *janitor = &state.janitors[0];
+    janitor->dir = 1;
+    janitor->cart_dir = -1;
+    janitor->activity = JANITOR_WALK;
+    janitor->activity_timer = 100.0f;
+    janitor->on_ground = true;
+
+    float shaft_left = lift->col * (float)TILE_SIZE;
+    bool entered = false;
+    int turns = 0;
+    int last_dir = janitor->dir;
+    for (int frame = 0; frame < SIM_STEPS(20.0f); ++frame)
+    {
+        state.events.count = 0;
+        level_update_elevators(&state.level, SIM_STEP_DT);
+        gameplay_ai_update_movement(&state, SIM_STEP_DT);
+        janitor->activity_timer = 100.0f;
+        if (janitor->activity != JANITOR_WALK)
+            janitor->activity = JANITOR_WALK;
+        if (janitor->x + JANITOR_W > shaft_left + 1.0f)
+            entered = true;
+        if (janitor->dir != last_dir)
+        {
+            turns++;
+            last_dir = janitor->dir;
+        }
+    }
+    /* Never inside the shaft's column ... */
+    CHECK(!entered);
+    /* ... and he was actually walking up to it and turning round, rather than
+     * standing still somewhere harmless. */
+    CHECK(turns > 0);
+}
+
+/*
  * The desk post. What is being pinned is that the errand is a round trip: the
  * receptionist leaves the counter, gets far enough away for it to be worth
  * watching, and is back on the exact spawn tile afterwards. A patrol that
@@ -11481,8 +17499,7 @@ static void test_a_guard_who_finds_a_body_may_run_for_the_alarm(void)
     runner->x = (target->col + 0.5f) * TILE_SIZE - ENEMY_W * 0.5f;
     runner->y = (target->row + 0.5f) * TILE_SIZE - ENEMY_H * 0.5f;
     runner->on_ground = true;
-    runner->raising_alarm = true;
-    runner->alarm_switch_index = 0;
+    gameplay_ai_send_to_alarm(&raised, 0, 0);
 
     gameplay_ai_update_movement(&raised, ALARM_SWITCH_USE_TIME);
     CHECK(gameplay_alarm_active(&raised));
@@ -12628,7 +18645,7 @@ static void test_pursuing_guard_refuses_high_drop(void)
     {
         enemy_update(&guard, &level, SIM_STEP_DT, true, false,
                      7.5f * TILE_SIZE, 5.5f * TILE_SIZE,
-                     false, 1.0f, &rng);
+                     false, false, 1.0f, &rng);
         if (guard.dir < 0)
             turned_back = true;
         CHECK(fabsf(guard.y - ledge_y) < 0.01f);
@@ -12638,11 +18655,29 @@ static void test_pursuing_guard_refuses_high_drop(void)
     CHECK(turned_back);
 }
 
+/*
+ * A shaft has to run up into the storey it serves, and this map used to prove
+ * the opposite.
+ *
+ * Its top `V` was in a *slab* row with masonry either side of it, and the guard
+ * still walked off at the top — because `top_limit` reserved no headroom for a
+ * rider and the lift therefore carried him a whole tile above its own run, into
+ * the open storey above the shaft. So the fixture asserted an over-travel that
+ * `route_in_shaft` has never sanctioned: the route model only ever answers for
+ * tiles that *are* shaft, so on a real map that destination is one the campaign
+ * is not certified to reach. On sector 6 the tile above was `#` instead of air,
+ * and the same over-travel crushed the player and stood guards inside the
+ * ceiling.
+ *
+ * The shaft is one row taller now, so its top tile sits in the storey the lift
+ * serves — which is what the rule requires of every map, and what the two other
+ * shipped shafts already did.
+ */
 static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
 {
     static const char data[] =
         "#######\n"
-        "#     #\n"
+        "#  V  #\n" /* the storey the lift serves, and the top of its run */
         "###V###\n"
         "#  V  #\n"
         "###V###\n"
@@ -12671,7 +18706,7 @@ static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
     enemy_update(&guard, &level, SIM_STEP_DT, true, false,
                  5.5f * TILE_SIZE,
                  elevator->top_limit - ENEMY_H * 0.5f,
-                 false, 1.0f, &rng);
+                 false, false, 1.0f, &rng);
     CHECK(guard.on_elevator == -1);
     CHECK(guard.on_ground);
     CHECK(fabsf(guard.x - waiting_x) < 0.01f);
@@ -12680,7 +18715,7 @@ static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
     enemy_update(&guard, &level, SIM_STEP_DT, true, false,
                  5.5f * TILE_SIZE,
                  elevator->top_limit - ENEMY_H * 0.5f,
-                 false, 1.0f, &rng);
+                 false, false, 1.0f, &rng);
     CHECK(guard.on_elevator == 0);
     CHECK(guard.on_ground);
     CHECK(fabsf(guard.y - (elevator->y - ENEMY_H)) < 0.01f);
@@ -12692,7 +18727,7 @@ static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
         enemy_update(&guard, &level, SIM_STEP_DT, true, false,
                      5.5f * TILE_SIZE,
                      elevator->top_limit - ENEMY_H * 0.5f,
-                     false, 1.0f, &rng);
+                     false, false, 1.0f, &rng);
         CHECK(guard.on_elevator == 0);
         CHECK(guard.on_ground);
         CHECK(fabsf(guard.y - (elevator->y - ENEMY_H)) < 0.01f);
@@ -12710,7 +18745,7 @@ static void test_guard_rides_elevator_and_leaves_at_target_floor(void)
         enemy_update(&guard, &level, SIM_STEP_DT, true, false,
                      5.5f * TILE_SIZE,
                      elevator->top_limit - ENEMY_H * 0.5f,
-                     false, 1.0f, &rng);
+                     false, false, 1.0f, &rng);
     }
     CHECK(guard.on_elevator == -1);
     CHECK(guard.on_ground);
@@ -12741,7 +18776,7 @@ static void test_pursuing_guard_walks_onto_falling_platform(void)
 
     enemy_update(&guard, &level, SIM_STEP_DT, true, false,
                  6.5f * TILE_SIZE,
-                 guard.y + ENEMY_H * 0.5f, false, 1.0f, &rng);
+                 guard.y + ENEMY_H * 0.5f, false, false, 1.0f, &rng);
 
     CHECK(guard.on_ground);
     CHECK(fabsf(guard.vy) < 0.01f);
@@ -12911,8 +18946,16 @@ static void test_a_moving_platform_runs_its_span_and_takes_its_rider(void)
  * pins is the shape of the mechanic rather than its numbers: standing on one
  * arms it, `FALL_PLATFORM_TRIGGER_DELAY` of that is the beat the player has to
  * read it in and nothing moves during it, and once it is gone it is gone and
- * the floor under it is what catches him. `F` is on sectors 2, 4, 9, 12 and
+ * the floor under it is what catches him. `F` is on sectors 2, 4, 12 and
  * 17, and the same was true of every one of those.
+ *
+ * What "the floor under it is what catches him" does *not* say is how far away
+ * that floor is, and that was the gap: nothing asked what a panel drops the
+ * player onto. The archive's pair dropped him 192px against a
+ * `PLAYER_FATAL_FALL_HEIGHT` of 160 — a death rather than a heart — and the
+ * roof's dropped him through a ceiling fan. `check_panels` in
+ * [editor_validate.c](../editor/editor_validate.c) is what asks now, and
+ * `test_the_editor_reports_a_broken_map` drives it.
  */
 static void test_a_falling_platform_waits_its_beat_then_drops_its_rider(void)
 {
@@ -13083,7 +19126,7 @@ static void test_only_chucks_weight_arms_a_cracked_panel(void)
  * a panel springing itself on a shipped map was nobody's assertion. Sector 12's
  * did, every run, about a second in.
  *
- * `F` is on sectors 2, 4, 9, 12 and 17 — five chances for an ambient body to
+ * `F` is on sectors 2, 4, 12 and 17 — four chances for an ambient body to
  * spend a one-shot route before Chuck reaches it.
  */
 static void test_no_sector_springs_its_own_panels(void)
@@ -13168,7 +19211,7 @@ static void test_a_guard_in_a_one_tile_dead_end_stands_still(void)
     for (int step = 0; step < SIM_STEPS(6.0f); ++step)
     {
         enemy_update(&trapped, &level, SIM_STEP_DT, false, false, 0.0f, 0.0f,
-                     false, 1.0f, &rng);
+                     false, false, 1.0f, &rng);
         if (trapped.dir != facing)
             turns++;
         facing = trapped.dir;
@@ -13192,7 +19235,7 @@ static void test_a_guard_in_a_one_tile_dead_end_stands_still(void)
     for (int step = 0; step < SIM_STEPS(8.0f); ++step)
     {
         enemy_update(&edge, &level, SIM_STEP_DT, false, false, 0.0f, 0.0f,
-                     false, 1.0f, &rng);
+                     false, false, 1.0f, &rng);
         if (edge.dir != facing)
             edge_turns++;
         facing = edge.dir;
@@ -13220,7 +19263,7 @@ static void test_a_guard_in_a_one_tile_dead_end_stands_still(void)
     for (int step = 0; step < SIM_STEPS(12.0f); ++step)
     {
         enemy_update(&corridor, &level, SIM_STEP_DT, false, false, 0.0f, 0.0f,
-                     false, 1.0f, &rng);
+                     false, false, 1.0f, &rng);
         if (corridor.dir != facing)
             corridor_turns++;
         facing = corridor.dir;
@@ -13808,6 +19851,98 @@ static void test_dog_bite_is_announced_and_survivable(void)
                             SFX_DOG_BITE));
 }
 
+/*
+ * And what standing in one costs on a clock, which nothing had ever taken twice.
+ *
+ * `test_dog_bite_is_announced_and_survivable` walks the growl, the escape and
+ * the bite, and stops on the bite — so the *second* one has never happened in
+ * this suite: measured, both `dog->bite_cooldown -= dt` and
+ * `dog->attack_timer -= dt` in `update_dog` were executed nought times. Without
+ * a cooldown a dog standing on Chuck is not a hazard, it is a death, and nothing
+ * here would have said so.
+ *
+ * The rhythm is the assertion rather than a count of bites, and which two
+ * constants make it is the thing worth writing down: the contact pass returns
+ * before the dog loop while the mercy window is up, so what a player feels is
+ * `PLAYER_HIT_INVULN` plus a fresh `DOG_BITE_WINDUP` — the bite has to be
+ * announced again — and `DOG_BITE_COOLDOWN`, at 0.75 against a mercy window of
+ * 1.2, never gets to be the one that decides. A count would have been a number
+ * to re-guess whenever either moved; this fails on the change instead.
+ */
+static void test_a_dog_standing_on_you_bites_to_a_rhythm(void)
+{
+    static const char data[] =
+        "#####\n"
+        "#S E#\n"
+        "#####\n";
+    static GameplayState state;
+    static CampaignState campaign;
+    memset(&state, 0, sizeof(state));
+    memset(&campaign, 0, sizeof(campaign));
+    rng_seed(&state.rng, 16u);
+    REQUIRE(level_load_data(&state.level, "kennel", data, sizeof(data) - 1,
+                            &state.rng));
+    player_reset(&state.player, &state.level);
+    /* Enough hearts to be bitten several times over: what is under test is the
+     * spacing, not the survival. */
+    state.player.hp = PLAYER_MAX_HP * 8;
+    state.player.y = 2.0f * TILE_SIZE - PLAYER_H;
+    state.dog_count = 1;
+    state.dogs[0] = (Dog){.x = state.player.x,
+                          .y = 2.0f * TILE_SIZE - DOG_H,
+                          .hp = DOG_HP, .owner = -1, .dir = 1,
+                          .state = DOG_GUARD, .state_timer = 1.0e9f,
+                          .guard_x = state.player.x,
+                          .guard_y = 2.0f * TILE_SIZE - DOG_H};
+
+    int bites = 0;
+    int lunge_steps = 0;
+    int last_bite = -1;
+    int shortest_gap = 1 << 30;
+    int longest_gap = 0;
+    for (int i = 0; i < SIM_STEPS(6.0f); ++i)
+    {
+        state.events.count = 0;
+        /* Held against him, and the mercy window ticked the way
+         * [game.c](../src/game.c) ticks it — the one field no pass in this tree
+         * touches. */
+        state.dogs[0].x = state.player.x;
+        state.dogs[0].y = state.player.y + PLAYER_H - DOG_H;
+        if (state.invuln_timer > 0.0f)
+            state.invuln_timer -= SIM_STEP_DT;
+        int before = state.player.hp;
+        gameplay_ai_update_movement(&state, SIM_STEP_DT);
+        gameplay_combat_check_contacts(&state, &campaign);
+        if (state.dogs[0].attack_timer > 0.0f)
+            lunge_steps++;
+        if (state.player.hp < before)
+        {
+            if (last_bite >= 0)
+            {
+                int gap = i - last_bite;
+                if (gap < shortest_gap)
+                    shortest_gap = gap;
+                if (gap > longest_gap)
+                    longest_gap = gap;
+            }
+            bites++;
+            last_bite = i;
+        }
+    }
+    /* A second bite happened at all, which is the half nothing had reached. */
+    CHECK(bites >= 2);
+    int rhythm = SIM_STEPS(PLAYER_HIT_INVULN + DOG_BITE_WINDUP);
+    CHECK(shortest_gap >= rhythm - 2);
+    CHECK(longest_gap <= rhythm + 2);
+    /* And the follow-through the renderer draws the lunge from is spent rather
+     * than latched on the first bite: total time in the pose, against one
+     * `DOG_BITE_ACTION_TIME` per bite. Asked as a total because a single sample
+     * cannot tell a timer that is running from one that has stopped — the same
+     * reason the dog's spin is counted in ground rather than in turns. */
+    CHECK(lunge_steps <= bites * (SIM_STEPS(DOG_BITE_ACTION_TIME) + 2));
+    CHECK(lunge_steps >= bites);
+}
+
 /* A failed drive rewinds a stretch, not to zero. */
 static void test_chase_failure_rewinds_instead_of_restarting(void)
 {
@@ -14282,6 +20417,85 @@ static void test_the_net_always_has_something_to_say(void)
     }
 }
 
+/*
+ * The job has stages, and the net may not report two of them at once.
+ *
+ * The heist's spine is on this table: the locks come off, the vault is emptied,
+ * the cases go to the pad. Each of those is a *state of the job* rather than an
+ * event, so each stops being true — and for as long as `CrewLine` had a sector
+ * floor and no ceiling, none of them could. `BRUNO IS ON THE SIXTH LOCK. ONE
+ * MORE AND WE LOAD` is gated from 8 and was sayable to the end of the campaign,
+ * so on the roof one man reported the sixth lock still being worked while the
+ * next reported the vault already dry and a third reported the cases already
+ * loaded.
+ *
+ * Nothing in the tree could see it. Every other check on this table asks
+ * whether a line *fits* its plate or whether it is *reachable*; `check_docs.py`
+ * asks whether the one line that counts minutes agrees with the dial. None of
+ * them can see two lines that are each fine on their own and contradict each
+ * other in the same breath.
+ *
+ * The stages are found by what they claim rather than by index, and the test
+ * requires each to have been found at all — so rewording one fails loudly here
+ * instead of quietly being checked no longer, which is the same shape
+ * `test_the_sheets_spell_the_tuning_they_quote` is built on.
+ */
+static void test_the_net_reports_one_stage_of_the_job_at_a_time(void)
+{
+    /* In the order the night runs them. A stage is identified by a phrase it
+     * would have to be rewritten to lose. */
+    static const char *const STAGES[] = {"SIXTH LOCK", "VAULT IS DRY",
+                                         "ON THE PAD"};
+    const int stage_count = (int)(sizeof(STAGES) / sizeof(STAGES[0]));
+
+    /* Which sectors each stage can be heard on, read off the gate rather than
+     * off the fields, so this asks the question the player's ear asks. */
+    int first[3];
+    int last[3];
+    for (int stage = 0; stage < stage_count; ++stage)
+    {
+        first[stage] = 0;
+        last[stage] = 0;
+        int found = 0;
+        for (int kind = 0; kind < CHATTER_KIND_COUNT; ++kind)
+        {
+            int count = crew_line_count((ChatterKind)kind);
+            for (int i = 0; i < count; ++i)
+            {
+                const char *line = crew_line((ChatterKind)kind, i);
+                REQUIRE(line != NULL);
+                if (strstr(line, STAGES[stage]) == NULL)
+                    continue;
+                found++;
+                for (int sector = 1; sector <= (int)EMBEDDED_LEVEL_COUNT;
+                     ++sector)
+                {
+                    /* Nobody down, which is the situation that isolates the
+                     * sector window from the tally window. */
+                    CrewSituation moment = {sector, 0};
+                    if (!crew_line_allowed((ChatterKind)kind, i, &moment))
+                        continue;
+                    if (first[stage] == 0)
+                        first[stage] = sector;
+                    last[stage] = sector;
+                }
+            }
+        }
+        /* The claim has to still be on the table, and to be made once. */
+        CHECK(found == 1);
+        CHECK(first[stage] > 0);
+        CHECK(last[stage] >= first[stage]);
+    }
+
+    /* Strictly later, and never overlapping: the sixth lock is finished before
+     * the vault is dry, and the vault is dry before the cases are on the pad. */
+    for (int stage = 1; stage < stage_count; ++stage)
+    {
+        CHECK(first[stage] > last[stage - 1]);
+        CHECK(first[stage] > first[stage - 1]);
+    }
+}
+
 /* Whether `line` uses `name` as a word of its own — the same question the
  * strip asks, asked again here so the table cannot answer for itself. */
 static bool test_line_names(const char *line, const char *name)
@@ -14470,6 +20684,242 @@ static void test_the_report_between_sectors_fits_its_column(void)
 }
 
 /*
+ * And that no two of those lines say the same thing.
+ *
+ * Every other check on this table asks whether a row *fits* or whether a row
+ * is *reached*. Neither can see the one thing an arc can be wrong about, which
+ * is telling the player something twice — and this table is unusually exposed
+ * to it, because ten of its sixteen rows were written under the standing
+ * assumption that nobody would ever read them. Once the tally gave those ten a
+ * vehicle they became part of the arc without anybody re-reading the arc, and
+ * sector 7 turned out to be holding sector 5's opening clause and sector 8's
+ * turn at the same time: `THEIR DEMAND WENT OUT AT 00:04. IT ASKED FOR NO
+ * MONEY.` on the reveal *into* the sector whose whole report is `NOT FOR
+ * RANSOM.` Six whole-screen story beats in the campaign, and one of them
+ * arrived as a restatement of a line read ninety seconds earlier.
+ *
+ * The property rather than a list of forbidden phrases: **no two rows may
+ * share more than one word of four characters or more.** There is no stop list
+ * anywhere in it — four characters is what separates a subject from grammar,
+ * and it needs no maintaining — and measured over the table as it ships every
+ * legitimate pair sits at exactly one shared word (`VOSS` across 10 and 16,
+ * `DOOR` across 8 and 16, `LIGHTS` across 13 and 15), while the pair that was
+ * wrong sat at three. So a reworded row is checked by having been written, and
+ * a second row that reaches for the same beat fails whatever words it reaches
+ * with.
+ *
+ * A digit run counts as a word, `00:04` and `01:00` included, which is
+ * deliberate: two rows quoting the same minute of the night is exactly the
+ * kind of doubling this is for, and it is how the pair that prompted it scored
+ * three instead of two.
+ */
+#define ARC_WORD_MIN 4
+
+/* One word of the line, if there is one at `*from`; advances `*from` past it.
+ * A word is a run of letters, digits and colons, so a clock reading is one
+ * word rather than two. */
+static bool arc_next_word(const char **from, char *out, size_t size)
+{
+    const char *p = *from;
+    while (*p != '\0' && !isalnum((unsigned char)*p))
+        ++p;
+    if (*p == '\0')
+    {
+        *from = p;
+        return false;
+    }
+    size_t n = 0;
+    while (*p != '\0' && (isalnum((unsigned char)*p) || *p == ':'))
+    {
+        if (n + 1 < size)
+            out[n++] = *p;
+        ++p;
+    }
+    out[n] = '\0';
+    *from = p;
+    return true;
+}
+
+/* How many words of ARC_WORD_MIN characters or more the two lines have in
+ * common. */
+static int arc_shared_words(const char *a, const char *b, char *worst,
+                            size_t worst_size)
+{
+    int shared = 0;
+    const char *pa = a;
+    char wa[64];
+    for (int index = 0; arc_next_word(&pa, wa, sizeof(wa)); ++index)
+    {
+        if (strlen(wa) < ARC_WORD_MIN)
+            continue;
+        /* Once each, however often a row repeats it: what is being counted is
+         * how much of a beat two rows have in common, not how wordy one is. */
+        bool already = false;
+        const char *seen = a;
+        char ws[64];
+        for (int earlier = 0;
+             earlier < index && arc_next_word(&seen, ws, sizeof(ws)); ++earlier)
+        {
+            if (strcmp(ws, wa) == 0)
+            {
+                already = true;
+                break;
+            }
+        }
+        if (already)
+            continue;
+        const char *pb = b;
+        char wb[64];
+        while (arc_next_word(&pb, wb, sizeof(wb)))
+        {
+            if (strcmp(wa, wb) != 0)
+                continue;
+            ++shared;
+            if (worst != NULL && worst_size > 0)
+                snprintf(worst, worst_size, "%s", wa);
+            break;
+        }
+    }
+    return shared;
+}
+
+static void test_no_two_lines_of_the_arc_say_the_same_thing(void)
+{
+    int count = intel_line_count();
+    CHECK(count > 1);
+    for (int i = 0; i < count; ++i)
+    {
+        for (int j = i + 1; j < count; ++j)
+        {
+            const char *a = intel_line(i);
+            const char *b = intel_line(j);
+            CHECK(a != NULL && b != NULL);
+            if (a == NULL || b == NULL)
+                continue;
+            char worst[64] = "";
+            int shared = arc_shared_words(a, b, worst, sizeof(worst));
+            if (shared > 1)
+            {
+                printf("sectors %d and %d share %d words, '%s' among them:\n"
+                       "  %s\n  %s\n",
+                       i + 1, j + 1, shared, worst, a, b);
+            }
+            CHECK(shared <= 1);
+        }
+    }
+}
+
+/*
+ * Every number the staged screens print is one a clear of that floor could
+ * have produced.
+ *
+ * The fixture in [sector_tally.h](../src/sector_tally.h) opens by calling
+ * itself "the one clear the staged screens show" and has been corrected twice
+ * for printing a pair no clear can reach — a run quicker than the record
+ * standing beside it, then a bonus priced off the other clock. Both fixes
+ * landed on the clocks. Two of the remaining figures are counts against
+ * something the campaign can be asked about, and neither had ever been asked:
+ *
+ * - `DOCKET 07/12` on the report after sector 1. One sheet is laid out per
+ *   interior, so a run standing on the first floor can be holding one.
+ * - `HOSTILES 06` on the same frame. Sector 1 has two men on it, no dog, and
+ *   no `D` for a console to call anybody out of.
+ *
+ * Neither could fail anything: every assertion this band and that report have
+ * is about how *wide* a line is, and a wrong number is as wide as a right one.
+ * What it cost is that `tools/press_kit.sh` cuts `12-report` out of exactly
+ * that frame.
+ *
+ * The two halves are held here rather than where they are staged, because the
+ * staging is in `game.c` and this suite links no SDL. What is asserted is the
+ * arithmetic both of them read: how much of the docket exists below a floor,
+ * how many hostiles a floor's plan holds, and that the ceiling still bites
+ * somewhere — a clamp that never clamps is a clamp nobody has checked, and a
+ * clamp that always clamps has quietly deleted the fixture.
+ */
+static void test_a_staged_clear_is_one_the_campaign_could_have_produced(void)
+{
+    static Level level;
+
+    int sheets_below = 0;
+    int clamped_docket = 0;
+    int clamped_hostiles = 0;
+    int loose_hostiles = 0;
+
+    for (int sector = 1; sector <= (int)EMBEDDED_LEVEL_COUNT; ++sector)
+    {
+        Rng rng;
+        rng_seed(&rng, 4242u + (uint64_t)sector);
+        REQUIRE(level_load_data(&level, EMBEDDED_LEVELS[sector - 1].name,
+                                EMBEDDED_LEVELS[sector - 1].data,
+                                EMBEDDED_LEVELS[sector - 1].size, &rng));
+
+        /* One sheet to an interior, counted off the maps rather than off the
+         * table the function reads, so the two are compared rather than the
+         * answer restated. */
+        if (level.map.mode != LEVEL_MODE_FACADE)
+            sheets_below++;
+        if (campaign_docket_sheets_by(sector) != sheets_below)
+            printf("sector %d: %d sheets laid out below it, the campaign says "
+                   "%d\n",
+                   sector, sheets_below, campaign_docket_sheets_by(sector));
+        CHECK(campaign_docket_sheets_by(sector) == sheets_below);
+
+        /* And the floor's own population, counted the same way: every spawn,
+         * plus the dog the ones marked `W` bring. */
+        int hostiles = level.map.enemy_count;
+        for (int i = 0; i < level.map.enemy_count; ++i)
+            if (level.map.enemy_spawns[i].has_dog)
+                hostiles++;
+        CHECK(level_authored_hostiles(&level.map) == hostiles);
+
+        int staged_docket = sector_tally_soak_docket(sector);
+        if (staged_docket > sheets_below)
+            printf("sector %d stages DOCKET %d of a collection that has %d in "
+                   "it by then\n",
+                   sector, staged_docket, sheets_below);
+        CHECK(staged_docket <= sheets_below);
+        CHECK(staged_docket <= SOAK_TALLY_DOCKET);
+        if (staged_docket < SOAK_TALLY_DOCKET)
+            clamped_docket++;
+
+        int staged_hostiles =
+            sector_tally_soak_hostiles(level_authored_hostiles(&level.map));
+        if (staged_hostiles > hostiles)
+            printf("sector %d stages HOSTILES %d on a floor holding %d\n",
+                   sector, staged_hostiles, hostiles);
+        CHECK(staged_hostiles <= hostiles);
+        CHECK(staged_hostiles <= SOAK_TALLY_HOSTILES);
+        if (staged_hostiles < SOAK_TALLY_HOSTILES)
+            clamped_hostiles++;
+        else
+            loose_hostiles++;
+    }
+
+    /* The whole campaign is the general answer asked about the last sector, so
+     * a second spelling of it here would be the thing this shares one rule to
+     * avoid. */
+    CHECK(campaign_docket_sheets_by((int)EMBEDDED_LEVEL_COUNT) ==
+          campaign_docket_sheets());
+    /* Above the campaign and below the first floor, because a ceiling is only
+     * a ceiling if it holds at both ends. */
+    CHECK(campaign_docket_sheets_by((int)EMBEDDED_LEVEL_COUNT + 5) ==
+          campaign_docket_sheets());
+    CHECK(campaign_docket_sheets_by(0) == 0);
+    CHECK(campaign_docket_sheets_by(-3) == 0);
+    CHECK(sector_tally_soak_hostiles(-1) == 0);
+
+    /* And the fixture is still a fixture: the ceiling is reached on the floors
+     * that can pay it and bites on the ones that cannot. Both directions, or
+     * this test passes with the clamp deleted *and* with the fixture deleted. */
+    CHECK(clamped_docket > 0);
+    CHECK(clamped_hostiles > 0);
+    CHECK(loose_hostiles > 0);
+    CHECK(sector_tally_soak_docket((int)EMBEDDED_LEVEL_COUNT) ==
+          SOAK_TALLY_DOCKET);
+}
+
+/*
  * And the line the eleven clears that never reach that report get instead.
  *
  * It is a table of words the player reads, so it owes the same measurement:
@@ -14485,6 +20935,44 @@ static void test_the_report_between_sectors_fits_its_column(void)
  * would show a line with its end cut off and nothing anywhere would say so —
  * the same failure the report's own column had before it was measured.
  */
+/*
+ * The score the staged screens put beside the band is one a run could hold.
+ *
+ * `--screen cleared` and an interior `--screen reveal` draw the sector strip
+ * behind the tally band, and the strip has a SCORE readout. It was staged at
+ * nought while the band above it quoted a docket and paid two bonuses — so the
+ * frame said at once that the run had picked up seven sheets, just earned 1360
+ * points, and scored nothing. Every assertion this screen has is a *width*, and
+ * a wrong number is exactly as wide as a right one; this is the third field of
+ * the same fixture to need this and the fourth time this shape has been found
+ * on a staged frame.
+ *
+ * Asked as a relationship rather than as a figure: whatever the band says the
+ * run is holding, the score has to cover it. A number would have to be
+ * re-guessed whenever a bonus or a sheet's worth moved.
+ */
+static void test_a_staged_clear_scores_what_its_band_quotes(void)
+{
+    for (int sector = 1; sector <= CAMPAIGN_SECTORS; ++sector)
+    {
+        int sheets = sector_tally_soak_docket(sector);
+        int score = sector_tally_soak_score(sector);
+        /* Nought is the defect. */
+        CHECK(score > 0);
+        /* The sheets the band quotes are worth what they are worth. */
+        CHECK(score >= sheets * EVIDENCE_SCORE);
+        /* And the two bonuses the band has just paid are in it as well, so a
+         * floor with no sheets on it still cannot read nought. */
+        CHECK(score >= sheets * EVIDENCE_SCORE +
+                          campaign_time_bonus_for(SOAK_TALLY_ELAPSED) +
+                          SECTOR_CLEAN_BONUS);
+    }
+    /* And it grows with the docket, which is what says the two readings come
+     * off one state rather than being two constants that happen to agree. */
+    CHECK(sector_tally_soak_score(CAMPAIGN_SECTORS) >
+          sector_tally_soak_score(1));
+}
+
 static void test_the_sector_tally_fits_the_frame_it_is_drawn_in(void)
 {
     float column = SECTOR_TALLY_TEXT_RIGHT - SECTOR_TALLY_TEXT_LEFT;
@@ -14519,10 +21007,86 @@ static void test_the_sector_tally_fits_the_frame_it_is_drawn_in(void)
         {5999.0f, 5999.0f, false, 0, SECTOR_CLEAN_BONUS},
         {5999.0f, 5999.0f, false, 0, 0},
         /* And the ordinary one, so a shape nobody plays is not the only thing
-         * holding the frame. */
-        {74.0f, 91.0f, false, 1200, SECTOR_CLEAN_BONUS},
+         * holding the frame. It is the shape `game.c` stages `--screen
+         * report`, `--screen cleared` and `--screen reveal` from, so it is
+         * named off the same constants they read and its bonus is priced by
+         * the same function a real clear is. */
+        {SOAK_TALLY_ELAPSED, SOAK_TALLY_BEST, false,
+         campaign_time_bonus_for(SOAK_TALLY_ELAPSED), SECTOR_CLEAN_BONUS},
     };
     const int shape_count = (int)(sizeof(shapes) / sizeof(shapes[0]));
+
+    /*
+     * Every shape above has to be one a clear can actually reach, and the
+     * ordinary one was not: it read `{74.0f, 91.0f, false, ...}` — a run of
+     * 01:14 printed under `BEST 01:31` — which says at once that the player
+     * beat the record and that the record stands. `sector_tally_format` spells
+     * `NEW BEST` rather than quote a time the run has just replaced, so that
+     * pair cannot occur; it was here because the widest-field shapes above it
+     * use equal clocks, where the question does not arise.
+     *
+     * It mattered because the same pair was written down twice. `game.c`'s
+     * `--screen report` and `--screen cleared` staged it too, and that is where
+     * the press stills and the store page are cut from — so the fixture that
+     * was meant to hold the frame honest was the thing teaching the staging its
+     * impossible numbers. Nothing failed, because every assertion here is about
+     * *width*.
+     *
+     * Asserted as a property rather than fixed in place, so the pair cannot
+     * come back the next time somebody wants a realistic-looking row.
+     */
+    for (int i = 0; i < shape_count; ++i)
+    {
+        if (shapes[i].best_is_new)
+            continue;
+        if (shapes[i].best <= PROGRESS_NO_TIME)
+            continue;
+        CHECK(shapes[i].elapsed >= shapes[i].best);
+    }
+
+    /*
+     * And the clock has to agree with the money, which was the other half of
+     * the same fixture and was left behind when the pair above was swapped.
+     *
+     * `{91.0f, 74.0f, false, 1200, ...}` says a run of 01:31 was paid a bonus
+     * of 1200. The clock pays twenty a second under a par of 134, so 91
+     * seconds pays 860 — and 1200 is exactly what 74 pays, which is the
+     * *record* printed next to it. The bonus had been computed from the old
+     * elapsed and not moved with it, which is one half of a symmetric defect
+     * in the paragraph written to record the last one.
+     *
+     * Nothing failed and nothing could: every assertion in this test is a
+     * width, and a wrong number is as wide as a right one. What it cost is
+     * that `tools/press_kit.sh` cuts `12-report` out of the first of the three
+     * screens this fixture feeds, so the contradiction went to the press kit
+     * and the store page rather than to a player.
+     *
+     * Asked of the ordinary shape alone, and the rest are exempted by name
+     * rather than by silence: the widest-field shapes want the longest clock
+     * and the fullest par bonus at once, which is a pair no clear can produce
+     * and is exactly right for measuring a column.
+     */
+    CHECK(shapes[shape_count - 1].elapsed == SOAK_TALLY_ELAPSED);
+    CHECK(shapes[shape_count - 1].time_bonus ==
+          campaign_time_bonus_for(SOAK_TALLY_ELAPSED));
+    /* Payable at all and not the whole par, or the "ordinary" row is either an
+     * over-par floor or a clock of nought and stops being the ordinary one. */
+    CHECK(shapes[shape_count - 1].time_bonus > 0);
+    CHECK(shapes[shape_count - 1].time_bonus < widest_time_bonus);
+    /* And the pair itself, so the two staged clocks stay a clear the game can
+     * reach rather than only a pair of legal floats. */
+    CHECK(SOAK_TALLY_ELAPSED >= SOAK_TALLY_BEST);
+    CHECK(SOAK_TALLY_DOCKET > 0 &&
+          SOAK_TALLY_DOCKET <= campaign_docket_sheets());
+
+    /* The pricing itself, since a check that reads the same function it is
+     * checking would agree with any answer it gave. Par exactly, a second
+     * over, and a floor finished on the whistle. */
+    CHECK(campaign_time_bonus_for(0.0f) == widest_time_bonus);
+    CHECK(campaign_time_bonus_for(SECTOR_PAR_SECONDS) == 0);
+    CHECK(campaign_time_bonus_for(SECTOR_PAR_SECONDS + 1.0f) == 0);
+    CHECK(campaign_time_bonus_for(SECTOR_PAR_SECONDS - 1.0f) ==
+          SECTOR_TIME_BONUS_PER_SECOND);
 
     for (int i = 0; i < shape_count; ++i)
     {
@@ -14537,7 +21101,7 @@ static void test_the_sector_tally_fits_the_frame_it_is_drawn_in(void)
             sector_tally_set(&tally, sector, shapes[i].elapsed,
                              shapes[i].best, shapes[i].best_is_new,
                              shapes[i].time_bonus, shapes[i].clean_bonus,
-                             CAMPAIGN_SECTORS);
+                             CAMPAIGN_SECTORS, intel_line(sector));
 
             char line[SECTOR_TALLY_MAX];
             int written = sector_tally_format(&tally, line, sizeof(line));
@@ -14561,7 +21125,78 @@ static void test_the_sector_tally_fits_the_frame_it_is_drawn_in(void)
             snprintf(docket, sizeof(docket), "DOCKET %02d/%02d",
                      tally.docket_sheets, tally.docket_total);
             CHECK(strstr(line, docket) != NULL);
+
+            /*
+             * And the plot line above the numbers, which is the second line
+             * this band carries and therefore the second one that can be too
+             * wide to read. It is drawn at the same scale off the same margins,
+             * so it answers the same column.
+             *
+             * Read back through `sector_tally_intel` rather than off the field,
+             * because that is the function the renderer asks — a check that
+             * reads the struct directly is a check that agrees with a broken
+             * accessor.
+             */
+            const char *carried = sector_tally_intel(&tally);
+            CHECK(carried == intel_line(sector));
+            if (carried != NULL)
+            {
+                CHECK((float)strlen(carried) * SECTOR_TALLY_GLYPH_W <= column);
+                /* The band the renderer opens for it has to be inside the
+                 * frame on the lower of the two placements, which is the reveal
+                 * at 522 — the one with the least room under it. */
+                CHECK(522.0f - 7.0f - SECTOR_TALLY_INTEL_RISE > 0.0f);
+                CHECK(522.0f + 16.0f <= 552.0f);
+            }
         }
+    }
+
+    /*
+     * Every row of the table reaches a screen now, which is the whole point of
+     * carrying it here and the one thing a width check cannot see.
+     *
+     * `TRANSITION_INTEL` is one line per completed sector and the report shows
+     * the six in `INTEL_ARC_SECTORS`. The other ten were written, measured and
+     * pinned against the maps, and no screen in the game read them — the same
+     * defect as the bonuses this file was created for, left standing when the
+     * bonuses were fixed. So the assertion is about *reach* rather than about
+     * words: a completed sector either shows a report or carries its line on
+     * the tally, and the last sector of the campaign has no line at all because
+     * the outro is the payoff.
+     */
+    {
+        int reached = 0;
+        for (int completed = 0; completed < intel_line_count(); ++completed)
+        {
+            bool on_the_arc = false;
+            for (int a = 0; a < INTEL_ARC_SECTOR_COUNT; ++a)
+                if (INTEL_ARC_SECTORS[a] == completed + 1)
+                    on_the_arc = true;
+
+            SectorTally tally;
+            sector_tally_clear(&tally);
+            sector_tally_set(&tally, completed, 91.0f, 74.0f, false, 1200,
+                             SECTOR_CLEAN_BONUS, 3, intel_line(completed));
+            bool on_the_tally = sector_tally_intel(&tally) != NULL;
+
+            /* One or the other, and the report's own six are deliberately not
+             * both: `try_finish_current_level` clears the tally on the branch
+             * that shows a report, so a screen that says all of this properly
+             * is not also trailed by a summary of itself. */
+            CHECK(on_the_arc || on_the_tally);
+            if (on_the_arc || on_the_tally)
+                reached++;
+        }
+        CHECK(reached == intel_line_count());
+
+        /* And the last sector carries none, so nothing is printed over the
+         * verdict on the card the campaign ends on. */
+        SectorTally last;
+        sector_tally_clear(&last);
+        sector_tally_set(&last, CAMPAIGN_SECTORS - 1, 91.0f, 74.0f, false, 1200,
+                         SECTOR_CLEAN_BONUS, 3,
+                         intel_line(CAMPAIGN_SECTORS - 1));
+        CHECK(sector_tally_intel(&last) == NULL);
     }
 
     /*
@@ -14571,8 +21206,8 @@ static void test_the_sector_tally_fits_the_frame_it_is_drawn_in(void)
     {
         SectorTally none;
         sector_tally_clear(&none);
-        sector_tally_set(&none, 0, 74.0f, 91.0f, false, 1200,
-                         SECTOR_CLEAN_BONUS, 0);
+        sector_tally_set(&none, 0, 91.0f, 74.0f, false, 1200,
+                         SECTOR_CLEAN_BONUS, 0, intel_line(0));
         char empty_run[SECTOR_TALLY_MAX];
         int written = sector_tally_format(&none, empty_run, sizeof(empty_run));
         CHECK(written > 0);
@@ -14721,6 +21356,14 @@ static const char *spelled_number(int value)
         "TEN",      "ELEVEN",  "TWELVE",    "THIRTEEN", "FOURTEEN",
         "FIFTEEN",  "SIXTEEN", "SEVENTEEN", "EIGHTEEN", "NINETEEN",
         "TWENTY",   "TWENTY-ONE"};
+    /* The round tens above the list, because the one number in the game that
+     * needs them is the building's height and nothing between twenty-two and
+     * forty is spelled anywhere. Returning NULL for the gap rather than
+     * inventing "THIRTY-SEVEN" keeps every caller's REQUIRE honest: a check
+     * that cannot spell its own number must not quietly pass. */
+    static const char *const TENS[] = {"THIRTY", "FORTY", "FIFTY"};
+    if (value >= 30 && value <= 50 && value % 10 == 0)
+        return TENS[value / 10 - 3];
     if (value < 0 || value >= (int)(sizeof(WORDS) / sizeof(WORDS[0])))
         return NULL;
     return WORDS[value];
@@ -14830,6 +21473,73 @@ static const char *credits_note_containing(const char *needle)
     return NULL;
 }
 
+/*
+ * The tower is one height everywhere it is said out loud.
+ *
+ * Seventeen sectors is the route and forty floors is the building, and
+ * `docs/story.md` has a paragraph insisting the height "is stated in four places
+ * that have to agree" — a paragraph which had itself previously said *three* and
+ * left the credits roll out, which is how the roll came to state the campaign's
+ * length from memory too. `CAMPAIGN_SECTORS` got a check out of that and the
+ * height got the paragraph. There are six places, not four, and nothing held any
+ * of them: `check_docs.py` derives the campaign length, the climb count, the
+ * hearts, the crew, two readings off the night clock and the length of the night,
+ * and had no opinion at all about the one number the title screen opens on.
+ *
+ * Two of the six are tables on this side of the SDL boundary, so they are held
+ * here. **Found by the shape of the claim rather than by index**, the way the
+ * campaign-length checks next door are: any line anywhere in either table that
+ * counts floors has to count `BUILDING_FLOORS` of them, so a fifth line added
+ * later is checked by having been written rather than by somebody remembering to
+ * add it to a list. The remaining four are prose and a tagline in an SDL-side
+ * file, which no test can reach; `tools/check_docs.py` has them.
+ */
+static void test_the_tower_is_one_height_everywhere_it_is_said(void)
+{
+    const char *height = spelled_number(BUILDING_FLOORS);
+    REQUIRE(height != NULL);
+    char expected[64];
+    snprintf(expected, sizeof expected, "%s FLOORS", height);
+
+    /* The credits roll, which opens on the height and closes on it. Both lines
+     * count, so this walks the table rather than taking the first hit. */
+    int count = 0;
+    const CreditLine *lines = credits_lines(&count);
+    REQUIRE(lines != NULL);
+    int rolled = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        if (lines[i].text == NULL || strstr(lines[i].text, "FLOORS") == NULL)
+            continue;
+        ++rolled;
+        CHECK(strstr(lines[i].text, expected) != NULL);
+    }
+    /* Two of them, and the count is asserted because a roll that stopped
+     * mentioning the building at all would otherwise pass this test in
+     * silence — the failure mode the campaign-length check above was written
+     * for, one table over. */
+    CHECK(rolled == 2);
+
+    /* And the men shouting it down off the wall. `CHATTER_WALL` is the only kind
+     * that says it, but every kind is walked: a floor count moving into another
+     * table is exactly the drift this is for. */
+    int shouted = 0;
+    for (int kind = 0; kind < CHATTER_KIND_COUNT; ++kind)
+    {
+        int rows = crew_line_count((ChatterKind)kind);
+        for (int i = 0; i < rows; ++i)
+        {
+            const char *line = crew_line((ChatterKind)kind, i);
+            if (line == NULL || strstr(line, "FLOORS") == NULL)
+                continue;
+            ++shouted;
+            CHECK(strstr(line, expected) != NULL);
+        }
+    }
+    CHECK(shouted >= 1);
+}
+
+
 static void test_the_credits_say_the_campaign_they_roll_over(void)
 {
     char expected[64];
@@ -14900,6 +21610,506 @@ static void test_the_net_counts_the_crew_it_has(void)
     /* And the claim is still findable: nought of them means the lines were
      * reworded and this check has stopped checking anything. */
     CHECK(counting_lines >= 2);
+}
+
+/* A case-insensitive substring, because the manual's body text is the one table
+ * of words in the game written in sentence case while `spelled_number` answers
+ * in the case the straps and the labels use. Written out rather than reached for
+ * in libc: `strcasestr` is POSIX and this tree is built `-Wpedantic` C17, and it
+ * is one loop. */
+static bool text_contains_ci(const char *haystack, const char *needle)
+{
+    if (haystack == NULL || needle == NULL)
+        return false;
+    size_t len = strlen(needle);
+    if (len == 0)
+        return true;
+    for (const char *at = haystack; *at != '\0'; ++at)
+    {
+        size_t i = 0;
+        while (i < len && at[i] != '\0' &&
+               toupper((unsigned char)at[i]) == toupper((unsigned char)needle[i]))
+        {
+            ++i;
+        }
+        if (i == len)
+            return true;
+    }
+    return false;
+}
+
+/*
+ * A sheet's whole body as one string.
+ *
+ * These tables are hard-wrapped by hand, so a claim is free to straddle the
+ * wrap — `That is four` / `seconds of a man facing the wrong way` is one
+ * sentence in two rows — and a per-line check cannot see one that does. The
+ * title, strap and caption go in with the lines because a claim is a claim
+ * wherever on the sheet it is printed.
+ */
+static void manual_sheet_body(const ManualPageText *sheet, char *out,
+                              size_t cap)
+{
+    size_t at = 0;
+    const char *parts[3] = {sheet->title, sheet->strap, sheet->caption};
+    for (int p = 0; p < 3; ++p)
+    {
+        if (parts[p] == NULL)
+            continue;
+        at += (size_t)snprintf(out + at, cap - at, "%s ", parts[p]);
+        if (at >= cap)
+        {
+            out[cap - 1] = '\0';
+            return;
+        }
+    }
+    for (int i = 0; i < sheet->line_count; ++i)
+    {
+        if (sheet->lines[i].text == NULL)
+            continue;
+        at += (size_t)snprintf(out + at, cap - at, "%s ", sheet->lines[i].text);
+        if (at >= cap)
+        {
+            out[cap - 1] = '\0';
+            return;
+        }
+    }
+}
+
+/*
+ * What the wall clock in a sector reads, spelled the way the sheets spell it.
+ *
+ * `draw_wall_clock` is one line — the first minute plus a 0-based sector index
+ * times the minutes a sector is worth — and this is that line. Truncated rather
+ * than rounded, because the hand is: sector 17 lands on 57.76 and the prop reads
+ * 00:57.
+ *
+ * `check_docs.py` has the same function for the pages under `docs/` and cannot
+ * reach a string table in `manual_pages.c`, which is why the manual's own three
+ * clock readings had nothing holding them while every copy in the prose did.
+ *
+ * One buffer, so two readings may not be in flight at once — each caller has to
+ * be done with the answer before it asks for the next one.
+ */
+static const char *night_dial(int sector)
+{
+    static char out[8];
+    float minutes = NIGHT_CLOCK_FIRST_MINUTE +
+                    (float)(sector - 1) * NIGHT_CLOCK_MINUTES_PER_SECTOR;
+    snprintf(out, sizeof out, "00:%02d", (int)minutes);
+    return out;
+}
+
+/*
+ * How many interiors leave by their window rather than by a stair door.
+ *
+ * Derived from the maps rather than from `CAMPAIGN_CLIMB_SECTOR_COUNT`, which
+ * is the same number today and is not the same *fact*: this counts the floors
+ * whose stair core is welded, and that only equals the number of climbs while
+ * no two climbs are adjacent. Two climbs in a row would leave one welded
+ * interior below the pair and the second climb reached from the first — the
+ * counts would part company, and the sheet is making the claim about the
+ * floors.
+ */
+static int interiors_that_leave_by_a_window(void)
+{
+    int welded = 0;
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        Level level;
+        Rng rng;
+        rng_seed(&rng, 4242u + i);
+        if (!level_load_data(&level, EMBEDDED_LEVELS[i].name,
+                             EMBEDDED_LEVELS[i].data, EMBEDDED_LEVELS[i].size,
+                             &rng))
+            return -1;
+        if (level.map.mode != LEVEL_MODE_FACADE && level.map.has_window)
+            welded++;
+    }
+    return welded;
+}
+
+/*
+ * The sheets spell the tuning they quote, which is the rule the campaign's own
+ * numbers already had and the *mechanics'* numbers did not.
+ *
+ * `test_the_manual_says_the_campaign_it_draws` and
+ * `test_the_tower_is_one_height_everywhere_it_is_said` hold every count that is
+ * a fact about the shape of the night — the sectors, the climbs, the crew, the
+ * floors. Numbers on the same sheets are facts about the *tuning*, and every one
+ * of them was hard-coded English. The three below are the ones this check was
+ * written for — **and it said "three" for a release while there were
+ * twenty-one**, which is a comment claiming to have enumerated something, in a
+ * file whose own rule is that such a comment is the last place anybody
+ * recounts. The other eighteen are in the second half of this function, and the
+ * lesson is that the first half's confident list is what stopped anybody
+ * looking for them.
+ *
+ * - `A GUARD sees a cone seven tiles ahead` and the `SEVEN TILES` label on the
+ *   picture beside it, against `ENEMY_VIEW_RANGE`. That is the number the whole
+ *   quiet route is played against, written out twice and derived neither time.
+ * - `Every three tiles of climb is banked`, against `FACADE_CHECKPOINT_STEP` —
+ *   what a climber loses by falling, on five of the seventeen sectors.
+ * - The pause sheet's `THE TEN SHEETS`, against `MANUAL_PAGE_COUNT`.
+ *   `check_docs.py` already derives that count for the store page, the README
+ *   and `docs/screens.md`; the one copy nobody held was the one a player reads,
+ *   which is this repository's oldest defect with the audience swapped.
+ *
+ * All four were correct the day this was written, and saying so is the point: it
+ * is the loss of a *guard*, not a live bug. Each is found by the shape of its own
+ * claim rather than by index, and each requires the claim to have been found at
+ * all — a reworded sentence fails the `REQUIRE` loudly instead of quietly being
+ * checked no longer.
+ */
+static void test_the_sheets_spell_the_tuning_they_quote(void)
+{
+    char expected[96];
+
+    /* The guard's cone, in the sentence and on the picture. */
+    const char *cone_word = spelled_number(ENEMY_VIEW_RANGE / TILE_SIZE);
+    REQUIRE(cone_word != NULL);
+    snprintf(expected, sizeof expected, "%s TILES", cone_word);
+
+    int cone_claims = 0;
+    for (int page = 0; page < MANUAL_PAGE_COUNT; ++page)
+    {
+        const ManualPageText *sheet = &MANUAL_PAGES[page];
+        for (int i = 0; i < sheet->line_count; ++i)
+        {
+            const char *line = sheet->lines[i].text;
+            if (!text_contains_ci(line, "cone"))
+                continue;
+            ++cone_claims;
+            CHECK(text_contains_ci(line, expected));
+        }
+    }
+    /* At least one sheet says it, and every sheet that says it says the same
+     * number: a manual that stopped mentioning the cone would otherwise pass
+     * this in silence. */
+    CHECK(cone_claims >= 1);
+    CHECK(text_contains_ci(MANUAL_SIGHT_CONE_LABEL, expected));
+
+    /* What a fall off the wall costs. */
+    const char *bank_word =
+        spelled_number((int)(FACADE_CHECKPOINT_STEP / (float)TILE_SIZE));
+    REQUIRE(bank_word != NULL);
+    snprintf(expected, sizeof expected, "%s TILES", bank_word);
+
+    int bank_claims = 0;
+    for (int page = 0; page < MANUAL_PAGE_COUNT; ++page)
+    {
+        const ManualPageText *sheet = &MANUAL_PAGES[page];
+        for (int i = 0; i < sheet->line_count; ++i)
+        {
+            const char *line = sheet->lines[i].text;
+            if (!text_contains_ci(line, "banked"))
+                continue;
+            ++bank_claims;
+            CHECK(text_contains_ci(line, expected));
+        }
+    }
+    CHECK(bank_claims >= 1);
+
+    /* And how many sheets the pause sheet offers, which is how many there are. */
+    const char *sheets_word = spelled_number(MANUAL_PAGE_COUNT);
+    REQUIRE(sheets_word != NULL);
+    snprintf(expected, sizeof expected, "%s SHEETS", sheets_word);
+
+    int sheet_claims = 0;
+    int pause_rows = pause_sheet_row_count();
+    CHECK(pause_rows == PAUSE_ITEM_COUNT);
+    for (int i = 0; i < pause_rows; ++i)
+    {
+        const char *detail = PAUSE_SHEET_ROWS[i].detail;
+        if (!text_contains_ci(detail, "SHEETS"))
+            continue;
+        ++sheet_claims;
+        CHECK(text_contains_ci(detail, expected));
+    }
+    CHECK(sheet_claims == 1);
+
+    /*
+     * And then the same sheets were read again, which is what this check is for,
+     * and there were **eighteen** claims of this kind rather than three.
+     *
+     * The comment above opens "Three numbers on the same sheets are facts about
+     * the tuning", which is a sentence claiming to have enumerated something —
+     * and this file already knows that is the last place anybody recounts. The
+     * three it names are the ones the sweep that wrote it happened to be looking
+     * at. Measured off the tables, `PAGE_MISSION`, `PAGE_COMBAT`, `PAGE_QUIET`,
+     * `PAGE_CREW` and `PAGE_CONSOLE` between them also spell
+     * `TERMINAL_HACK_TIME`, `ENEMY_TALK_DURATION`, `PLAYER_MAX_HP`,
+     * `EXPLOSION_DAMAGE`, `PLAYER_CONTINUES`, `MAX_AMMO` twice over, `ENEMY_HP`,
+     * the relationship `ENEMY_HEAVY_HP` has to it, how many sectors leave by a
+     * window, `EXTRA_LIFE_SCORE_STEP` and three readings off the night clock —
+     * every one of them written out by hand, and every one correct on the day it
+     * was written, which is the point: what is missing is a guard.
+     *
+     * Three of the eighteen are worth naming for what they are rather than for
+     * being on the list. `MAX_AMMO` is spelled on **two** sheets, `FIGHTING` and
+     * `THE CONSOLE`, which is the shape that has cost this tree a wrong number
+     * before — a fix landing on one copy of a sentence. And "a heavy takes twice
+     * the rounds" is not a number at all but a *relationship* between two, which
+     * a sentence can hold and a `#define` cannot: the words are checked here and
+     * the arithmetic behind them beside it, because either half moving alone is
+     * the sheet lying. And six of the eighteen are *numerals* rather than words —
+     * `10000 points`, four clock readings and a percentage — which is exactly why
+     * the first
+     * pass over this missed them: a check written to compare a spelled number has
+     * nothing to compare a figure printed as digits with, so widening it meant
+     * looking for both shapes rather than for more of one.
+     *
+     * Matched over the sheet's whole body rather than line by line, unlike the
+     * three above. That is not a style choice: these tables are hard-wrapped, so
+     * `That is four` ends one line and `seconds of a man facing the wrong way`
+     * begins the next, and a per-line check cannot see a claim that straddles the
+     * wrap. Two of the eighteen do.
+     */
+    struct
+    {
+        const char *anchor; /* what makes this the sentence that claims it */
+        char must[80];      /* what it therefore has to say, derived */
+    } claims[] = {
+        {"TERMINAL for", {0}},
+        {"facing the wrong way", {0}},
+        {"hearts a life", {0}},
+        {"A hit costs", {0}},
+        {"The score survives", {0}},
+        {"PISTOL:", {0}},
+        {"fills the pistol back to", {0}},
+        {"Facing you it is", {0}},
+        {"a heavy takes", {0}},
+        {"sectors the stair door", {0}},
+        {"points is a spare life", {0}},
+        {"the front door at", {0}},
+        {"the roof at", {0}},
+        {"it leaves by air", {0}},
+        /* THE NIGHT prints the front door's hour twice — once in the bullet
+         * above and once in its own strap — which is the two-copies-on-one-sheet
+         * shape `MAX_AMMO` has across two sheets. Both are anchored, so a fix
+         * that lands on one of them fails on the other. */
+        {"KESSLER TOWER,", {0}},
+        /* The options sheet's DIFFICULTY page — see the loop below. */
+        {"HEARTS PER LIFE INSTEAD OF", {0}},
+        {"MOVE AT", {0}},
+        {"FASTER CREW,", {0}},
+    };
+    const char *words[10];
+    words[0] = spelled_number((int)TERMINAL_HACK_TIME);
+    words[1] = spelled_number((int)ENEMY_TALK_DURATION);
+    words[2] = spelled_number(PLAYER_MAX_HP);
+    words[3] = spelled_number(EXPLOSION_DAMAGE);
+    words[4] = spelled_number(PLAYER_CONTINUES);
+    words[5] = spelled_number(MAX_AMMO);
+    words[6] = words[5];
+    words[7] = spelled_number(ENEMY_HP);
+    words[8] = NULL; /* a relationship rather than a number — see below */
+    words[9] = spelled_number(interiors_that_leave_by_a_window());
+    for (int i = 0; i < 10; ++i)
+        if (i != 8)
+            REQUIRE(words[i] != NULL);
+
+    snprintf(claims[0].must, sizeof claims[0].must, "TERMINAL FOR %s SECONDS",
+             words[0]);
+    snprintf(claims[1].must, sizeof claims[1].must, "THAT IS %s SECONDS",
+             words[1]);
+    snprintf(claims[2].must, sizeof claims[2].must, "%s HEARTS A LIFE",
+             words[2]);
+    snprintf(claims[3].must, sizeof claims[3].must, "A BLAST %s", words[3]);
+    snprintf(claims[4].must, sizeof claims[4].must, "SURVIVES %s", words[4]);
+    snprintf(claims[5].must, sizeof claims[5].must, "PISTOL: %s ROUNDS",
+             words[5]);
+    snprintf(claims[6].must, sizeof claims[6].must, "BACK TO %s", words[6]);
+    snprintf(claims[7].must, sizeof claims[7].must, "FACING YOU IT IS %s",
+             words[7]);
+    /* The words say twice; the constants have to be twice. Neither half is a
+     * check on its own — a heavy at three times the rounds with the sheet still
+     * saying "twice" is the sheet lying, and so is the sheet saying "three
+     * times" over a doubled constant. */
+    snprintf(claims[8].must, sizeof claims[8].must, "TWICE THE ROUNDS");
+    CHECK(ENEMY_HEAVY_HP == 2 * ENEMY_HP);
+    snprintf(claims[9].must, sizeof claims[9].must,
+             "IN %s SECTORS THE STAIR DOOR", words[9]);
+
+    /*
+     * And five the same sweep found that are *numerals* rather than words, so
+     * `spelled_number` has nothing to do with them — which is the whole reason
+     * they were missed the first time round: a check built to compare a spelled
+     * number cannot see a figure printed as digits.
+     *
+     * The four clock readings are the sharper half. `check_docs.py` derives
+     * every dial it can find in `docs/`, `README.md`, `LEGEND.md` and the store
+     * page, and does not read `manual_pages.c` at all — it holds two named
+     * comments under `src/` and nothing else there. So the hour the night starts
+     * on, the hour Voss reaches the roof and the hour the money leaves were
+     * derived on every page a *reader of this repository* sees and on none of
+     * the sheets a player opens mid-run. The dial is `draw_wall_clock`'s own
+     * line, truncated rather than rounded, which is what makes sector 17's read
+     * 00:57 off 57.76. The front door's hour is anchored twice because THE NIGHT
+     * prints it twice, in a bullet and in its own strap — a strap reads as a
+     * title rather than as a claim, which is why that copy was found last and by
+     * looking at the drawn sheet rather than at the table.
+     */
+    snprintf(claims[10].must, sizeof claims[10].must, "EVERY %d POINTS",
+             EXTRA_LIFE_SCORE_STEP);
+    snprintf(claims[11].must, sizeof claims[11].must, "THE FRONT DOOR AT %s",
+             night_dial(1));
+    snprintf(claims[12].must, sizeof claims[12].must, "THE ROOF AT %s",
+             night_dial(CAMPAIGN_SECTORS));
+    /* The end of the night, which `night_dial` cannot spell: it formats `00:MM`
+     * and this one has gone round. */
+    snprintf(claims[13].must, sizeof claims[13].must, "AT %02d:%02d IT LEAVES",
+             (int)(NIGHT_CLOCK_FIRST_MINUTE + NIGHT_CLOCK_TOTAL_MINUTES) / 60,
+             (int)(NIGHT_CLOCK_FIRST_MINUTE + NIGHT_CLOCK_TOTAL_MINUTES) % 60);
+    snprintf(claims[14].must, sizeof claims[14].must, "KESSLER TOWER, %s",
+             night_dial(1));
+
+    /*
+     * And the options sheet's three, which is the same class on a fourth table.
+     *
+     * `MORE HEARTS` names both hit-point ceilings in one sentence, so both are
+     * derived into it. `SLOWER GUARDS` prints `ASSIST_ENEMY_SPEED` as a
+     * percentage, and the row is the one this tree has already had to fix once
+     * for reaching only half of a dog's states — the words being right and the
+     * switch being half-wired were separate defects on the same row. And
+     * `VETERAN` states two of its three numbers in words; the third, the pace,
+     * has no figure on the row and the fourth clause — when the switch bites —
+     * is held next door by `test_the_veteran_row_says_when_it_bites`.
+     */
+    const char *assist_hearts = spelled_number(PLAYER_ASSIST_MAX_HP);
+    const char *plain_hearts = spelled_number(PLAYER_MAX_HP);
+    const char *veteran_lives = spelled_number(VETERAN_LIVES);
+    REQUIRE(assist_hearts != NULL && plain_hearts != NULL);
+    REQUIRE(veteran_lives != NULL);
+    snprintf(claims[15].must, sizeof claims[15].must,
+             "%s HEARTS PER LIFE INSTEAD OF %s", assist_hearts, plain_hearts);
+    snprintf(claims[16].must, sizeof claims[16].must, "MOVE AT %d%% SPEED",
+             (int)(ASSIST_ENEMY_SPEED * 100.0f + 0.5f));
+    /* The number and not the noun after it: at two lives the row wants
+     * rewording to `TWO LIVES`, and a check that demanded the singular would be
+     * failing on the grammar rather than on the figure. */
+    snprintf(claims[17].must, sizeof claims[17].must, "FASTER CREW, %s",
+             veteran_lives);
+    /* `NO CONTINUES` is the words for a number too, and nought is the one
+     * figure this sheet spells by leaving it out. */
+    CHECK(VETERAN_CONTINUES == 0);
+
+    for (size_t c = 0; c < sizeof(claims) / sizeof(claims[0]); ++c)
+    {
+        int found = 0;
+        for (int page = 0; page < MANUAL_PAGE_COUNT; ++page)
+        {
+            char body[2048];
+            manual_sheet_body(&MANUAL_PAGES[page], body, sizeof body);
+            if (!text_contains_ci(body, claims[c].anchor))
+                continue;
+            ++found;
+            if (!text_contains_ci(body, claims[c].must))
+                fprintf(stderr,
+                        "  the sheet titled '%s' claims '%s' and does not say "
+                        "'%s'\n",
+                        MANUAL_PAGES[page].title, claims[c].anchor,
+                        claims[c].must);
+            CHECK(text_contains_ci(body, claims[c].must));
+        }
+        /*
+         * And the options sheet, which is the fourth table of words to turn out
+         * to be carrying this class.
+         *
+         * The DIFFICULTY page's three switches print `FIVE HEARTS PER LIFE
+         * INSTEAD OF THREE`, `GUARDS AND DOGS MOVE AT 80% SPEED` and
+         * `FASTER CREW, ONE LIFE, NO CONTINUES` — five tuning numbers on the one
+         * screen whose whole job is reporting state, and every check that screen
+         * has asks whether a line *fits*. `settings.c` is already named in this
+         * repository's own rule as a table of words that had its geometry in the
+         * renderer and no fit check; the numbers in it were the half nobody had
+         * looked at afterwards.
+         */
+        for (int page = 0; page < SETTINGS_PAGE_COUNT; ++page)
+        {
+            int row_count = 0;
+            const SettingRow *rows =
+                settings_rows((SettingsPage)page, &row_count);
+            for (int row = 0; row < row_count; ++row)
+            {
+                const char *detail = rows[row].detail;
+                if (detail == NULL ||
+                    !text_contains_ci(detail, claims[c].anchor))
+                    continue;
+                ++found;
+                if (!text_contains_ci(detail, claims[c].must))
+                    fprintf(stderr,
+                            "  the options row '%s' claims '%s' and does not "
+                            "say '%s'\n",
+                            settings_row_label(&rows[row]), claims[c].anchor,
+                            claims[c].must);
+                CHECK(text_contains_ci(detail, claims[c].must));
+            }
+        }
+        /* And the claim is still findable. A reworded sentence has to fail here
+         * rather than quietly stop being checked, which is the whole reason the
+         * three checks above count their own matches. */
+        if (found == 0)
+            fprintf(stderr, "  no sheet makes the claim '%s' any more\n",
+                    claims[c].anchor);
+        CHECK(found >= 1);
+    }
+}
+
+/*
+ * And the sheet the player reads says what was just measured.
+ *
+ * `ON FOOT`'s caption is a claim about the simulation rather than a label
+ * on a picture — the distinction `MANUAL_SIGHT_CONE_LABEL` is already made
+ * on — and it read `ONE TILE IS A JUMP. TWO IS A LADDER`, which is the same
+ * tile the bullet inside the sheet was short by and the same tile
+ * `levels/LEGEND.md` was short by. The words were corrected and the picture
+ * beside them was not, which is this file's oldest shape: a fix landing on
+ * one copy of a sentence.
+ *
+ * The two figures are derived here rather than written down, so there is no
+ * list of which string is right: the widest hole the body clears in *every*
+ * band is a jump, and one tile past the widest it clears in *any* band is a
+ * ladder. Retune the jump and this fails on the caption rather than on a
+ * player.
+ */
+static void test_the_on_foot_sheet_spells_the_jump_it_draws(void)
+{
+    int jumpable_anywhere = 0;
+    int jumpable_at_best = 0;
+    for (int hole = 1; hole <= 5; ++hole)
+    {
+        if (body_crosses_hole(hole, 2) && body_crosses_hole(hole, 3))
+            jumpable_anywhere = hole;
+        if (body_crosses_hole(hole, 3))
+            jumpable_at_best = hole;
+    }
+    REQUIRE(jumpable_anywhere > 0);
+    REQUIRE(jumpable_at_best >= jumpable_anywhere);
+
+    const char *jump_word = spelled_number(jumpable_anywhere);
+    const char *ladder_word = spelled_number(jumpable_at_best + 1);
+    REQUIRE(jump_word != NULL && ladder_word != NULL);
+
+    const ManualPageText *on_foot = NULL;
+    for (int page = 0; page < MANUAL_PAGE_COUNT; ++page)
+        if (strcmp(MANUAL_PAGES[page].title, "ON FOOT") == 0)
+            on_foot = &MANUAL_PAGES[page];
+    REQUIRE(on_foot != NULL);
+
+    char jump_claim[64];
+    char ladder_claim[64];
+    snprintf(jump_claim, sizeof jump_claim, "%s TILES IS A JUMP", jump_word);
+    snprintf(ladder_claim, sizeof ladder_claim, "%s IS A LADDER", ladder_word);
+    if (!text_contains_ci(on_foot->caption, jump_claim) ||
+        !text_contains_ci(on_foot->caption, ladder_claim))
+        fprintf(stderr,
+                "  ON FOOT's caption reads \"%s\"; the body jumps %d tile(s) in "
+                "any room and %d at best, so it should say \"%s\" and \"%s\"\n",
+                on_foot->caption, jumpable_anywhere, jumpable_at_best,
+                jump_claim, ladder_claim);
+    CHECK(text_contains_ci(on_foot->caption, jump_claim));
+    CHECK(text_contains_ci(on_foot->caption, ladder_claim));
 }
 
 /*
@@ -16071,6 +23281,601 @@ static const PadHints *widest_pad_spelling(void)
     return &widest;
 }
 
+/*
+ * The widest a record figure can ever print, found by asking rather than by
+ * being written down.
+ *
+ * Every ceiling `Progress` will store is driven into `run_tally_format_record`
+ * and the answers measured, so the bound the fit check uses is the function's own
+ * rather than somebody's reading of it. A `%d` of a clamped score is easy to
+ * reason about and `SECTOR %02d` is not — the campaign could pass a hundred
+ * floors — and reasoning about it is what a check is for avoiding.
+ */
+static size_t widest_record_value(RunTallyRecord which)
+{
+    static const int SCORES[] = {0, 1, 999, PROGRESS_MAX_SCORE,
+                                 PROGRESS_MAX_SCORE * 2};
+    static const int SHEETS[] = {0, 1, PROGRESS_MAX_EVIDENCE,
+                                 PROGRESS_MAX_EVIDENCE * 2};
+    static const int SECTORS[] = {0, 1, CAMPAIGN_SECTORS,
+                                  PROGRESS_MAX_TRACKED_SECTORS};
+
+    size_t widest = 0;
+    char buf[RUN_TALLY_RECORD_MAX];
+    for (size_t a = 0; a < sizeof(SCORES) / sizeof(SCORES[0]); ++a)
+    {
+        for (size_t b = 0; b < sizeof(SHEETS) / sizeof(SHEETS[0]); ++b)
+        {
+            for (size_t c = 0; c < sizeof(SECTORS) / sizeof(SECTORS[0]); ++c)
+            {
+                Progress progress;
+                progress_defaults(&progress);
+                progress.best_score = SCORES[a];
+                progress.best_evidence = SHEETS[b];
+                progress.furthest_sector = SECTORS[c];
+                for (int i = 0; i < SECTORS[c] &&
+                                i < PROGRESS_MAX_TRACKED_SECTORS;
+                     ++i)
+                    progress.best_sector_time[i] = 61.0f;
+
+                int written =
+                    run_tally_format_record(which, &progress, buf, sizeof(buf));
+                /* Never truncated, which is the other half of a fit check: a
+                 * value that fits because it was cut off is not a value. */
+                CHECK(written == (int)strlen(buf));
+                CHECK((size_t)written < sizeof(buf) - 1);
+                if (strlen(buf) > widest)
+                    widest = strlen(buf);
+            }
+        }
+    }
+    CHECK(widest > 0);
+    return widest;
+}
+
+/*
+ * The RECORDS page shows the three things it offers to delete.
+ *
+ * It shipped as a page named RECORDS whose strap listed the best score, the
+ * docket and every sector's best time, over one row that clears all of it and no
+ * figure anywhere on it. The numbers were on the field manual's `THE RECORD`
+ * sheet and nowhere else, so the one screen in the game whose whole subject is
+ * the records was the one screen that would not print one — and the destructive
+ * thing on it asked "are you sure" about nothing the player could see.
+ *
+ * Two properties, and the second is the one that needs a test rather than a
+ * reading.
+ *
+ * **A record nothing has been written to prints as `--` rather than as nought.**
+ * That is the same distinction `PROGRESS_NO_TIME` exists for: a sector nobody has
+ * finished and a sector finished in no time at all must not look the same, and a
+ * page offering to clear a record must not show one where there is none. All four
+ * figures are high-water marks that only ever rise, so nought and never are the
+ * same state and `--` is its honest spelling.
+ *
+ * **And every row on the page is one of them.** The check walks the table and
+ * requires each `RunTallyRecord` to be reported by exactly one row, so a fifth
+ * figure added to the enum with no row beside it fails here instead of being a
+ * number the game keeps and nothing shows — which is the whole defect this page
+ * was fixed for, one level down.
+ */
+static void test_the_records_page_shows_what_it_offers_to_delete(void)
+{
+    char buf[RUN_TALLY_RECORD_MAX];
+
+    /* A fresh install: nothing has ever been banked. */
+    Progress fresh;
+    progress_defaults(&fresh);
+    for (int i = 0; i < (int)RUN_TALLY_RECORD_COUNT; ++i)
+    {
+        RunTallyRecord which = (RunTallyRecord)i;
+        REQUIRE(run_tally_format_record(which, &fresh, buf, sizeof(buf)) > 0);
+        CHECK(strcmp(buf, "--") == 0);
+        /* And a label over it, because a figure with no name on it is a number
+         * on a plate. */
+        const char *label = run_tally_record_label(which);
+        CHECK(label != NULL && label[0] != '\0');
+    }
+
+    /* A profile that has been played: every figure is the figure and none of them
+     * is `--`. */
+    Progress played;
+    progress_defaults(&played);
+    played.best_score = 41250;
+    played.best_evidence = 7;
+    played.furthest_sector = 8; /* 0-based, so sector 9 */
+    for (int i = 0; i < 5; ++i)
+        played.best_sector_time[i] = 71.0f;
+
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_SCORE, &played, buf,
+                                    sizeof(buf)) > 0);
+    CHECK(strcmp(buf, "41250") == 0);
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_DOCKET, &played, buf,
+                                    sizeof(buf)) > 0);
+    /* Out of the campaign's own sheet count rather than a literal twelve: one to
+     * an interior and none on a climb, which is `campaign_docket_sheets`. */
+    char expect[RUN_TALLY_RECORD_MAX];
+    snprintf(expect, sizeof(expect), "7 / %d", campaign_docket_sheets());
+    CHECK(strcmp(buf, expect) == 0);
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_FURTHEST, &played, buf,
+                                    sizeof(buf)) > 0);
+    /* 1-based, the way a sector is named everywhere a human reads one. */
+    CHECK(strcmp(buf, "SECTOR 09") == 0);
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_SECTORS_TIMED, &played,
+                                    buf, sizeof(buf)) > 0);
+    snprintf(expect, sizeof(expect), "5 / %d", CAMPAIGN_SECTORS);
+    CHECK(strcmp(buf, expect) == 0);
+
+    /*
+     * And the fraction cannot exceed its own whole.
+     *
+     * `Progress` keeps `PROGRESS_MAX_TRACKED_SECTORS` times against
+     * `CAMPAIGN_SECTORS` floors on purpose — the slack is what lets a longer
+     * campaign ship without a new file format — and `progress_parse` takes
+     * every index inside it, so a file from such a build, or from anybody with
+     * a text editor, carries times for floors this build does not have. The
+     * count used to walk the array and printed `20 / 17`.
+     *
+     * Filled from the top of the array downwards so the campaign's own slots
+     * stay exactly as they were: the reading must not move at all.
+     */
+    for (int i = CAMPAIGN_SECTORS; i < PROGRESS_MAX_TRACKED_SECTORS; ++i)
+        played.best_sector_time[i] = 71.0f;
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_SECTORS_TIMED, &played,
+                                    buf, sizeof(buf)) > 0);
+    CHECK(strcmp(buf, expect) == 0);
+    /* And the fresh file is still `--` with the same rubbish in it, rather than
+     * a page that reports a ladder nobody has stepped on. */
+    for (int i = CAMPAIGN_SECTORS; i < PROGRESS_MAX_TRACKED_SECTORS; ++i)
+        fresh.best_sector_time[i] = 71.0f;
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_SECTORS_TIMED, &fresh, buf,
+                                    sizeof(buf)) > 0);
+    CHECK(strcmp(buf, "--") == 0);
+
+    /* And the page reports every one of them, exactly once. */
+    int row_count = 0;
+    const SettingRow *rows = settings_rows(SETTINGS_PAGE_RECORDS, &row_count);
+    REQUIRE(rows != NULL);
+    int reported[RUN_TALLY_RECORD_COUNT];
+    for (int i = 0; i < (int)RUN_TALLY_RECORD_COUNT; ++i)
+        reported[i] = 0;
+    for (int i = 0; i < row_count; ++i)
+    {
+        if (rows[i].kind != SETTING_ROW_READOUT)
+            continue;
+        RunTallyRecord which = settings_row_readout(rows[i].id);
+        REQUIRE(which != RUN_TALLY_RECORD_COUNT);
+        ++reported[which];
+    }
+    for (int i = 0; i < (int)RUN_TALLY_RECORD_COUNT; ++i)
+        CHECK(reported[i] == 1);
+
+    /* A readout is not a row the caret can stop on: there is nothing on it to
+     * change, and the page's one reachable row is the reset. */
+    for (int i = 0; i < row_count; ++i)
+        if (rows[i].kind == SETTING_ROW_READOUT)
+            CHECK(!settings_row_is_reachable(rows[i].kind));
+
+    /*
+     * And the guards, driven rather than left as unexecuted lines.
+     *
+     * Every one of these is a caller's mistake rather than a state the game can
+     * reach, and the promise they keep is the one `pad_hint` and
+     * `sector_tally_format` make: a caller that ignores the return value draws
+     * nothing rather than the stack. That promise is worth exactly as much as
+     * whatever has checked it.
+     */
+    buf[0] = 'x';
+    CHECK(run_tally_format_record(RUN_TALLY_RECORD_COUNT, &played, buf,
+                                  sizeof(buf)) == 0);
+    CHECK(buf[0] == '\0');
+    buf[0] = 'x';
+    CHECK(run_tally_format_record(RUN_TALLY_RECORD_SCORE, NULL, buf,
+                                  sizeof(buf)) == 0);
+    CHECK(buf[0] == '\0');
+    CHECK(run_tally_format_record(RUN_TALLY_RECORD_SCORE, &played, NULL, 8) ==
+          0);
+    CHECK(run_tally_format_record(RUN_TALLY_RECORD_SCORE, &played, buf, 0) ==
+          0);
+    /* Truncated on purpose: the figure is five digits and the room is three, so
+     * the answer is the cap less its terminator and the string is still one. */
+    char tight[4];
+    int written =
+        run_tally_format_record(RUN_TALLY_RECORD_SCORE, &played, tight,
+                                sizeof(tight));
+    CHECK(written == (int)sizeof(tight) - 1);
+    CHECK(strlen(tight) == sizeof(tight) - 1);
+    CHECK(run_tally_record_label(RUN_TALLY_RECORD_COUNT)[0] == '\0');
+}
+
+/*
+ * Every screen that shows a record spells it the same way.
+ *
+ * There are three of them and only two agreed. The end cards go through
+ * `run_tally_format_score` and `run_tally_format_docket`; the options sheet's
+ * RECORDS page goes through `run_tally_format_record`; and THE RECORD sheet in
+ * the field manual spelled its two run figures with an `SDL_snprintf` of its
+ * own. So a fresh install read `BEST SCORE 0` and `DOCKET 0` off the manual
+ * while the page beside it, reading the same file, said `--` — and while the
+ * seventeen sector cells on the manual's own card, which do come through this
+ * file, said `--:--`. The card disagreed with the page, with its own grid, and
+ * with the rule the file it bypassed exists to hold. `DOCKET 0` reads as "your
+ * best night carried no sheets" rather than "no night has finished", which is
+ * the misreading the game-over card's `SCORE 0 - BEST 0` was fixed to stop.
+ *
+ * `test_no_end_card_quotes_a_record_before_there_is_one` closes its own body
+ * saying the card and the page are asked the same question in the same state,
+ * "which is the check that would have caught this" — and it asks exactly those
+ * two. The third screen was a renderer literal on the far side of the SDL
+ * boundary, where nothing could compare it with anything.
+ *
+ * So the property, of every figure at once: **a screen quotes a record when and
+ * only when there is one, and a line is its label and that figure.** There is no
+ * list here of which string is right, so a fifth figure is covered by having
+ * been added to the enum.
+ */
+static void test_every_screen_spells_a_record_the_same_way(void)
+{
+    /* Nought is the state a fresh install is in and the one the manual got
+     * wrong. The rest are ordinary figures either side of it. */
+    static const int FIGURES[] = {0, 1, 7, 12, 41250};
+
+    for (size_t f = 0; f < sizeof(FIGURES) / sizeof(FIGURES[0]); ++f)
+    {
+        int value = FIGURES[f];
+        bool none = value <= 0;
+
+        for (int i = 0; i < (int)RUN_TALLY_RECORD_COUNT; ++i)
+        {
+            RunTallyRecord which = (RunTallyRecord)i;
+
+            char cell[RUN_TALLY_RECORD_MAX];
+            REQUIRE(run_tally_format_record_value(which, value, cell,
+                                                  sizeof(cell)) > 0);
+            char line[RUN_TALLY_RECORD_LINE_MAX];
+            REQUIRE(run_tally_format_record_line(which, value, line,
+                                                 sizeof(line)) > 0);
+
+            /* The line is its label and that cell, so the two cannot drift: one
+             * of them going stale is the defect rather than a formatting
+             * taste. */
+            char expect[RUN_TALLY_RECORD_LINE_MAX];
+            snprintf(expect, sizeof(expect), "%s %s",
+                     run_tally_record_label(which), cell);
+            CHECK(strcmp(line, expect) == 0);
+
+            /* And never a nought printed at the player. Said out loud first,
+             * because `CHECK` prints the expression and the expression names
+             * neither the figure nor which row it was. */
+            if ((strcmp(cell, "--") == 0) != none)
+                fprintf(stderr,
+                        "  %s reads '%s' for a figure of %d\n",
+                        run_tally_record_label(which), cell, value);
+            CHECK((strcmp(cell, "--") == 0) == none);
+            CHECK((strstr(line, "--") != NULL) == none);
+            if (none)
+                CHECK(strchr(line, '0') == NULL);
+        }
+    }
+
+    /*
+     * And the page and the manual's card are read off one `Progress` in one
+     * state, which is the shape that would have caught it: the options sheet
+     * asks the file, the card is handed the two figures the shell read out of
+     * that same file, and the two answers have to be the same answer.
+     */
+    Progress fresh;
+    progress_defaults(&fresh);
+    char page[RUN_TALLY_RECORD_MAX];
+    char card[RUN_TALLY_RECORD_LINE_MAX];
+
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_SCORE, &fresh, page,
+                                    sizeof(page)) > 0);
+    REQUIRE(run_tally_format_record_line(RUN_TALLY_RECORD_SCORE,
+                                         fresh.best_score, card,
+                                         sizeof(card)) > 0);
+    CHECK(strstr(card, page) != NULL);
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_DOCKET, &fresh, page,
+                                    sizeof(page)) > 0);
+    REQUIRE(run_tally_format_record_line(RUN_TALLY_RECORD_DOCKET,
+                                         fresh.best_evidence, card,
+                                         sizeof(card)) > 0);
+    CHECK(strstr(card, page) != NULL);
+
+    fresh.best_score = 41250;
+    fresh.best_evidence = 7;
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_SCORE, &fresh, page,
+                                    sizeof(page)) > 0);
+    REQUIRE(run_tally_format_record_line(RUN_TALLY_RECORD_SCORE,
+                                         fresh.best_score, card,
+                                         sizeof(card)) > 0);
+    CHECK(strstr(card, page) != NULL);
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_DOCKET, &fresh, page,
+                                    sizeof(page)) > 0);
+    REQUIRE(run_tally_format_record_line(RUN_TALLY_RECORD_DOCKET,
+                                         fresh.best_evidence, card,
+                                         sizeof(card)) > 0);
+    CHECK(strstr(card, page) != NULL);
+
+    /* The guards, driven rather than left as unexecuted lines — the same
+     * promise every formatter in this file makes: a caller that ignores the
+     * return value draws nothing rather than the stack. */
+    card[0] = 'x';
+    CHECK(run_tally_format_record_line(RUN_TALLY_RECORD_COUNT, 1, card,
+                                       sizeof(card)) == 0);
+    CHECK(card[0] == '\0');
+    card[0] = 'x';
+    CHECK(run_tally_format_record_value(RUN_TALLY_RECORD_COUNT, 1, card,
+                                        sizeof(card)) == 0);
+    CHECK(card[0] == '\0');
+    CHECK(run_tally_format_record_line(RUN_TALLY_RECORD_SCORE, 1, NULL, 8) == 0);
+    CHECK(run_tally_format_record_line(RUN_TALLY_RECORD_SCORE, 1, card, 0) == 0);
+    CHECK(run_tally_format_record_value(RUN_TALLY_RECORD_SCORE, 1, NULL, 8) ==
+          0);
+    CHECK(run_tally_format_record_value(RUN_TALLY_RECORD_SCORE, 1, card, 0) ==
+          0);
+    /* And truncation, which is a branch a caller can actually reach rather than
+     * a defensive one: the label alone is longer than this buffer, so the answer
+     * is the cap less its terminator and what came back is still a string. */
+    char tight[8];
+    int written = run_tally_format_record_line(RUN_TALLY_RECORD_SCORE, 41250,
+                                               tight, sizeof(tight));
+    CHECK(written == (int)sizeof(tight) - 1);
+    CHECK(strlen(tight) == sizeof(tight) - 1);
+}
+
+/*
+ * And the widest line either figure can produce fits the card it is set on.
+ *
+ * THE RECORD sheet draws its two run figures as prose at the foot of a printed
+ * card, and until this existed those were a renderer's own literals inside a
+ * renderer's own layout — the state the options sheet's footer and the pause
+ * sheet's rows were both found in, and in one of those two cases the line was
+ * already off the plate when somebody first measured it.
+ *
+ * Each figure is driven to its own ceiling rather than to a number picked here:
+ * the score and the sheets to what `Progress` clamps them at, the furthest
+ * sector to whatever survives that file's own parser, and the timed count to the
+ * campaign. A longer campaign or a wider ceiling therefore arrives as a failure
+ * here rather than as a line over the edge of a card.
+ */
+static void test_the_record_card_fits_the_sheet_it_is_printed_on(void)
+{
+    /* The ceilings, asked of the things that impose them. `progress_parse` is
+     * what clamps the furthest sector, so it is what gets asked: the constant
+     * behind it is private to progress.c and restating it here would be the
+     * second copy this suite exists to refuse. */
+    Progress widest;
+    progress_defaults(&widest);
+    progress_parse(&widest,
+                   "best_score 999999999\n"
+                   "furthest_sector 999999999\n"
+                   "best_evidence 999999999\n");
+    for (int i = 0; i < CAMPAIGN_SECTORS; ++i)
+        widest.best_sector_time[i] = 5999.0f;
+
+    for (int i = 0; i < (int)RUN_TALLY_RECORD_COUNT; ++i)
+    {
+        RunTallyRecord which = (RunTallyRecord)i;
+
+        char cell[RUN_TALLY_RECORD_MAX];
+        int cell_len =
+            run_tally_format_record(which, &widest, cell, sizeof(cell));
+        REQUIRE(cell_len > 0);
+        /* Nothing was truncated getting here, or the reading below is of a
+         * shorter line than the card actually draws. */
+        CHECK(cell_len < (int)sizeof(cell) - 1);
+
+        char line[RUN_TALLY_RECORD_LINE_MAX];
+        int len = run_tally_format_record_line(
+            which, which == RUN_TALLY_RECORD_SCORE
+                       ? widest.best_score
+                       : which == RUN_TALLY_RECORD_DOCKET
+                             ? widest.best_evidence
+                             : which == RUN_TALLY_RECORD_FURTHEST
+                                   ? widest.furthest_sector
+                                   : CAMPAIGN_SECTORS,
+            line, sizeof(line));
+        REQUIRE(len > 0);
+        CHECK(len < (int)sizeof(line) - 1);
+
+        float ink = (float)len * RUN_TALLY_GLYPH_W;
+        if (ink > RUN_TALLY_RECORD_LINE_W)
+            fprintf(stderr,
+                    "  '%s' is %.0fpx of the %.0fpx the record card leaves\n",
+                    line, ink, RUN_TALLY_RECORD_LINE_W);
+        CHECK(ink <= RUN_TALLY_RECORD_LINE_W);
+    }
+}
+
+/*
+ * A record is named once, and in the unit its own figure is counted in.
+ *
+ * Two defects in one place, and the first one hid the second.
+ *
+ * `RECORD_LABELS` in [run_tally.c](../src/run_tally.c) is guarded by a
+ * `_Static_assert`, asserted on by the test above — *"a label over it, because a
+ * figure with no name on it is a number on a plate"* — and had **no caller in
+ * the game whatsoever**. The names the player actually read were a second copy
+ * spelled out in `RECORD_ROWS` in [settings.c](../src/settings.c). So the file
+ * whose own header says it "already owns what a record reads as" owned a table
+ * nothing drew, and the copy on the plate was held by nothing: a list written
+ * down twice, with the check sitting on the side nobody could see.
+ *
+ * What that let through is the second defect. The third row read
+ * `FURTHEST FLOOR` over a value that formats as `SECTOR 09`, under a detail line
+ * saying "THE HIGHEST SECTOR ANY RUN HAS REACHED" — one word out of three
+ * disagreeing, on the one screen whose whole subject is what the game remembers.
+ * A floor is not a synonym for a sector here: `BUILDING_FLOORS` is forty and
+ * `CAMPAIGN_SECTORS` is seventeen, and AGENTS.md keeps the two constants
+ * deliberately underived from each other for exactly this reason — the tower is
+ * a height and the campaign is a route up it.
+ *
+ * So this asks both halves. One home, checked by requiring the words on the
+ * plate to *be* run_tally's words rather than to match them — which is what
+ * fails if somebody puts a literal back in the table. And one unit, checked by
+ * requiring the row that reports a sector to say so and no row on the page to
+ * claim a floor, because not one of the four figures is measured in storeys.
+ */
+static void test_a_record_is_named_once_and_in_its_own_unit(void)
+{
+    int row_count = 0;
+    const SettingRow *rows = settings_rows(SETTINGS_PAGE_RECORDS, &row_count);
+    REQUIRE(rows != NULL);
+
+    Progress played;
+    progress_defaults(&played);
+    played.furthest_sector = 8; /* 0-based, so sector 9 */
+
+    int readouts = 0;
+    for (int i = 0; i < row_count; ++i)
+    {
+        const char *label = settings_row_label(&rows[i]);
+        REQUIRE(label != NULL);
+        CHECK(label[0] != '\0');
+
+        /*
+         * Nothing on this page counts storeys. Asked of every row rather than
+         * of the one that was wrong, because the next figure added here is as
+         * able to borrow the wrong noun as that one was.
+         */
+        CHECK(strstr(label, "FLOOR") == NULL);
+        if (rows[i].detail != NULL)
+            CHECK(strstr(rows[i].detail, "FLOOR") == NULL);
+
+        if (rows[i].kind != SETTING_ROW_READOUT)
+            continue;
+        ++readouts;
+
+        RunTallyRecord which = settings_row_readout(rows[i].id);
+        REQUIRE(which != RUN_TALLY_RECORD_COUNT);
+
+        /*
+         * The words on the plate are run_tally's words, and the check that
+         * enforces it is the *second* line rather than the first.
+         *
+         * Pointer identity looked like the stronger question and is not: two
+         * identical literals in two translation units are pooled to one
+         * address, so re-adding "FURTHEST SECTOR" to the table here compares
+         * equal and sails through. Verified by doing it. What actually catches a
+         * second copy is that a readout must not carry a label of its own at
+         * all — a table that names its own rows is the defect, whatever the
+         * names happen to say on the day it is written. The pointer line stays
+         * because it costs nothing and does fail on a *differently spelled*
+         * duplicate, which is the case where the two copies have already
+         * drifted.
+         */
+        CHECK(label == run_tally_record_label(which));
+        CHECK(rows[i].label == NULL);
+    }
+    /* It read the page rather than an empty table. */
+    CHECK(readouts == (int)RUN_TALLY_RECORD_COUNT);
+
+    /*
+     * And the row that reports a sector says sector, in the label and in the
+     * figure under it. This is the pair that had come apart; requiring them to
+     * use the same noun is what makes the disagreement a failing test rather
+     * than something a reader has to notice.
+     */
+    char value[RUN_TALLY_RECORD_MAX];
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_FURTHEST, &played, value,
+                                    sizeof(value)) > 0);
+    CHECK(strstr(value, "SECTOR") != NULL);
+    CHECK(strstr(run_tally_record_label(RUN_TALLY_RECORD_FURTHEST),
+                 "SECTOR") != NULL);
+    /* The two numbers the noun would be confused between really are different,
+     * which is the whole reason the noun matters. */
+    CHECK(BUILDING_FLOORS != CAMPAIGN_SECTORS);
+
+    /*
+     * And the accessor's two guards, driven rather than left as unexecuted
+     * lines — the same argument the test above makes about
+     * `run_tally_format_record`'s. Both are a caller's mistake rather than a
+     * state the sheet can reach, and the promise they keep is that a row with no
+     * name draws as nothing instead of dereferencing NULL inside `draw_text`.
+     * That promise is worth exactly as much as whatever has checked it.
+     */
+    CHECK(settings_row_label(NULL)[0] == '\0');
+    SettingRow nameless = {SETTING_ROW_TOGGLE, SETTING_CRT_FILTER, NULL, NULL};
+    CHECK(settings_row_label(&nameless)[0] == '\0');
+}
+
+/*
+ * The end-of-run card and the RECORDS page are the same figures read in two
+ * places, and this is the one thing they have to agree about: what a record of
+ * nought is.
+ *
+ * `progress_note_score` only ever raises, so nought is "no run has finished"
+ * rather than "a run finished on nothing" — the RECORDS page has said so since
+ * it was written and spells it `--`. The card fell through to its comparison
+ * clause and told the first player to die before scoring `SCORE 0 - BEST 0`,
+ * quoting a record that does not exist at them, on their first sight of the
+ * scoreboard. The docket line beside it already suppressed itself in exactly
+ * that state, for exactly that reason, which is what makes this one file
+ * carrying one rule and applying it twice out of three times.
+ *
+ * The property rather than the strings: **no line quotes a record until one
+ * exists, and every line quotes it once there is one.**
+ */
+static void test_no_end_card_quotes_a_record_before_there_is_one(void)
+{
+    char line[RUN_TALLY_MAX];
+
+    /* Nothing tonight and nothing ever. */
+    REQUIRE(run_tally_format_score(0, 0, false, line, sizeof(line)) > 0);
+    CHECK(strstr(line, "BEST") == NULL);
+    CHECK(strcmp(line, "SCORE 0") == 0);
+    /* The docket's half of the same state is the line not being there at all,
+     * which is right for a second line and wrong for the first: a card with no
+     * score on it is a card that has stopped reporting. */
+    CHECK(run_tally_format_docket(0, 0, false, line, sizeof(line)) == 0);
+
+    /* A record exists, and now every line stands the run beside it. */
+    REQUIRE(run_tally_format_score(900, 4200, false, line, sizeof(line)) > 0);
+    CHECK(strcmp(line, "SCORE 900 - BEST 4200") == 0);
+    REQUIRE(run_tally_format_docket(2, 9, false, line, sizeof(line)) > 0);
+    CHECK(strcmp(line, "DOCKET 2 SHEETS - BEST 9") == 0);
+
+    /* And the run that set it says so outright rather than printing the same
+     * figure twice. */
+    REQUIRE(run_tally_format_score(4200, 4200, false, line, sizeof(line)) > 0);
+    CHECK(strcmp(line, "SCORE 4200 - YOUR BEST YET") == 0);
+
+    /*
+     * The assist keeps its own words in both states, because what it is saying
+     * is not "there is no record" but "this run is not on the ladder" — a
+     * distinction the player needs on the very run where both happen to be
+     * true.
+     */
+    REQUIRE(run_tally_format_score(0, 0, true, line, sizeof(line)) > 0);
+    CHECK(strcmp(line, "SCORE 0 - ASSIST, NOT RECORDED") == 0);
+    REQUIRE(run_tally_format_score(1500, 4200, true, line, sizeof(line)) > 0);
+    CHECK(strcmp(line, "SCORE 1500 - ASSIST, NOT RECORDED") == 0);
+
+    /*
+     * And the card and the page are asked the same question in the same state,
+     * which is the check that would have caught this: a fresh profile, read
+     * both ways, must not have a record on one screen and none on the other.
+     */
+    Progress fresh;
+    progress_defaults(&fresh);
+    char cell[RUN_TALLY_RECORD_MAX];
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_SCORE, &fresh, cell,
+                                    sizeof(cell)) > 0);
+    CHECK(strcmp(cell, "--") == 0);
+    REQUIRE(run_tally_format_score(0, fresh.best_score, false, line,
+                                   sizeof(line)) > 0);
+    CHECK(strstr(line, "BEST") == NULL);
+
+    fresh.best_score = 4200;
+    REQUIRE(run_tally_format_record(RUN_TALLY_RECORD_SCORE, &fresh, cell,
+                                    sizeof(cell)) > 0);
+    CHECK(strcmp(cell, "--") != 0);
+    REQUIRE(run_tally_format_score(900, fresh.best_score, false, line,
+                                   sizeof(line)) > 0);
+    CHECK(strstr(line, "BEST") != NULL);
+}
+
 /* One template, measured at that widest expansion against a given column. */
 static bool pad_template_fits(const char *pad_form, const char *key_form,
                               float glyph_w, float scale, float room)
@@ -16086,10 +23891,13 @@ static void test_every_word_on_the_options_sheet_fits_the_plate(void)
 {
     const float right = SETTINGS_PANEL_W - SETTINGS_LABEL_X;
 
-    const SettingsPage pages[] = {SETTINGS_PAGE_MAIN, SETTINGS_PAGE_CONTROLS};
-    for (int p = 0; p < 2; ++p)
+    /* Walked off the enum rather than out of a list beside it: a page named
+     * here and not there is a page nothing measures, which is the shape of half
+     * the defects this file exists to prevent. It was a two-entry array with a
+     * literal `p < 2` next to it. */
+    for (int p = 0; p < (int)SETTINGS_PAGE_COUNT; ++p)
     {
-        SettingsPage page = pages[p];
+        SettingsPage page = (SettingsPage)p;
 
         const char *strap = settings_page_strap(page);
         CHECK(strap != NULL && strap[0] != '\0');
@@ -16110,8 +23918,50 @@ static void test_every_word_on_the_options_sheet_fits_the_plate(void)
             bool heading = rows[i].kind == SETTING_ROW_HEADING;
             float x = heading ? SETTINGS_LABEL_X : SETTINGS_ROW_TEXT_X;
 
-            CHECK(rows[i].label != NULL && rows[i].label[0] != '\0');
-            CHECK(x + (float)strlen(rows[i].label) * SETTINGS_GLYPH_W <= right);
+            /* Through the accessor rather than the field, because the RECORDS
+             * readouts leave `label` NULL on purpose and their words come from
+             * run_tally.c — see `settings_row_label`. A check reading the field
+             * would measure an empty string and pass every width in the game. */
+            const char *label = settings_row_label(&rows[i]);
+            CHECK(label != NULL && label[0] != '\0');
+            CHECK(x + (float)strlen(label) * SETTINGS_GLYPH_W <= right);
+
+            /*
+             * A readout's *value* is the one thing on this plate the table does
+             * not spell, so it is measured against the column it is drawn in
+             * rather than against the label's. The renderer right-aligns it on
+             * `SETTINGS_CONTROL_INSET`, so what has to fit is the label plus the
+             * widest value plus a gap — a number that grows with the player's own
+             * best score, which is exactly the kind of line no static string
+             * check would ever have looked at.
+             */
+            if (rows[i].kind == SETTING_ROW_READOUT)
+            {
+                RunTallyRecord which = settings_row_readout(rows[i].id);
+                REQUIRE(which != RUN_TALLY_RECORD_COUNT);
+                float label_w = (float)strlen(label) * SETTINGS_GLYPH_W;
+                float value_w =
+                    (float)widest_record_value(which) * SETTINGS_GLYPH_W;
+                float control_right =
+                    SETTINGS_PANEL_W - SETTINGS_CONTROL_INSET;
+                CHECK(x + label_w + SETTINGS_CAP_GAP <=
+                      control_right - value_w);
+            }
+
+            /*
+             * And the line the row prints *instead* of that one once it has been
+             * armed, which is the one the player is reading at the moment the
+             * press matters. Asked of the row rather than listed at the bottom of
+             * this test, because the list at the bottom is what let a second
+             * armed row arrive unmeasured — the same reason the renderer no
+             * longer names a row either.
+             */
+            const char *armed = settings_row_armed_detail(rows[i].id);
+            if (armed != NULL)
+            {
+                CHECK(armed[0] != '\0');
+                CHECK(x + (float)strlen(armed) * SETTINGS_GLYPH_W <= right);
+            }
 
             if (rows[i].detail == NULL)
                 continue;
@@ -16129,11 +23979,6 @@ static void test_every_word_on_the_options_sheet_fits_the_plate(void)
         SETTINGS_CAPTURE_KEY_LINE,
         SETTINGS_CAPTURE_PAD_LINE,
         SETTINGS_MUTED_LINE,
-        /* The records row swaps its detail for this once it has been pressed
-         * once, so it is drawn at a row's indent rather than the heading's —
-         * measured from `SETTINGS_LABEL_X` with the rest of them, which is the
-         * stricter of the two and therefore the safe one to hold it to. */
-        SETTINGS_RECORDS_ARMED_DETAIL,
     };
     for (size_t i = 0; i < sizeof(LOOSE) / sizeof(LOOSE[0]); ++i)
     {
@@ -16159,6 +24004,150 @@ static void test_every_word_on_the_options_sheet_fits_the_plate(void)
     CHECK(pad_template_fits(SETTINGS_FOOTER_PAD_LINE, SETTINGS_FOOTER_KEY_LINE,
                             SETTINGS_GLYPH_W, 1.0f,
                             SETTINGS_PANEL_W - 2.0f * SETTINGS_LABEL_X));
+}
+
+/*
+ * And the other axis, which nothing measured at all.
+ *
+ * The check above is called "every word … fits the plate" and asks one question:
+ * is this line narrower than the column. The plate has a height too, it is
+ * computed from the table rather than fixed, and the sheet had already run off
+ * the bottom of the frame by about 50px — the RECORDS strap printed over the
+ * footer prompt, RESET RECORDS and its detail line drawn below the plate and off
+ * the screen. Every gate was green: the soak drew the frame, so coverage counted
+ * it; the width check passed, because nothing on it was too wide; and the
+ * picture went into the press kit that feeds the store page.
+ *
+ * So this is the same class as the rest of this file's history — *a check whose
+ * name overstates its reach* — and the fix is the same shape: put the geometry
+ * where the suite can reach it (`settings_page_layout`) and ask the question
+ * nobody was asking.
+ *
+ * What it asks is two things, and both matter:
+ *
+ * - the plate fits inside the frame with its margin, `layout.fits`, which is
+ *   false the moment the squeeze bottoms out. A page that needs more than the
+ *   floor allows is a table too long for the sheet, and the author wants to hear
+ *   that from a failing test rather than from a screenshot;
+ * - and the pitch it fits at is still taller than a row's own ink, so a detail
+ *   line cannot be drawn through the label under it. `SETTINGS_SQUEEZE_MIN` is
+ *   derived from exactly that and this is what holds the derivation.
+ *
+ * Both mute states, because the audio heading grows a line while the kill
+ * switch is down and that is a page height that depends on something outside
+ * the table.
+ */
+static void test_every_page_of_the_options_sheet_fits_the_frame_it_is_drawn_in(
+    void)
+{
+    for (int p = 0; p < (int)SETTINGS_PAGE_COUNT; ++p)
+    {
+        SettingsPage page = (SettingsPage)p;
+        for (int muted = 0; muted < 2; ++muted)
+        {
+            SettingsLayout layout =
+                settings_page_layout(page, muted != 0, (float)VIEW_H);
+
+            /* The plate is on the plate. */
+            CHECK(layout.fits);
+            CHECK(layout.plate_h <= (float)VIEW_H - SETTINGS_FRAME_MARGIN);
+            CHECK(layout.plate_h > SETTINGS_ROWS_TOP + SETTINGS_FOOTER_BAND);
+
+            /* And no row is drawn through the one under it. */
+            CHECK(layout.value_h >= SETTINGS_ROW_INK_H);
+            CHECK(layout.bind_h >= SETTINGS_GLYPH_H);
+            CHECK(layout.squeeze > 0.0f && layout.squeeze <= 1.0f);
+
+            /*
+             * And the plate is as tall as what is actually drawn on it, which is
+             * the identity the shipped bug broke and the only one worth asserting
+             * here.
+             *
+             * The rows are added back up the way the renderer's own loop adds
+             * them — heading heights straight from the header because they never
+             * squeeze, the two pitches off the layout because they do — rather
+             * than read off `layout.rows_h`. Reading the field would make this a
+             * tautology: `rows_h` and the drawing loop agreeing is precisely what
+             * stopped being true. The old arithmetic scaled the pitches and then
+             * scaled the whole total again, headings and all, so the plate came
+             * out about 50px shorter than the run of rows laid on it.
+             */
+            int row_count = 0;
+            const SettingRow *rows = settings_rows(page, &row_count);
+            float drawn = 0.0f;
+            float last_pitch = 0.0f;
+            for (int i = 0; i < row_count; ++i)
+            {
+                if (rows[i].kind == SETTING_ROW_BINDING)
+                    last_pitch = layout.bind_h;
+                else if (rows[i].kind != SETTING_ROW_HEADING)
+                    last_pitch = layout.value_h;
+                else if (rows[i].detail != NULL ||
+                         (muted != 0 && settings_heading_governs_levels(
+                                            rows, row_count, i)))
+                    last_pitch = SETTINGS_HEADING_DETAIL_H;
+                else
+                    last_pitch = SETTINGS_HEADING_H;
+                drawn += last_pitch;
+            }
+            CHECK(drawn <= layout.rows_h + 0.01f);
+            CHECK(layout.plate_h >=
+                  SETTINGS_ROWS_TOP + drawn + SETTINGS_FOOTER_BAND - 0.01f);
+
+            /* The footer prompt is drawn 24px up from the plate's bottom edge,
+             * so the last row's second line has to end above it. */
+            float last_row_ink = SETTINGS_ROWS_TOP + drawn - last_pitch +
+                                 SETTINGS_ROW_INK_H;
+            CHECK(last_row_ink < layout.plate_h - 24.0f);
+
+            /*
+             * And how much room is left, which is `fits` asked as a number.
+             *
+             * `fits` is a cliff: it has been true for every page since the
+             * RECORDS split and says nothing about how close the edge is. The
+             * answer turned out to be *one row* on the main page and **none**
+             * with the mute warning up, at a squeeze of 0.68 against a floor of
+             * 0.6 — so the sheet a player opens most is full, and the boolean
+             * that has been green throughout reads as room it does not have.
+             *
+             * The number is checked against the only thing that can confirm it:
+             * the function itself. One more value row costs a *squeezed* row
+             * rather than a whole one, so a page with `spare_rows` in hand must
+             * still fit in a frame that much shorter, and must not fit in one
+             * shorter still. That makes this a check on the arithmetic rather
+             * than a restatement of it — the failure mode `rows_h` had, where a
+             * test read the field the bug was in.
+             */
+            CHECK(layout.spare_rows >= 0);
+            const float per_row = SETTINGS_VALUE_H * SETTINGS_SQUEEZE_MIN;
+            SettingsLayout at_capacity = settings_page_layout(
+                page, muted != 0,
+                (float)VIEW_H - (float)layout.spare_rows * per_row);
+            CHECK(at_capacity.fits);
+            SettingsLayout past_it = settings_page_layout(
+                page, muted != 0,
+                (float)VIEW_H - (float)(layout.spare_rows + 1) * per_row);
+            CHECK(!past_it.fits);
+        }
+    }
+
+    /*
+     * And the refusal itself, driven rather than left compiled.
+     *
+     * `fits` only goes false when a page is too long for the frame, so while
+     * every page is sound that branch is executed by nothing — which is how a
+     * guard comes to be wrong at exactly the moment it is wanted. Handed a frame
+     * nothing could fit in, the layout has to squeeze to the floor, stop there,
+     * and say so; it must not go on shrinking the rows through their own ink,
+     * because the drawn sheet is the fallback and a legible crowded page beats
+     * an illegible one.
+     */
+    SettingsLayout cramped =
+        settings_page_layout(SETTINGS_PAGE_MAIN, false, 200.0f);
+    CHECK(!cramped.fits);
+    CHECK(cramped.squeeze > 0.0f && cramped.squeeze < 1.0f);
+    CHECK(cramped.value_h >= SETTINGS_ROW_INK_H);
+    CHECK(cramped.plate_h > 200.0f - SETTINGS_FRAME_MARGIN);
 }
 
 /*
@@ -16261,19 +24250,23 @@ static void test_every_word_on_the_pause_sheet_fits_the_plate(void)
 
 static void test_a_binding_row_fits_the_plate(void)
 {
-    const float cap_w =
-        (float)KEYBIND_NAME_MAX * SETTINGS_GLYPH_W + SETTINGS_CAP_PAD;
-    const float pad_cap_w =
-        (float)PADBIND_NAME_MAX * SETTINGS_GLYPH_W + SETTINGS_CAP_PAD;
+    /*
+     * The run is asked of `settings_bind_caps` rather than laid out a second
+     * time here.
+     *
+     * It used to be the second copy — "laid out exactly as `draw_setting_keys`
+     * lays it out" — which is the arrangement every other duplicated layout in
+     * this tree has already been found drifted in, and it could not have seen
+     * the bug it sat next to: both copies agreed about the *width* of the run
+     * while the renderer put the two halves of it in the wrong order.
+     */
+    const float right = SETTINGS_PANEL_W - SETTINGS_CONTROL_INSET;
+    SettingsCap caps[BIND_TOTAL_SLOTS];
+    int cap_count = settings_bind_caps(right, caps);
+    CHECK(cap_count == BIND_TOTAL_SLOTS);
 
-    /* The run, laid out exactly as `draw_setting_keys` lays it out. */
-    float keys_w = (float)BIND_SLOTS * cap_w +
-                   (float)(BIND_SLOTS - 1) * SETTINGS_CAP_GAP;
-    float pads_w = (float)BIND_SLOTS * pad_cap_w +
-                   (float)(BIND_SLOTS - 1) * SETTINGS_CAP_GAP;
-    float caps_w = keys_w + SETTINGS_CAP_GROUP_GAP + pads_w;
-
-    float caps_left = SETTINGS_PANEL_W - SETTINGS_CONTROL_INSET - caps_w;
+    float caps_left = caps[0].x;
+    float caps_w = caps[cap_count - 1].x + caps[cap_count - 1].w - caps_left;
 
     /* The longest label on the sheet, whichever row that turns out to be. */
     size_t widest = 0;
@@ -16292,6 +24285,76 @@ static void test_a_binding_row_fits_the_plate(void)
     /* And the run stays on the plate at both ends. */
     CHECK(caps_left > SETTINGS_LABEL_X);
     CHECK(caps_left + caps_w <= SETTINGS_PANEL_W - SETTINGS_CONTROL_INSET);
+}
+
+/*
+ * The caret walks the caps left to right, and this is the check the sheet
+ * shipped without.
+ *
+ * `settings_bind_slot` is one number from 0 to `BIND_TOTAL_SLOTS`, the change
+ * inputs step it by one, and the heading over the page says what that means in
+ * words: `TWO KEYS, THEN TWO PAD BUTTONS`. The renderer disagreed. It pinned the
+ * *keyboard's* pair to the right margin and put the pad's to its left, so the
+ * page opened with the caret on the third cap from the left, LEFT was refused at
+ * slot 0 while two caps sat to its left, and the two the caret reached last were
+ * the two drawn first. The manual's own control sheet had been drawing the
+ * keyboard first the whole time — two screens, the same question, two answers,
+ * which is this tree's most reliable smell.
+ *
+ * Nothing could have caught it. `test_a_binding_row_fits_the_plate` measures the
+ * run's width and the order does not change it; the soak draws the frame and a
+ * counter cannot tell a frame that was drawn from a frame anybody could read.
+ * What makes it checkable is that the geometry moved to
+ * [settings.c](../src/settings.c), the way the sheet's vertical layout already
+ * had.
+ *
+ * It asks the property rather than the numbers: cap `i + 1` starts to the right
+ * of where cap `i` ends, the keys come before the pad, and the run finishes on
+ * the margin it was given. So a fifth slot, a wider name or a regrouping is
+ * checked by having been written.
+ */
+static void test_the_binding_caps_run_left_to_right(void)
+{
+    const float right = 480.0f;
+    SettingsCap caps[BIND_TOTAL_SLOTS];
+    int count = settings_bind_caps(right, caps);
+    CHECK(count == BIND_TOTAL_SLOTS);
+
+    for (int slot = 0; slot < count; ++slot)
+    {
+        CHECK(caps[slot].w > 0.0f);
+        /* Which half a slot belongs to is `BIND_PAD_SLOT`'s business and the
+         * struct has to agree with it, because the renderer reads the flag and
+         * the caret reads the number. */
+        CHECK(caps[slot].pad == (slot >= BIND_PAD_SLOT));
+        if (slot == 0)
+            continue;
+        /* Strictly to the right, with air: caps that merely failed to overlap
+         * would still read as one long cap. */
+        CHECK(caps[slot].x >= caps[slot - 1].x + caps[slot - 1].w +
+                                  SETTINGS_CAP_GAP);
+    }
+
+    /* The keys are the left-hand pair, which is what the heading promises. */
+    CHECK(!caps[0].pad);
+    CHECK(caps[BIND_PAD_SLOT].pad);
+    CHECK(caps[BIND_PAD_SLOT].x >
+          caps[BIND_PAD_SLOT - 1].x + caps[BIND_PAD_SLOT - 1].w);
+    /* The two groups are further apart than two caps of the same group, which
+     * is the whole job of `SETTINGS_CAP_GROUP_GAP` and is what makes the row
+     * read as two things rather than four. */
+    CHECK(caps[BIND_PAD_SLOT].x - (caps[BIND_PAD_SLOT - 1].x +
+                                   caps[BIND_PAD_SLOT - 1].w) >
+          caps[1].x - (caps[0].x + caps[0].w));
+
+    /* And the run ends where it was told to, so the caps line up with the
+     * switches and the ends of the sliders down the sheet. */
+    CHECK(fabsf(caps[count - 1].x + caps[count - 1].w - right) < 0.01f);
+
+    /* The refusal driven rather than left compiled, the way the fit test drives
+     * `fits` going false: a caller with nowhere to put the answer is told
+     * nothing was written instead of being written into. */
+    CHECK(settings_bind_caps(right, NULL) == 0);
 }
 
 /*
@@ -16831,6 +24894,62 @@ static void test_a_prompt_is_spelled_for_the_pad_in_hand(void)
     CHECK(strcmp(pad_hint(&hints, NULL, 0, "$A", "ENTER"), "ENTER") == 0);
 }
 
+/*
+ * Every pad cap on the controls sheet spells a button, with nothing plugged in.
+ *
+ * `keybind_pad_name` hands back a `pad_hint` template — `$A`, `$LB` — because
+ * what a face button is called depends on the pad. The sheet draws a *stored*
+ * binding, and a stored binding exists whether or not a pad does, so the cap
+ * has to spell something either way.
+ *
+ * This is what a shipped bug looked like from this side of the boundary. The
+ * renderer expanded against `game_pad_hints`, which is NULL with no pad in
+ * hand, and `pad_hint` hands a NULL set its *key* form through verbatim — the
+ * only key form a `$A` template has being itself. So the cap printed the
+ * literal text `$A`, and `$B`, `$X`, `$Y`, `$LB` and `$RB` beside it, to every
+ * player without a controller. The d-pad rows were right throughout, because
+ * their names carry no token, which is why the sheet read as half-finished
+ * rather than as broken.
+ *
+ * A `$` surviving the expansion is the whole signature of it, and it catches
+ * the failure from either end: a token nothing spells, or a hint set nobody
+ * applied. The draw call itself is on the SDL side and out of reach; the two
+ * decisions behind it are not.
+ */
+static void test_every_pad_cap_spells_a_button_with_no_pad_in_hand(void)
+{
+    /* Exactly what `game_input_init` applies before any pad has said a word,
+     * and what `game_pad_spelling` therefore answers with none connected. */
+    PadHints unplugged;
+    pad_hints_apply(&unplugged, PAD_TYPE_UNKNOWN, NULL, 0);
+
+    KeyBindings bindings;
+    keybind_defaults(&bindings);
+
+    int spelled = 0;
+    for (int action = 0; action < BIND_COUNT; ++action)
+    {
+        for (int slot = 0; slot < BIND_SLOTS; ++slot)
+        {
+            const char *form = keybind_pad_name(bindings.pad[action][slot]);
+            REQUIRE(form != NULL);
+            if (form[0] == '\0')
+                continue; /* An empty slot draws a dash, not a name. */
+
+            char buf[16];
+            const char *shown =
+                pad_hint(&unplugged, buf, sizeof(buf), form, form);
+            CHECK(shown == buf);
+            CHECK(shown[0] != '\0');
+            CHECK(strchr(shown, '$') == NULL);
+            ++spelled;
+        }
+    }
+    /* And the default layout fills enough of them that the loop above proved
+     * something: one per action at the very least. */
+    CHECK(spelled >= BIND_COUNT);
+}
+
 /* Bindings survive the file, and a damaged binding line is not a reset — the
  * same rule every other value in this file keeps. */
 static void test_bindings_survive_the_file(void)
@@ -16968,17 +25087,39 @@ static void test_settings_cursor_only_lands_on_rows(void)
         int cursor = settings_first_row(page);
         CHECK(rows[cursor].kind != SETTING_ROW_HEADING);
 
-        /* Two full laps in each direction: every stop is a real row, and the
+        /*
+         * Two full laps in each direction: every stop is a real row, and the
          * walk comes back to where it started rather than getting stuck at an
-         * end. */
+         * end.
+         *
+         * A lap is as long as the rows the cursor can actually stop on, counted
+         * here rather than assumed. It used to walk `row_count * 2` steps, which
+         * was exactly two laps only because every page was mostly rows — the
+         * records page is one row under one heading, and the same assertion on
+         * the same walk saw four laps.
+         *
+         * **And what counts as a stop is asked rather than restated**, which is
+         * the same lesson one line further in. This read
+         * `kind != SETTING_ROW_HEADING` — a second copy of the rule
+         * `settings_move_cursor` obeys — so the day the records page gained
+         * readout rows, which the caret also steps over, the lap got longer here
+         * and stayed the same length over there. `settings_row_is_reachable` is
+         * the one reading of it, and this asks it.
+         */
+        int reachable = 0;
+        for (int i = 0; i < row_count; ++i)
+            if (settings_row_is_reachable(rows[i].kind))
+                ++reachable;
+        CHECK(reachable > 0);
+
         for (int direction = -1; direction <= 1; direction += 2)
         {
             int at = settings_first_row(page);
             int seen = 0;
-            for (int step = 0; step < row_count * 2; ++step)
+            for (int step = 0; step < reachable * 2; ++step)
             {
                 at = settings_move_cursor(page, at, direction);
-                CHECK(rows[at].kind != SETTING_ROW_HEADING);
+                CHECK(settings_row_is_reachable(rows[at].kind));
                 CHECK(rows[at].id != SETTING_NONE);
                 if (at == settings_first_row(page))
                     ++seen;
@@ -17000,7 +25141,7 @@ static void test_settings_cursor_only_lands_on_rows(void)
         bool binding_section_explained = true;
         for (int i = 0; i < row_count; ++i)
         {
-            CHECK(rows[i].label != NULL);
+            CHECK(settings_row_label(&rows[i])[0] != '\0');
             if (rows[i].kind == SETTING_ROW_HEADING ||
                 rows[i].kind == SETTING_ROW_BINDING)
             {
@@ -17026,6 +25167,89 @@ static void test_settings_cursor_only_lands_on_rows(void)
         }
         CHECK(binding_section_explained);
     }
+}
+
+/*
+ * An action row either opens another sheet or asks twice.
+ *
+ * The options sheet has two kinds of `SETTING_ROW_ACTION`: three that navigate
+ * and two that destroy something. `RESET RECORDS` had been arm-then-confirm
+ * since it existed, and `RESET CONTROLS` — nine actions across four slots each,
+ * with no undo anywhere in the game — went back to the defaults on a single
+ * press, drawn in the same white as every row that changes nothing. Records are
+ * a ratchet a player rebuilds by playing; a control scheme somebody has just
+ * spent five minutes on is gone. The comment above `SETTINGS_RECORDS_ARMED_DETAIL`
+ * opened "the only row on either sheet that cannot be undone", which is both the
+ * argument for the arm and the reason nobody recounted the rows.
+ *
+ * So the property is asked rather than the pair listed: a row that navigates
+ * needs no confirmation and anything else does, which is why
+ * `settings_row_opens` and `settings_row_armed_detail` exist as questions about
+ * the table instead of as a three-way `if` inside `game.c`'s handler and a named
+ * row inside the renderer. A sixth action row is held by having been written,
+ * and there is no list here for anybody to forget to extend.
+ *
+ * The two halves of it are worth stating separately. An armed row must have
+ * something to *say*, because the arm is only honest if the sheet showed the
+ * question — that is what makes "anything else keeps them" a promise rather than
+ * a hopeful sentence. And a navigating row must not arm, because a second press
+ * to open a page the first press already asked for reads as the button having
+ * missed.
+ */
+static void test_every_action_row_either_opens_a_sheet_or_asks_twice(void)
+{
+    int armed_rows = 0;
+    int opening_rows = 0;
+
+    for (int p = 0; p < SETTINGS_PAGE_COUNT; ++p)
+    {
+        int row_count = 0;
+        const SettingRow *rows = settings_rows((SettingsPage)p, &row_count);
+        REQUIRE(rows != NULL && row_count > 0);
+
+        for (int i = 0; i < row_count; ++i)
+        {
+            const char *armed = settings_row_armed_detail(rows[i].id);
+            SettingsPage opens = settings_row_opens(rows[i].id);
+
+            /* Only an action row may do either of these. A slider that armed,
+             * or a heading that opened a page, would be a row the handler
+             * reaches through a case that is not written for it. */
+            if (rows[i].kind != SETTING_ROW_ACTION)
+            {
+                CHECK(armed == NULL);
+                CHECK(opens == SETTINGS_PAGE_COUNT);
+                continue;
+            }
+
+            /* Exactly one of the two, which is the whole rule. */
+            CHECK((armed != NULL) != (opens != SETTINGS_PAGE_COUNT));
+
+            if (armed != NULL)
+            {
+                ++armed_rows;
+                /* An arm that shows nothing is an arm the player cannot
+                 * distinguish from a press that did not register. */
+                CHECK(armed[0] != '\0');
+                CHECK(strcmp(armed, rows[i].detail) != 0);
+            }
+            if (opens != SETTINGS_PAGE_COUNT)
+            {
+                ++opening_rows;
+                /* And it has to open a page that exists and is not itself,
+                 * because a row that reopens its own sheet is a row that looks
+                 * broken from the only side the player sees. */
+                CHECK(opens >= 0 && opens < SETTINGS_PAGE_COUNT);
+                CHECK(opens != (SettingsPage)p);
+            }
+        }
+    }
+
+    /* Both kinds have to exist, or the two checks above are vacuous on a table
+     * that happens to have none of one — which is the shape of failure this
+     * whole file keeps finding. Not a count: the numbers are free to move. */
+    CHECK(armed_rows > 0);
+    CHECK(opening_rows > 0);
 }
 
 /*
@@ -17599,6 +25823,334 @@ static void test_the_docket_sheet_costs_a_detour(void)
 }
 
 /*
+ * A weak wall has to be a shortcut somewhere, because that is what the docs say
+ * it is.
+ *
+ * `docs/levels.md` settles the whole feature in one clause — the route model
+ * counting a `%` as wall in both directions "is what keeps a `%` a shortcut and
+ * never the way out" — and until the editor note beside
+ * `check_weak_wall_shortcut` existed, nothing measured the first half of that.
+ * Measured, four of the seven interiors carrying a patch save **nought steps**
+ * by opening every one of them, sector 10 with six of the campaign's patches
+ * among them; the other three save 7, 15 and 25 against walks of 80, 133 and 19.
+ *
+ * Whether a bolt-hole that saves no steps is worth a rocket under an alarm is
+ * the author's call, and the editor note is how they get to make it. What is
+ * *not* a matter of taste is the mechanic existing at all: if every patch in the
+ * campaign became scenery, the grenade would have nothing to open, the bazooka's
+ * second job would be gone, `gameplay_break_walls_in_radius` would be reached by
+ * no run, and every gate in this tree would stay green — the editor allows notes
+ * and there is no other check. This is that floor.
+ *
+ * It deliberately does not count how many sectors pass. A ratchet on four would
+ * be a number people learn to move, which is the argument `make coverage` is not
+ * a gate; the note is what you read, and this is what must not reach nought.
+ */
+static void test_a_weak_wall_is_a_shortcut_somewhere_in_the_campaign(void)
+{
+    static Level level;
+    static Level opened;
+    static RouteMap route;
+    static int closed_walk[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
+    static int opened_walk[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
+
+    int sectors_with_a_patch = 0;
+    int sectors_that_save_something = 0;
+    int best_saving_anywhere = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        Rng rng;
+        rng_seed(&rng, 9100 + (int)i);
+        REQUIRE(level_load_data(&level, EMBEDDED_LEVELS[i].name,
+                                EMBEDDED_LEVELS[i].data,
+                                EMBEDDED_LEVELS[i].size, &rng));
+
+        int patches = 0;
+        for (int row = 0; row < level.map.height; ++row)
+            for (int col = 0; col < level.map.width; ++col)
+                patches += level.map.tiles[row][col] == TILE_WEAK_WALL;
+        if (patches == 0)
+            continue;
+        /* A patch on a climb never opens at all, which the editor calls an error
+         * and `check_weak_walls` has held since it was written. */
+        REQUIRE(level.map.mode != LEVEL_MODE_FACADE);
+        ++sectors_with_a_patch;
+
+        route_map_init(&route, &level);
+        RouteCell start = route_player_start(&route);
+        RouteCell goal = level.map.has_window
+                             ? (RouteCell){level.map.window_col,
+                                           level.map.window_row}
+                             : (RouteCell){level.map.exit_col,
+                                           level.map.exit_row};
+        checkpoint_bfs(&route, closed_walk, start);
+
+        /* The same sector with every patch blown. A copy, because the loaded map
+         * is what every other assertion in this file is about. */
+        opened = level;
+        for (int row = 0; row < opened.map.height; ++row)
+            for (int col = 0; col < opened.map.width; ++col)
+                if (opened.map.tiles[row][col] == TILE_WEAK_WALL)
+                    opened.map.tiles[row][col] = TILE_EMPTY;
+        route_map_init(&route, &opened);
+        checkpoint_bfs(&route, opened_walk, start);
+
+        /* Everywhere the sector asks anybody to go: the way out, and every
+         * pickup. Anything else is a tile nobody is walking to. */
+        int saving = 0;
+        if (closed_walk[goal.row][goal.col] >= 0 &&
+            opened_walk[goal.row][goal.col] >= 0)
+        {
+            int gained = closed_walk[goal.row][goal.col] -
+                         opened_walk[goal.row][goal.col];
+            if (gained > saving)
+                saving = gained;
+        }
+        for (int item = 0; item < level.runtime.item_count; ++item)
+        {
+            int col = (int)(level.runtime.items[item].x / TILE_SIZE);
+            int row = (int)(level.runtime.items[item].y / TILE_SIZE);
+            if (closed_walk[row][col] < 0 || opened_walk[row][col] < 0)
+                continue;
+            int gained = closed_walk[row][col] - opened_walk[row][col];
+            if (gained > saving)
+                saving = gained;
+        }
+
+        /* Never negative: opening a wall cannot lengthen a walk, and a model
+         * that said so would have a bug in it rather than an opinion. */
+        CHECK(saving >= 0);
+        if (saving > 0)
+            ++sectors_that_save_something;
+        if (saving > best_saving_anywhere)
+            best_saving_anywhere = saving;
+    }
+
+    /* The campaign carries patches at all, or the two checks below are checking
+     * nothing — the shape `test_the_arc_lands_on_the_sectors_that_show_a_report`
+     * was written for. */
+    CHECK(sectors_with_a_patch > 0);
+    /*
+     * And now **every** one of them is a real one, which is a ratchet this test
+     * spent a while deliberately not being.
+     *
+     * It was written as a floor — one real patch anywhere in the campaign — on the
+     * argument that whether a bolt-hole worth no steps is worth a rocket under an
+     * alarm is the author's call and the editor note is how they make it. That
+     * argument is about the *editor*, which must not fail somebody else's build
+     * over a judgement; it was never an argument for this game shipping four
+     * floors' worth of patches that measure nought. Measured, they did: sectors 2,
+     * 4, 6 and 10, twelve of the campaign's seventeen patch tiles, and sector 10
+     * alone held six of them.
+     *
+     * Sector 2's patch moved to the foot of the partition beside the start, where
+     * blowing it drops Chuck into the basement instead of walking the long way
+     * round through the paired door — 43 steps of a 56-step floor. Sectors 4, 6
+     * and 10 lost theirs, because the whole of each of those floor plans was
+     * searched and no patch anywhere on them is worth more than a couple of
+     * steps: they are built on several vertical routes, which is a good thing to
+     * be built on and the reason a `%` there is a promise the floor cannot keep.
+     *
+     * So this is the shipped campaign's own standard rather than a rule about all
+     * maps, the way `test_the_docket_sheet_costs_a_detour` is, and it is a
+     * property rather than a number — every patch on the map is a shortcut,
+     * which is what [../levels/LEGEND.md](../levels/LEGEND.md) says a patch is.
+     */
+    CHECK(sectors_that_save_something == sectors_with_a_patch);
+    /* And the best of them is a shortcut somebody would notice, rather than one
+     * step that happens to be positive. */
+    CHECK(best_saving_anywhere >= 5);
+}
+
+/*
+ * The editor's version of the measurement above must not be satisfiable by
+ * making the map worse.
+ *
+ * The two halves were written apart and only one of them was honest. The test
+ * above indexes the flood directly and requires both readings to have landed, so
+ * it cannot be fooled. `check_weak_wall_shortcut` went through `distance_to`,
+ * which falls back to "the floor a thing drawn in mid-air is collected from" —
+ * right for a card hanging over a walkway, and wrong for the *same tile measured
+ * twice*, because a patch can stop a tile being somewhere anybody can stand.
+ * Open a hole in the slab under the way out and the way out is no longer a
+ * standing cell, so the flood stops reaching it, so the fallback answers with
+ * the landing below — which is nearer, so the check reports a saving and drops
+ * its note.
+ *
+ * That was not hypothetical. Searching sector 4 for a position that would clear
+ * the note turned up a two-tile patch at (1,4) apparently worth **eighty** steps
+ * of the sector's 136-step walk, the best on the floor by a factor of three; it
+ * is the slab under the window the sector leaves by, and blowing it would have
+ * taken the floor out from under the exit. A check an author can satisfy by
+ * damaging the map is worse than no check, because it is the one they will reach
+ * for when the note will not go away.
+ *
+ * The map below is that shape at its smallest: the way out is a door on the top
+ * floor standing on the one patch in the sector, and the walk to it goes the long
+ * way round a ladder. Every assertion here passes on the fixed code and the
+ * saving assertion fails on the old one.
+ */
+static void test_a_patch_that_deletes_the_way_out_is_not_a_shortcut(void)
+{
+    /*
+     * `E` at (11,1) is held up by the `%` under it at (11,2). Closed, the walk
+     * is left to the ladder, up three, and back along the top floor. Opened, the
+     * exit has nothing under it — and a hole at col 11 that drops to the ground
+     * floor the start is already standing on.
+     */
+    static const char text[] = "#############\n"
+                               "#H         E#\n"
+                               "#H#########%#\n"
+                               "#HS         #\n"
+                               "#############\n"
+                               "\n"
+                               "THEME OFFICE\n";
+    static EdReport report;
+    validate_text(text, "levels/level4.txt", &report);
+
+    /* The note is the whole assertion: this patch buys nothing, and the reason
+     * it looks like it buys something is the fallback. */
+    CHECK(report_mentions(&report, ED_SEV_NOTE, "reads as scenery"));
+
+    /*
+     * And the same map with the patch somewhere it genuinely shortens the walk
+     * says nothing — so the check is still capable of being satisfied, which is
+     * the half a stricter rule is most likely to break. Here the patch is the
+     * partition beside the start, and opening it is a door straight through to
+     * the far end of the ground floor instead of the climb.
+     */
+    static const char shortcut[] = "##################\n"
+                                   "#H              E#\n"
+                                   "#H##############.#\n"
+                                   "#HS   %         .#\n"
+                                   "##################\n"
+                                   "\n"
+                                   "THEME OFFICE\n";
+    static EdReport second;
+    validate_text(shortcut, "levels/level4.txt", &second);
+    CHECK(!report_mentions(&second, ED_SEV_NOTE, "reads as scenery"));
+}
+
+/*
+ * A blown patch must not be able to eat a run.
+ *
+ * Every route question the editor and this suite ask is asked of the map *as
+ * authored*, because a `%` is masonry to the model in both directions — and that
+ * is exactly why nothing had ever looked at the floor plan a run actually spends
+ * a sector in. The hole lasts as long as the visit does: a death keeps it, only
+ * reloading the sector puts the wall back. So for most of a floor the player is
+ * walking a map no check in this tree had seen.
+ *
+ * What that misses is the one thing a hole can do and a doorway cannot: **drop
+ * somebody**. A patch whose lower tile sits in a slab is a one-way fall, and a
+ * fall into a room whose only other way out was the wall you came through is a
+ * run ended by using the mechanic exactly as intended — with every gate green,
+ * because the authored map is fine and the authored map was all anybody
+ * measured.
+ *
+ * It is not hypothetical: it arrived the day sector 2's patch moved to the foot
+ * of the partition beside the start, where blowing it drops Chuck into the
+ * basement instead of walking the long way round through the door pair. That
+ * shortcut is safe — the paired `D` is the way back up — and the only thing that
+ * established either fact was a throwaway program.
+ */
+static void test_a_blown_patch_leaves_a_way_back(void)
+{
+    /*
+     * The trap at its smallest. The patch is two tiles of the slab the start is
+     * standing on, and under it a room sealed on every other side; closed, the
+     * room is not part of the sector at all. Blown, it is a hole two tiles wide
+     * with a floor two tiles down and nothing to climb.
+     */
+    static const char pit[] = "#############\n"
+                              "#S    N    E#\n"
+                              "###%%########\n"
+                              "#           #\n"
+                              "#############\n"
+                              "\n"
+                              "THEME OFFICE\n";
+    static EdReport trap;
+    validate_text(pit, "levels/level4.txt", &trap);
+    CHECK(report_mentions(&trap, ED_SEV_ERROR, "cannot get back to the way out"));
+    /* And as an error, so it fails a build rather than being read past. */
+    CHECK(trap.errors > 0);
+
+    /*
+     * The same hole with a ladder in the room under it, which is the half a
+     * stricter rule is most likely to break: a check that fired on every patch
+     * over a slab would forbid the shortcut this was written to make safe.
+     */
+    static const char laddered[] = "#############\n"
+                                   "#S    N    E#\n"
+                                   "###%%####H###\n"
+                                   "#        H  #\n"
+                                   "#############\n"
+                                   "\n"
+                                   "THEME OFFICE\n";
+    static EdReport safe;
+    validate_text(laddered, "levels/level4.txt", &safe);
+    CHECK(!report_mentions(&safe, ED_SEV_ERROR, "cannot get back to the way out"));
+
+    /*
+     * And the shipped campaign, which is the case that matters and the reason
+     * this is an error rather than a note. Sector 2's patch is a one-way drop by
+     * design; the other three are doorways.
+     */
+    static Level level;
+    static RouteMap route;
+    int one_way_drops = 0;
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        Rng rng;
+        rng_seed(&rng, 9400 + (int)i);
+        REQUIRE(level_load_data(&level, EMBEDDED_LEVELS[i].name,
+                                EMBEDDED_LEVELS[i].data,
+                                EMBEDDED_LEVELS[i].size, &rng));
+        int patches = 0;
+        for (int row = 0; row < level.map.height; ++row)
+            for (int col = 0; col < level.map.width; ++col)
+                patches += level.map.tiles[row][col] == TILE_WEAK_WALL;
+        if (patches == 0)
+            continue;
+
+        /* Where the sector is once every rocket has been spent. */
+        for (int row = 0; row < level.map.height; ++row)
+            for (int col = 0; col < level.map.width; ++col)
+                if (level.map.tiles[row][col] == TILE_WEAK_WALL)
+                    level.map.tiles[row][col] = TILE_EMPTY;
+
+        route_map_init(&route, &level);
+        RouteCell start = route_player_start(&route);
+        route_flood(&route, start);
+        RouteCell goal = level.map.has_window
+                             ? (RouteCell){level.map.window_col,
+                                           level.map.window_row}
+                             : (RouteCell){level.map.exit_col,
+                                           level.map.exit_row};
+        RouteCell landing;
+        RouteCell escape = goal;
+        if (!route_standing(&route, escape.col, escape.row) &&
+            route_landing(&route, escape.col, escape.row, &landing))
+            escape = landing;
+        CHECK(route_reaches(&route, goal.col, goal.row));
+        CHECK(route_never_strands(&route, escape));
+
+        /* A patch with a slab tile in it is a fall rather than a doorway, and
+         * the campaign is meant to hold one — the sector 2 shortcut. Counting
+         * them is what stops this test quietly becoming a check on four
+         * doorways, which is the shape it would pass with the mechanic gone. */
+        for (int row = 1; row < level.map.height; ++row)
+            for (int col = 0; col < level.map.width; ++col)
+                if (level.map.tiles[row][col] == TILE_EMPTY &&
+                    !route_standing(&route, col, row - 1) &&
+                    route_standing(&route, col, row + 1))
+                    ++one_way_drops;
+    }
+    CHECK(one_way_drops > 0);
+}
+
+/*
  * Picking one up, and everything it deliberately does not do.
  *
  * It is the only pickup in the game that is worth nothing to the man carrying
@@ -17737,6 +26289,105 @@ static void test_the_veteran_run_is_three_numbers_and_no_more(void)
     GameplayState hard = {0};
     hard.veteran = true;
     CHECK(gameplay_player_max_hp(&hard) == PLAYER_MAX_HP);
+}
+
+/*
+ * And the row has to say when it bites, which is the half nothing was holding.
+ *
+ * Everything above is about the three numbers. The words beside them said
+ * `NEXT RUN` — and the test above has required the opposite of that since it was
+ * written: `campaign_note_veteran` mid-run and the very next continue hands out
+ * `VETERAN_LIVES`. So the suite and the sheet disagreed in the same tree, the
+ * comment at `case SETTING_VETERAN:` in game.c cited the sheet as its
+ * justification, and `docs/screens.md` argued both sides two paragraphs apart.
+ * The one of the four a player ever reads was the wrong one.
+ *
+ * The check asks the simulation which world it is in rather than being told, so
+ * it holds in both directions: if a continue's lives follow the switch, the row
+ * may not promise the player that nothing happens until next time; if somebody
+ * later latches the flag at `campaign_reset` — a defensible change, and the one
+ * the old comment thought had been made — the row has to go back to saying so,
+ * and this fails until it does. There is no list of which string is right, only
+ * the requirement that it match what the code does.
+ *
+ * `strstr` on a user-facing string is a blunt instrument, and it is the same one
+ * `test_every_pad_cap_spells_a_button_with_no_pad_in_hand` uses for the same
+ * reason: the defect is a word that must or must not be there, and any subtler
+ * check would be a second copy of the sentence.
+ *
+ * **What this does not hold, said out loud, because the `||` below looks as
+ * though it does.** The row carries one sentence about *when*, covering all
+ * three numbers at once, so the most this can ask is whether *anything* is live.
+ * With the pace live — and it always is, short of `VETERAN_ENEMY_SPEED` becoming
+ * 1.0 — the lives could quietly stop following the switch and the wording would
+ * still be honest, so this would still pass. That half is pinned next door
+ * instead: `test_the_veteran_run_is_three_numbers_and_no_more` drives
+ * `campaign_note_veteran` through a continue in both directions and requires
+ * `VETERAN_LIVES` back, and latching the flag at `campaign_reset` fails there
+ * rather than here. Two tests, one for the behaviour and one for the words; this
+ * is the words.
+ */
+static void test_the_veteran_row_says_when_it_bites(void)
+{
+    /* Ask the campaign, on a run that opened ordinary and had the switch flipped
+     * from the pause sheet halfway up the building. */
+    CampaignState run;
+    campaign_reset(&run, false);
+    campaign_note_veteran(&run, true);
+    while (!campaign_lose_life(&run))
+        ;
+    CHECK(campaign_begin_continue(&run));
+    CHECK(campaign_accept_continue(&run));
+    bool a_continue_follows_the_switch = run.lives == VETERAN_LIVES;
+
+    /* And the pace, which has always been live and is the other half of what the
+     * row is describing. */
+    GameplayState state = {0};
+    state.veteran = true;
+    bool the_pace_follows_the_switch =
+        gameplay_enemy_speed_scale(&state) != 1.0f;
+
+    /*
+     * Found by walking every page rather than by naming the one it was on, which
+     * is the difference between checking a row and checking a location: this read
+     * `SETTINGS_PAGE_MAIN`, and the day ASSIST and CHALLENGE moved to a sheet of
+     * their own the search came back with nothing. A `REQUIRE` caught that, which
+     * is the only reason it is a paragraph here instead of a test that had
+     * quietly stopped having a subject.
+     */
+    const char *detail = NULL;
+    for (int p = 0; p < (int)SETTINGS_PAGE_COUNT; ++p)
+    {
+        int count = 0;
+        const SettingRow *rows = settings_rows((SettingsPage)p, &count);
+        REQUIRE(rows != NULL);
+        for (int i = 0; i < count; ++i)
+        {
+            if (rows[i].id == SETTING_VETERAN)
+                detail = rows[i].detail;
+        }
+    }
+    /* A row that has lost its detail line cannot be checked for what it says,
+     * and this test passing on a NULL would be the exact failure it exists to
+     * catch one level down. */
+    REQUIRE(detail != NULL);
+
+    if (a_continue_follows_the_switch || the_pace_follows_the_switch)
+    {
+        /* Live in either respect, so the row must not tell the player the flip
+         * is free until the next run. `THIS RUN` is what it says instead; the
+         * assertion is on the promise it must not make, because there are many
+         * honest ways to word the truth and one way to word the lie. */
+        CHECK(strstr(detail, "NEXT RUN") == NULL);
+        CHECK(strstr(detail, "THIS RUN") != NULL);
+    }
+    else
+    {
+        /* Latched at `campaign_reset`, so the run in progress really is
+         * untouched and the row owes the player that sentence. */
+        CHECK(strstr(detail, "NEXT RUN") != NULL);
+        CHECK(strstr(detail, "THIS RUN") == NULL);
+    }
 }
 
 /*
@@ -17945,12 +26596,20 @@ int main(void)
     test_campaign_themes_keep_changing();
     test_all_embedded_levels_parse();
     test_campaign_levels_are_distinct_and_solvable();
+    test_the_body_delivers_every_route_the_model_promises();
     test_no_sector_asks_for_a_long_walk_with_nothing_banked();
     test_the_restrooms_are_four_rooms_rather_than_one();
     test_every_sector_can_seat_the_reinforcements_it_can_call();
+    test_the_reinforcement_drip_fills_the_floor_it_is_wired_to();
+    test_a_patrol_does_not_stop_being_one();
+    test_a_patrol_that_meets_another_does_not_shudder();
+    test_a_guard_dog_does_not_stop_being_one();
+    test_the_man_with_the_mop_keeps_out_of_the_boxes();
     test_a_sector_gives_the_player_a_moment_to_read_it();
+    test_a_climb_does_not_bite_before_its_first_gust_blows_out();
     test_the_grace_period_is_not_an_empty_building();
     test_the_whole_frame_survives_a_monkey_on_the_controls();
+    test_every_interior_can_reach_a_blast();
     test_embedded_restroom_sublevels();
     test_every_restroom_theme_names_a_room_that_exists();
     test_every_theme_names_a_score_of_its_own();
@@ -17959,7 +26618,9 @@ int main(void)
     test_editor_edits_and_undo();
     test_editor_resizes_deletes_and_survives_a_real_file();
     test_the_editor_has_nothing_to_say_about_the_shipped_campaign();
+    test_a_refused_map_says_which_rule_it_broke();
     test_the_loader_and_the_editor_survive_nonsense();
+    test_the_players_own_two_files_survive_nonsense();
     test_the_editor_and_the_loader_read_a_spawns_line_the_same_way();
     test_editor_report_catches_broken_maps();
     test_editor_report_counts_dogs_and_lift_shafts();
@@ -17972,6 +26633,9 @@ int main(void)
     test_chase_departure_hands_over_to_the_drive();
     test_chase_collision_costs_integrity_and_speed();
     test_chase_kerb_scrape_bleeds_speed_without_damage();
+    test_chase_left_kerb_holds_the_car_on_the_road();
+    test_chase_ramming_the_suv_only_loses_the_car();
+    test_chase_runs_all_the_way_to_the_kerb();
     test_chase_pedals_drive_the_car();
     test_chase_skip_answers_the_pad_letter();
     test_chase_holding_the_throttle_never_catches_the_suv();
@@ -18003,12 +26667,16 @@ int main(void)
     test_only_the_duct_answers_the_two_stances_differently();
     test_player_dies_from_a_high_fall();
     test_elevator_carries_an_off_centre_rider_through_a_slab();
+    test_a_lift_stops_inside_its_own_shaft();
+    test_riding_a_lift_to_the_top_of_its_run_costs_nothing();
     test_player_under_a_slab_is_crushed();
     test_ladder_mount_centres_the_player();
     test_player_descends_from_top_of_ladder();
     test_holding_down_enters_and_leaves_the_crawl();
     test_the_lid_of_a_shaft_is_not_somewhere_to_lie_down();
     test_a_shaft_is_left_by_its_mouths();
+    test_what_the_crawl_takes_away();
+    test_a_shot_from_inside_a_shaft_reaches_nothing();
     test_every_ladder_in_the_campaign_can_be_climbed_down();
     test_a_jump_off_a_ladder_survives_a_held_climb_key();
     test_ladder_remembers_climb_direction_for_shooting();
@@ -18022,12 +26690,16 @@ int main(void)
     test_a_rocket_bursts_on_what_it_meets();
     test_a_crate_is_cover_and_a_lost_round_is_cleaned_up();
     test_level_reveal_finishes();
+    test_a_stretched_reveal_lasts_the_same_on_every_map();
+    test_the_tally_band_is_readable_wherever_it_is_drawn();
     test_event_buffer_reports_overflow();
     test_terminal_unlocks_deterministically();
     test_the_terminal_calls_its_reinforcements_under_an_alarm();
     test_the_men_a_console_calls_come_out_of_a_door();
     test_alarm_switch_parsing_and_quiet_timeout();
     test_guards_choose_attack_or_alarm_and_operate_switch();
+    test_a_run_for_the_alarm_is_not_a_state_with_no_exit();
+    test_a_guard_tries_each_alarm_switch_once_and_then_gives_up();
     test_alarm_increases_guard_aggression_and_search();
     test_door_interaction_reports_range_and_teleports();
     test_sublevel_doors_are_not_paired_teleports();
@@ -18035,8 +26707,13 @@ int main(void)
     test_the_live_card_is_never_silent();
     test_no_card_is_wrong_where_no_card_can_be();
     test_a_finished_hack_is_never_silent();
+    test_a_mine_is_a_beat_rather_than_a_hit();
     test_mine_damage_emits_feedback();
     test_grenade_fuse_and_explosion_emit_sounds();
+    test_every_doorway_hands_over_the_whole_pack();
+    test_the_doorway_hands_over_the_blink();
+    test_the_carried_row_gives_every_throwable_its_own_place();
+    test_a_throw_says_what_left_the_hand();
     test_a_throw_spends_one_grenade();
     test_only_the_magazine_comes_back();
     test_bazooka_pickup_and_rocket_explosion();
@@ -18044,6 +26721,8 @@ int main(void)
     test_weapon_cycle_runs_both_ways();
     test_the_weapon_ring_names_every_weapon_exactly_once();
     test_a_pickup_never_arms_itself();
+    test_the_docket_counts_a_floor_s_sheet_once();
+    test_no_record_prints_a_fraction_over_its_own_whole();
     test_a_pickup_that_would_be_wasted_is_left_alone();
     test_a_sector_hands_its_explosives_to_the_next();
     test_every_climb_carries_an_explosive_out();
@@ -18057,6 +26736,7 @@ int main(void)
     test_reinforcements_take_a_fresh_slot_before_a_body();
     test_a_reinforcement_dog_takes_a_fresh_slot_before_a_body();
     test_a_reused_corpse_slot_is_forgotten_by_whoever_looked_at_it();
+    test_a_reused_dog_slot_is_forgotten_by_whoever_looked_at_it();
     test_a_body_falls_to_the_floor();
     test_a_fast_round_cannot_step_over_a_dog();
     test_a_duct_is_masonry_to_the_whole_building();
@@ -18066,10 +26746,17 @@ int main(void)
     test_weak_wall_is_masonry_to_the_route_model();
     test_the_route_model_will_not_take_a_fatal_fall();
     test_the_route_model_promises_only_moves_the_player_can_make();
+    test_a_two_tile_step_up_is_the_bodys_move_not_the_models();
+    test_a_jump_clears_a_wider_hole_than_the_model_will_route();
     test_empty_pistol_uses_close_range_knife();
     test_ladder_knife_attacks_in_aimed_direction();
     test_crate_movement_emits_sounds();
     test_a_crate_is_a_floor_a_wall_and_a_brake();
+    test_a_crate_rests_on_what_the_player_does();
+    test_a_crate_never_comes_to_rest_in_the_rungs();
+    test_a_crate_never_shoves_a_body_into_the_building();
+    test_a_moving_platform_carries_what_it_holds_up();
+    test_a_crate_is_shoved_from_either_side_and_stops_a_jump();
     test_a_dog_is_stopped_by_a_crate();
     test_a_blast_breaks_the_crates_it_reaches();
     test_a_falling_crate_kills_the_dog_under_it();
@@ -18086,6 +26773,7 @@ int main(void)
     test_dog_escapes_ladder_perch_without_spinning();
     test_a_dog_jumps_a_gap_it_can_clear();
     test_a_dog_turns_back_at_a_gap_it_cannot_clear();
+    test_the_difficulty_switches_reach_a_dog_in_every_state();
     test_a_dog_with_nothing_to_chase_roams_around_its_handler();
     test_a_dog_hunts_the_alarm_it_was_told_about();
     test_a_zeroed_guard_is_nobody_s_partner();
@@ -18103,6 +26791,7 @@ int main(void)
     test_a_flash_charge_makes_a_camera_forget();
     test_a_flash_charge_reaches_the_dog_as_well();
     test_a_bolt_pulls_a_guard_to_where_it_landed();
+    test_a_full_sky_is_still_a_dead_press();
     test_a_bolt_makes_its_noise_where_it_hit_the_wall();
     test_a_guard_who_never_saw_it_coming_goes_down_at_once();
     test_a_takedown_does_not_wake_the_man_he_was_talking_to();
@@ -18115,6 +26804,7 @@ int main(void)
     test_boxed_in_receptionist_stays_on_the_desk();
     test_walled_in_civilian_leaves_instead_of_running_on_the_spot();
     test_janitor_cart_stays_clear_when_turning_at_wall();
+    test_the_janitor_keeps_out_of_a_lift_shaft();
     test_enemy_vision_cone_stealth_and_walls();
     test_enemy_fires_vertical_shot_up_a_shaft();
     test_noise_draws_guards_to_investigate();
@@ -18156,6 +26846,7 @@ int main(void)
     test_guard_downed_in_combat_drops_ammo();
     test_body_falls_past_the_rungs();
     test_dog_bite_is_announced_and_survivable();
+    test_a_dog_standing_on_you_bites_to_a_rhythm();
     test_chase_failure_rewinds_instead_of_restarting();
     test_chase_skippable_after_repeated_failures();
     test_fresh_sighting_waits_before_aiming();
@@ -18166,15 +26857,22 @@ int main(void)
     test_crew_traffic_fits_the_plate();
     test_nobody_on_the_net_names_himself();
     test_the_net_always_has_something_to_say();
+    test_the_net_reports_one_stage_of_the_job_at_a_time();
     test_credits_fit_the_frame();
     test_the_report_between_sectors_fits_its_column();
+    test_no_two_lines_of_the_arc_say_the_same_thing();
+    test_a_staged_clear_is_one_the_campaign_could_have_produced();
     test_the_sector_tally_fits_the_frame_it_is_drawn_in();
+    test_a_staged_clear_scores_what_its_band_quotes();
     test_every_sector_reports_or_tallies_and_none_does_neither();
     test_the_arc_lands_on_the_sectors_that_show_a_report();
     test_no_two_sectors_in_a_row_go_quiet();
     test_the_manual_draws_the_campaign_it_ships_with();
     test_the_manual_says_the_campaign_it_draws();
+    test_the_sheets_spell_the_tuning_they_quote();
+    test_the_on_foot_sheet_spells_the_jump_it_draws();
     test_the_credits_say_the_campaign_they_roll_over();
+    test_the_tower_is_one_height_everywhere_it_is_said();
     test_the_net_counts_the_crew_it_has();
     test_manual_sheets_fit_the_column();
     test_no_radio_checks_while_the_alarm_is_up();
@@ -18187,18 +26885,27 @@ int main(void)
     test_the_record_card_cells_fit_their_column();
     test_an_assisted_run_banks_no_records();
     test_clearing_the_records_keeps_the_resume();
+    test_the_records_page_shows_what_it_offers_to_delete();
+    test_every_screen_spells_a_record_the_same_way();
+    test_the_record_card_fits_the_sheet_it_is_printed_on();
+    test_a_record_is_named_once_and_in_its_own_unit();
+    test_no_end_card_quotes_a_record_before_there_is_one();
     test_every_word_on_the_options_sheet_fits_the_plate();
+    test_every_page_of_the_options_sheet_fits_the_frame_it_is_drawn_in();
     test_every_word_on_the_pause_sheet_fits_the_plate();
     test_a_binding_row_fits_the_plate();
+    test_the_binding_caps_run_left_to_right();
     test_pad_buttons_keep_one_button_to_one_job();
     test_a_pad_is_read_by_the_letter_not_the_position();
     test_the_stick_answers_a_menu_like_a_d_pad();
     test_a_letter_and_a_button_find_each_other();
     test_a_prompt_is_spelled_for_the_pad_in_hand();
+    test_every_pad_cap_spells_a_button_with_no_pad_in_hand();
     test_no_sector_is_locked_behind_an_unbindable_action();
     test_bindings_survive_the_file();
     test_the_settings_file_fits_the_buffer_that_writes_it();
     test_settings_cursor_only_lands_on_rows();
+    test_every_action_row_either_opens_a_sheet_or_asks_twice();
     test_the_audio_heading_is_found_by_what_it_holds();
     test_settings_sliders_step_and_stop();
     test_every_options_row_moves_its_own_field();
@@ -18210,7 +26917,11 @@ int main(void)
     test_every_interior_lays_out_exactly_one_docket_sheet();
     test_the_docket_sheet_costs_a_detour();
     test_a_docket_sheet_is_counted_by_the_run();
+    test_a_weak_wall_is_a_shortcut_somewhere_in_the_campaign();
+    test_a_patch_that_deletes_the_way_out_is_not_a_shortcut();
+    test_a_blown_patch_leaves_a_way_back();
     test_the_veteran_run_is_three_numbers_and_no_more();
+    test_the_veteran_row_says_when_it_bites();
     test_the_night_clock_fills_the_night();
     test_a_sector_time_is_a_record_rather_than_a_number();
     test_progress_survives_the_file();

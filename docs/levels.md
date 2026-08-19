@@ -145,6 +145,87 @@ sector is solvable. The editor adds the two rules the model cannot see: a sector
 with a patch needs a grenade or a bazooka in it, and a patch on a climb never
 opens at all, because nothing out there can set off a blast.
 
+**And then somebody measured the shortcut, which that clause had been asserting
+since it was written.** "Never the way out" was checked by the model itself, three
+ways over. "A shortcut" was checked by nothing, and on four of the seven interiors
+carrying a patch it was false: opening every patch on the floor shortened the walk
+to the way out *and* to every pickup by nought steps. Sector 10 held six of those
+seventeen patch tiles — the most in the campaign, two three-tall partitions — and
+sector 2 was the one that explains the shape: its patch crossed a basement
+partition that a paired `D` door twelve tiles away already crossed for free, so the
+loud route past that wall duplicated the quiet one and cost the sector's only
+bazooka rocket.
+
+**And then it was fixed rather than noted, which took a search of every floor plan
+and produced two different answers.** Sector 2's patch moved to the foot of the
+partition beside the start, where blowing it drops Chuck through the slab into the
+basement instead of walking the long way round through the door pair: 43 steps of
+a 56-step floor, and the best patch in the campaign. Sectors 4, 6 and 10 lost
+theirs. Every position on those three floors was tried — vertical and horizontal,
+two and three tiles, validated for errors and warnings each time — and the best
+saving available anywhere on any of them is **two or three steps**. They are built
+on several vertical routes each, ladders at four or five columns, and that is a
+good thing for a floor to be built on and exactly why a `%` there is a promise the
+floor plan cannot keep. The campaign carries four of them now — sectors 2, 9, 12
+and 14, worth 43, 7, 15 and 25 steps — and `check_weak_wall_shortcut` says nothing
+about any sector in it.
+
+Three things are worth taking from it, and the third is the general one.
+
+The first is that this is the **docket sheet's rule pointing the other way**. `*`
+had an authoring rule saying it should cost a detour, no measurement, and seven of
+twelve sitting on a shortest path to the door; `%` had one saying it saves a walk,
+no measurement, and four of seven saving nothing. Both rules were true of what the
+author intended and unheld by anything, and in both cases what went wrong was not
+the tile but *the floor around it* — a sheet on the way to the door, a patch beside
+a door that was already open. **A rule about one tile cannot be checked one tile at
+a time**, which is why both of these live in the route model rather than in the
+grid parser.
+
+The second is that **the check could be satisfied by making the map worse**, which
+the search found by trying to satisfy it. `check_weak_wall_shortcut` measured each
+target through `distance_to`, which falls back to "the floor a thing drawn in
+mid-air is collected from" — right for a card hanging over a walkway, and wrong for
+the same tile measured twice, because a patch can stop a tile being somewhere
+anybody can stand. Open a hole in the slab under the way out and the way out is no
+longer a standing cell, so the flood stops reaching it, so the fallback answers
+with the landing below, which is nearer. Searching sector 4 turned up a position
+worth an apparent **eighty** steps of its 136-step walk, the best on the floor by a
+factor of three: the slab under the window the sector leaves by. A check an author
+can satisfy by damaging the map is worse than no check, because it is the one they
+reach for when the note will not go away. It compares like with like now — a target
+that was walkable and is not any more has not got nearer — and
+`test_a_patch_that_deletes_the_way_out_is_not_a_shortcut` holds both halves of
+that. The suite's own copy of the same measurement was honest all along, which is
+what made the difference invisible: **two readings of one question, and only the
+one an author reads was wrong.**
+
+And the third is that **nothing had ever looked at the floor the patches leave
+behind.** Every route question above is asked of the map as authored, because a `%`
+is masonry to the model in both directions — and the hole lasts as long as the
+visit does, so for most of a sector the player is walking a floor plan no check in
+this tree had seen. What that misses is the one thing a hole can do that a doorway
+cannot: **drop somebody**. Sector 2's new patch has a slab tile in it and is
+therefore a one-way fall; it is safe because the paired `D` is the way back up, and
+for an afternoon the only thing establishing that was a throwaway program.
+`check_opened_walls_leave_a_way_out` is the check, an **error** rather than a note
+because this is not "it will not play the way it reads", it is a floor that can eat
+a run — and `test_a_blown_patch_leaves_a_way_back` is the suite's half.
+
+Where the fix stops is still worth writing down. `check_weak_wall_shortcut` notes a
+sector where nothing got shorter — nought being the threshold because a shortcut
+that shortens nothing is not a shortcut in any degree, rather than because anybody
+picked a bar. It is a **note**, and deliberately not a warning: this model counts
+steps and a patch under an alarm is bought with risk rather than with distance, so
+whether a partition is worth a rocket when the floor is red is a judgement the
+author makes and the tool has no standing to fail a build over. What the *suite*
+holds is this campaign rather than all maps, and now that the campaign is clean it
+holds the property rather than a floor: every sector carrying a patch saves
+something by it, and the best of them saves five steps or more.
+`test_a_weak_wall_is_a_shortcut_somewhere_in_the_campaign` counts no sectors on
+purpose — a ratchet on four would be a number people learn to move — but "all of
+them" is not a number, it is the rule this page states.
+
 ## One plan per sector
 
 The campaign used to be one floor plan fifteen times: a sealed rectangle

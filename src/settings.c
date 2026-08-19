@@ -1,6 +1,7 @@
 #include "settings.h"
 
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,38 +27,21 @@ static const SettingRow ROWS[] = {
      "SCANLINES AND VIGNETTE OVER THE PICTURE"},
     {SETTING_ROW_TOGGLE, SETTING_REDUCED_MOTION, "REDUCED MOTION",
      "NO SCREEN SHAKE; WARNING LIGHTS GLOW INSTEAD OF STROBING"},
+    /*
+     * The three rows that open the other pages, under a heading of their own.
+     *
+     * `CONTROLS` used to hang off the end of DISPLAY and `RECORDS` off the end of
+     * CHALLENGE, which put two "this opens another sheet" rows inside two
+     * sections about something else — a grouping nobody chose, arrived at because
+     * the page had no room for a fourth heading. It has room now.
+     */
+    {SETTING_ROW_HEADING, SETTING_NONE, "MORE", NULL},
     {SETTING_ROW_ACTION, SETTING_OPEN_CONTROLS, "CONTROLS",
      "WHICH KEY AND BUTTON DOES WHAT, ON ITS OWN SHEET"},
-
-    {SETTING_ROW_HEADING, SETTING_NONE, "ASSIST",
-     "THE GAME IS TUNED WITHOUT THESE. TAKE WHAT HELPS."},
-    {SETTING_ROW_TOGGLE, SETTING_MORE_HEARTS, "MORE HEARTS",
-     "FIVE HEARTS PER LIFE INSTEAD OF THREE"},
-    {SETTING_ROW_TOGGLE, SETTING_SLOWER_GUARDS, "SLOWER GUARDS",
-     "GUARDS AND DOGS MOVE AT 80% SPEED"},
-    {SETTING_ROW_TOGGLE, SETTING_INFINITE_LIVES, "INFINITE LIVES",
-     "A DEATH NEVER COSTS A LIFE"},
-
-    {SETTING_ROW_HEADING, SETTING_NONE, "CHALLENGE",
-     "FOR THE CLIMB YOU ALREADY KNOW BY HEART."},
-    {SETTING_ROW_TOGGLE, SETTING_VETERAN, "VETERAN",
-     "FASTER CREW, ONE LIFE, NO CONTINUES. NEXT RUN."},
-
-    /*
-     * And the section that exists because of what the three switches above do
-     * to the two figures the game keeps.
-     *
-     * A run with any assist on banks no score, no sector time and no docket
-     * (`campaign_records_count`), which is the only arrangement under which the
-     * per-sector times mean anything at all — a par set with infinite lives is a
-     * par nobody can beat honestly, and the player who set it was never told.
-     * The heading says so, and the row is how somebody who found that out too
-     * late gets their sheet back.
-     */
-    {SETTING_ROW_HEADING, SETTING_NONE, "RECORDS",
-     "AN ASSIST RUN BANKS NO SCORE, NO TIME AND NO SHEETS."},
-    {SETTING_ROW_ACTION, SETTING_RECORDS_RESET, "RESET RECORDS",
-     "CLEARS THE BEST SCORE, EVERY SECTOR TIME AND THE DOCKET"},
+    {SETTING_ROW_ACTION, SETTING_OPEN_DIFFICULTY, "DIFFICULTY",
+     "ASSIST AND VETERAN, ON THEIR OWN SHEET"},
+    {SETTING_ROW_ACTION, SETTING_OPEN_RECORDS, "RECORDS",
+     "WHAT THE GAME KEEPS BETWEEN RUNS, ON ITS OWN SHEET"},
 };
 
 /*
@@ -81,9 +65,148 @@ static const SettingRow CONTROL_ROWS[] = {
      "PUT THE KEYBOARD AND THE PAD BACK TO WHAT THEY WERE"},
 };
 
+/*
+ * The third page: how hard the night is, in both directions.
+ *
+ * These were two sections at the bottom of the main page until that page ran out
+ * of height — one value row in hand, none with the mute warning up. They come off
+ * it together rather than one at a time because they are one question: ASSIST is
+ * the game apologising for its tuning and CHALLENGE is the same lever the other
+ * way, `gameplay_enemy_speed_scale` reads both and resolves them against each
+ * other, and a sheet with one of the two on it would be a sheet that answers half
+ * of "how hard do you want this".
+ */
+static const SettingRow DIFFICULTY_ROWS[] = {
+    {SETTING_ROW_HEADING, SETTING_NONE, "ASSIST",
+     "THE GAME IS TUNED WITHOUT THESE. TAKE WHAT HELPS."},
+    {SETTING_ROW_TOGGLE, SETTING_MORE_HEARTS, "MORE HEARTS",
+     "FIVE HEARTS PER LIFE INSTEAD OF THREE"},
+    {SETTING_ROW_TOGGLE, SETTING_SLOWER_GUARDS, "SLOWER GUARDS",
+     "GUARDS AND DOGS MOVE AT 80% SPEED"},
+    {SETTING_ROW_TOGGLE, SETTING_INFINITE_LIVES, "INFINITE LIVES",
+     "A DEATH NEVER COSTS A LIFE"},
+
+    {SETTING_ROW_HEADING, SETTING_NONE, "CHALLENGE",
+     "FOR THE CLIMB YOU ALREADY KNOW BY HEART."},
+    /*
+     * `THIS RUN TOO` rather than `NEXT RUN`, which is what it said and which was
+     * not true of it.
+     *
+     * Two of the three numbers reach a run in progress. The pace does so on
+     * purpose and always did — `state->veteran` is set by
+     * `apply_assist_to_state` and read by `gameplay_enemy_speed_scale` on the
+     * next simulation step. The lives do too, and that half was nobody's
+     * intention: `campaign_accept_continue` is the *other* place lives are
+     * handed out, it reads `campaign->veteran`, and that flag follows this
+     * switch — so flipping VETERAN on mid-run cuts the next continue from
+     * `PLAYER_LIVES` to `VETERAN_LIVES`. Only the continue *count* is genuinely
+     * `campaign_reset`'s and so genuinely next-run.
+     *
+     * `docs/screens.md` and `test_the_veteran_run_is_three_numbers_and_no_more`
+     * both describe and require the live behaviour, and the behaviour is right:
+     * a veteran run whose continue handed back three lives is the mode expiring
+     * on first contact, which is the bug that put the flag on `CampaignState` in
+     * the first place. What was wrong was this line and the comment beside
+     * `case SETTING_VETERAN:` in game.c — the two places a *player* and the next
+     * reader look, telling them it was safe to flip. Same shape as the `$A` pad
+     * cap: the sheet reporting something the simulation does not do.
+     */
+    {SETTING_ROW_TOGGLE, SETTING_VETERAN, "VETERAN",
+     "FASTER CREW, ONE LIFE, NO CONTINUES. THIS RUN TOO."},
+};
+
+/*
+ * The third page, and the section that exists because of what the assist
+ * switches do to the two figures the game keeps.
+ *
+ * A run with any assist on banks no score, no sector time and no docket
+ * (`campaign_records_count`), which is the only arrangement under which the
+ * per-sector times mean anything at all — a par set with infinite lives is a par
+ * nobody can beat honestly, and the player who set it was never told. The strap
+ * says so, which is where a sentence about the whole page belongs; the row is how
+ * somebody who found that out too late gets their sheet back.
+ *
+ * It was a fifth section on the main page, and that page has no room for one.
+ */
+static const SettingRow RECORD_ROWS[] = {
+    {SETTING_ROW_HEADING, SETTING_NONE, "WHAT THE GAME KEEPS",
+     "THE BEST SCORE, THE DOCKET, AND EVERY SECTOR'S BEST TIME."},
+    /*
+     * And it shows them, which for a release it did not.
+     *
+     * The strap above listed the three things the game keeps and the only other
+     * row on the page offered to delete all of it, so the one screen in the game
+     * whose subject is the records was the one screen that would not print one —
+     * they were readable on the field manual's `THE RECORD` sheet and nowhere
+     * else. A page that asks "are you sure" about numbers it will not show is
+     * asking about nothing.
+     *
+     * The four figures are `RunTallyRecord`, formatted in
+     * [run_tally.c](run_tally.c) beside the manual's own cell: the same file
+     * answers what a record reads as wherever it is read. The per-sector times
+     * stay on the manual sheet — seventeen of them are a grid, not a row — and
+     * `SECTORS TIMED` is the line that tells a player there is a grid to go and
+     * look at.
+     */
+    /*
+     * **A readout's label is left NULL on purpose**, and resolved through
+     * `settings_row_label` from [run_tally.c](run_tally.c).
+     *
+     * These four rows used to spell the labels out again — "BEST SCORE",
+     * "DOCKET", "FURTHEST FLOOR", "SECTORS TIMED" — beside a `RECORD_LABELS`
+     * table in run_tally.c that says the same four things, is guarded by a
+     * `_Static_assert` and asserted on by the suite, and **had no caller in the
+     * game at all**. So the file whose stated job is that "the same file answers
+     * what a record reads as wherever it is read" held a table nothing drew, the
+     * check sat on the copy nobody could see, and the copy the player actually
+     * reads was held by nothing — which is how one of the four came to name a
+     * unit its own value does not use.
+     *
+     * That is this repository's own recurring defect twice over in one place: a
+     * list written down twice, and a check reporting coverage it does not have.
+     * The words have one home now and the label reaches the renderer from it, so
+     * a fifth figure cannot arrive with a name in one file and a different name
+     * in the other.
+     */
+    {SETTING_ROW_READOUT, SETTING_READOUT_FIRST + RUN_TALLY_RECORD_SCORE,
+     NULL, "THE MOST ANY FINISHED RUN HAS COME AWAY WITH"},
+    {SETTING_ROW_READOUT, SETTING_READOUT_FIRST + RUN_TALLY_RECORD_DOCKET,
+     NULL, "SHEETS THE BEST SINGLE NIGHT CARRIED OUT"},
+    {SETTING_ROW_READOUT, SETTING_READOUT_FIRST + RUN_TALLY_RECORD_FURTHEST,
+     NULL, "THE HIGHEST SECTOR ANY RUN HAS REACHED"},
+    {SETTING_ROW_READOUT,
+     SETTING_READOUT_FIRST + RUN_TALLY_RECORD_SECTORS_TIMED, NULL,
+     "EVERY ONE OF THEM IS ON THE RECORD SHEET IN THE MANUAL"},
+    /*
+     * The one destructive row in this table that the caret cannot be kept off,
+     * and it is worth saying why rather than leaving it to look like an
+     * oversight.
+     *
+     * `game_toggle_pause` opens the pause cursor on RESUME on the argument that
+     * "the one item on this list that cannot be undone must never be the one
+     * sitting under the thumb". This page cannot honour that: the four rows above
+     * are readouts, `settings_row_is_reachable` steps the caret over them, so
+     * `settings_first_row` has exactly one row to land on and this is it. Adding
+     * a row for the caret to rest on instead would be a row that does nothing,
+     * on the sheet whose own rule is that every reachable row says what it is
+     * for.
+     *
+     * So the arm is load-bearing here in a way it is not anywhere else — it is
+     * the whole of the guard rather than the second half of one — which is the
+     * reason `settings_row_armed_detail` is a question about the table rather
+     * than a flag somebody sets per row.
+     */
+    {SETTING_ROW_ACTION, SETTING_RECORDS_RESET, "RESET RECORDS",
+     "CLEARS THE BEST SCORE, EVERY SECTOR TIME AND THE DOCKET"},
+};
+
 #define ROW_COUNT ((int)(sizeof(ROWS) / sizeof(ROWS[0])))
 #define CONTROL_ROW_COUNT                                                     \
     ((int)(sizeof(CONTROL_ROWS) / sizeof(CONTROL_ROWS[0])))
+#define RECORD_ROW_COUNT                                                      \
+    ((int)(sizeof(RECORD_ROWS) / sizeof(RECORD_ROWS[0])))
+#define DIFFICULTY_ROW_COUNT                                                  \
+    ((int)(sizeof(DIFFICULTY_ROWS) / sizeof(DIFFICULTY_ROWS[0])))
 
 const SettingRow *settings_rows(SettingsPage page, int *out_count)
 {
@@ -93,6 +216,18 @@ const SettingRow *settings_rows(SettingsPage page, int *out_count)
             *out_count = CONTROL_ROW_COUNT;
         return CONTROL_ROWS;
     }
+    if (page == SETTINGS_PAGE_DIFFICULTY)
+    {
+        if (out_count != NULL)
+            *out_count = DIFFICULTY_ROW_COUNT;
+        return DIFFICULTY_ROWS;
+    }
+    if (page == SETTINGS_PAGE_RECORDS)
+    {
+        if (out_count != NULL)
+            *out_count = RECORD_ROW_COUNT;
+        return RECORD_ROWS;
+    }
     if (out_count != NULL)
         *out_count = ROW_COUNT;
     return ROWS;
@@ -100,14 +235,153 @@ const SettingRow *settings_rows(SettingsPage page, int *out_count)
 
 const char *settings_page_title(SettingsPage page)
 {
-    return page == SETTINGS_PAGE_CONTROLS ? "CONTROLS" : "OPTIONS";
+    switch (page)
+    {
+    case SETTINGS_PAGE_CONTROLS:
+        return "CONTROLS";
+    case SETTINGS_PAGE_DIFFICULTY:
+        return "DIFFICULTY";
+    case SETTINGS_PAGE_RECORDS:
+        return "RECORDS";
+    case SETTINGS_PAGE_MAIN:
+    case SETTINGS_PAGE_COUNT:
+        break;
+    }
+    return "OPTIONS";
 }
 
 const char *settings_page_strap(SettingsPage page)
 {
-    return page == SETTINGS_PAGE_CONTROLS
-               ? "ENTER, THEN THE NEW KEY OR BUTTON. ESC AND START CANCEL."
-               : "EVERY CHANGE IS KEPT WHEN THIS SHEET IS CLOSED.";
+    switch (page)
+    {
+    case SETTINGS_PAGE_CONTROLS:
+        return "ENTER, THEN THE NEW KEY OR BUTTON. ESC AND START CANCEL.";
+    case SETTINGS_PAGE_DIFFICULTY:
+        return "ONE QUESTION, ASKED IN BOTH DIRECTIONS. NOTHING IS LOCKED.";
+    case SETTINGS_PAGE_RECORDS:
+        return "AN ASSIST RUN BANKS NO SCORE, NO TIME AND NO SHEETS.";
+    case SETTINGS_PAGE_MAIN:
+    case SETTINGS_PAGE_COUNT:
+        break;
+    }
+    return "EVERY CHANGE IS KEPT WHEN THIS SHEET IS CLOSED.";
+}
+
+/*
+ * The plate, and the one place that decides how tall a page is.
+ *
+ * Two heights are added up rather than one, and keeping them apart is the whole
+ * fix: `fixed` is the headings, whose height is a rule plus a sentence and does
+ * not shrink, and `flex` is the rows that carry a label and a sentence, which
+ * do. The version this replaced scaled `flex` and then took the scale off the
+ * total — headings included — so the plate came out shorter than what was drawn
+ * on it and the last section of the sheet was printed over the footer and off
+ * the bottom of the frame.
+ */
+SettingsLayout settings_page_layout(SettingsPage page, bool muted,
+                                    float frame_h)
+{
+    int row_count = 0;
+    const SettingRow *rows = settings_rows(page, &row_count);
+
+    float fixed = 0.0f;
+    float flex = 0.0f;
+    for (int i = 0; i < row_count; ++i)
+    {
+        if (rows[i].kind == SETTING_ROW_BINDING)
+            flex += SETTINGS_BIND_H;
+        else if (rows[i].kind != SETTING_ROW_HEADING)
+            flex += SETTINGS_VALUE_H;
+        else if (rows[i].detail != NULL ||
+                 (muted && settings_heading_governs_levels(rows, row_count, i)))
+            fixed += SETTINGS_HEADING_DETAIL_H;
+        else
+            fixed += SETTINGS_HEADING_H;
+    }
+
+    SettingsLayout layout;
+    layout.squeeze = 1.0f;
+    layout.fits = true;
+
+    float budget = frame_h - SETTINGS_FRAME_MARGIN - SETTINGS_ROWS_TOP -
+                   SETTINGS_FOOTER_BAND;
+    if (fixed + flex > budget && flex > 0.0f)
+    {
+        layout.squeeze = (budget - fixed) / flex;
+        if (layout.squeeze < SETTINGS_SQUEEZE_MIN)
+        {
+            /* Past this a detail line touches the label under it, which is a
+             * table too long for the frame rather than something to go on
+             * shrinking around. The page is still drawn — a blank sheet would be
+             * worse than a crowded one — and the suite is what refuses it. */
+            layout.squeeze = SETTINGS_SQUEEZE_MIN;
+            layout.fits = false;
+        }
+    }
+
+    layout.value_h = SETTINGS_VALUE_H * layout.squeeze;
+    layout.bind_h = SETTINGS_BIND_H * layout.squeeze;
+    layout.rows_h = fixed + flex * layout.squeeze;
+    layout.plate_h = SETTINGS_ROWS_TOP + layout.rows_h + SETTINGS_FOOTER_BAND;
+
+    /*
+     * And how many more rows the page could take, which is `fits` asked as a
+     * number.
+     *
+     * A page fits while `fixed + flex * SETTINGS_SQUEEZE_MIN` is inside the
+     * budget, so what one more value row costs is a squeezed row rather than a
+     * whole one, and the answer is that difference divided out. The epsilon is
+     * for the case where it comes out exact: a page with room for precisely two
+     * more rows must not report one because the division landed on 1.9999998.
+     *
+     * The epsilon covers the other end too: `capacity - held` is nought or more
+     * on any page that fits, so it can never floor to -1 on a rounding error.
+     */
+    const float per_row = SETTINGS_VALUE_H * SETTINGS_SQUEEZE_MIN;
+    float held = flex / SETTINGS_VALUE_H;
+    float capacity = (budget - fixed) / per_row;
+    /* No clamp under this, and there must not be one: `fits` is exactly
+     * `fixed + flex * SETTINGS_SQUEEZE_MIN <= budget`, which rearranges to
+     * `capacity >= held`, so a page that fits cannot report a negative number.
+     * A guard here would be a line nothing can execute standing where a reader
+     * would take it for a case that occurs. */
+    layout.spare_rows = (int)floorf(capacity - held + 1.0e-4f);
+    return layout;
+}
+
+/*
+ * The run of caps, laid out from the right margin inwards.
+ *
+ * The pad's pair ends on the margin and the keyboard's pair sits to its left,
+ * which is the opposite of the way this was written and is the whole of the fix:
+ * slot 0 is a key, the caret starts there, and the caret has to start at the
+ * *left* end of a run it walks rightwards. See `SettingsCap`.
+ */
+int settings_bind_caps(float right, SettingsCap *out)
+{
+    if (out == NULL)
+        return 0;
+
+    const float cap_w =
+        (float)KEYBIND_NAME_MAX * SETTINGS_GLYPH_W + SETTINGS_CAP_PAD;
+    const float pad_cap_w =
+        (float)PADBIND_NAME_MAX * SETTINGS_GLYPH_W + SETTINGS_CAP_PAD;
+    const float run = (float)BIND_SLOTS * (cap_w + SETTINGS_CAP_GAP);
+    const float pad_run = (float)BIND_SLOTS * (pad_cap_w + SETTINGS_CAP_GAP);
+
+    float pad_left = right - pad_run + SETTINGS_CAP_GAP;
+    float keys_left = pad_left - SETTINGS_CAP_GROUP_GAP - run + SETTINGS_CAP_GAP;
+
+    for (int slot = 0; slot < BIND_TOTAL_SLOTS; ++slot)
+    {
+        bool pad = slot >= BIND_PAD_SLOT;
+        int within = pad ? slot - BIND_PAD_SLOT : slot;
+        out[slot].pad = pad;
+        out[slot].w = pad ? pad_cap_w : cap_w;
+        out[slot].x = (pad ? pad_left : keys_left) +
+                      (float)within * (out[slot].w + SETTINGS_CAP_GAP);
+    }
+    return BIND_TOTAL_SLOTS;
 }
 
 bool settings_heading_governs_levels(const SettingRow *rows, int row_count,
@@ -134,6 +408,65 @@ BindAction settings_row_action(SettingId id)
         return BIND_COUNT;
     int action = (int)id - (int)SETTING_BIND_FIRST;
     return action < BIND_COUNT ? (BindAction)action : BIND_COUNT;
+}
+
+RunTallyRecord settings_row_readout(SettingId id)
+{
+    if (id < SETTING_READOUT_FIRST || id >= SETTING_BIND_FIRST)
+        return RUN_TALLY_RECORD_COUNT;
+    return (RunTallyRecord)((int)id - (int)SETTING_READOUT_FIRST);
+}
+
+const char *settings_row_label(const SettingRow *row)
+{
+    if (row == NULL)
+        return "";
+    if (row->label != NULL)
+        return row->label;
+    /* The only rows that leave it out are the readouts, whose names belong to
+     * `run_tally.c` — see the note on `RECORD_ROWS`. Anything else with no label
+     * is a row somebody forgot to name, and an empty string is what makes that
+     * visible on the plate instead of dereferencing NULL in `draw_text`. */
+    RunTallyRecord which = settings_row_readout(row->id);
+    if (which == RUN_TALLY_RECORD_COUNT)
+        return "";
+    return run_tally_record_label(which);
+}
+
+const char *settings_row_armed_detail(SettingId id)
+{
+    switch (id)
+    {
+    case SETTING_RECORDS_RESET:
+        return SETTINGS_RECORDS_ARMED_DETAIL;
+    case SETTING_BINDINGS_RESET:
+        return SETTINGS_BINDINGS_ARMED_DETAIL;
+    default:
+        return NULL;
+    }
+}
+
+SettingsPage settings_row_opens(SettingId id)
+{
+    switch (id)
+    {
+    case SETTING_OPEN_CONTROLS:
+        return SETTINGS_PAGE_CONTROLS;
+    case SETTING_OPEN_DIFFICULTY:
+        return SETTINGS_PAGE_DIFFICULTY;
+    case SETTING_OPEN_RECORDS:
+        return SETTINGS_PAGE_RECORDS;
+    default:
+        return SETTINGS_PAGE_COUNT;
+    }
+}
+
+bool settings_row_is_reachable(SettingRowKind kind)
+{
+    /* A heading is a rule with a name on it and a readout is a number the game
+     * is reporting: there is nothing on either for a change input to do, and a
+     * caret parked on one is a caret the player has to press past. */
+    return kind != SETTING_ROW_HEADING && kind != SETTING_ROW_READOUT;
 }
 
 bool settings_assist_any(const Settings *settings)
@@ -183,7 +516,7 @@ int settings_first_row(SettingsPage page)
     const SettingRow *rows = settings_rows(page, &count);
     for (int i = 0; i < count; ++i)
     {
-        if (rows[i].kind != SETTING_ROW_HEADING)
+        if (settings_row_is_reachable(rows[i].kind))
             return i;
     }
     return 0;
@@ -207,7 +540,7 @@ int settings_move_cursor(SettingsPage page, int cursor, int delta)
     for (int guard = 0; guard < count; ++guard)
     {
         at = (at + step + count) % count;
-        if (rows[at].kind != SETTING_ROW_HEADING)
+        if (settings_row_is_reachable(rows[at].kind))
             return at;
     }
     return cursor;
@@ -261,13 +594,16 @@ bool settings_adjust(Settings *settings, SettingId id, int delta)
         return flip(&settings->challenge.veteran);
     /* None of these hold a value that "less" and "more" mean anything to. A
      * binding is taken rather than adjusted — left and right walk its two
-     * slots, which is the shell's cursor and not a value at all — and the
-     * other
-     * two are pressed. Returning false is what keeps the change inputs from
-     * clicking at a row nothing happened to. */
+     * slots, which is the shell's cursor and not a value at all — and the rest
+     * are pressed: two of them open another page and two do something once.
+     * Returning false is what keeps the change inputs from clicking at a row
+     * nothing happened to. */
     case SETTING_OPEN_CONTROLS:
+    case SETTING_OPEN_DIFFICULTY:
+    case SETTING_OPEN_RECORDS:
     case SETTING_BINDINGS_RESET:
     case SETTING_RECORDS_RESET:
+    case SETTING_READOUT_FIRST:
     case SETTING_BIND_FIRST:
     case SETTING_NONE:
         break;

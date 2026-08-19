@@ -494,7 +494,7 @@ void gameplay_use_door(GameplayState *state, Input *input)
  * a grenade set `collected` with a nought respawn timer and played
  * `SFX_PICKUP_GRENADE`: the scarcest thing in the sector destroyed by crossing
  * a tile, announced with the sound of a successful pickup. Sector 12 carries
- * two grenades, sectors 10, 12, 16 and 17 two medkits apiece, and every restroom
+ * two grenades, sectors 10, 12, 14, 16 and 17 two medkits apiece, and every restroom
  * hands out the grenade the campaign's own budget is balanced on — so the case
  * is not a corner, it is the middle of four maps.
  * (That list read `10, 12 and 15` for a while, and 15 is a facade carrying one
@@ -527,13 +527,37 @@ static bool item_would_be_wasted(const GameplayState *state,
          * is only wasted when both are already at their cap. */
         return state->player.hp >= gameplay_player_max_hp(state) &&
                campaign->lives >= MAX_LIVES;
+    case ITEM_EVIDENCE:
+        /*
+         * The sheet this floor's own `*` is, once the run already has it.
+         *
+         * This case used to sit with the card and the magazine under "paper
+         * cannot be wasted: there is no counter for it to be full of, and two
+         * sheets are two sheets". That is exactly right about the card — a
+         * wrong card is a second card and scores as one — and false about the
+         * docket in both of its clauses. There *is* a counter,
+         * `CampaignState.evidence_collected`; it *has* a full, twelve, which
+         * every screen that prints it shows as the denominator; and two sheets
+         * off the same floor are one sheet, because the collection is laid out
+         * one to an interior so that a missed one is always a floor the player
+         * can name.
+         *
+         * It went unnoticed because nothing in an ordinary sector can take a
+         * pickup twice. A *continue* can: it is always on offer, it reloads
+         * the map through `load_level`, and the run's count carries on across
+         * it — so a player who takes the sheet, dies out, and accepts the
+         * retry has two of the twelve off one floor, on a run whose score the
+         * game then banks as a record.
+         */
+        return campaign_holds_docket_sheet(campaign, campaign->current_level);
     case ITEM_CARD:
     case ITEM_GUN:
-    case ITEM_EVIDENCE:
-        /* Paper cannot be wasted: there is no counter for it to be full of, and
-         * two sheets are two sheets. It is on this list so the switch stays
-         * exhaustive — a new item type that nobody decided about is exactly how
-         * the three explosives came to be missing from it. */
+        /* Paper cannot be wasted: there is no counter for it to be full of,
+         * and two cards are two cards — one of them opens the door and the
+         * other scores, which is the whole of what a lie costs. It is on this
+         * list so the switch stays exhaustive — a new item type that nobody
+         * decided about is exactly how the three explosives came to be missing
+         * from it. */
         break;
     }
     return false;
@@ -664,9 +688,16 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                 break;
             case ITEM_FLASHBANG:
                 /* Same rule as every other one-shot: picking it up is not
-                 * deciding to spend it, so nothing arms itself here. */
+                 * deciding to spend it, so nothing arms itself here.
+                 *
+                 * And its own sound. It played the grenade's for as long as it
+                 * existed, which is the charge arriving half-wired one more
+                 * time — every other one-shot has one, and this is the item
+                 * `draw_flashbang` insists must be told from a grenade at a
+                 * glance. Two things that have to be distinguished in a hurry
+                 * should not announce themselves identically. */
                 state->player.flashbangs = 1;
-                game_events_sound(&state->events, SFX_PICKUP_GRENADE);
+                game_events_sound(&state->events, SFX_PICKUP_FLASH);
                 break;
             case ITEM_EVIDENCE:
                 /*
@@ -682,7 +713,8 @@ void gameplay_collect_items(GameplayState *state, CampaignState *campaign,
                  * make the safest route through a sector "touch the
                  * collectable first".
                  */
-                campaign->evidence_collected++;
+                campaign_take_docket_sheet(campaign,
+                                           campaign->current_level);
                 campaign->score += EVIDENCE_SCORE;
                 game_events_sound(&state->events, SFX_CARD_SCAN);
                 break;

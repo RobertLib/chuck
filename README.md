@@ -106,9 +106,13 @@ unlike touching one any other way, which costs a heart.
 The options sheet has one switch that runs the other way from the assists. Turn
 `VETERAN` on and the crew moves faster than the campaign was tuned for, you get
 one life instead of three, and no continue is coming. It is not locked behind
-finishing — every row on that sheet is something you may choose — and the faster
-pace takes hold in the sector you are already standing in, while the lives wait
-for the next run so nothing on that screen can take something you already had.
+finishing — every row on that sheet is something you may choose — and it takes
+hold in the run you are already in: the faster pace on the next simulation step,
+and the next continue handing back one life rather than three. Only the number of
+continues is genuinely next-run, because that is the one of the three spent at
+`campaign_reset`. The row says `THIS RUN TOO` for exactly that reason, and it
+used to say `NEXT RUN` while two of the three numbers reached the run in
+progress — the sheet telling a player a flip was free when it was not.
 
 And there is one answer to having already been seen. A flash charge is thrown
 like a grenade and kills nobody: every guard near it stops seeing, aiming and
@@ -265,18 +269,18 @@ does, what the floor plan allows, what the guards do, how to get through a floor
 of them without firing, how the wall is climbed, how to read the HUD, and — on
 the last sheet — every record the game has kept, which is the only place the
 seventeen per-sector times can all be read at once. **Options** (`J`, or `X` on a pad, and also reachable from the
-pause screen) is one sheet in five sections: separate levels for the music and
+pause screen) is one sheet in four sections and a page of records: separate levels for the music and
 the sound effects; fullscreen, the CRT filter and reduced motion; the three
 assist switches — five hearts a life, guards and dogs at 80% speed, and deaths
 that never cost a life; the **veteran** run, which is the same lever the other
-way (a faster crew, one life, no continues); and **records**, which says out
-loud that a run with any assist switch on banks no score, no sector time and no
-sheets, and carries the row that clears the lot. That row asks twice before it
-does it — it is the only thing on either page that cannot be undone — and it
-leaves the sector you are resuming from alone. **Reduced motion** takes the screen shake out and holds
+way (a faster crew, one life, no continues); and a row that opens **records**,
+which says out loud that a run with any assist switch on banks no score, no
+sector time and no sheets, and carries the row that clears the lot. That row
+asks twice before it does it — it is the only thing on any of the sheet's pages
+that cannot be undone — and it leaves the sector you are resuming from alone. **Reduced motion** takes the screen shake out and holds
 every warning light — the alarm call points, a mine's fuse, the police cordon
 on the drive — at a steady glow instead of a strobe, without changing what any
-of them is telling you. A row on the same sheet opens a second page where
+of them is telling you. A row on the same sheet opens a page of its own where
 **every key can be rebound**. Everything takes effect on the frame it is
 changed, and the sheet writes the lot to disk when it is closed, so the next
 launch opens the way the last one was left.
@@ -346,7 +350,7 @@ still free. `Start` still pauses.
 ### Platformer
 
 **All nine of the sector controls below can be rebound, on the keyboard and on
-a controller**, from the options sheet's second page (`J`, then `CONTROLS`).
+a controller**, from a page of the options sheet (`J`, then `CONTROLS`).
 Each row carries four caps — two keys, then two pad buttons — which is how the
 arrows and `WASD` are both first class rather than one being a fallback, and
 one key or button only ever does one job: binding one that is already taken
@@ -422,6 +426,15 @@ and the prologue:
 
 ```sh
 ./chuck --level 7
+```
+
+`--shot PATH` writes the frame to a file, which is where every picture of this game
+comes from — there is no art in the repository to screenshot instead.
+[tools/press_kit.sh](tools/press_kit.sh) uses it to photograph twenty screens at
+once:
+
+```sh
+make press
 ```
 
 Run the deterministic core test suite with:
@@ -516,22 +529,21 @@ built for one architecture and one macOS version, so a copy of that binary
 starts here and refuses to launch anywhere else.
 
 ```sh
-make app
+make mac
 ```
 
 builds `dist/Chuck.app` instead: universal (Apple Silicon and Intel), macOS 11
 and later, with SDL travelling inside the bundle and the icon drawn from the
-game's own palette. It is signed with a *Developer ID Application* certificate
-if the keychain holds one, and ad-hoc — runnable here, refused elsewhere — if
-it does not, saying which of the two it did.
+game's own palette. It is signed with a *Developer ID Application* certificate,
+then sent to Apple, and the ticket that comes back is stapled into the bundle so
+the first launch needs no network. What lands in `dist/` is
+`Chuck-<version>-macos.zip` and `Chuck-<version>.dmg`, both notarized and
+stapled.
 
-```sh
-make notarize
-```
+`make win` and `make linux` are the other two, and those are the three: one
+target per platform, each writing one archive into `dist/` and stopping there.
 
-sends the signed app to Apple, staples the ticket into it so the first launch
-needs no network, and cuts `dist/Chuck-<version>.dmg`, also notarized and
-stapled. It needs a paid Apple Developer Program membership, a Developer ID
+`make mac` needs a paid Apple Developer Program membership, a Developer ID
 Application certificate, and credentials stored once:
 
 ```sh
@@ -539,6 +551,10 @@ xcrun notarytool store-credentials chuck-notary \
     --apple-id you@example.com --team-id XXXXXXXXXX \
     --password <app-specific password from appleid.apple.com>
 ```
+
+`make app` is the same build stopped before Apple — signed ad-hoc if there is no
+certificate, which runs here and is refused elsewhere, and says which of the two
+it did. It is what CI checks on every push.
 
 SDL3 development files must be available through `pkg-config`.
 
@@ -588,7 +604,7 @@ effects.
 `Level` separates immutable parsed map data (`LevelMap`), mutable per-run data
 (`LevelRuntime`), and reveal-animation state (`LevelReveal`). Random gameplay
 choices use an explicitly seeded `Rng`; the SDL random generator is reserved
-for visual effects. The core tests cover seeded behavior, parsing every
+for visual effects. The core tests cover seeded behaviour, parsing every
 embedded level, collision, resets, interactions, AI spawning, combat feedback,
 and the prologue drive from its opening beat to the arrival at the building.
 
