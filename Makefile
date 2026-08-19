@@ -72,7 +72,7 @@ EDITOR_OBJECTS := $(patsubst %.c,$(BUILD_DIR)/editor/%.o,$(notdir $(EDITOR_SOURC
 EDITOR_DEPENDENCIES := $(EDITOR_OBJECTS:.o=.d)
 
 .PHONY: all release debug run run-debug run-editor editor test lint \
-	sanitize soak coverage clean app notarize sdl3
+	sanitize soak coverage coverage-shell clean app notarize sdl3
 
 all: $(TARGET)
 
@@ -233,7 +233,12 @@ LLVM_PREFIX := $(shell command -v xcrun >/dev/null 2>&1 && echo xcrun)
 LLVM_PROFDATA ?= $(LLVM_PREFIX) llvm-profdata
 LLVM_COV ?= $(LLVM_PREFIX) llvm-cov
 
-coverage: $(EMBEDDED_LEVELS_SOURCE)
+# The instrumented suite and its profile, as a file rather than as steps inside
+# one recipe: `coverage-shell` below needs the same profile to work out which
+# functions the suite already reaches, and two copies of these four lines is how
+# the two halves would come to measure slightly different things.
+$(COVERAGE_DIR)/core_tests.profdata: $(TEST_SOURCES) $(TEST_HEADERS) \
+		$(EMBEDDED_LEVELS_SOURCE)
 	@mkdir -p $(COVERAGE_DIR)
 	$(CC) $(CPPFLAGS) $(TEST_CFLAGS) $(COVERAGE_FLAGS) \
 		$(TEST_SOURCES) $(EMBEDDED_LEVELS_SOURCE) \
@@ -241,7 +246,9 @@ coverage: $(EMBEDDED_LEVELS_SOURCE)
 	@LLVM_PROFILE_FILE=$(COVERAGE_DIR)/core_tests.profraw \
 		$(COVERAGE_DIR)/core_tests > /dev/null 2>&1
 	@$(LLVM_PROFDATA) merge -sparse $(COVERAGE_DIR)/core_tests.profraw \
-		-o $(COVERAGE_DIR)/core_tests.profdata
+		-o $@
+
+coverage: $(COVERAGE_DIR)/core_tests.profdata
 	@$(LLVM_COV) report $(COVERAGE_DIR)/core_tests \
 		-instr-profile=$(COVERAGE_DIR)/core_tests.profdata \
 		$(TEST_SOURCES) 2>/dev/null | tail -n 3
@@ -278,6 +285,87 @@ coverage: $(EMBEDDED_LEVELS_SOURCE)
 		END { if (total) \
 			printf "\n  %d line(s) compiled and never run\n", total; \
 		      else print "  none" }'
+
+# The other half of the same question, and the half nobody had asked.
+#
+# `coverage` above measures the SDL-free tree against the suite. It cannot say a
+# word about the shell — `game.c`, `game_input.c`, the renderers — because the
+# test binary does not link any of it, and the reader of a target called
+# `coverage` reporting `none` has every reason to think the answer covers the
+# tree. It covered half of it.
+#
+# So this builds the *game* instrumented, walks it with the same sweep
+# `make soak` uses, and prints the functions **neither gate executes**: never
+# entered by the suite and never entered by the sweep. That intersection is the
+# honest list, and the first time it was taken it held **42 functions** where
+# AGENTS.md wrote down 14 — the pause and options row handlers plus
+# `audio_toggle_mute` and `audio_stop_music`. The 28 nobody had named were the
+# whole gamepad path in `game_input.c` (20 of them, including `turn_manual_page`
+# and `toggle_fullscreen`) and eight more in `game.c`: `finish_player_death`,
+# `continue_game`, `game_save_progress`, `leave_restroom`,
+# `game_apply_assist_everywhere`, `game_resume_campaign`, `game_set_fullscreen`
+# and `settings_current_row` — which is to say the death, the continue, the write
+# to the player's disk and the way out of a restroom, all of them in the area
+# where AGENTS.md documents a *shipped* bug found by hand.
+#
+# The renderers came out clean the same day: 394 functions across
+# `game_render.c`, `level_art.c`, `cutscene.c`, `manual.c`, `intro.c`,
+# `render_figures.c`, `particle.c` and `chase_render.c`, every one of them
+# executed by the sweep. That is the claim the `--screen` work in AGENTS.md
+# makes, measured rather than believed.
+#
+# Not a gate, for the same reason `coverage` is not one: what is worth reading is
+# the list. It needs SDL and it needs the clock — the sweep on an -O0
+# instrumented build is minutes rather than seconds — which is the other reason
+# it is a target of its own rather than part of `coverage`, since that one is
+# meant to work on a machine with no SDL at all.
+coverage-shell: $(COVERAGE_DIR)/core_tests.profdata
+	@mkdir -p $(COVERAGE_DIR)/profraw
+	@find $(COVERAGE_DIR)/profraw -name '*.profraw' -delete
+	$(MAKE) BUILD_DIR=$(COVERAGE_DIR)/game \
+		TARGET=$(COVERAGE_DIR)/chuck-cov \
+		CFLAGS="$(CFLAGS) $(COVERAGE_FLAGS)" \
+		LDFLAGS="$(LDFLAGS) -fprofile-instr-generate" all
+# Through a file rather than a pipe, and that is not tidiness: `soak.sh | tail`
+# reports tail's exit status, so a sweep that failed halfway would be swallowed by
+# the very command printing its summary — a check reporting success it does not
+# have, in the recipe written to stop exactly that.
+	@LLVM_PROFILE_FILE=$(COVERAGE_DIR)/profraw/chuck-%p.profraw \
+		SOAK_MODE=$(SOAK_MODE) SOAK_EDITOR= \
+		tools/soak.sh $(COVERAGE_DIR)/chuck-cov $(SOAK_SECONDS) \
+		> $(COVERAGE_DIR)/sweep.log 2>&1 \
+		|| { cat $(COVERAGE_DIR)/sweep.log; exit 1; }
+	@tail -n 1 $(COVERAGE_DIR)/sweep.log
+	@$(LLVM_PROFDATA) merge -sparse \
+		$$(find $(COVERAGE_DIR)/profraw -name '*.profraw') \
+		-o $(COVERAGE_DIR)/chuck.profdata
+	@for source in $(wildcard $(SRC_DIR)/*.c); do \
+		$(LLVM_COV) report $(COVERAGE_DIR)/chuck-cov \
+			-instr-profile=$(COVERAGE_DIR)/chuck.profdata \
+			-show-functions -sources $$source 2>/dev/null \
+		| awk -v name="$$source" \
+			'$$1 != "Filename" && $$1 != "TOTAL" && $$4 == "0.00%" \
+				{ print name, $$1 }'; \
+	done | sort -u > $(COVERAGE_DIR)/sweep_zero.txt
+	@for source in $(TEST_SOURCES); do \
+		case $$source in tests/*) continue ;; esac; \
+		$(LLVM_COV) report $(COVERAGE_DIR)/core_tests \
+			-instr-profile=$(COVERAGE_DIR)/core_tests.profdata \
+			-show-functions -sources $$source 2>/dev/null \
+		| awk -v name="$$source" \
+			'$$1 != "Filename" && $$1 != "TOTAL" && $$4 != "0.00%" \
+				{ print name, $$1 }'; \
+	done | sort -u > $(COVERAGE_DIR)/suite_run.txt
+	@echo
+	@echo "functions the sweep never executes:"
+	@awk '{ printf "  %s %s\n", $$1, $$2 }' $(COVERAGE_DIR)/sweep_zero.txt \
+	| sort | awk 'END { if (NR == 0) print "  none" } { print }'
+	@echo
+	@echo "functions NEITHER gate executes (the honest list):"
+	@comm -23 $(COVERAGE_DIR)/sweep_zero.txt $(COVERAGE_DIR)/suite_run.txt \
+	| awk '{ printf "  %-24s %s\n", $$1, $$2; total++ } \
+	       END { if (total) printf "\n  %d function(s) no gate runs\n", total; \
+		     else print "  none" }'
 
 # `all test` built the sanitized game and then ran only the suite, which links no
 # SDL — so the renderers, the level art, the audio synth and the cutscenes were

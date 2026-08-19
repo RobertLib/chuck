@@ -586,9 +586,15 @@ static void handle_gamepad_button(Game *game, SDL_GamepadButton button);
  *
  * Read live off both axes rather than off the one the event happened to carry:
  * a diagonal arrives as two separate events, and which of the two a menu
- * should answer is only decidable with both in hand. The dominant axis wins,
- * with a tie going to the vertical, because every cursor in the game runs down
- * a column.
+ * should answer is only decidable with both in hand.
+ *
+ * What is left here is the reading. The *decision* — the dead zone and the
+ * diagonal — is `pad_stick_direction` in [pad_hint.c](pad_hint.c), on the side
+ * of the line a test can reach, for the same reason the letters moved there:
+ * behind `SDL_GetGamepadAxis` it was six lines nothing in the tree could drive,
+ * and it decides how a menu feels under a thumb. The numbers it hands back are
+ * `PAD_BUTTON_DPAD_*`, which the assertions at the head of this file already
+ * hold to SDL's own.
  */
 static SDL_GamepadButton menu_stick_direction(const Game *game)
 {
@@ -599,13 +605,7 @@ static SDL_GamepadButton menu_stick_direction(const Game *game)
                                 SDL_GAMEPAD_AXIS_LEFTX);
   Sint16 y = SDL_GetGamepadAxis(game->platform.gamepad,
                                 SDL_GAMEPAD_AXIS_LEFTY);
-  int px = x < 0 ? -(int)x : (int)x;
-  int py = y < 0 ? -(int)y : (int)y;
-  if (px < GAMEPAD_AXIS_DEAD_ZONE && py < GAMEPAD_AXIS_DEAD_ZONE)
-    return SDL_GAMEPAD_BUTTON_INVALID;
-  if (py >= px)
-    return y < 0 ? SDL_GAMEPAD_BUTTON_DPAD_UP : SDL_GAMEPAD_BUTTON_DPAD_DOWN;
-  return x < 0 ? SDL_GAMEPAD_BUTTON_DPAD_LEFT : SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
+  return (SDL_GamepadButton)pad_stick_direction((int)x, (int)y);
 }
 
 /*

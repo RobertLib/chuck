@@ -357,7 +357,8 @@ bool gameplay_crate_blocks_row(const GameplayState *state,
 }
 
 bool gameplay_box_tiles_clear(const GameplayState *state,
-                              float x, float y, float w, float h)
+                              float x, float y, float w, float h,
+                              Stance stance)
 {
     int left = (int)floorf(x / TILE_SIZE);
     int right = (int)floorf((x + w - 1.0f) / TILE_SIZE);
@@ -365,7 +366,7 @@ bool gameplay_box_tiles_clear(const GameplayState *state,
     int bottom = (int)floorf((y + h - 1.0f) / TILE_SIZE);
     for (int row = top; row <= bottom; ++row)
         for (int col = left; col <= right; ++col)
-            if (level_is_solid(&state->level, col, row))
+            if (level_blocks_stance(&state->level, col, row, stance))
                 return false;
     return true;
 }
@@ -389,13 +390,19 @@ bool gameplay_resolve_player_crush(GameplayState *state)
 {
     Player *player = &state->player;
     float height = player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+    Stance stance = player_stance(player);
     int col_left = (int)floorf(player->x / TILE_SIZE);
     int col_right = (int)floorf((player->x + PLAYER_W - 1.0f) / TILE_SIZE);
     int row_top = (int)floorf(player->y / TILE_SIZE);
 
+    /* Asked in the posture he is actually in, which is the whole of what makes
+     * a duct survivable. The tile a crawler is *inside* is the tile this loop
+     * reads, so an upright answer would find masonry over the head of every man
+     * in every shaft, push him at both walls, find those blocked too, and take
+     * a heart — a hazard that reads on screen as nothing at all happening. */
     bool slab_overhead = false;
     for (int col = col_left; col <= col_right && !slab_overhead; ++col)
-        slab_overhead = level_is_solid(&state->level, col, row_top);
+        slab_overhead = level_blocks_stance(&state->level, col, row_top, stance);
     if (!slab_overhead)
         return false;
 
@@ -413,13 +420,13 @@ bool gameplay_resolve_player_crush(GameplayState *state)
         float into_right = (float)col_right * TILE_SIZE;
         float into_left = (float)(col_left + 1) * TILE_SIZE - PLAYER_W;
         if (gameplay_box_tiles_clear(state, into_right, player->y,
-                                     PLAYER_W, height))
+                                     PLAYER_W, height, stance))
         {
             player->x = into_right;
             return false;
         }
         if (gameplay_box_tiles_clear(state, into_left, player->y,
-                                     PLAYER_W, height))
+                                     PLAYER_W, height, stance))
         {
             player->x = into_left;
             return false;
@@ -490,7 +497,8 @@ void gameplay_ride_platforms(GameplayState *state, float dt)
              */
             float carried = player->x + platform->vx * dt;
             if (gameplay_box_tiles_clear(state, carried, player->y,
-                                         PLAYER_W, height))
+                                         PLAYER_W, height,
+                                         player_stance(player)))
             {
                 player->x = carried;
             }

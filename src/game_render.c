@@ -45,6 +45,15 @@ static const SDL_Color COL_SUBTITLE = {210, 220, 215, 255};
  * read and the colour says nothing at all. */
 static const SDL_Color COL_CHATTER_IDLE = {118, 134, 138, 255};
 
+/* Chuck's own pool of light — the one glow in a sector whose whole job is
+ * saying where the hero is. Named rather than spelled where it is drawn,
+ * because `render_duct_fronts` has to lay it back over a man it has just hidden
+ * behind a grille, and a pool with a two-tile hole punched in it exactly where
+ * he is would be the readability device failing at its one job. */
+static const SDL_Color COL_HERO_POOL = {134, 196, 214, 255};
+#define HERO_POOL_RADIUS 120.0f
+#define HERO_POOL_ALPHA 26
+
 void game_get_view_size(Game *game, int *out_w, int *out_h)
 {
   int lw = 0, lh = 0;
@@ -481,6 +490,75 @@ static void draw_shaft_tile(SDL_Renderer *r, float x, float y, int col, int row)
   color_rect(r, FX_INK, x + 15.0f, y, 2.0f, TILE_SIZE);
   if ((h & 3u) == 0u)
     color_rect(r, (SDL_Color){42, 125, 126, 255}, x + 12.0f, y + 13.0f, 8.0f, 3.0f);
+}
+
+/*
+ * A duct mouth: galvanised trunking let into the wall, louvred, with nothing
+ * readable behind the louvres.
+ *
+ * The dark is the mechanic rather than a mood. A shaft is safe — no guard sees
+ * into it, no round comes through it — and what it costs is knowing where you
+ * are coming out, so the picture must not quietly give that back by showing the
+ * room at the far end. It is drawn the same way under every theme, because a
+ * duct is the one thing in the building that is the same on all seventeen
+ * floors, and it is the DUCTS sector's own material everywhere else.
+ *
+ * **And it is drawn in two halves, which no other tile in the game is.** A duct
+ * is the one tile something is ever *inside*, so it has a back and a front with
+ * a crawler between them: `draw_vent_plenum` is the shaft and
+ * `draw_vent_grille` is what is screwed over it. In one piece, as it was, the
+ * whole tile went down in the structural pass and the figure went down near the
+ * end of the frame — so a man in a shaft was painted over the louvres he was
+ * supposed to be behind, and the tile whose entire cost is that those louvres
+ * are opaque both ways read as a man crawling along in front of them.
+ * `render_duct_fronts` lays the front half back over him.
+ */
+
+static void draw_vent_plenum(SDL_Renderer *r, float x, float y)
+{
+  /* The plenum behind the grille: the one surface in a sector with no light on
+   * it at all, so it sits under every theme's own darkest fill. */
+  color_rect(r, FX_NIGHT, x, y, TILE_SIZE, TILE_SIZE);
+  fx_vgrad(r, x, y, TILE_SIZE, TILE_SIZE, FX_INK, 170, FX_INK, 60);
+}
+
+static void draw_vent_grille(SDL_Renderer *r, float x, float y, int col,
+                             int row)
+{
+  unsigned h = tile_hash(col, row);
+
+  /* Louvres, bevelled the way the rest of the tree bevels: a dark blade with
+   * the light caught on its top edge. */
+  for (int slat = 5; slat < TILE_SIZE - 6; slat += 6)
+  {
+    color_rect(r, FX_INK, x + 4.0f, y + (float)slat, TILE_SIZE - 8.0f, 4.0f);
+    color_rect(r, FX_STEEL, x + 4.0f, y + (float)slat, TILE_SIZE - 8.0f, 2.0f);
+    fx_rect_a(r, FX_PALE, 105, x + 4.0f, y + (float)slat, TILE_SIZE - 8.0f,
+              1.0f);
+  }
+
+  /* The frame it is all screwed into, over the louvre ends. */
+  color_rect(r, FX_STEEL_DK, x, y, TILE_SIZE, 3.0f);
+  color_rect(r, FX_STEEL_DK, x, y + TILE_SIZE - 3.0f, TILE_SIZE, 3.0f);
+  color_rect(r, FX_STEEL_DK, x, y, 3.0f, TILE_SIZE);
+  color_rect(r, FX_STEEL_DK, x + TILE_SIZE - 3.0f, y, 3.0f, TILE_SIZE);
+  /* The bright arris along the top, which is the cue every surface the player
+   * can be on top of carries in this game. */
+  color_rect(r, FX_STEEL_LT, x, y, TILE_SIZE, 1.0f);
+
+  /* One fixing off the tile hash, so a run of trunking is not one tile
+   * repeated. */
+  if ((h & 1u) == 0u)
+    fx_rect_a(r, FX_PALE, 120, x + 5.0f, y + 5.0f, 2.0f, 2.0f);
+  else
+    fx_rect_a(r, FX_PALE, 120, x + TILE_SIZE - 7.0f, y + TILE_SIZE - 7.0f,
+              2.0f, 2.0f);
+}
+
+static void draw_vent_tile(SDL_Renderer *r, float x, float y, int col, int row)
+{
+  draw_vent_plenum(r, x, y);
+  draw_vent_grille(r, x, y, col, row);
 }
 
 static void draw_platform(SDL_Renderer *r, float x, float y, SDL_Color accent, bool unstable)
@@ -2452,6 +2530,81 @@ static void render_alarm_lighting(SDL_Renderer *r, int win_w, int win_h,
   SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 }
 
+/*
+ * The front face of every duct the player is inside, laid back over him.
+ *
+ * The figure layers are drawn near the end of the frame and the tile layers at
+ * the start of it, which is right for every other tile in the game: nothing is
+ * ever *inside* masonry. Trunking is the exception the whole mechanic rests on,
+ * so without this pass a crawl through a shaft drew Chuck over the louvres —
+ * outside the wall he had just gone into, on the one tile whose documented cost
+ * is that it is opaque both ways. Behind the grille he is what he should be: a
+ * slot of shirt at a time, a sliver down each side of the frame, and the half of
+ * him not in yet still out in the room.
+ *
+ * Only the tiles the man is in, rather than every duct on screen, and that is
+ * the point of doing it here rather than in the tile loop: a blast beside the
+ * trunking is drawn in front of it and has to stay in front of it. The wall
+ * comes back over the frame where the man is and nowhere else.
+ *
+ * A tile either side of him as well, because the pose reaches further than the
+ * box it is drawn from: a knife thrust and the launcher's muzzle both land about
+ * a dozen pixels past his shoulder, which is well into the next length of
+ * trunking. What is deliberately left in front of the louvres is *light* — a
+ * muzzle flash is a glow with a thirty-pixel radius, and light through a grille
+ * belongs on the outside of it. Asked only once his own box has been found to
+ * hold a duct at all, so a man walking past the outside of one never repaints
+ * it.
+ */
+static void render_duct_fronts(SDL_Renderer *r, const Level *lvl,
+                               const Player *p, float cam_x, float oy,
+                               int win_w, int win_h)
+{
+  float height = p->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+  int first_col = (int)floorf(p->x / (float)TILE_SIZE);
+  int last_col = (int)floorf((p->x + (float)PLAYER_W - 1.0f) / (float)TILE_SIZE);
+  int first_row = (int)floorf(p->y / (float)TILE_SIZE);
+  int last_row = (int)floorf((p->y + height - 1.0f) / (float)TILE_SIZE);
+  bool inside = false;
+
+  for (int row = first_row; row <= last_row && !inside; ++row)
+    for (int col = first_col; col <= last_col && !inside; ++col)
+      inside = level_tile(lvl, col, row) == TILE_VENT;
+  if (!inside)
+    return;
+
+  for (int row = first_row; row <= last_row; ++row)
+    for (int col = first_col - 1; col <= last_col + 1; ++col)
+    {
+      if (level_tile(lvl, col, row) != TILE_VENT)
+        continue;
+      /* Revealed, because the structural pass draws nothing that is not, and a
+         front face over a tile with no back to it would be trunking hanging in
+         the dark ahead of the reveal. */
+      if (!lvl->reveal.tiles_visible[row][col])
+        continue;
+      float x = col * (float)TILE_SIZE - cam_x;
+      float y = row * (float)TILE_SIZE + oy;
+      if (x + TILE_SIZE < 0.0f || x > (float)win_w ||
+          y + TILE_SIZE < HUD_HEIGHT || y > (float)win_h)
+        continue;
+      /* The grille only — the plenum's own shading is not laid over him a
+         second time, and that is a decision rather than an omission. He is
+         lying against the louvres and the gradient is the far wall of the
+         shaft behind him, so the light that reaches him is what leaks through
+         the slots; painting the shaft's dark over him as well dulled the two
+         pixels of shirt that are the whole of what the player has to follow,
+         and darkened the plenum of his own tiles below its neighbours' into
+         the bargain. */
+      draw_vent_grille(r, x, y, col, row);
+      /* And his pool of light back on top of it, because that is drawn with the
+         tiles and has just been painted over: a duct run with a dark hole in
+         the middle of the hero's own glow is the one cue the player has for
+         where he is, failing where he is. */
+      fx_rect_a(r, COL_HERO_POOL, HERO_POOL_ALPHA, x, y, TILE_SIZE, TILE_SIZE);
+    }
+}
+
 static void render_world(Game *game)
 {
   SDL_Renderer *r = game->platform.renderer;
@@ -2505,6 +2658,8 @@ static void render_world(Game *game)
         draw_ladder_tile(r, x, y, row);
       else if (tile == TILE_ELEVATOR_SHAFT)
         draw_shaft_tile(r, x, y, col, row);
+      else if (tile == TILE_VENT)
+        draw_vent_tile(r, x, y, col, row);
     }
   }
 
@@ -2632,7 +2787,7 @@ static void render_world(Game *game)
   if (!game->gameplay.player.dying)
     fx_glow(r, game->gameplay.player.x + PLAYER_W * 0.5f - cam_x,
             game->gameplay.player.y + PLAYER_H * 0.5f + oy,
-            120.0f, (SDL_Color){134, 196, 214, 255}, 26);
+            HERO_POOL_RADIUS, COL_HERO_POOL, HERO_POOL_ALPHA);
 
   for (int i = 0; i < lvl->runtime.elevator_count; ++i)
   {
@@ -2983,6 +3138,8 @@ static void render_world(Game *game)
                   game->gameplay.terminal_hacking,
                   game->gameplay.terminal_hack_progress,
                   game->presentation.player_land_squash);
+    render_duct_fronts(r, lvl, &game->gameplay.player, cam_x, oy,
+                       win_w, win_h);
   }
   else
   {

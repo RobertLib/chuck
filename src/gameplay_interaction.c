@@ -336,7 +336,7 @@ void gameplay_update_body_drag(GameplayState *state, const Input *input)
         /* Walked into a wall with it: the body stays where it is rather than
          * being pushed through the masonry, and the leash below decides how
          * long Chuck gets to keep pulling. */
-        if (gameplay_box_tiles_clear(state, target_x, *by, w, h))
+        if (gameplay_box_tiles_clear(state, target_x, *by, w, h, STANCE_UPRIGHT))
             *bx = target_x;
         /* Only `x` is ever written here, which is why this function takes no
          * `dt` at all. Gravity belongs to `settle_body` in gameplay_ai.c, which

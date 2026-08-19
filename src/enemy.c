@@ -105,7 +105,7 @@ static void enemy_update_talking(Enemy *enemy, Level *level, float dt)
     bool ignored_ground = false;
     level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
                ENEMY_W, ENEMY_H, dt, false, &ignored_ground,
-               false);
+               false, STANCE_UPRIGHT);
 }
 
 static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
@@ -140,7 +140,7 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
         enemy->on_ground = false;
         level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
                    ENEMY_W, ENEMY_H, dt, true, &enemy->on_ground,
-                   false);
+                   false, STANCE_UPRIGHT);
         return;
     }
     enemy->x = ladder_x;
@@ -247,7 +247,7 @@ static void enemy_update_climbing(Enemy *enemy, Level *level, float dt,
     enemy->on_ground = false;
     level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
                ENEMY_W, ENEMY_H, dt, enemy->climbing, &enemy->on_ground,
-               false);
+               false, STANCE_UPRIGHT);
 }
 
 static bool enemy_box_tiles_clear(const Level *level, float x, float y,
@@ -377,11 +377,12 @@ static int enemy_elevator_ahead(const Level *level, const Enemy *enemy,
     return -1;
 }
 
-static bool enemy_floor_ahead(const Level *level, const Enemy *enemy, int dir)
+/* The whole of "is there anything to stand on in this column at this row",
+ * asked by column rather than by probe offset so that the same answer can be
+ * had about a tile the guard is not standing beside yet — see
+ * `enemy_can_advance`. */
+static bool enemy_floor_in_col(const Level *level, int col, int row)
 {
-    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f : enemy->x - 3.0f;
-    int col = (int)floorf(probe_x / TILE_SIZE);
-    int row = (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
     if (level_is_solid(level, col, row) || level_is_ladder(level, col, row))
         return true;
 
@@ -414,6 +415,18 @@ static bool enemy_floor_ahead(const Level *level, const Enemy *enemy, int dir)
     return false;
 }
 
+static int enemy_foot_row(const Enemy *enemy)
+{
+    return (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
+}
+
+static bool enemy_floor_ahead(const Level *level, const Enemy *enemy, int dir)
+{
+    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f : enemy->x - 3.0f;
+    return enemy_floor_in_col(level, (int)floorf(probe_x / TILE_SIZE),
+                              enemy_foot_row(enemy));
+}
+
 /* Is there a landing within jump range across a gap in the given direction? */
 static bool enemy_can_jump_gap(const Level *level, const Enemy *enemy, int dir)
 {
@@ -438,16 +451,10 @@ static bool enemy_can_jump_gap(const Level *level, const Enemy *enemy, int dir)
 
 /* Permit a deliberate step off a ledge only when ground is close below it.
  * Guards still need short drops to navigate split-height floors, but should
- * turn around instead of throwing themselves down a lift shaft or atrium. */
-static bool enemy_can_step_down(const Level *level, const Enemy *enemy,
-                                int dir)
+ * turn around instead of throwing themselves down a lift shaft or atrium.
+ * Split by column for the same reason `enemy_floor_in_col` is. */
+static bool enemy_step_down_from_col(const Level *level, int col, int feet_row)
 {
-    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f
-                            : enemy->x - 3.0f;
-    int col = (int)floorf(probe_x / TILE_SIZE);
-    int feet_row =
-        (int)floorf((enemy->y + ENEMY_H + 2.0f) / TILE_SIZE);
-
     if (level_is_solid(level, col, feet_row - 1))
         return false;
     for (int drop = 1; drop <= ENEMY_STEP_DOWN_MAX_TILES; ++drop)
@@ -458,6 +465,45 @@ static bool enemy_can_step_down(const Level *level, const Enemy *enemy,
             return true;
     }
     return false;
+}
+
+static bool enemy_can_step_down(const Level *level, const Enemy *enemy,
+                                int dir)
+{
+    float probe_x = dir > 0 ? enemy->x + ENEMY_W + 3.0f
+                            : enemy->x - 3.0f;
+    return enemy_step_down_from_col(level, (int)floorf(probe_x / TILE_SIZE),
+                                    enemy_foot_row(enemy));
+}
+
+/*
+ * Whether the guard has anywhere to go on this side, asked a whole tile out.
+ *
+ * The two reversal rules in `enemy_update_walking` probe from the body edge at
+ * different offsets — 1px for masonry at his shoulder, 3px for the floor his
+ * next step lands on — so between them they leave a 2px band in which neither
+ * fires. In a corridor that is one tile wide, with a wall on one side and
+ * nothing to stand on on the other, each turn drops him straight into the band
+ * where the other rule fires: he reverses every ninth simulation step and reads
+ * as a man spinning on the spot at the frame rate. That is what a duct and a
+ * fallen `F` panel two tiles apart on sector 12 did to the guard between them,
+ * and his dog with him, because `dog_anchor_x` is derived from the handler's
+ * facing.
+ *
+ * Asked by tile the question has one answer, so the two rules cannot disagree
+ * about it: he is not going anywhere, and he stands. `update_dog` already
+ * reasons this way — see `dog_can_advance` and the note on a boxed-in dog
+ * standing still rather than spinning in place.
+ */
+static bool enemy_can_advance(const Level *level, const Enemy *enemy, int dir)
+{
+    int col = (int)floorf((enemy->x + ENEMY_W * 0.5f) / TILE_SIZE) + dir;
+    int center_row = (int)floorf((enemy->y + ENEMY_H * 0.5f) / TILE_SIZE);
+    if (level_is_solid(level, col, center_row))
+        return false;
+    int feet_row = enemy_foot_row(enemy);
+    return enemy_floor_in_col(level, col, feet_row) ||
+           enemy_step_down_from_col(level, col, feet_row);
 }
 
 static bool enemy_box_crates_clear(const Level *level, float x, float y,
@@ -550,7 +596,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         enemy->vx = 0.0f;
         level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
                    ENEMY_W, ENEMY_H, dt, false, &enemy->on_ground,
-                   false);
+                   false, STANCE_UPRIGHT);
         return;
     }
 
@@ -591,6 +637,25 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
         }
     }
 
+    /*
+     * Nowhere to walk on either side, which stops the walk for the same reason
+     * `hemmed_in` does: a man with no way out stands rather than picking one of
+     * two refusals every frame. Kept as its own flag because it is a different
+     * question — `hemmed_in` asks what is pressed against his body, this asks
+     * whether either neighbouring tile is somewhere he could put a foot — and
+     * because the pursuit hop below is a genuine way off a one-tile island and
+     * must not be suppressed with the walk. A lift rider is excluded: the
+     * platform under him is not a tile, and stepping off it is the elevator
+     * block's own decision, made just above.
+     */
+    bool dead_end =
+        enemy->on_ground && enemy->on_elevator < 0 && !enemy->climbing &&
+        !enemy_can_advance(level, enemy, -1) &&
+        !enemy_can_advance(level, enemy, 1);
+    if (dead_end && following_target && target_on_same_floor &&
+        enemy_can_jump_gap(level, enemy, target_dx < 0.0f ? -1 : 1))
+        dead_end = false;
+
     /* Only follow the target's X position once the enemy is on its floor.
      * Otherwise, crossing that X position makes the direction flip every
      * frame and prevents the enemy from continuing along the platform to a
@@ -609,7 +674,8 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
     bool preserving_gap_jump =
         !enemy->on_ground &&
         fabsf(enemy->vx) >= ENEMY_JUMP_MIN_SPEED - 0.5f;
-    enemy->vx = (hemmed_in || reached_target_x || waiting_on_elevator)
+    enemy->vx = (hemmed_in || dead_end || reached_target_x ||
+                 waiting_on_elevator)
                     ? 0.0f
                     : preserving_crate_mount
                           ? (float)enemy->dir * ENEMY_CRATE_MOUNT_SPEED
@@ -777,7 +843,7 @@ static void enemy_update_walking(Enemy *enemy, Level *level, float dt,
 
     level_move(level, &enemy->x, &enemy->y, &enemy->vx, &enemy->vy,
                ENEMY_W, ENEMY_H, dt, false, &enemy->on_ground,
-               false);
+               false, STANCE_UPRIGHT);
 }
 
 void enemy_update(Enemy *enemy, Level *level, float dt,

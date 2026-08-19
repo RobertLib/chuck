@@ -32,6 +32,9 @@ make soak     # tools/soak.sh: run a built game headless across the title
 make coverage # count the functions `make test` never executes, and print
               # them by name. Not a gate — see the note below on why the
               # number is not the point and the list is
+make coverage-shell # the other half: build the game instrumented, walk it with
+              # the soak sweep, and print the functions **neither** gate runs.
+              # Needs SDL and a few minutes; also not a gate
 make app      # build dist/Chuck.app, universal and signed (macOS)
 make notarize # notarize and staple it, and cut dist/Chuck-<version>.dmg
 make clean    # remove build/, dist/, ./chuck and ./chuck-editor
@@ -63,7 +66,10 @@ frame holds exactly one of them, and the pose that covers the launcher is the po
 that stops covering the muzzle flash. `--screen aftermath --level N` on a climb
 stages the wall's own two hazards instead, a thrown object and a bird, because
 both spawn on a timer and "whether two seconds caught one" is luck rather than
-coverage.
+coverage. And on a floor with trunking on it the crawl is staged *inside a duct*,
+because the louvres a shaft is worth anything for are laid back over the man
+behind them by a pass of their own (`render_duct_fronts`) and no headless run has
+ever put anybody in a shaft: a sweep that presses nothing crawls into nothing.
 `--screen restroom --level N` is the same problem answered by the other switch:
 which room a `U` opens on is decided by the sector's `THEME`, so a sweep pinned to
 sector 1 drew the lobby's washroom four times and left the plant's, the archive's
@@ -154,6 +160,24 @@ sheets' own row handlers in `game.c`, and `audio_toggle_mute` and
 `audio_stop_music`. Both need menu presses, and neither is something `--screen`
 can name — a switch names a state, and these are *transitions*.
 
+**And that sentence was this file's own recurring defect one more time, because
+nothing had measured it.** It was written from the renderer sweep, which is where
+the work had been, and it reads as a statement about the shell. `make
+coverage-shell` measures the shell — the game built instrumented, walked by the
+same sweep, intersected with what the suite reaches — and the honest answer is
+**42 functions no gate executes**, against the 14 named above. The other 28 are
+the whole gamepad path in [game_input.c](src/game_input.c) (20 of them, including
+`turn_manual_page` and `toggle_fullscreen`) and eight more in
+[game.c](src/game.c): `finish_player_death`, `continue_game`,
+`game_save_progress`, `leave_restroom`, `game_apply_assist_everywhere`,
+`game_resume_campaign`, `game_set_fullscreen` and `settings_current_row`. Which is
+to say the death, the continue, the write to the player's disk and the way out of
+a restroom — the area where the *shipped* veteran-lives bug written up further
+down this file was found by hand, and the area a reader of the paragraph above
+would have believed was accounted for. The renderers, measured the same day, came
+out at **394 functions and nought unexecuted**, so the claim they were the problem
+was true and the claim they were the *whole* problem was not.
+
 **And `pad_hint.c` was the fourth one, which has now had the treatment
 [keybind.c](src/keybind.c) already had** — SDL-free, in `TEST_SOURCES`, its
 numbers held to `SDL_GAMEPAD_BUTTON_LABEL_*` and `SDL_GAMEPAD_TYPE_*` by
@@ -229,9 +253,20 @@ twenty-five is a mechanic and a scatter of ones is a file's worth of `return
 false` guards. Thirteen tests took the total from eleven hundred to seven hundred
 and sixty-six, `gameplay_ai.c` from two hundred and seventy-nine to a hundred and
 twenty-eight, and `player.c` from forty-eight to five; a later sweep took it to
-**seven hundred and twenty-three** and is written up below.
+seven hundred and twenty-three, the one written up in the middle of this section
+to six hundred and ten, the pass at the end of it to five hundred and
+ninety-one, and the duct sweep written up below to **five hundred and
+eighty-six**.
 What is left is honest to read rather than to claim, and reading it is the whole
 point. **`none` is not the target and never was.**
+
+That running figure is itself a number in prose that nothing holds, and it had
+already drifted — it said seven hundred and twenty-three while the target printed
+seven hundred and sixteen. Worth knowing what kind of claim it is: this one is a
+*reading*, not a rule. It is meant to be re-measured by whoever adds a test and
+corrected in the same commit, which is why it is written here in words rather than
+checked by a script — a gate on it would be a number people learn to move, which is
+the argument this whole section is built on.
 
 Two of those ten are worth naming for what they say about the campaign rather
 than the suite. `test_a_sector_gives_the_player_a_moment_to_read_it` drives every
@@ -245,6 +280,19 @@ runs the passes in `update_playing`'s own order with seeded noise on the pad,
 which nothing did — every other test drives a hand-picked handful of the frame,
 and the soak runs the real order standing still, so the ordering was covered by a
 player who did nothing and the actions were covered outside the ordering.
+
+**And it skipped the five climbs, behind a comment saying they were covered
+elsewhere.** The sentence read "the facade has its own frame and its own bot, in
+`facade_bot_reaches_window`", and that bot is not a frame: it drives
+`gameplay_climb_update_player` and nothing else, because what it exists to ask is
+whether a map has a dead end. So `update_facade_playing`'s order — the player,
+then the hazards and the wind, then the pickups — was run by nothing that pressed
+anything, on a third of the campaign, while the check that would have covered it
+said in writing that something else did. Same defect as the paragraph above it and
+the paragraph below, one directory over: **a check whose name or comment overstates
+its reach is worse than a missing one, because a missing one leaves a reader
+curious.** Both modes are driven in their own shell function's order now and the
+counts at the end require both to have been walked.
 
 **And then the same list was read again, which is what it is for, and the thing
 it turned up has a shape worth naming: two mechanics written as one another's
@@ -304,6 +352,224 @@ checked. Two of the fifteen are caught by the *game* build rather than the suite
 because they are the compile-time assertions tying `pad_hint.h`'s numbers to
 SDL's, and the test binary links no SDL — which is the arrangement working, not a
 hole in it.
+
+**And the list was read once more, and this time one of them was a shipped bug.**
+Six findings, and the order they are written in is the order of how much they cost.
+
+- **A veteran run stopped being one after its first death.** `campaign_reset` was
+  handed the `veteran` flag, spent it on the opening lives and continues, and
+  forgot it; `campaign_accept_continue` is the *other* place lives are handed out
+  and had nothing to ask, so it handed out `PLAYER_LIVES`. Since
+  `VETERAN_CONTINUES` is nought, a veteran's very first death takes the
+  score-reset branch — and came back with three lives. The mode
+  [docs/screens.md](docs/screens.md#the-options-sheet) describes as three numbers
+  held two of them for exactly one mistake, which on a one-life run is the whole
+  run. `test_the_veteran_run_is_three_numbers_and_no_more` had checked
+  `campaign_reset` and stopped there: **checking the opening state of a mode is
+  checking it for as long as nothing has happened yet.**
+- **The options sheet's *reader* had six of its seven arms dark.** The write-up
+  further up this file is about `settings_adjust` being tested two rows at a time;
+  `settings_value_bool`, the function that decides whether each switch prints ON or
+  OFF, kept exactly that treatment and nobody noticed, because the fix had been
+  filed as done. Its every caller is in `game_render.c`, so the suite had asked it
+  one question in its life. A miswired arm shows the player the wrong state for a
+  switch they just flipped, on the one screen whose whole job is reporting state.
+  **Fixing one half of a symmetric defect is the most reliable way to stop anybody
+  looking at the other half.**
+- **Three twins with one test between them, all in the same file.** The rocket's
+  swept box is tested against masonry and guards and had never met a crate, a gas
+  canister or a dog — thirty-six lines in three near-identical loops. A guard's
+  round had never met a crate, while the player's round meeting one was covered.
+  And `test_ladder_explosives_follow_aim_direction` walked the rocket and the
+  grenade past two more copies of the same twelve lines: the flash charge and the
+  bolt, neither ever thrown from a ladder by anything. It is
+  `test_every_ladder_throw_follows_the_aim` now, because the old name was true of
+  what it did and false of what it was for.
+- **A dog's body could be dragged and nothing had ever dragged one.**
+  `dragging_is_dog` appeared in the suite once, as `false`; `body_slot` ran at half
+  its regions. An animal is a body the AI investigates like any other and `W` puts
+  one on ten of the seventeen sectors, so this is half a mechanic covered on the
+  half of the world that happens to be human.
+- **The monkey skipped a third of the campaign behind a comment saying otherwise**
+  — written up in its own paragraph above, because the shape matters more than the
+  gap.
+- **And four numbers that were literals beside named constants.** Three throw
+  branches wrote `0.18f` next to a `PLAYER_KNIFE_ACTION_TIME` that is also 0.18,
+  the pistol wrote `0.12f`, the muzzle-flash threshold `0.055f` stood in five
+  places in `render_figures.c` and a sixth as a number inside a comment, and the
+  underarm arc was solved out longhand three times — with the third copy carrying a
+  comment claiming it was "the same arc the grenade is thrown on", an equality
+  nothing held. All named now, the arc is one `throw_arc_speed`, and the two
+  relationships a header cannot state (a throw lasts a knife stroke; a pose
+  outlasts the flash drawn on it) are in the suite, because a float comparison in a
+  `_Static_assert` is a GNU extension and this tree is `-Wpedantic`.
+
+Two more came out of the same pass and neither is a defect — both are facts the
+tree was resting on without having written down, which is the other thing reading
+this list is for.
+
+- **A standing round flies over a dog, and that is the canister's own mechanic
+  wearing a different coat.** The shot leaves the hand at `PLAYER_H * 0.35`, which
+  puts its underside 0.8px above anything 16 tall standing on the floor;
+  `DOG_H` and `GAS_CANISTER_H` are both sixteen. The canister half is documented
+  and pinned, the animal half was neither, so the sidearm quietly does nothing to
+  the fastest thing on a floor unless Chuck crawls first — with the blade, a
+  ladder shot and any blast as the other answers. `test_the_shot_line_is_chest_high`
+  states the cause once and both consequences beside it. **A margin under a pixel
+  carrying two mechanics is a coincidence until somebody writes it down.**
+- **Every underarm throw rises at the cap, and the formula above it is inert.**
+  `throw_arc_speed` solves the rise from the horizontal speed and then clamps it,
+  and at the three speeds the game ships the solve is 335, 348 and 261 against a
+  cap of 220. So all three throwables leave the hand on exactly the same arc, the
+  lower clamp needs a throw over 2600px/s to be reached at all, and the number that
+  moves the feel of a lob is the cap rather than the strength — the opposite of what
+  the code reads like. Pinned by `test_every_underarm_throw_rises_at_the_cap`, so if
+  a speed change ever brings the solve inside the clamps, that arrives as a failing
+  test rather than as a bolt that lobs differently from a grenade.
+
+Every one of these was **checked by breaking the thing it guards and watching the
+new test fail** — thirteen mutations — and the sweep also ran a wider monkey than the
+suite keeps: all seventeen sectors, eight seeds, sixty seconds each, invariants on
+NaN, world bounds, hearts, ammunition, score and every entity count. That found
+nothing, which is the useful half of the answer.
+
+**And the list was read again, and this time what it found was mostly the shape
+of the checks rather than the code.** Five findings and one deletion; none was a
+shipped bug, and every one of them was a mechanic or a rule the suite would not
+have noticed the loss of. Each new test was **checked by breaking the thing it
+guards and watching it fail** — nine mutations, and the interesting one is the
+mutation that *passed*: it is why the fourth test below was rewritten before it
+was believed.
+
+- **A twin with one test between them, on the way out of seven sectors.**
+  `gameplay_player_reached_exit` answers the *window* first and returns, so every
+  caller the suite ever had — its own bots included — handed it a map with a `Y`
+  on it. Measured: 66 900 executions of the window branch against **nought** of
+  the door's, including the line that refuses a *locked* door, which is the whole
+  of what a card is for. Seven of the seventeen sectors leave by their stair core
+  and the last of them is the roof, so what nothing checked was the finish
+  condition of the floor the campaign ends on.
+  `test_the_stair_door_is_a_way_out_only_once_it_opens` is the missing half; the
+  behaviour was correct all along, which is worth saying plainly.
+- **A guard was sent to look at a body 4 390 times and never once arrived.** The
+  suspicion block in `update_enemy_pursuit` ran constantly; the branch inside it
+  that fires when the man *reaches* the spot was dark, so the shortening to
+  `ENEMY_INVESTIGATE_LOOK_TIME`, the turn on the spot and the drop back to patrol
+  were staged by nothing. That is the beat the quiet route is played against —
+  hiding a body is worth doing because the witness walks over, looks round and
+  **gives up** — and a guard who arrived and never left, or who never stopped
+  walking, is one line from either. It is the "reached but truncated" kind this
+  file's own sweep named, on the mechanic the whole route is built on.
+- **A rule that had been prose since the sheet existed.**
+  [levels/LEGEND.md](levels/LEGEND.md) says to put the docket sheet "somewhere
+  that costs a detour rather than on the route to the door". Nothing measured it,
+  and seven of the twelve were sitting on a *shortest* path to the way out with
+  sector 12's costing one step: the one collectable in the game that is meant to
+  be a decision was, on eight floors of twelve, picked up by walking to the door.
+  The sheets moved — the campaign runs +11 to +92 steps now, with sector 4 the
+  closest to the bar at 22 against a 136-step walk — and
+  `test_the_docket_sheet_costs_a_detour` holds them there.
+  Two things worth taking from it: **a rule about where a thing goes is as much a
+  rule as one about what it does**, and the measurement needs a flood *from the
+  sheet* rather than a flood from the door read backwards, because a step off a
+  ledge is a one-way edge and the model is full of them.
+- **The route model's two claims about the body, held by nothing.**
+  `route_neighbours` decides that a hole is clearable one tile wide (two with a
+  row spare overhead) and a spike bed hoppable one tile wide. Those are claims
+  about `PLAYER_JUMP_SPEED`, `PLAYER_WALK_SPEED` and `GRAVITY`, written as
+  literals in a different file — and this model is what certifies every shipped
+  map as playable. Measured, the margin is one tile in each direction: the
+  simulation clears a three-tile hole and pays a heart for a two-tile bed, so the
+  model is on the conservative side, which is the side to be on. **The first
+  draft of the test pinned the wrong thing** — hard-coded at one and two tiles it
+  passed happily when the model was widened to three, which is exactly the
+  mutation it should have had an opinion about. It asks the model for its widths
+  now and requires the simulation to deliver each one, so widening the spike hop
+  to two tiles fails on the change instead of on a player.
+- **And the dead zone and the diagonal, six lines behind `SDL_GetGamepadAxis`.**
+  `make coverage-shell` says the gamepad path is executed by neither gate, and
+  most of it does need a pad in a hand. `menu_stick_direction` did not: what it
+  needs is the two numbers a pad reports, which is the same sentence
+  [pad_hint.c](src/pad_hint.c) is already built on. The reading stayed with SDL
+  and the decision came across as `pad_stick_direction`, where the suite drives
+  it — the dead zone on both axes and in both directions, the corners, and the
+  exact diagonal that has to resolve *vertically* because every cursor it feeds
+  runs down a column. Both halves of that are things a player feels and neither
+  had a test: a tie resolving sideways is a stick pushed corner-wise moving
+  nothing on three screens.
+- **And a tile type nothing parses to.** `TILE_FALL_PLATFORM` sat in
+  [level.h](src/level.h) as the only mention of itself in the tree, carrying a
+  comment describing the mechanic `FallPlatform` in `LevelRuntime` actually
+  implements: `F` parses to `TILE_EMPTY` plus a runtime entry, because a panel is
+  a thing with a position and a velocity and the parsed map has to stay exactly
+  what the file said. An enumerator nothing produces is a claim about the map
+  format that is not true of it.
+
+**And the newest mechanic was read the same way, which found the one thing on
+this page that was costing a player something while it was written.** The duct
+arrived with a split solidity rule, an editor check, a route-model edge, a
+renderer pass of its own and two tests — and every one of those asks about the
+*horizontal* crawl, because that is the direction a shaft is for. Nothing had
+asked what trunking does to a man moving up or down through it. It does the same
+thing in both directions.
+
+- **Crouching on the lid rocked the player 240 times a second.** The crawl lowers
+  the box, `level_blocks_stance` opens a duct to a crawler downwards as well as
+  sideways, so the tile he was standing on stopped holding him; `on_ground` went
+  out with it, `want_crawl` requires `on_ground`, and the very next step stood him
+  back up onto the trunking and handed `on_ground` straight back. Every run on
+  sector 12 has its storey's own air above it, so every one of them was a walkway
+  where the crouch key did that: the pose the renderer draws alternating, the box
+  14px taller and shorter by turns, and `crawling` — one of the two ways of being
+  hard to see — true on half the sight checks a guard makes. **A tile that is
+  solid to one stance and open to the other can take the floor away by being
+  crouched on**, and until the duct there had never been one, which is why the
+  crawl had no reason to ask.
+- **One press of JUMP left the shaft through its roof.** A rise is resolved in the
+  posture the player is in too, so a duct was open upwards as well.
+  [levels/LEGEND.md](levels/LEGEND.md) had already spent a sentence on this —
+  *the crawl is the only move it allows from inside a shaft* — and the sentence
+  was true of the route model and false of the game. So "a duct with one mouth is
+  not a route" described nothing, and the louvres the whole bet is made against
+  could be lifted at any tile. This is the `gameplay_restore_checkpoint` shape
+  from further up the page in a new place: **a claim written about the model
+  reads as a claim about the simulation, and only one of the two is holding it.**
+- **And the SPAWNS parser was written down twice with the guards on one copy.**
+  `level_load_data` refuses a token that is not a number, a digit run that will
+  not fit an `int`, and junk on the end of one; `editor_doc_parse` stopped at the
+  first non-digit without a word and multiplied by ten until it wrapped. So
+  `SPAWNS -1 4` opened in the editor as *no* spawns at all — a hand-edited map
+  could be opened, drawn on and saved with its door counts gone, because
+  `editor_doc_serialize` writes the line only when there is something in it — and
+  `SPAWNS 99999999999999` is signed overflow in a translation unit this
+  repository already builds under UBSan, reached by nothing because the fuzz
+  corpus stopped at seven digits. [tools/check_lists.py](tools/check_lists.py)
+  holds the lists written down twice; a *parser* written down twice is the same
+  class and has no script.
+- **And the refusal it printed named the wrong thing.** One `bool` fed one
+  message, so `SPAWNS -1` on a map with no doors printed `expected 0 values,
+  found 0` and refused — a refusal an author cannot act on, quoting two figures
+  that agree with each other. A malformed token and a miscount are two faults and
+  want two sentences.
+
+Three things are worth taking from it. The first is that the two gameplay bugs
+are **the same bug in two directions**, and the write-ups above would have found
+one of them: a check reading `crawling` once would have passed on whichever step
+it landed on, so the assertion has to be *how many times it changed*. The second
+is that the fix's whole risk is in the other direction — a rung, a cracked panel
+and a moving platform hold a player up with no solid tile under his feet at all,
+so "the tile under the feet must be masonry" would have taken the crawl away on
+the seven floors carrying a `P` or an `F` to close a hole on one, and that case
+is in the test because it is the mutation that matters. The third is that the
+editor's answer comes in **two halves** and only one of them is the parser: a
+check asking merely "does the editor end up refusing this" passes with the parser
+fully broken, because the validator catches the miscount the discarded values
+leave behind — and the values are still gone. It is separated by counting the
+tokens on the line, which needs neither parser's opinion.
+
+All four were **checked by breaking the thing they guard and watching the new
+tests fail** — nine mutations, including two that pass a weaker version of the
+same test and are the reason it is written the way it is.
 
 `make coverage` is deliberately **not** a gate, and the reason is the shape of
 the number. A line percentage in CI is a figure people learn to move; what is

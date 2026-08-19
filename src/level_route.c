@@ -37,7 +37,15 @@ bool route_inside(const RouteMap *route, int col, int row)
 static bool route_masonry(const RouteMap *route, int col, int row)
 {
     TileType tile = route->level->map.tiles[row][col];
-    return tile == TILE_WALL || tile == TILE_WEAK_WALL;
+    /* A duct counts as masonry here, and that is deliberate rather than
+     * unfinished: everything this predicate feeds is a question about an
+     * *upright* player — is there headroom, can a jump clear this, does a fall
+     * stop here, will a slab hold somebody up — and trunking answers wall to
+     * every one of them. The crawl through it is not a special case of walking;
+     * it is its own move, and it is the one edge `route_neighbours` adds for a
+     * duct. Keeping it out of here is what stops a shaft from quietly becoming
+     * a place to jump out of, step up out of, or hop a hole through. */
+    return tile == TILE_WALL || tile == TILE_WEAK_WALL || tile == TILE_VENT;
 }
 
 bool route_passable(const RouteMap *route, int col, int row)
@@ -117,6 +125,22 @@ static bool route_step_off(const RouteMap *route, int col, int row,
            route_survivable_fall(row, landing->row);
 }
 
+/*
+ * Trunking, which the player crosses on their elbows.
+ *
+ * It is its own move for the same reason the lift shaft is: what the player can
+ * do from inside one is not what they can do standing on a floor. A crawl runs
+ * along its own row and does nothing else — no jump starts in a duct, no step up
+ * leaves one, no hole is cleared through one — because a man flat on his face
+ * makes none of those moves. `route_masonry` keeps saying wall so that none of
+ * them can be routed through a duct by accident.
+ */
+static bool route_in_duct(const RouteMap *route, int col, int row)
+{
+    return route_inside(route, col, row) &&
+           route->level->map.tiles[row][col] == TILE_VENT;
+}
+
 /* A shaft only carries anybody if its run is long enough to hold a lift. */
 bool route_in_shaft(const RouteMap *route, int col, int row)
 {
@@ -136,6 +160,31 @@ int route_neighbours(const RouteMap *route, int col, int row, RouteCell *out)
     const LevelMap *map = &route->level->map;
     int count = 0;
     RouteCell landing;
+
+    /*
+     * Inside trunking, the crawl is the whole of what the player can do: along
+     * the row, or out onto a floor at either mouth. Every other move below this
+     * point belongs to somebody on their feet, and this early return is what
+     * keeps them out — without it the model walked *out* of a duct into open
+     * air and took the fall, so a shaft over a hole in the floor became a route
+     * down through it. That is the one shape a duct must never certify, because
+     * the game will not do it: a crawler is stopped by the same air an upright
+     * player is stopped by, and being flat on the floor is what makes a duct a
+     * duct rather than a doorway.
+     */
+    if (route_in_duct(route, col, row))
+    {
+        for (int step = -1; step <= 1; step += 2)
+        {
+            int next = col + step;
+            if (route_in_duct(route, next, row) ||
+                route_standing(route, next, row))
+            {
+                out[count++] = (RouteCell){next, row};
+            }
+        }
+        return count;
+    }
 
     if (map->tiles[row][col] == TILE_LADDER)
     {
@@ -157,6 +206,18 @@ int route_neighbours(const RouteMap *route, int col, int row, RouteCell *out)
         {
             if (route_in_shaft(route, col, row + step))
                 out[count++] = (RouteCell){col, row + step};
+        }
+    }
+
+    /* Into a duct from a floor beside its mouth. Leaving one is handled at the
+     * top of this function, because inside trunking the crawl is the only move
+     * there is. */
+    for (int step = -1; step <= 1; step += 2)
+    {
+        if (route_in_duct(route, col + step, row) &&
+            route_standing(route, col, row))
+        {
+            out[count++] = (RouteCell){col + step, row};
         }
     }
 

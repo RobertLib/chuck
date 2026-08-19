@@ -271,7 +271,8 @@ void gameplay_update_ammo_drops(GameplayState *state, float dt)
         float vx = 0.0f;
         bool on_ground = false;
         level_move(&state->level, &drop->x, &drop->y, &vx, &drop->vy,
-                   AMMO_DROP_W, AMMO_DROP_H, dt, false, &on_ground, false);
+                   AMMO_DROP_W, AMMO_DROP_H, dt, false, &on_ground, false,
+                   STANCE_UPRIGHT);
         if (on_ground)
             drop->vy = 0.0f;
 

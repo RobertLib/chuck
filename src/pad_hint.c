@@ -1,5 +1,7 @@
 #include "pad_hint.h"
 
+#include "game_config.h"
+
 #include <string.h>
 
 const PadHints PAD_HINTS_XBOX = {
@@ -244,4 +246,15 @@ const char *pad_hint(const PadHints *hints, char *buf, size_t size,
     }
     buf[out] = '\0';
     return buf;
+}
+
+int pad_stick_direction(int x, int y)
+{
+    int px = x < 0 ? -x : x;
+    int py = y < 0 ? -y : y;
+    if (px < GAMEPAD_AXIS_DEAD_ZONE && py < GAMEPAD_AXIS_DEAD_ZONE)
+        return PAD_BUTTON_NONE;
+    if (py >= px)
+        return y < 0 ? PAD_BUTTON_DPAD_UP : PAD_BUTTON_DPAD_DOWN;
+    return x < 0 ? PAD_BUTTON_DPAD_LEFT : PAD_BUTTON_DPAD_RIGHT;
 }

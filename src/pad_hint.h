@@ -195,4 +195,21 @@ int pad_hints_button(const PadHints *hints, PadFace face);
 const char *pad_hint(const PadHints *hints, char *buf, size_t size,
                      const char *pad_form, const char *key_form);
 
+/*
+ * Which way a stick is pushed, said as the d-pad button that means the same
+ * thing, or `PAD_BUTTON_NONE` while it is inside `GAMEPAD_AXIS_DEAD_ZONE`.
+ *
+ * Here rather than in [game_input.c](game_input.c) for the reason the letters
+ * are: what the menus need off a stick is a *decision* — how far is a push, and
+ * which way is a diagonal — and a decision made behind `SDL_GetGamepadAxis` is
+ * a decision no test can drive. Reading the two axes is what needs a pad and
+ * stays over there; this takes the two numbers it read.
+ *
+ * The dominant axis wins and a tie goes to the vertical, because every cursor in
+ * the game runs down a column. Both axes are asked together rather than one at a
+ * time because a diagonal arrives as two separate events and which of the two a
+ * menu should answer is only decidable with both in hand.
+ */
+int pad_stick_direction(int x, int y);
+
 #endif /* CHUCK_PAD_HINT_H */

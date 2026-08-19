@@ -5,10 +5,18 @@
 void campaign_reset(CampaignState *campaign, bool veteran)
 {
     memset(campaign, 0, sizeof(*campaign));
+    campaign->veteran = veteran;
     campaign->lives = veteran ? VETERAN_LIVES : PLAYER_LIVES;
     campaign->continues_remaining =
         veteran ? VETERAN_CONTINUES : PLAYER_CONTINUES;
     campaign->next_extra_life_score = EXTRA_LIFE_SCORE_STEP;
+}
+
+void campaign_note_veteran(CampaignState *campaign, bool veteran)
+{
+    if (campaign == NULL)
+        return;
+    campaign->veteran = veteran;
 }
 
 void campaign_note_assist(CampaignState *campaign, bool assist_on)
@@ -73,7 +81,10 @@ bool campaign_accept_continue(CampaignState *campaign)
         campaign->level_start_score = 0;
         campaign->next_extra_life_score = EXTRA_LIFE_SCORE_STEP;
     }
-    campaign->lives = PLAYER_LIVES;
+    /* The run's own number rather than the default one. A veteran run has no
+     * continues to spend, so this is the branch its every death takes, and
+     * handing it `PLAYER_LIVES` made the mode expire on first contact. */
+    campaign->lives = campaign->veteran ? VETERAN_LIVES : PLAYER_LIVES;
     campaign->continue_timer = 0.0f;
     return true;
 }

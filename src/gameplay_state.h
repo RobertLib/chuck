@@ -283,11 +283,40 @@ typedef struct
      * harder run has no reason to be kept off the ladder it is beating.
      */
     bool assisted;
+    /*
+     * Whether this is a veteran run, kept here because a continue has to ask.
+     *
+     * `campaign_reset` used to take the flag, spend it on the opening lives and
+     * continues, and forget it — and `campaign_accept_continue`, which is the
+     * one other place that hands lives out, had nothing to ask and so handed out
+     * `PLAYER_LIVES`. A veteran run opens with `VETERAN_CONTINUES` of nought, so
+     * its *first* death takes the branch that resets the score, and it came back
+     * with three lives: the mode `VETERAN_LIVES` describes lasted exactly one
+     * mistake, which on a one-life run is the whole of it. Two of the three
+     * numbers the mode is survived the continue and the defining one did not.
+     *
+     * Not sticky like `assisted`, because it is not a record's business: it is
+     * live difficulty, read the same way the assist switches are, and the sheet
+     * can be reached from the pause menu mid-run. `apply_assist_to_state` keeps
+     * it in step for exactly that reason — it is already the one function every
+     * change to the run's difficulty passes through.
+     */
+    bool veteran;
 } CampaignState;
 
 /* `veteran` decides how many lives and continues the run opens with; see
- * VETERAN_LIVES. Everything else about a campaign is the same either way. */
+ * VETERAN_LIVES. It is remembered on the campaign because a continue hands out
+ * lives too; everything else about a campaign is the same either way. */
 void campaign_reset(CampaignState *campaign, bool veteran);
+
+/*
+ * The sheet's answer about the veteran switch, which may be flipped mid-run.
+ *
+ * Beside `campaign_note_assist` and called from the same place, because these
+ * are the same question asked of the two levers: what a run counts as, and how
+ * many lives its next continue is worth.
+ */
+void campaign_note_veteran(CampaignState *campaign, bool veteran);
 
 /*
  * An assist switch is on. Called with the sheet's answer whenever a run starts

@@ -2,6 +2,7 @@
 
 #include "rng.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -159,27 +160,57 @@ bool editor_doc_parse(EditorDoc *doc, const char *data, size_t size)
                 return false;
             doc->grid.has_theme = true;
         }
+        /*
+         * The loader's own SPAWNS parser, read across rather than remembered.
+         *
+         * This was the same line of reasoning written twice and only one of
+         * them was finished. `level_load_data` refuses a token that is not a
+         * number, refuses a digit run that will not fit an `int`, and refuses
+         * junk hanging off the end of one; this stopped at the first non-digit
+         * without a word and multiplied by ten until it wrapped. Both halves
+         * showed: `SPAWNS -1 4` opened here as *no* spawns at all and was
+         * refused by the game, so a hand-edited map could be opened, drawn on
+         * and saved with its door counts silently gone — and
+         * `SPAWNS 99999999999999` is signed overflow, which is undefined
+         * behaviour this repository builds its own sanitizer job to catch. The
+         * fuzz corpus in the suite reached neither, because its longest number
+         * was seven digits.
+         *
+         * A malformed line refuses the file, exactly as a `THEME` this editor
+         * cannot name already does a few lines up. The editor exists so that
+         * what it opens and what the game loads cannot disagree, and answering
+         * "fine" to a file the loader rejects is the one way it can fail at
+         * that quietly.
+         */
         else if (length > 7 && strncmp(line, "SPAWNS ", 7) == 0)
         {
             doc->grid.has_spawns = true;
             doc->grid.spawn_count = 0;
             size_t scan = 7;
-            while (scan < length && doc->grid.spawn_count < MAX_DOORS)
+            while (scan < length)
             {
                 while (scan < length && (line[scan] == ' ' || line[scan] == '\t'))
                     scan++;
                 if (scan >= length)
                     break;
+                if (line[scan] < '0' || line[scan] > '9')
+                    return false;
                 int value = 0;
-                bool digits = false;
                 while (scan < length && line[scan] >= '0' && line[scan] <= '9')
                 {
-                    value = value * 10 + (line[scan] - '0');
+                    int digit = line[scan] - '0';
+                    if (value > (INT_MAX - digit) / 10)
+                        return false;
+                    value = value * 10 + digit;
                     scan++;
-                    digits = true;
                 }
-                if (!digits)
-                    break;
+                if (scan < length && line[scan] != ' ' && line[scan] != '\t')
+                    return false;
+                /* More counts than the map could ever have doors is the same
+                 * malformed line the loader reports as a count mismatch; there
+                 * is nowhere to put the value and truncating would hide it. */
+                if (doc->grid.spawn_count >= MAX_DOORS)
+                    return false;
                 doc->grid.spawns[doc->grid.spawn_count++] = value;
             }
         }

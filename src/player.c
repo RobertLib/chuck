@@ -218,6 +218,105 @@ static bool player_has_ladder_below(const Player *player, const Level *level)
     return level_is_ladder(level, col, row);
 }
 
+/*
+ * Whether the floor under the feet would still be floor on the elbows.
+ *
+ * Trunking is the one tile in the building that answers the two postures
+ * differently — masonry to a man on his feet, a gap to a man on his elbows —
+ * and the crawl was written when every tile answered them the same. So a
+ * player standing on top of a duct who pressed DOWN lowered his box, and the
+ * tile he had been standing on stopped holding him up: `level_blocks_stance`
+ * opens a shaft to a crawler, `level_move` therefore found nothing under him,
+ * `on_ground` went out, and `want_crawl` — which requires it — was false on the
+ * very next step, which stood him back up onto the trunking and handed
+ * `on_ground` straight back. That is a stand/crawl flip every simulation step
+ * for as long as the key is held: **240 a second**, the pose the renderer draws
+ * alternating with them, the collision box 14px taller and shorter by turns,
+ * and `crawling` — one of the two ways of being hard to see — true on only half
+ * the sight checks a guard makes. It was live on all four runs in sector 12,
+ * because a duct is let into a storey and every one of them has that storey's
+ * own air above it.
+ *
+ * The crawl is refused where the only thing holding the player up is a duct,
+ * which is the answer the rest of the game is already written for: a shaft is
+ * entered at its mouths ([../levels/LEGEND.md](../levels/LEGEND.md)), the
+ * editor checks that both of them have somewhere to stand, and the route model
+ * reaches a duct from beside it rather than from above it. Dropping in through
+ * the lid would make every tile of a run an entrance and leave that whole rule
+ * describing nothing. The lid is a walkway, not somewhere to lie down.
+ *
+ * The one-way surfaces are deliberately not asked about, and getting that wrong
+ * is how this fix breaks the game instead of mending it. A ladder rung, a
+ * falling panel and a moving platform are not solid tiles at all — they are
+ * caught by `level_move`'s own tests, and those tests know nothing about
+ * posture — so a player crouching on any of them keeps exactly the floor he
+ * had. Only a tile that is solid to one stance and open to the other can take
+ * the floor away by being crouched on, and `level_blocks_stance` has exactly
+ * one of those.
+ */
+static bool crawling_would_keep_the_floor(const Player *player,
+                                          const Level *level)
+{
+    float ph = player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+    int row = (int)floorf((player->y + ph) / TILE_SIZE);
+    int left = (int)floorf(player->x / TILE_SIZE);
+    int right = (int)floorf((player->x + PLAYER_W - 1.0f) / TILE_SIZE);
+    bool holds_him_up_now = false;
+    for (int col = left; col <= right; ++col)
+    {
+        /* Real masonry under any column he straddles: `level_move` lands a
+         * crawler on it exactly as it lands a walker, so the posture is safe. */
+        if (level_blocks_stance(level, col, row, STANCE_CRAWLING))
+            return true;
+        if (level_is_solid(level, col, row))
+            holds_him_up_now = true;
+    }
+    /* Nothing solid under him at all is a rung, a panel or a car, and those
+     * hold both postures. Solid but open to a crawler is trunking, and only
+     * trunking. */
+    return !holds_him_up_now;
+}
+
+/*
+ * Whether the box is *inside* trunking rather than beside it or on it.
+ *
+ * [../levels/LEGEND.md](../levels/LEGEND.md) says the crawl is the only move a
+ * shaft allows from inside it — no jump, no step up and no hole hop starts in
+ * one — and that is what the route model and the editor's two-mouth rule are
+ * built on. The simulation did not agree: one press of JUMP from the middle of
+ * sector 12's sixteen-tile run put Chuck standing on the lid, because the rise
+ * is resolved with `STANCE_CRAWLING` and trunking is open to it in every
+ * direction. So a shaft could be left anywhere along its length, and "a duct
+ * with one mouth is not a route" described nothing.
+ *
+ * It also gave away the thing the shaft costs. The louvres are opaque both
+ * ways, and the whole bet a player takes crawling into one is that they cannot
+ * see the room they are about to come out in; a lid that can be lifted at any
+ * tile is a periscope. The jump is refused inside the shaft and the buffered
+ * press is deliberately left standing, so it fires the moment he crawls out of
+ * a mouth — which is what `PLAYER_JUMP_BUFFER` is for.
+ */
+static bool player_is_inside_a_shaft(const Player *player, const Level *level)
+{
+    if (!player->crawling)
+        return false;
+    int left = (int)floorf(player->x / TILE_SIZE);
+    int right = (int)floorf((player->x + PLAYER_W - 1.0f) / TILE_SIZE);
+    int top = (int)floorf(player->y / TILE_SIZE);
+    int bottom = (int)floorf((player->y + (float)PLAYER_CRAWL_H - 1.0f) /
+                             TILE_SIZE);
+    for (int row = top; row <= bottom; ++row)
+    {
+        for (int col = left; col <= right; ++col)
+        {
+            if (level_is_solid(level, col, row) &&
+                !level_blocks_stance(level, col, row, STANCE_CRAWLING))
+                return true;
+        }
+    }
+    return false;
+}
+
 float player_update(Player *player, Level *level, const Input *input, float dt)
 {
     player->jumped = false;
@@ -254,8 +353,12 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
     /* Determine crawling intent: holding down while on ground and not on ladder */
     bool descend_from_top = input->down && player->on_ground &&
                             player_has_ladder_below(player, level);
+    /* The last term is the duct's, and it is the only tile that needs one: see
+     * `crawling_would_keep_the_floor`. Everything else in the building holds a
+     * man on his elbows exactly as well as it holds him on his feet. */
     bool want_crawl = input->down && player->on_ground && !player->on_ladder &&
-                      !descend_from_top;
+                      !descend_from_top &&
+                      crawling_would_keep_the_floor(player, level);
     if (want_crawl && !player->crawling)
     {
         /* Enter crawling: lower the collision box while keeping feet in place */
@@ -430,7 +533,8 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
         else if (player->coyote_timer > 0.0f)
             player->coyote_timer -= dt;
         if (player->jump_buffer_timer > 0.0f &&
-            (player->on_ground || player->coyote_timer > 0.0f))
+            (player->on_ground || player->coyote_timer > 0.0f) &&
+            !player_is_inside_a_shaft(player, level))
         {
             player->vy = -PLAYER_JUMP_SPEED;
             player->jump_buffer_timer = 0.0f;
@@ -452,9 +556,11 @@ float player_update(Player *player, Level *level, const Input *input, float dt)
 
     float fall_speed = player->vy > 0.0f ? player->vy : 0.0f;
     float ph = player->crawling ? (float)PLAYER_CRAWL_H : (float)PLAYER_H;
+    /* Chuck on his elbows is the only body in the building whose shape the map
+     * is asked about; everything else in the game passes `STANCE_UPRIGHT`. */
     level_move(level, &player->x, &player->y, &player->vx, &player->vy,
                PLAYER_W, ph, dt, player->on_ladder, &player->on_ground,
-               true);
+               true, player_stance(player));
     if (player->on_ground)
         player->jump_cut_ok = false;
 

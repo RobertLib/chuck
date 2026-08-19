@@ -210,6 +210,11 @@ static void apply_assist_to_state(Game *game, GameplayState *state)
      * flag only ever sets, so being told twice costs nothing.
      */
     campaign_note_assist(&game->campaign, settings_assist_any(&game->settings));
+    /* And the other lever, for the same reason and by the same route: the
+     * campaign has to know, because a continue hands out lives and the number
+     * it hands out is the mode's. Not sticky like the assist above — this one
+     * is live difficulty and follows the sheet in both directions. */
+    campaign_note_veteran(&game->campaign, game->settings.challenge.veteran);
     state->assist_slow_enemies = game->settings.assist.slower_guards;
     state->assist_more_hearts = game->settings.assist.more_hearts;
     state->veteran = game->settings.challenge.veteran;
@@ -1051,6 +1056,58 @@ static bool soak_stage_aftermath(Game *game, int page)
     /* The building knows. This is the one flag `render_alarm_lighting` reads. */
     g->terminal_alarm_timer = ALARM_CALM_TIME;
 
+    /*
+     * And the crawl goes into a duct, because page 2 is the crawl and a crawl
+     * staged on a corridor floor is the pose without the one tile the pose
+     * exists for. `render_duct_fronts` is the pass that lays a shaft's louvres
+     * back over the man inside it, and nothing else in the game reaches it: a
+     * headless run presses nothing, so no sweep has ever put Chuck in trunking.
+     *
+     * Here rather than in the pose switch below, so the particles, the rocket in
+     * the air and the camera all follow him in. Staged after them it would have
+     * drawn a crawler in a shaft with his own smoke a storey away.
+     *
+     * The middle of the longest run, so there is trunking either side of him and
+     * the figure is inside rather than at a mouth — and the slab under that tile
+     * is checked rather than assumed, because a duct over air is the one shape
+     * the editor refuses and the one this would stage as a man in mid-fall. A
+     * sector with no trunking on it — or a run whose middle tile somehow has
+     * nothing under it — stages the crawl where it always did.
+     */
+    if (page == 2)
+    {
+        int duct_row = -1;
+        int duct_col = -1;
+        int longest = 0;
+        for (int row = 0; row < g->level.map.height; ++row)
+        {
+            int run = 0;
+            for (int col = 0; col <= g->level.map.width; ++col)
+            {
+                if (col < g->level.map.width &&
+                    g->level.map.tiles[row][col] == TILE_VENT)
+                {
+                    run++;
+                    continue;
+                }
+                if (run > longest)
+                {
+                    longest = run;
+                    duct_row = row;
+                    duct_col = col - (run + 1) / 2;
+                }
+                run = 0;
+            }
+        }
+        if (duct_row >= 0 && level_is_solid(&g->level, duct_col, duct_row + 1))
+        {
+            g->player.x = (float)duct_col * TILE_SIZE +
+                          (TILE_SIZE - PLAYER_W) * 0.5f;
+            g->player.y = (float)(duct_row + 1) * TILE_SIZE - PLAYER_CRAWL_H;
+            g->player.facing = 1;
+        }
+    }
+
     /* Smoke, sparks and dust, which is the emitting half of `particle.c` and the
      * half no soak had ever called. */
     float px = g->player.x + PLAYER_W * 0.5f;
@@ -1060,8 +1117,10 @@ static bool soak_stage_aftermath(Game *game, int page)
     particle_system_explosion(&game->presentation.particles, px + 24.0f, py, 10);
     particle_system_dust(&game->presentation.particles, px, py + 8.0f, 4, 1.0f);
 
-    /* And the tube in his hands, mid-shot, with the round still in the air.
-     * `action_timer` past `0.055` is also what puts the muzzle flash on. */
+    /* And the tube in his hands, mid-shot, with the round still in the air. An
+     * `action_timer` past `PLAYER_MUZZLE_FLASH_TIME` is also what puts the muzzle
+     * flash on, which is why this stages a shot's own duration rather than a
+     * number picked to look right. */
     g->player.active_weapon = PLAYER_WEAPON_BAZOOKA;
     /* Loaded, because `draw_player` reads the tube as drawn only when there is a
      * round in it (`bazooka_rockets > 0`) or a shot in flight from it — an empty
@@ -1069,7 +1128,7 @@ static bool soak_stage_aftermath(Game *game, int page)
      * and no bazooka was drawn. */
     g->player.bazooka_rockets = 1;
     g->player.bazooka_firing = true;
-    g->player.action_timer = 0.12f;
+    g->player.action_timer = PLAYER_SHOT_ACTION_TIME;
     g->player.knife_attacking = false;
     g->player.grenade_throwing = false;
     Rocket *rocket = &g->rockets[0];

@@ -90,11 +90,18 @@ static bool doc_solid(const EditorDoc *doc, int col, int row)
 /* Everything that stops the player. A weak wall collides exactly as a wall
  * does until an explosion opens it, so every reachability and clearance rule
  * has to count it — which is also what makes a sector work before it is
- * opened, the only state the route model is allowed to assume. */
+ * opened, the only state the route model is allowed to assume.
+ *
+ * A duct counts too, and for the same reason one step further on: it stops a
+ * man on his feet, and standing is the state every clearance rule here is
+ * written about. This is `route_masonry` in src/level_route.c said again on
+ * this side of the fence, and the two have to keep agreeing — a sector the
+ * editor calls solvable that `make test` then rejects is worse than no check
+ * at all. */
 static bool doc_blocks(const EditorDoc *doc, int col, int row)
 {
     char cell = doc_at(doc, col, row);
-    return cell == '#' || cell == '%';
+    return cell == '#' || cell == '%' || cell == '=';
 }
 
 static int count_of(const EdReport *report, char symbol)
@@ -711,6 +718,58 @@ static void check_weak_walls(const EditorDoc *doc, EdReport *report)
                 report_add(report, ED_SEV_NOTE, col, row,
                            "This patch has no wall to be let into, so it reads "
                            "as a block standing in mid-air");
+            }
+        }
+    }
+}
+
+/*
+ * Trunking, which is the one tile a posture changes the answer to — wall
+ * standing, a way through crawling.
+ *
+ * A crawl is horizontal, so what holds the player up inside a duct is whatever
+ * the map put underneath it. That makes the floor under a run part of the run,
+ * and its absence the one mistake here that no other rule can see: the tile
+ * loads, draws as trunking, and drops the player out of the bottom of it. A
+ * warning rather than a note, because it will not play the way it reads.
+ *
+ * The mouths are the route model's business (`route_in_duct` reaches a duct only
+ * from a tile the player can stand on and leaves it only onto another), so a
+ * shaft with one mouth already shows up as whatever it strands.
+ */
+static void check_ducts(const EditorDoc *doc, EdReport *report)
+{
+    if (count_of(report, '=') == 0)
+        return;
+
+    for (int row = 0; row < doc->grid.height; ++row)
+    {
+        for (int col = 0; col < doc->grid.width; ++col)
+        {
+            if (doc_at(doc, col, row) != '=')
+                continue;
+
+            /* A duct underneath a duct is not a floor: a crawl carries nobody
+             * downward, so the player falls through both. */
+            char below = doc_at(doc, col, row + 1);
+            if (below != '#' && below != '%')
+            {
+                report_add(report, ED_SEV_WARN, col, row,
+                           "This duct has no floor under it, so a crawl drops "
+                           "out of the bottom of it: put a wall '#' below");
+            }
+
+            /* A run sealed at both ends by masonry is trunking nobody can be
+             * inside, which is a picture rather than a route. */
+            bool open_side = !doc_blocks(doc, col - 1, row) ||
+                             !doc_blocks(doc, col + 1, row) ||
+                             doc_at(doc, col - 1, row) == '=' ||
+                             doc_at(doc, col + 1, row) == '=';
+            if (!open_side)
+            {
+                report_add(report, ED_SEV_NOTE, col, row,
+                           "This duct is walled in on both sides, so nobody can "
+                           "crawl into it");
             }
         }
     }
@@ -1354,6 +1413,7 @@ void editor_validate(const EditorDoc *doc, const Level *level, bool parsed,
         check_fans(doc, report);
         check_spikes(doc, report);
         check_weak_walls(doc, report);
+        check_ducts(doc, report);
         check_moving_platforms(doc, report);
         /* Interiors only, which is where an `m` may stand at all. */
         check_flight_cases(doc, report);

@@ -369,7 +369,16 @@ bool level_load_data(Level *level, const char *name,
     int sublevel_return_count = 0;
     bool too_wide = false;
     bool too_tall = false;
-    bool invalid_spawn_metadata = false;
+    /*
+     * Why the SPAWNS line was refused, rather than merely that it was.
+     *
+     * This was a `bool`, and the one message it fed named the two counts — so
+     * `SPAWNS -1` on a map with no doors printed `expected 0 values, found 0`
+     * and refused, which is a refusal an author cannot act on and a pair of
+     * numbers that agree with each other. A malformed token and a miscount are
+     * two different faults and want two different sentences.
+     */
+    const char *spawn_metadata_fault = NULL;
     int spawn_value_count = 0;
 
     for (size_t i = 0; i < size; ++i)
@@ -418,6 +427,9 @@ bool level_load_data(Level *level, const char *name,
             break;
         case '%':
             level->map.tiles[row][col] = TILE_WEAK_WALL;
+            break;
+        case '=':
+            level->map.tiles[row][col] = TILE_VENT;
             break;
         case 'H':
             level->map.tiles[row][col] = TILE_LADDER;
@@ -919,7 +931,7 @@ bool level_load_data(Level *level, const char *name,
         {
             TileType t = level->map.tiles[row_mp][lc - 1];
             if (t == TILE_WALL || t == TILE_WEAK_WALL || t == TILE_DOOR ||
-                t == TILE_ELEVATOR_SHAFT)
+                t == TILE_ELEVATOR_SHAFT || t == TILE_VENT)
                 break;
             lc--;
         }
@@ -928,7 +940,7 @@ bool level_load_data(Level *level, const char *name,
         {
             TileType t = level->map.tiles[row_mp][rc + 1];
             if (t == TILE_WALL || t == TILE_WEAK_WALL || t == TILE_DOOR ||
-                t == TILE_ELEVATOR_SHAFT)
+                t == TILE_ELEVATOR_SHAFT || t == TILE_VENT)
                 break;
             rc++;
         }
@@ -975,7 +987,7 @@ bool level_load_data(Level *level, const char *name,
 
                 if (*sp < '0' || *sp > '9')
                 {
-                    invalid_spawn_metadata = true;
+                    spawn_metadata_fault = "a value that is not a number";
                     break;
                 }
 
@@ -985,16 +997,16 @@ bool level_load_data(Level *level, const char *name,
                     int digit = *sp++ - '0';
                     if (n > (INT_MAX - digit) / 10)
                     {
-                        invalid_spawn_metadata = true;
+                        spawn_metadata_fault = "a value too large to store";
                         break;
                     }
                     n = n * 10 + digit;
                 }
-                if (invalid_spawn_metadata)
+                if (spawn_metadata_fault != NULL)
                     break;
                 if (sp < line_end && *sp != ' ' && *sp != '\t')
                 {
-                    invalid_spawn_metadata = true;
+                    spawn_metadata_fault = "a value that is not a number";
                     break;
                 }
 
@@ -1003,8 +1015,9 @@ bool level_load_data(Level *level, const char *name,
                 spawn_value_count++;
             }
 
-            if (spawn_value_count != level->map.door_count)
-                invalid_spawn_metadata = true;
+            if (spawn_metadata_fault == NULL &&
+                spawn_value_count != level->map.door_count)
+                spawn_metadata_fault = "one count per door";
         }
     }
 
@@ -1077,12 +1090,13 @@ bool level_load_data(Level *level, const char *name,
                 name, level->map.door_count);
         return false;
     }
-    if (invalid_spawn_metadata)
+    if (spawn_metadata_fault != NULL)
     {
         fprintf(stderr,
-                "Level '%s' has invalid SPAWNS metadata "
+                "Level '%s' has invalid SPAWNS metadata: %s "
                 "(expected %d values, found %d)\n",
-                name, level->map.door_count, spawn_value_count);
+                name, spawn_metadata_fault,
+                level->map.door_count, spawn_value_count);
         return false;
     }
     return true;
@@ -1100,12 +1114,40 @@ TileType level_tile(const Level *level, int col, int row)
 bool level_is_solid(const Level *level, int col, int row)
 {
     TileType tile = level_tile(level, col, row);
-    /* One solidity rule for the whole game: everything that collides, shades,
-     * blocks a bullet or stops a line of sight comes through here, so a weak
-     * wall that has been opened stops being solid everywhere at once. */
+    /* One solidity rule for the building: everything that shades, blocks a
+     * bullet or stops a line of sight comes through here, so a weak wall that
+     * has been opened stops being solid everywhere at once.
+     *
+     * It used to say "everything that collides" as well, and that is the half
+     * that had to give: a body is stopped by the building *as that body is
+     * shaped*, which is a second question and lives in `level_blocks_stance`
+     * below. Everything that is not a body in a posture still asks this one,
+     * which is nearly the whole game — see `Stance` in level.h. */
     if (tile == TILE_WEAK_WALL)
         return !level_wall_broken(level, col, row);
-    return tile == TILE_WALL;
+    /* A duct is masonry here and nowhere else: what the shaft is *for* is that
+     * a guard cannot see into it, a round cannot be put through it and nothing
+     * standing on the floor can follow anybody in. All of that is this one
+     * answer, which is why the mechanic costs no special case anywhere in the
+     * AI, the ballistics or the lighting. */
+    return tile == TILE_WALL || tile == TILE_VENT;
+}
+
+bool level_blocks_stance(const Level *level, int col, int row, Stance stance)
+{
+    /* The whole of the duct, and the reason solidity had to become two
+     * questions: trunking is masonry to a man on his feet and a gap to a man on
+     * his elbows. Everything else in the building answers `level_is_solid`, so
+     * the shaft keeps stopping sight, rounds, blasts and anybody following.
+     *
+     * A duct is a *horizontal* gap, not a hole in the floor. The tile a crawler
+     * is inside stops blocking them, so what holds them up is whatever the map
+     * put underneath — which for a duct set into a storey is that storey's own
+     * slab. A duct drawn over thin air is a duct the player falls out of, and
+     * that is the author's business rather than a rule here. */
+    if (stance == STANCE_CRAWLING && level_tile(level, col, row) == TILE_VENT)
+        return false;
+    return level_is_solid(level, col, row);
 }
 
 bool level_wall_broken(const Level *level, int col, int row)
@@ -1140,7 +1182,7 @@ bool level_is_ladder(const Level *level, int col, int row)
 
 void level_move(Level *level, float *x, float *y, float *vx, float *vy,
                 float w, float h, float dt, bool climbing, bool *on_ground,
-                bool triggers_falling)
+                bool triggers_falling, Stance stance)
 {
     *on_ground = false;
     float prev_y = *y;
@@ -1156,7 +1198,7 @@ void level_move(Level *level, float *x, float *y, float *vx, float *vy,
             int col = (int)floorf((*x + w) / TILE_SIZE);
             for (int r = top; r <= bottom; ++r)
             {
-                if (level_is_solid(level, col, r))
+                if (level_blocks_stance(level, col, r, stance))
                 {
                     *x = col * (float)TILE_SIZE - w;
                     *vx = 0.0f;
@@ -1169,7 +1211,7 @@ void level_move(Level *level, float *x, float *y, float *vx, float *vy,
             int col = (int)floorf(*x / TILE_SIZE);
             for (int r = top; r <= bottom; ++r)
             {
-                if (level_is_solid(level, col, r))
+                if (level_blocks_stance(level, col, r, stance))
                 {
                     *x = (col + 1) * (float)TILE_SIZE;
                     *vx = 0.0f;
@@ -1192,7 +1234,7 @@ void level_move(Level *level, float *x, float *y, float *vx, float *vy,
             float prev_feet = prev_y + h;
             for (int c = left; c <= right; ++c)
             {
-                if (level_is_solid(level, c, row))
+                if (level_blocks_stance(level, c, row, stance))
                 {
                     *y = row * (float)TILE_SIZE - h;
                     *vy = 0.0f;
@@ -1261,7 +1303,7 @@ void level_move(Level *level, float *x, float *y, float *vx, float *vy,
             int row = (int)floorf(*y / TILE_SIZE);
             for (int c = left; c <= right; ++c)
             {
-                if (level_is_solid(level, c, row))
+                if (level_blocks_stance(level, c, row, stance))
                 {
                     *y = (row + 1) * (float)TILE_SIZE;
                     *vy = 0.0f;

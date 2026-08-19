@@ -33,6 +33,42 @@ static bool within_radius(float x, float y, float center_x, float center_y,
     return dx * dx + dy * dy <= radius * radius;
 }
 
+/*
+ * The rise on an underarm throw, from how fast the thing is leaving the hand.
+ *
+ * A flat throw lands at the foot of the first wall, which is exactly where the
+ * player already is, so everything lobbed out of Chuck's hand goes up first. The
+ * rise is solved from the horizontal speed — the faster it leaves, the flatter it
+ * flies, which is the arc a hand actually produces — and clamped at both ends so a
+ * slow lob does not stall overhead and a fast one still clears a crate.
+ *
+ * **At every speed the game actually throws at, the solve is over the cap and the
+ * cap is the answer.** `THROW_ARC_STRENGTH * GRAVITY / (2 * vx)` is 335 for the
+ * grenade, 348 for the flash charge and 261 for the bolt against a
+ * `THROW_ARC_MAX_RISE` of 220, so all three rise at 220 and the derivation changes
+ * nothing today; the lower clamp needs a throw over 2600px/s to be reached at all.
+ * Worth knowing before tuning a lob, because the number that moves the feel is the
+ * cap and not the strength — and worth knowing before believing the sentence above
+ * it, which describes a behaviour the shipped speeds never reach.
+ * `test_every_underarm_throw_rises_at_the_cap` is what will say so if that stops
+ * being true.
+ *
+ * One function because it is one arc. It was written out three times, once in each
+ * throw branch, with the decoy's copy carrying a comment claiming it was "the same
+ * arc the grenade is thrown on" — an equality that nothing held: tuning the
+ * grenade's lob would have left the flash charge and the bolt behind, and the
+ * comment asserting otherwise is exactly what would stop the next reader checking.
+ */
+static float throw_arc_speed(float vx)
+{
+    float arc_speed = THROW_ARC_STRENGTH * GRAVITY / (2.0f * fabsf(vx));
+    if (arc_speed < THROW_ARC_MIN_RISE)
+        arc_speed = THROW_ARC_MIN_RISE;
+    if (arc_speed > THROW_ARC_MAX_RISE)
+        arc_speed = THROW_ARC_MAX_RISE;
+    return arc_speed;
+}
+
 static int find_grenade_slot(GameplayState *state)
 {
     for (int i = 0; i < state->grenade_count; ++i)
@@ -694,7 +730,8 @@ void gameplay_combat_update_explosives(GameplayState *state,
         bool on_ground = false;
         bool was_grounded = flash->grounded;
         level_move(&state->level, &flash->x, &flash->y, &flash->vx, &flash->vy,
-                   FLASH_W, FLASH_H, dt, false, &on_ground, false);
+                   FLASH_W, FLASH_H, dt, false, &on_ground, false,
+                   STANCE_UPRIGHT);
         if (on_ground)
         {
             flash->grounded = true;
@@ -752,7 +789,8 @@ void gameplay_combat_update_explosives(GameplayState *state,
         bool was_grounded = grenade->grounded;
         level_move(&state->level, &grenade->x, &grenade->y,
                    &grenade->vx, &grenade->vy,
-                   GRENADE_W, GRENADE_H, dt, false, &on_ground, false);
+                   GRENADE_W, GRENADE_H, dt, false, &on_ground, false,
+                   STANCE_UPRIGHT);
         if (on_ground)
         {
             grenade->grounded = true;
@@ -824,7 +862,8 @@ void gameplay_combat_update_decoys(GameplayState *state, float dt)
         float previous_vx = decoy->vx;
         bool on_ground = false;
         level_move(&state->level, &decoy->x, &decoy->y, &decoy->vx, &decoy->vy,
-                   DECOY_W, DECOY_H, dt, false, &on_ground, false);
+                   DECOY_W, DECOY_H, dt, false, &on_ground, false,
+                   STANCE_UPRIGHT);
 
         /*
          * Landed, or stopped dead against a wall. Both are the same event: the
@@ -970,13 +1009,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                              (state->player.facing > 0
                                   ? PLAYER_W + 6.0f
                                   : -(GRENADE_W + 6.0f));
-                float arc_speed = 160.0f * GRAVITY /
-                                  (2.0f * fabsf(grenade->vx));
-                if (arc_speed < 30.0f)
-                    arc_speed = 30.0f;
-                if (arc_speed > 220.0f)
-                    arc_speed = 220.0f;
-                grenade->vy = -arc_speed;
+                grenade->vy = -throw_arc_speed(grenade->vx);
             }
             /* Spent one at a time, like the rocket two branches above. Cleared
              * outright, as this used to be, a second grenade was destroyed by
@@ -988,7 +1021,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             state->player.knife_attacking = false;
             state->player.grenade_throwing = true;
             state->player.bazooka_firing = false;
-            state->player.action_timer = 0.18f;
+            state->player.action_timer = PLAYER_THROW_ACTION_TIME;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
             player_fall_back_to_sidearm(&state->player);
         }
@@ -1036,20 +1069,14 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                            (state->player.facing > 0
                                 ? PLAYER_W + 6.0f
                                 : -(FLASH_W + 6.0f));
-                float arc_speed = 160.0f * GRAVITY /
-                                  (2.0f * fabsf(flash->vx));
-                if (arc_speed < 30.0f)
-                    arc_speed = 30.0f;
-                if (arc_speed > 220.0f)
-                    arc_speed = 220.0f;
-                flash->vy = -arc_speed;
+                flash->vy = -throw_arc_speed(flash->vx);
             }
             state->player.flashbangs--;
             state->player.shot_vertical = vertical;
             state->player.knife_attacking = false;
             state->player.grenade_throwing = true;
             state->player.bazooka_firing = false;
-            state->player.action_timer = 0.18f;
+            state->player.action_timer = PLAYER_THROW_ACTION_TIME;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
             player_fall_back_to_sidearm(&state->player);
         }
@@ -1082,9 +1109,8 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             }
             else
             {
-                /* The same arc the grenade is thrown on, and for the same
-                 * reason: a flat throw lands at the foot of the first wall,
-                 * which is exactly where the player already is. */
+                /* The same arc the grenade is thrown on, because it is
+                 * literally the same function — see `throw_arc_speed`. */
                 decoy->y = state->player.y + player_height(state) * 0.4f;
                 float speed = DECOY_THROW_SPEED;
                 decoy->vx = state->player.facing > 0 ? speed : -speed;
@@ -1092,13 +1118,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
                            (state->player.facing > 0
                                 ? PLAYER_W + 6.0f
                                 : -(DECOY_W + 6.0f));
-                float arc_speed = 160.0f * GRAVITY /
-                                  (2.0f * fabsf(decoy->vx));
-                if (arc_speed < 30.0f)
-                    arc_speed = 30.0f;
-                if (arc_speed > 220.0f)
-                    arc_speed = 220.0f;
-                decoy->vy = -arc_speed;
+                decoy->vy = -throw_arc_speed(decoy->vx);
             }
             state->player.decoy_cooldown = DECOY_COOLDOWN;
             state->player.shot_vertical = vertical;
@@ -1109,7 +1129,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
              * be a second thing every path that ends an action has to clear. */
             state->player.grenade_throwing = true;
             state->player.bazooka_firing = false;
-            state->player.action_timer = 0.18f;
+            state->player.action_timer = PLAYER_THROW_ACTION_TIME;
             game_events_sound(&state->events, SFX_GRENADE_THROW);
             /* And the hand keeps the bolts, unlike every other branch here.
              * Nothing was spent, so falling back to the sidearm would take the
@@ -1161,7 +1181,7 @@ void gameplay_combat_handle_player_action(GameplayState *state,
             state->player.knife_attacking = false;
             state->player.grenade_throwing = false;
             state->player.bazooka_firing = false;
-            state->player.action_timer = 0.12f;
+            state->player.action_timer = PLAYER_SHOT_ACTION_TIME;
             game_events_sound(&state->events, SFX_PLAYER_SHOT);
             gameplay_alert_enemies_to_noise(
                 state, state->player.x + PLAYER_W * 0.5f,

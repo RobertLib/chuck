@@ -202,7 +202,8 @@ pause, continue and game-over halves of
   a menu gains a row, and what would be under test is the event handlers rather
   than the renderers. `game_soak_screen` in [game.c](../src/game.c) holds the
   list — `abduction`, `chase`, `opening`, `manual`, `settings`, `pause`,
-  `report`, `cleared`, `continue`, `gameover`, `outro`, `credits`, `restroom` —
+  `report`, `cleared`, `continue`, `gameover`, `outro`, `credits`, `restroom`,
+  `aftermath` —
   and `check_lists.py` holds it against the array in
   [tools/soak.sh](../tools/soak.sh), because those are two copies of one list and
   the direction that fails silently is the dangerous one: a screen the game knows
@@ -230,6 +231,20 @@ pause, continue and game-over halves of
 The campaign's length is counted out of `levels/` rather than written down here,
 for the reason every other count in this tree is: a literal seventeen in a shell
 script would go stale on the same day as all the others.
+
+**And the sweep is the shell's measuring instrument as well as its safety net.**
+`make coverage` can only see the SDL-free tree, because that is all the test
+binary links — so for a long time the only account of what the shell executes was
+a paragraph in AGENTS.md written from the renderer work, and it named 14 functions
+where the truth was 42. `make coverage-shell` builds the game with clang's
+instrumentation, runs *this* script over it, and prints the intersection: the
+functions neither the suite nor the sweep enters. That list is the honest one —
+the whole gamepad path, and in `game.c` the death, the continue, the write to the
+player's disk and the way out of a restroom, all of them transitions behind a real
+key or button press that `--screen` cannot name. The renderers, measured the same
+way, are 394 functions with nought unexecuted, which is the claim the `--screen`
+work makes, measured instead of remembered. It needs SDL and a few minutes and it
+is not a gate; what it is for is reading once, after adding a screen.
 
 ## The shipped macOS app
 

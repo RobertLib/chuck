@@ -105,6 +105,28 @@ the opened tiles live in `LevelRuntime.wall_broken` beside the fallen panels and
 the broken crates. A lost life therefore keeps the hole and reloading the sector
 restores the wall, which is the same bargain `F` panels make.
 
+**And a panel is Chuck's weight and nobody else's**, which is the same shape of
+rule one tile down and is where it had already gone wrong. `level_move` takes a
+`triggers_falling` flag and every body in the building passes false — the guards,
+the janitor, the receptionist, a fleeing civilian, every corpse being
+dragged — except the dog, which passed true. Nothing wrote that down: the field it
+sets was commented "player/enemy stepped on it", which was true of neither, and
+the only test of the mechanic drove it from the player's side. So one actor in the
+game had a rule of its own by accident, and it was the one actor that roams.
+
+It cost a route and a patrol on a shipped map. Sector 12's panel sits inside a
+handler's dog's roaming radius, so it went at about a second into every run: the
+one-shot drop out of the duct corridor was spent before Chuck had left the bottom
+corner, and the hole it left boxed the guard beside it into the single tile
+between the trunking and the drop — where the two rules that reverse a patrol,
+which probe from the body edge at 1px for masonry and 3px for floor, handed him
+back and forth about a dozen times a second for the rest of the sector. Two
+lessons, and the second is the general one: **a flag that means "this body is
+special" has to say which bodies, somewhere a test can read it**, and **a rule
+that opens a hole owes a thought to whatever is standing next to it**. A guard
+with nowhere to walk stands still now (`enemy_can_advance` in
+[enemy.c](../src/enemy.c)), which is the answer `update_dog` already had.
+
 **Only a blast opens one**, and gameplay code never plays the sound itself:
 `gameplay_break_walls_in_radius` ([gameplay_world.c](../src/gameplay_world.c)) is
 called from `apply_blast` in [gameplay_combat.c](../src/gameplay_combat.c) — see
@@ -184,6 +206,27 @@ it was drawn. Hearts do not enter into it; a fatal fall calls
 `gameplay_hit_player` directly. `test_the_route_model_will_not_take_a_fatal_fall`
 pins the refusal, the survivable drop either side of it, and the fact that the
 cap is not `route_landing`'s.
+
+**And the model's other two claims about the body are held to the body now.**
+`route_neighbours` decides that a hole is clearable one tile wide — two with an
+open row over the jump — and that a bed of spikes is hoppable one tile wide.
+Those are statements about `PLAYER_JUMP_SPEED`, `PLAYER_WALK_SPEED` and
+`GRAVITY`, written as literals in a file that includes none of them, and this is
+the model that certifies every shipped map as playable: a floor the player cannot
+actually cross, passed by the suite and by the editor, is the one failure it
+exists to prevent. `test_the_route_model_promises_only_moves_the_player_can_make`
+drives the simulation over every width the model *says* it will walk and requires
+it to arrive — on its feet for a hole, and without paying a heart for a bed. The
+widths come from the model rather than from the test, so widening either hop is a
+change the simulation has to be able to deliver rather than a literal somebody
+edited. Measured today the margin is a tile each way: the physics clears a
+three-tile hole and pays a heart for a two-tile bed, which is the model being
+conservative, which is the direction to be wrong in.
+
+**A docket sheet also has to cost something to reach**, which is the one
+authoring rule about a map that is neither geometry nor a hazard count; it is in
+[levels/LEGEND.md](../levels/LEGEND.md) beside the character, and
+`test_the_docket_sheet_costs_a_detour` measures it through this same model.
 
 ## Level themes
 

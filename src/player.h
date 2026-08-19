@@ -128,6 +128,14 @@ typedef struct
     int shot_vertical;     /* -1 = last attack went up, +1 = down, 0 = horizontal */
 } Player;
 
+/* The crawl flag as the map's own question. One place rather than a ternary at
+ * every call site, because the two are the same fact and a spelling of it that
+ * drifts is a body being asked about in the wrong posture. */
+static inline Stance player_stance(const Player *player)
+{
+    return player->crawling ? STANCE_CRAWLING : STANCE_UPRIGHT;
+}
+
 void player_reset(Player *player, const Level *level);
 /* Opening a sector: a reset, plus whatever the sector below is allowed to hand
  * over. `previous` is the man who walked out of it, or NULL when nobody did —

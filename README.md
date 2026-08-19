@@ -449,6 +449,22 @@ reached them. A function is not covered because its file is compiled in. It is
 not a gate — `make test` is — because the thing worth reading is the list and
 not the percentage.
 
+That target can only see the half of the tree the suite links. The other half
+answers to:
+
+```sh
+make coverage-shell
+```
+
+which builds the *game* instrumented, walks it with the soak sweep below, and
+prints the functions **neither** gate executes. The first time it was run the
+answer was 42, against the 14 that had been written down from memory — the whole
+gamepad path, and the death, the continue, the write to the player's disk and the
+way out of a restroom. The renderers came out at 394 functions and nought
+unexecuted the same day, so the half that had been worked on was clean and the
+half nobody had measured was the list. It needs SDL and a few minutes, and it is
+not a gate either.
+
 Build the complete game and run the core tests with AddressSanitizer and
 UndefinedBehaviorSanitizer enabled:
 

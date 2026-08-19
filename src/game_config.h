@@ -308,6 +308,22 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define MAX_GRENADES 8
 #define GRENADE_W 10
 #define GRENADE_H 10
+/*
+ * The underarm throw's arc, shared by the grenade, the flash charge and the bolt.
+ *
+ * `THROW_ARC_STRENGTH` is the distance the lob is solved for: the rise is
+ * `strength * GRAVITY / (2 * |vx|)`, which is the speed needed to be coming back
+ * down about that many pixels along. The two clamps keep a slow lob from stalling
+ * overhead and a fast one from being flat enough to land at Chuck's own feet.
+ *
+ * Named because the formula used to be written out three times, once per
+ * throwable, and only one of the three could ever have been found by somebody
+ * tuning it. See `throw_arc_speed` in gameplay_combat.c.
+ */
+#define THROW_ARC_STRENGTH 160.0f
+#define THROW_ARC_MIN_RISE 30.0f
+#define THROW_ARC_MAX_RISE 220.0f
+
 #define GRENADE_FUSE_TIME 1.4f
 #define GRENADE_RADIUS 48.0f
 #define GRENADE_THROW_SPEED 260.0f
@@ -467,6 +483,37 @@ _Static_assert(SIM_STEPS_PER_SECOND >= MIN_FRAME_RATE,
 #define PLAYER_CRAWL_SPEED 75.0f
 #define PLAYER_KNIFE_RANGE 18.0f
 #define PLAYER_KNIFE_ACTION_TIME 0.18f
+/*
+ * How long the pose an attack puts Chuck in is held for, one number per pose.
+ *
+ * Two of the four used to be literals: every one of the three throw branches in
+ * `gameplay_combat.c` wrote `0.18f` and the pistol wrote `0.12f`, next door to a
+ * `PLAYER_KNIFE_ACTION_TIME` that is *also* 0.18 and a `ROCKET_ACTION_TIME` that
+ * is not. So a reader could not tell whether the throw was meant to last as long
+ * as the blade or merely happened to, and tuning either one meant finding out by
+ * grep which of five numbers were the same on purpose. They are named here, and
+ * the two relationships between them are held by
+ * `test_the_attack_poses_agree_with_what_is_drawn_on_them` rather than by the
+ * assertions next door: a float comparison in a `_Static_assert` is a GNU
+ * extension and this tree is built `-Wpedantic`, so what cannot be asked here is
+ * asked in the suite. If the throw is meant to stop lasting as long as the blade,
+ * that test is the line that has to say so out loud.
+ */
+#define PLAYER_THROW_ACTION_TIME 0.18f
+#define PLAYER_SHOT_ACTION_TIME 0.12f
+/*
+ * And how much of an action's pose has a muzzle flash on it.
+ *
+ * `render_figures.c` asks `action_timer > 0.055f` in four places for Chuck and
+ * once more for a guard's recoil, and `game.c` states the same number in a
+ * comment beside the pose the soak sweep stages — six copies of one number, on
+ * the side of the SDL line no test can reach, deciding whether the frame that
+ * proves a shot happened is drawn at all. The renderers are the last place a
+ * number should be written twice, because nothing over there can compare them.
+ * It has to stay under `PLAYER_SHOT_ACTION_TIME` or the flash is never reached;
+ * that is the other half the suite holds.
+ */
+#define PLAYER_MUZZLE_FLASH_TIME 0.055f
 /*
  * What a guard taken from behind is worth, against the `ENEMY_SCORE` every
  * other way of putting one down pays.

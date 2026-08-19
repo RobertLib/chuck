@@ -210,6 +210,16 @@ player is an objection about *Chuck*, who is carrying paper that is worth nothin
 to him; neither of those screens is Chuck. They are the same voice that already
 prints what the seconds were worth.
 
+**And a sheet has to cost something to reach, or none of the above is a
+decision.** `DOCKET n/12` is a number about what the player chose to go and get;
+measured through the route model, seven of the twelve were sitting on a shortest
+path to the way out, which makes the collection a thing that happens *to* a
+player walking to the door rather than a thing they did. The placement rule is in
+[levels/LEGEND.md](../levels/LEGEND.md) and it is checked now — see
+`test_the_docket_sheet_costs_a_detour`. A rule about where a thing goes is as
+much a rule as a rule about what it does, and this one had been prose for as long
+as the sheet had existed.
+
 ## The report between sectors
 
 One line of what the sector just told him, on the screen the run passes through

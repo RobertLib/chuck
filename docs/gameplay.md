@@ -240,6 +240,21 @@ works on an animal the blade does not: it goes off with a bang and a shake and
 it buys seconds rather than a kill, so the dog is still there and still hunting
 when it comes back. What it removes is the moment, not the obstacle.
 
+**And a standing round goes over it**, which is not a rule about animals either —
+it is the height the muzzle sits at. A shot leaves the hand at
+`PLAYER_H * 0.35`, so its underside is 0.8px above anything 16 tall standing on
+the floor, and `DOG_H` is the same sixteen as `GAS_CANISTER_H`. The canister's
+version of this is a mechanic the legend states and
+`test_gas_canister_requires_crawling_shot` pins; the animal's version had never
+been written down anywhere, so the sidearm — the one weapon that never runs out —
+quietly does nothing to the fastest thing on the floor unless Chuck goes down onto
+his elbows first. So the answers to a dog are the blade (which reaches it, unlike
+the takedown behind a man), the same round from a crawl, the same round up or down
+a ladder, and anything that goes off; what it is not is the thing a player reaches
+for without thinking. `test_the_shot_line_is_chest_high` holds all of that
+together in one place, because the two consequences have one cause and neither is
+guessable from the constant that produces them.
+
 **A bolt is thrown to be heard somewhere Chuck is not.**
 `PLAYER_WEAPON_DECOY` is the fifth weapon and the only one that is not a weapon:
 never carried, never picked up, never spent, and limited by nothing but
@@ -313,6 +328,18 @@ Four things about it are decisions rather than details.
   faster than the one lying beside it. That is also why the function takes no
   `dt` at all.
 
+**And a dog is hauled the same way a man is**, which is worth stating because the
+mechanic reads as being about corpses in coats. `nearest_body_in_reach` scans the
+fallen animals after the fallen men and `Player.dragging_is_dog` says which of the
+two arrays the index is in, so a shot dog is furniture to be moved exactly like its
+handler. It has to be: `update_body_discovery` sends a calm guard to a fallen
+animal as readily as to a fallen man, and `W` puts a dog on ten of the seventeen
+sectors, so an animal left in an open corridor wakes a floor as surely as a body
+does. The two halves were written together and only the man's had ever been
+simulated — `dragging_is_dog` appeared in the suite exactly once, as `false` —
+which is why `test_a_dragged_dog_stops_being_found_where_it_fell` exists beside the
+two named below.
+
 It costs `PLAYER_DRAG_SPEED`, which is deliberately under `PLAYER_CRAWL_SPEED`
 — crawling is the other way to be hard to see and has to stay the quicker of
 the two, or hauling a dead man would be the fastest careful way across a floor.
@@ -328,6 +355,113 @@ between the two looks so the only thing that changed is where the body is.
 All three are taught on the manual's ninth sheet, `GOING QUIET`, because none of
 them is announced anywhere else on screen except the drag's own prompt — see
 [The field manual](screens.md#the-field-manual).
+
+## The duct
+
+A `=` is trunking let into a wall, and it is the one tile in the game the two
+solidity questions answer differently: masonry to a man on his feet, a gap to a
+man on his elbows. Hold down and crawl in.
+
+**Everything that makes a shaft safe is that one answer rather than a rule of
+its own.** `level_is_solid` is what stops a line of sight, a round, a blast and
+anybody following on their feet, and trunking keeps answering it — so a guard
+does not see into a duct, cannot shoot into one, cannot walk into one, and the
+lighting pass leaves the inside dark. None of that is written down anywhere as a
+special case, which is the whole reason solidity was split in two:
+`level_blocks_stance` is asked only by the four collision tests in `level_move`
+and by the crush pass, and only Chuck on his elbows ever passes it anything but
+`STANCE_UPRIGHT`.
+
+**What it costs is the other half of the same fact.** The louvres are opaque
+both ways, so the player cannot see the room they are about to come out in; and
+a crawl already denies the sidearm, the hack, and hauling a body. The shaft is a
+bet rather than a shortcut — you go in knowing where you entered and not what is
+waiting at the far mouth.
+
+**And the picture says the same thing, which took a fix.** A shaft whose whole
+cost is opaque louvres has to be *drawn* opaque, and it was not: the tile layer
+goes down at the top of the frame and the figures near the bottom of it, so Chuck
+was painted over the trunking he had just crawled into — inside the wall by every
+rule and outside it on screen. `render_duct_fronts` lays the louvres back over
+him, so what the player sees is a slot of shirt at a time and the half of him not
+in yet still out in the room. [Tuning, art, audio](art-and-audio.md) is where the
+split that allows it is written up, and `--screen aftermath --level N --page 2` is
+the one frame in the sweep that draws it.
+
+**A duct is horizontal.** The tile a crawler is inside stops blocking them, so
+what holds them up is whatever the map put underneath, which for a duct set into
+a storey is that storey's own slab. Trunking over a hole is trunking the player
+falls out of; the editor says so, and [levels/LEGEND.md](../levels/LEGEND.md)
+carries the authoring rules.
+
+**And the vertical axis is where both halves of that were wrong.** The
+horizontal crawl was written, tested and right; nothing had asked what trunking
+does to a man moving *up or down* through it, and both existing duct tests ask
+only about the direction that works. It does the same thing in both directions,
+to two moves that had no business making it.
+
+A player standing on top of a run who pressed DOWN was rocked between the two
+postures **240 times a second**. The crawl lowers his box, the tile he had been
+standing on stops holding him — `level_blocks_stance` opens a shaft to a crawler
+downwards exactly as it opens it sideways — `on_ground` goes out with the floor,
+and `want_crawl` requires `on_ground`, so the very next step stood him back up
+onto the lid and handed it straight back. Every run on sector 12 has its own
+storey's air above it, so every one of them was a walkway on which the crouch key
+did that: the drawn pose alternating, the collision box 14px taller and shorter by
+turns, and `crawling` — one of the two ways of being hard to see — true on half
+the sight checks a guard made. **The lid is a walkway, not somewhere to lie
+down.** The crawl is refused where the only thing holding the player up is a
+duct, which is the same answer that keeps a shaft entered at its mouths rather
+than through its roof.
+
+And from inside, one press of JUMP put him on top of it, because a rise is
+resolved in the posture he is in as well. That is the sentence
+[levels/LEGEND.md](../levels/LEGEND.md) already spends on the route model — the
+crawl is the only move a shaft allows from inside one — being true of the model
+and false of the game: a shaft could be left anywhere along its length, "a duct
+with one mouth is not a route" described nothing, and the opaque louvres the bet
+above is made against could be lifted at any tile. The jump is refused inside the
+shaft and the buffered press is left standing, so it fires the moment he crawls
+out of a mouth, which is what `PLAYER_JUMP_BUFFER` is for.
+
+`test_the_lid_of_a_shaft_is_not_somewhere_to_lie_down` and
+`test_a_shaft_is_left_by_its_mouths` hold the two, and most of the first is about
+not breaking the game to mend it. A rung, a cracked panel and a moving platform
+hold a player up with no solid tile under his feet at all — `level_move` catches
+them with one-way tests that know nothing about posture — so a rule reading "the
+tile under the feet must be masonry" would take the crawl away on the seven
+floors that carry a `P` or an `F` in order to close a hole on one. Only a tile
+that is solid to one stance and open to the other can take the floor away by
+being crouched on, and there is exactly one of those.
+
+**Sector 12 is the floor the campaign spends on them**, which is the sector this
+page already described as six crawl levels stacked a riser apart. It carries four
+runs and 61 tiles of trunking: most of the storey that leaves by the window, most
+of the middle storey, a third across the storey below it, and the pillar that
+divides the one under that. Two of them are long enough that crossing one is a
+decision about the whole floor — slower than walking it, and blind at both ends,
+against a storey with a guard, a dog and a mine on it.
+
+**The crush pass is where this quietly went wrong once and would again.**
+`gameplay_resolve_player_crush` asks what is over the player's head, and the
+tile a crawler is *inside* is the tile that loop reads — so asked in the upright
+posture it finds masonry over the head of every man in every shaft, tries to
+push him clear at both walls, finds those blocked too, and takes a heart. On
+screen that is a hazard that reads as nothing happening at all.
+`test_the_ducts_sector_can_actually_be_crawled_through` is what holds it, and it
+holds it by *driving* the sector rather than modelling it: the shipped map, the
+pad held down, `player_update` and the crush pass in the order the frame runs
+them, hearts checked every step. A shaft nobody has crawled is a shaft nobody
+has checked.
+
+**The route model treats the crawl as its own move rather than as cheaper
+walking**, because what the player can do inside a duct is not what they can do
+on a floor. `route_masonry` still answers wall — that is what keeps a jump, a
+step up and a hole hop from being routed through trunking — and
+`route_neighbours` adds exactly one edge for a duct: along its row, in from a
+tile beside its mouth, out onto one at the far end. Without that separation the
+model walked out of a duct into open air and took the fall, which would have
+certified a shaft over a hole as a way down through it.
 
 ## The charge that answers being seen
 

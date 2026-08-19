@@ -14,8 +14,15 @@ void gameplay_resolve_dog_crates(GameplayState *state, Dog *dog,
                                  float previous_x, float previous_y);
 bool gameplay_crate_blocks_row(const GameplayState *state,
                                float ax, float bx, int row);
+/* Whether a box of this size at this position clears the tile map. 'stance' is
+ * the posture of whatever is being placed: everything in the building but Chuck
+ * on his elbows passes `STANCE_UPRIGHT`, and only a duct answers the two
+ * differently. Getting it wrong on the player's own path is not a near miss —
+ * the tile a crawler is *inside* is the tile this asks about, so an upright
+ * answer says a man in a duct is in masonry. */
 bool gameplay_box_tiles_clear(const GameplayState *state,
-                              float x, float y, float w, float h);
+                              float x, float y, float w, float h,
+                              Stance stance);
 
 /* Nudge a rider up with the elevator he stood on last frame, before gravity
  * gets a chance to drop him off it. Runs before the player's own physics. */

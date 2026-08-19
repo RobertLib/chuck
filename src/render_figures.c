@@ -403,7 +403,7 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
     sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 10.0f,
                 firing ? 7.0f : 5.0f, 3.0f,
                 (SDL_Color){36, 43, 48, 255});
-    if (firing && p->action_timer > 0.055f)
+    if (firing && p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
     {
       /* Prone or standing, a shot lights the floor it is fired across. */
       draw_muzzle_flash(r, x, y, PLAYER_W, dir, 31.0f, 11.5f, FX_AMBER);
@@ -883,7 +883,7 @@ void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
         sprite_rect(r, x, y, PLAYER_W, gun_dir,
                     28.0f + recoil, 16.0f + bob, 3.0f, 5.0f,
                     (SDL_Color){44, 49, 49, 255});
-        if (p->action_timer > 0.055f)
+        if (p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
         {
           draw_muzzle_flash(r, x, y, PLAYER_W, gun_dir,
                             36.0f + recoil, 14.0f + bob, FX_AMBER);
@@ -923,7 +923,7 @@ void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
           sprite_rect(r, x, y, PLAYER_W, dir,
                       19.0f, gun_y, 5.0f, 8.0f,
                       (SDL_Color){31, 38, 43, 255});
-          if (p->action_timer > 0.055f)
+          if (p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
           {
             float flash_y = p->shot_vertical < 0 ? -5.0f : 26.0f;
             draw_muzzle_flash(r, x, y, PLAYER_W, dir,
@@ -1079,7 +1079,7 @@ void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
       sprite_rect(r, x, y, PLAYER_W, dir, 18.0f + recoil, 14.0f + bob, 7.0f, 3.0f, (SDL_Color){209, 154, 105, 255});
       sprite_rect(r, x, y, PLAYER_W, dir, 23.0f + recoil, 12.0f + bob, 8.0f, 4.0f, (SDL_Color){31, 38, 43, 255});
       sprite_rect(r, x, y, PLAYER_W, dir, 25.0f + recoil, 16.0f + bob, 3.0f, 5.0f, (SDL_Color){44, 49, 49, 255});
-      if (p->action_timer > 0.055f)
+      if (p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
       {
         draw_muzzle_flash(r, x, y, PLAYER_W, dir, 33.0f + recoil, 14.0f + bob,
                           FX_AMBER);
@@ -1899,7 +1899,7 @@ void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
     sprite_rect(r, x, y, ENEMY_W, dir, 18.0f + recoil, 14.0f + bob, 7.0f, 3.0f, fx_dim(FX_SKIN, 0.85f));
     sprite_rect(r, x, y, ENEMY_W, dir, 23.0f + recoil, 12.0f + bob, 8.0f, 4.0f, (SDL_Color){24, 29, 31, 255});
     sprite_rect(r, x, y, ENEMY_W, dir, 25.0f + recoil, 16.0f + bob, 3.0f, 5.0f, (SDL_Color){40, 44, 42, 255});
-    if (e->recoil_timer > 0.055f)
+    if (e->recoil_timer > PLAYER_MUZZLE_FLASH_TIME)
     {
       draw_muzzle_flash(r, x, y, ENEMY_W, dir, 33.0f + recoil, 14.0f + bob,
                         (SDL_Color){255, 128, 74, 255});

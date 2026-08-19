@@ -97,6 +97,33 @@
   — and lands each ceiling fixture's cone in a pool on the first floor beneath
   it, because a beam that fades out in mid-air is a beam with nothing at the
   end of it.
+- **One tile in the game has a front and a back, and it is the one something is
+  inside.** Every other tile is drawn once, in the structural pass at the top of
+  the frame, and that is right because nothing is ever inside masonry — the
+  figures go down near the bottom of the frame and never overlap a wall. A duct
+  is the exception the whole mechanic rests on: masonry to a man on his feet, a
+  gap to a man on his elbows (see [The duct](gameplay.md#the-duct)). So trunking
+  is drawn as `draw_vent_plenum` — the unlit shaft — and `draw_vent_grille`, the
+  louvres screwed over it, and `render_duct_fronts` lays the grille back over
+  whichever of its tiles the player is in after the figure layers are down. Drawn
+  in one piece, as it first was, a crawl through a shaft painted Chuck over the
+  louvres: the tile whose entire documented cost is that those louvres are opaque
+  both ways read as a man crawling along in front of them. Behind them he is what
+  he should be — a slot of shirt at a time, and the half of him not in yet still
+  out in the room.
+  Four details are what make it a picture rather than a clip. The grille goes
+  back and the plenum's shading does not: he is lying against the louvres, the
+  gradient is the far wall of the shaft behind him, and a second pass of it
+  dulled the two pixels of shirt that are the whole of what the player has to
+  follow. A tile either side of him is covered as well, because the pose reaches
+  past the box it is drawn from — a knife thrust and a launcher muzzle by about a
+  dozen pixels — while a muzzle flash's *light* is deliberately left in front of
+  the louvres, since light through a grille belongs on the outside of it. His own
+  pool of light is laid back on top, because that is drawn with the tiles and
+  would otherwise leave a two-tile hole in the one glow that exists to say where
+  the hero is. And only the tiles the man is in: the pass runs off his own box
+  rather than over every duct on screen, because a blast beside the trunking is
+  drawn in front of it and has to stay there.
 - **A material's rhythm is separate from its texture.** The panel grid tells
   the player how big a panel is; only something on a longer module — a bolted
   stiffener every fourth course, a shadow-gap reveal every third, a brick header

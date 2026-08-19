@@ -453,6 +453,7 @@ def main() -> int:
     grids = sector_grids()
     facades = facade_sectors()
     interiors = {n: g for n, g in grids.items() if n not in facades}
+    dog_floors = sectors_where(grids, "W", lambda count: count > 0)
 
     checks = [
         (
@@ -626,6 +627,21 @@ def main() -> int:
             ROOT / "Makefile",
             "which is the fallback that keeps a reinforcement",
             [f"`P` and `F` are on {spelled(platform_floors)} shipped floors"],
+        ),
+        # The dog count, written into the paragraph that explains why a fallen
+        # animal is hauled out of a corridor like a fallen man. It is a *count*
+        # over the maps rather than a sector list, so the parser above cannot see
+        # it — and it is exactly the shape of claim this half of the script keeps
+        # honest: `W` is one character and every new floor that carries one moves
+        # this sentence without touching it.
+        (
+            "how many sectors carry a dog",
+            DOCS / "gameplay.md",
+            "**And a dog is hauled the same way a man is**",
+            [
+                f"`W` puts a dog on {spelled(len(dog_floors))} of the "
+                f"{spelled(len(grids))}\nsectors",
+            ],
         ),
         (
             "hazard budget sequence",

@@ -50,6 +50,21 @@ once would be a set of sectors nobody had played. The pace is still under
 there is no such thing as breaking off — which is a different game rather than a
 harder one.
 
+**And `VETERAN_LIVES` is a number the run has to keep**, which took a while to be
+true. `campaign_reset` was handed the flag, spent it on the opening lives and
+continues, and forgot it — and `campaign_accept_continue`, which is the *other*
+place lives are handed out, had nothing left to ask and handed out `PLAYER_LIVES`.
+A veteran run opens with no continues at all, so its very first death takes the
+branch that resets the score: one mistake, which on a one-life run is the whole of
+the run, and it came back with three lives. Two of the three numbers the mode is
+survived a continue and the defining one did not. The flag is on `CampaignState`
+now, kept in step by `apply_assist_to_state` — the one function every change to a
+run's difficulty already passes through, because the switch can be reached from the
+pause sheet mid-run — and
+`test_the_veteran_run_is_three_numbers_and_no_more` walks the continue as well as
+the reset. Unlike `assisted` it is not sticky: this one is live difficulty and
+follows the sheet in both directions.
+
 Two things about it are decisions.
 
 **It is not locked behind finishing.** Every row on this sheet is a thing the
@@ -344,15 +359,24 @@ in `game_shutdown` now, beside the settings write that was already happening
 there. Anything that becomes a sixth way out owes the same call.
 
 **But being put in a sector is not arriving in it**, and that is the one
-exception the rule needs. `load_level` takes a `bank_arrival` flag because
-`game_start_at_level` is not a campaign path: `--level N`, the editor's
-playtest button and the debug picker all hand it an arbitrary sector, and
-banking those meant that opening sector 15 to check a map's lighting unlocked
-the title screen's resume chip at a floor nobody had played to — the record
-quietly recording something that never happened. Every route the campaign
-actually walks passes true; the authoring entry point passes false. A resume
-comes through the same door and needs nothing, because the sector it names is
-by definition already in the record.
+exception the rule needs. `load_level` takes a `LevelEntry` saying *how* the
+sector is being entered, because `game_start_at_level` is not a campaign path:
+`--level N`, the editor's playtest button and the debug picker all hand it an
+arbitrary sector, and banking those meant that opening sector 15 to check a map's
+lighting unlocked the title screen's resume chip at a floor nobody had played to —
+the record quietly recording something that never happened.
+`LEVEL_ENTRY_AUTHORED` banks nothing; the two campaign entries bank. A resume
+comes through the authoring door and needs nothing banked, because the sector it
+names is by definition already in the record.
+
+It is an enum of three rather than the flag it started as, and the third state is
+why: the same question decides whether the explosive in Chuck's hands survives the
+doorway, and the answer is not the same as the banking answer.
+`LEVEL_ENTRY_RUN_START` — the first sector of a run, and the retry after a
+continue — is an arrival worth writing down and *not* a step out of the sector
+below, so there is nothing to bring through. Only `LEVEL_ENTRY_CAMPAIGN_STEP`
+hands anything over. A bool could answer one of those two questions and was
+answering the other one by accident.
 
 **And a file it cannot read costs nothing.** Both this module and
 [settings.c](../src/settings.c) route every value through a `read_int` that

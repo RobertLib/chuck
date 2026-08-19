@@ -332,12 +332,47 @@ done
 # emitting half of the particle system and both the flat and the vertical bazooka.
 # See `soak_stage_aftermath` in src/game.c for why the state is staged rather
 # than played.
+aftermath_poses=(1 2 3 4 5)
 poses=0
-for pose in 1 2 3 4 5; do
+for pose in "${aftermath_poses[@]}"; do
     soak_one "aftermath pose $pose" "$seconds" \
         --screen aftermath --page "$pose"
     poses=$((poses + 1))
 done
+
+# And the same poses again on the floor with trunking on it, because one of them
+# is staged *inside* a duct there and nothing else in the game draws that.
+#
+# `render_duct_fronts` lays a shaft's louvres back over the man crawling behind
+# them — the pass that stops a crawl being drawn outside the wall it went into —
+# and the only world that reaches it is a world with Chuck in trunking. A
+# headless run presses nothing, so no sweep has ever crawled into one, and the
+# poses above are staged on whichever sector is the first with a `%` and a dog on
+# it, which need not be a sector with trunking and today is not. Same shape as the
+# restrooms below: one screen name, and which drawing it reaches decided by the
+# map behind it.
+#
+# All five poses rather than the crawl alone, because which page is the crawl is
+# `soak_stage_aftermath`'s business and a number here would be that fact written
+# down twice. The sector is grepped out of the maps for the reason the facade
+# below it is: a `=` painted into a new sector is a shaft this sweep has to walk.
+ducts=""
+for sector in $(seq 1 "$sectors"); do
+    if grep -E '^[#. ]' "$root/levels/level$sector.txt" | grep -q '='; then
+        ducts=$sector
+        break
+    fi
+done
+if [ -n "$ducts" ]; then
+    for pose in "${aftermath_poses[@]}"; do
+        soak_one "aftermath pose $pose in the ducts (sector $ducts)" "$seconds" \
+            --screen aftermath --level "$ducts" --page "$pose"
+        poses=$((poses + 1))
+    done
+else
+    echo "soak: found no map with a '=' in it to stage a duct aftermath on" >&2
+    failures=$((failures + 1))
+fi
 
 # And the same for a wall, which has none of an interior's pieces and two of its
 # own: a thrown object in the air and a bird crossing. Both spawn on a timer, so

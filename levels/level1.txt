@@ -8,11 +8,11 @@
 ##############################H###
 #     w                       H  #
 #                             H  #
-#                   mt*M fs C H  #
+#                   mt M fs C H  #
 #                  K############H#
 #                  #            H#
 #                 ##            H#
-# S tss f ffnnnkg### U i Tdc A  H#
+# S tss f ffnnnkg### U i Tdc*A  H#
 ##################################
 
 THEME LOBBY

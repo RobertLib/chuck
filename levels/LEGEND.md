@@ -21,6 +21,60 @@ has to be added there as well, or it is a character the editor cannot paint.
   That is the same bargain `F` panels make, and it is written up in
   [The hole is runtime, not map](../docs/levels.md#walls-that-open). Interiors
   only, and never the way out — see the authoring rule below.
+- `=` : Ventilation duct — galvanised trunking let into the wall, louvred.
+  **Masonry to the whole building and a way through to a man on his elbows**,
+  which is the only tile in the game those two sentences disagree about. What
+  the shaft is *for* is that disagreement: a guard cannot see into one, a round
+  cannot be put through one, a blast does not open one and nothing standing on
+  the floor can follow anybody in — all of which is a single answer
+  (`level_is_solid`) rather than a special case in the AI, the ballistics or the
+  lighting. What it costs is the other half of the same fact: the louvres are
+  opaque both ways, so a player in a duct cannot see the room they are about to
+  come out in, and cannot stand, hack, haul a body or fire from inside it. The
+  shaft is a bet rather than a shortcut. The drawing agrees: a man inside one is
+  behind its louvres and shows through the slots between them, and that takes a
+  pass of its own (`render_duct_fronts`) because the tile layer goes down before
+  the figures do.
+  Interiors only, like `%` and `I`: nothing on a climbed wall has a plenum
+  behind it. It carries no decoration — a prop needs a `#` under it, and a
+  grille is not one.
+  **A duct needs a floor under every tile of its run**, because a crawl is
+  horizontal: the tile the player is inside stops blocking them, so what holds
+  them up is whatever the map put underneath. Trunking over a hole is trunking
+  the player falls out of, and the editor says so.
+  **And it needs somewhere to stand at both mouths**, or it is a hole that is
+  crawled into and not out of. The route model reaches a duct only from a tile
+  the player can stand on beside its mouth, and leaves it only onto another one
+  — the crawl is the *only* move it allows from inside a shaft, so no jump, no
+  step up and no hole hop starts in one. A duct with one mouth is not a route
+  and nothing past it counts as reachable.
+  **And the simulation keeps that sentence now, which it did not.** It was
+  written about the route model and read as though it were about the game. One
+  press of JUMP from the middle of a run put Chuck standing on the lid, because
+  a rise is resolved in the posture he is in and trunking is open to a crawler
+  upwards exactly as it is sideways — so a shaft could be left anywhere along
+  its length, "a duct with one mouth is not a route" described nothing, and the
+  opaque louvres the whole bet is made against could be lifted at any tile. The
+  other direction had no sentence at all and was worse: crouching on the **lid**
+  took the floor out from under the man doing it and stood him back up on the
+  next step, 240 times a second, on every run in the campaign. **The lid is a
+  walkway, not somewhere to lie down**, and a shaft is entered and left at its
+  mouths — one rule, two directions, held by
+  `test_the_lid_of_a_shaft_is_not_somewhere_to_lie_down` and
+  `test_a_shaft_is_left_by_its_mouths`.
+  Sector 12 carries the campaign's ducts, and it is the floor named after them:
+  four runs of trunking, 61 tiles of it, on the storey that leaves by the window,
+  the middle storey, the one below it and through the pillar that divides the
+  storey under that. Two of them are the length of most of a floor, so a crawl
+  across one is a decision about the whole storey rather than a step around a
+  wall.
+  **Placing a run moves whatever stood in it**, and the two things that matter
+  are a ceiling fan `O` and the mouths. A fan reads a duct as its own floor —
+  `band_floor_row` in the editor stops at the first thing that blocks, and
+  trunking blocks — so a fan over a run needs every column within two of it to be
+  duct as well, or the editor calls it a hole in the floor. And both mouths want
+  two tiles of standing floor beside them, or the crawl is into somewhere nobody
+  can walk out of.
 - `H` : Ladder (can climb up/down).
 - (space) : Empty space / air.
 - `.` : Empty padding / air (useful before a compact sublevel room).
@@ -76,10 +130,22 @@ has to be added there as well, or it is a character the editor cannot paint.
   simulation reads, no respawn. **Exactly one belongs in every interior sector
   and none on a climb**, which `test_every_interior_lays_out_exactly_one_docket_sheet`
   pins — a collection the player can complete is the whole point, and one sheet
-  short of twelve has to mean a floor they can name. Put it somewhere that costs
-  a detour rather than on the route to the door, and keep it inside what the
+  short of twelve has to mean a floor they can name. Keep it inside what the
   route model can walk: it is optional, so nothing in an ordinary run would ever
   reveal one placed where the player cannot stand.
+  **And put it somewhere that costs a detour**, which is a sentence this file
+  carried for a long time with nothing behind it. Measured through the route
+  model — the flood from the spawn, and a second one from the sheet, because a
+  step off a ledge is a one-way edge and a flood from the door read backwards
+  would lie about it — seven of the twelve sheets sat on a *shortest* path to the
+  way out and sector 12's cost one step. So the collectable the whole docket is
+  built out of was, on eight floors of twelve, picked up by walking to the door,
+  and a collection that completes itself is not a collection. It is
+  `test_the_docket_sheet_costs_a_detour` now, and the bar is a tenth of the
+  sector's own walk rather than a number of steps: a floor plan runs from 19
+  steps to 136, so eight steps is a decision on one and a rounding error on
+  another. What the campaign ships is +11 to +92 steps, and the one closest to
+  the bar is sector 4 at 22 against a 136-step walk.
 
 **None of the three above is spent on a counter that is already full**, and
 that rule is what makes it safe to put two of one kind on a floor. Walking over
@@ -254,7 +320,13 @@ sector above it.
 - `o` : Open restroom stall with a visible toilet (non-solid).
 - `z` : Closed restroom stall door (non-solid).
 - `V` : Elevator shaft (vertical elevator track).
-- `F` : Falling platform (falls after triggered).
+- `F` : Falling panel. **Only Chuck's weight arms it**, like a mine `X`, and
+  once armed it goes for the rest of the visit — a lost life keeps the hole,
+  reloading the sector restores the panel. Everything else in the building
+  walks over it: guards, dogs, the ambient NPCs and every dropped body pass
+  `triggers_falling` as false. A dog used to be the exception, which spent
+  sector 12's panel about a second into every run and left a hole that boxed
+  the guard beside it into one tile.
 - `P` : Moving platform (moves horizontally).
 - `r` : Facade-mode window that periodically throws an object toward the player.
 - `v` : Facade-mode bird entry point. Birds periodically cross toward the player.

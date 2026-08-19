@@ -137,7 +137,7 @@ static void gameplay_settle_body(GameplayState *state, float *x, float *y,
     if (*vy > MAX_FALL_SPEED)
         *vy = MAX_FALL_SPEED;
     level_move(&state->level, x, y, &vx, vy, w, h, dt, true, &on_ground,
-               false);
+               false, STANCE_UPRIGHT);
     if (on_ground)
         *vy = 0.0f;
 }
@@ -151,7 +151,7 @@ static bool actor_or_tile_blocks_side(const GameplayState *state,
                   : enemy->x + ENEMY_W;
     float y = enemy->y + 1.0f;
     float height = ENEMY_H - 2.0f;
-    if (!gameplay_box_tiles_clear(state, x, y, ENEMY_SIDE_PROBE, height))
+    if (!gameplay_box_tiles_clear(state, x, y, ENEMY_SIDE_PROBE, height, STANCE_UPRIGHT))
         return true;
     for (int i = 0; i < state->dog_count; ++i)
     {
@@ -374,9 +374,9 @@ static void spawn_dog_for_enemy(GameplayState *state, int enemy_index)
     float base_x = handler->x + ENEMY_W * 0.5f - DOG_W * 0.5f;
     float y = handler->y + ENEMY_H - DOG_H;
     float x = base_x - handler->dir * DOG_HANDLER_DISTANCE;
-    if (!gameplay_box_tiles_clear(state, x, y, DOG_W, DOG_H))
+    if (!gameplay_box_tiles_clear(state, x, y, DOG_W, DOG_H, STANCE_UPRIGHT))
         x = base_x + handler->dir * DOG_HANDLER_DISTANCE;
-    if (!gameplay_box_tiles_clear(state, x, y, DOG_W, DOG_H))
+    if (!gameplay_box_tiles_clear(state, x, y, DOG_W, DOG_H, STANCE_UPRIGHT))
         x = base_x;
     dog_init(&state->dogs[slot], x, y, enemy_index, &state->rng);
 }
@@ -582,7 +582,7 @@ static void update_janitor(GameplayState *state, Janitor *janitor, float dt)
     float left_extension = janitor->x - collision_x;
     level_move(&state->level, &collision_x, &janitor->y,
                &janitor->vx, &janitor->vy, collision_width, JANITOR_H,
-               dt, false, &janitor->on_ground, false);
+               dt, false, &janitor->on_ground, false, STANCE_UPRIGHT);
     janitor->x = collision_x + left_extension;
     if (janitor->activity == JANITOR_WALK && intended_vx != 0.0f &&
         janitor->vx == 0.0f)
@@ -732,7 +732,7 @@ static void update_civilian(GameplayState *state, Civilian *civilian, float dt)
     float intended_vx = civilian->vx;
     level_move(&state->level, &civilian->x, &civilian->y,
                &civilian->vx, &civilian->vy, CIVILIAN_W, CIVILIAN_H,
-               dt, false, &civilian->on_ground, false);
+               dt, false, &civilian->on_ground, false, STANCE_UPRIGHT);
 
     /* Panic does not turn around at an obstacle the way a patrol does: hop
      * what can be hopped. Should the way really be shut, the person leaves the
@@ -983,7 +983,7 @@ static void update_receptionist(GameplayState *state,
     level_move(&state->level, &receptionist->x, &receptionist->y,
                &receptionist->vx, &receptionist->vy,
                RECEPTIONIST_W, RECEPTIONIST_H, dt, false,
-               &receptionist->on_ground, false);
+               &receptionist->on_ground, false, STANCE_UPRIGHT);
     /* Whatever the probes missed, being stopped dead by the map is the end of
      * the walk; standing there pushing into a wall is not a pose. */
     if (receptionist->activity == RECEPTIONIST_WALK && intended_vx != 0.0f &&
@@ -1174,10 +1174,10 @@ static bool dog_can_jump_gap(const GameplayState *state,
             !level_is_ladder(&state->level, col, row))
             continue;
         float x = col * (float)TILE_SIZE + (TILE_SIZE - DOG_W) * 0.5f;
-        if (gameplay_box_tiles_clear(state, x, dog->y, DOG_W, DOG_H) &&
+        if (gameplay_box_tiles_clear(state, x, dog->y, DOG_W, DOG_H, STANCE_UPRIGHT) &&
             gameplay_box_tiles_clear(state, x,
                                      dog->y - TILE_SIZE * 0.8f,
-                                     DOG_W, DOG_H))
+                                     DOG_W, DOG_H, STANCE_UPRIGHT))
             return true;
     }
     return false;
@@ -1473,8 +1473,18 @@ static void update_dog(GameplayState *state, Dog *dog, float dt)
         }
     }
     float previous_vx = dog->vx;
+    /* `triggers_falling` is false, and the dog was the one actor in the
+     * building that had it true. Chuck's weight arms a cracked panel; the
+     * guards, the janitor, the receptionist, a fleeing civilian and every
+     * dropped body pass false, so an animal springing one was a rule of its
+     * own that nothing wrote down. It cost a mechanic and a patrol: on sector
+     * 12 the panel sits in a handler's dog's roaming range, so it went at
+     * about a second into every run — a one-shot route spent before Chuck had
+     * left the bottom corner — and the hole it left boxed the guard beside it
+     * into a single tile between the duct and the drop. */
     level_move(&state->level, &dog->x, &dog->y, &dog->vx, &dog->vy,
-               DOG_W, DOG_H, dt, false, &dog->on_ground, true);
+               DOG_W, DOG_H, dt, false, &dog->on_ground, false,
+               STANCE_UPRIGHT);
     if (fabsf(previous_vx) > 0.0f && fabsf(dog->vx) < 0.1f &&
         dog->state != DOG_CHASE)
         dog->state = DOG_RETURN;
@@ -1568,9 +1578,9 @@ static void update_conversations(GameplayState *state, float dt)
                 float left_x = left->x - shift;
                 float right_x = right->x + shift;
                 if (!gameplay_box_tiles_clear(state, left_x, left->y,
-                                              ENEMY_W, ENEMY_H) ||
+                                              ENEMY_W, ENEMY_H, STANCE_UPRIGHT) ||
                     !gameplay_box_tiles_clear(state, right_x, right->y,
-                                              ENEMY_W, ENEMY_H))
+                                              ENEMY_W, ENEMY_H, STANCE_UPRIGHT))
                     continue;
 
                 left->x = left_x;
@@ -1673,7 +1683,8 @@ void gameplay_ai_update_movement(GameplayState *state, float dt)
                 vy = MAX_FALL_SPEED;
             float vx = 0.0f;
             level_move(&state->level, &enemy->x, &enemy->y, &vx, &vy,
-                       ENEMY_W, ENEMY_H, dt, false, &grounded, false);
+                       ENEMY_W, ENEMY_H, dt, false, &grounded, false,
+                       STANCE_UPRIGHT);
             enemy->vy = grounded ? 0.0f : vy;
             enemy->on_ground = grounded;
             continue;

@@ -20,8 +20,45 @@ typedef enum
     TILE_DOOR,
     TILE_SUBLEVEL_DOOR,
     TILE_ELEVATOR_SHAFT /* visual only – not solid */,
-    TILE_FALL_PLATFORM /* single-tile one-way platform that can fall */
+    /* There is deliberately no tile for a falling panel. `F` parses to
+     * TILE_EMPTY plus a `FallPlatform` in LevelRuntime, because the panel is
+     * a thing with a position and a velocity rather than a property of a
+     * cell — and the map has to stay exactly what the file said, so that a
+     * hole is per-visit state and a reload puts the panel back. A
+     * `TILE_FALL_PLATFORM` sat here for a long time, named in this enum and
+     * mentioned in no other line of the tree, with a comment describing the
+     * mechanic the runtime list actually implements. A tile type nothing
+     * parses to and nothing tests for is a claim about the map format that
+     * is not true of it. */
+    /* A ventilation duct: trunking let into the wall. Masonry to everything in
+     * the building — sight, rounds, blasts, props, guards, dogs — and a way
+     * through to a man on his elbows. It is the one tile the two solidity
+     * questions answer differently; see `Stance` below. */
+    TILE_VENT,
+    TILE_TYPE_COUNT
 } TileType;
+
+/*
+ * How tall the thing being moved through the map is carrying itself.
+ *
+ * It exists because solidity is two questions rather than one, and only one of
+ * them a posture can change: what stops a bullet, a line of sight, a crate or
+ * a guard is the building, and what stops a *body* is the building as that
+ * body happens to be shaped. Every tile the game has answers both the same
+ * way, which is why this parameter has been `UPRIGHT` everywhere for as long
+ * as there was nothing to ask.
+ *
+ * `UPRIGHT` is nought so a zero-filled caller gets the building's own answer:
+ * the safe reading of an uninitialised stance is that everything is wall.
+ *
+ * It is an enum rather than a bool because `level_move` already ends in two of
+ * those, and a third would make every one of its call sites a coin flip.
+ */
+typedef enum
+{
+    STANCE_UPRIGHT = 0, /* everyone in the building, nearly every frame */
+    STANCE_CRAWLING     /* flat on the elbows */
+} Stance;
 
 /* A moving elevator platform within a vertical shaft. */
 typedef struct
@@ -40,7 +77,11 @@ typedef struct
     float y;        /* current top position in world px */
     float vy;       /* vertical velocity (positive = down) */
     float timer;    /* time since triggered */
-    bool triggered; /* true when player/enemy stepped on it */
+    /* True once Chuck has stood on it, and only Chuck: every other body in the
+     * building passes `triggers_falling` as false to `level_move`. The comment
+     * here used to say "player/enemy", which was true of neither — a guard has
+     * never armed one — and read as licence for the dog that was. */
+    bool triggered;
     bool removed;   /* true when it has fallen away */
 } FallPlatform;
 
@@ -465,6 +506,11 @@ bool level_sublevel_name_is(const char *path, const char *stem);
 /* Tile queries. Out-of-bounds is treated as solid wall. */
 TileType level_tile(const Level *level, int col, int row);
 bool level_is_solid(const Level *level, int col, int row);
+/* Whether this tile stops a body carrying itself that way. Ask `level_is_solid`
+ * for everything else — sight, rounds, blasts, shading, props, pathing —
+ * because those are questions about the building and this is one about a body.
+ * The two agree on every tile the game currently has; see `Stance` above. */
+bool level_blocks_stance(const Level *level, int col, int row, Stance stance);
 bool level_is_ladder(const Level *level, int col, int row);
 
 /* True when this tile is a weak wall that has already been blown open.
@@ -488,9 +534,14 @@ bool level_reveal_step(Level *level, float dt);
  * the tile map. Walls are fully solid. Ladders behave as one-way platforms
  * (you can stand on their top), unless 'climbing' is true, in which case the
  * box passes freely through ladder tiles.
+ *
+ * 'stance' is how the box is carrying itself, and it is the box's own business:
+ * everything else this function consults — the ladders, the two kinds of
+ * platform — is the building, and the building does not care. Anything that is
+ * not a body in a posture passes `STANCE_UPRIGHT`.
  */
 void level_move(Level *level, float *x, float *y, float *vx, float *vy,
                 float w, float h, float dt, bool climbing, bool *on_ground,
-                bool triggers_falling);
+                bool triggers_falling, Stance stance);
 
 #endif /* CHUCK_LEVEL_H */
