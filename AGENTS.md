@@ -6035,3 +6035,135 @@ to the SUV with the crew either side of her, and the reunion — before and afte
 the full sweep are all clean, and `make coverage` is unmoved at `none` functions
 and 459 lines, which is what a renderer fix on the far side of the boundary
 looks like.
+
+**And then a player said the card-and-terminal levels do not play the way they
+read — that walking a floor opens its door by itself — and measured, they were
+right about six of the seven.** Seven interiors leave by a security door a `C`
+or a `T` unlocks, and the premise of every one of them is a search: one card of
+the two or three on the floor is live and the rest buzz, a console costs
+`TERMINAL_HACK_TIME` standing still, and the manual sells both. Nothing had ever
+measured whether either was a decision. Measured through the route model — the
+flood from the spawn, and a second from each key, because a step off a ledge is
+a one-way edge — the answer is a table:
+
+| sector | walk | free keys | P(the door is open when you reach it) |
+| --- | --- | --- | --- |
+| 1 | 37 | 1 of 1 | **100%** |
+| 4 | 136 | 2 of 4 | 75% |
+| 5 | 49 | 1 of 3 | 50% |
+| 8 | 47 | 0 of 5 | 0% |
+| 9 | 80 | 3 of 5 | 83% |
+| 16 | 132 | **5 of 5** | **100%** |
+| 17 | 58 | 2 of 4 | 75% |
+
+"Free" is a detour of **nought**: the key sits on a *shortest* path from the
+spawn to the way out. The vault is the one to read — 132 steps of corridor with
+all five keys standing on it, on the floor whose whole subject is a strongroom —
+and sector 8 is the one that already worked, because its plan is a spine with
+sealed bays combed off it and every key is inside one.
+
+**It is this page's most-repeated shape wearing the campaign's clothes**, and by
+now it has a name: a claim about what a mechanic is *for*, settled prose for
+exactly as long as it went unmeasured. The docket sheet's `*` had to cost a
+detour and seven of twelve sat on a shortest path to the door. The weak wall's
+`%` had to save one and four of seven saved nought. Both were found by asking
+the route model a question nobody had asked it, both turned out to be about the
+floor *around* the tile rather than the tile, and both now live in the route
+model rather than in the grid parser. The key is the third, and it is the one
+that costs the most, because a `*` is optional and a `%` is a shortcut while a
+locked door is the sector.
+
+**So the seven floors were rebuilt rather than nudged**, which is the difference
+between this and moving a card four tiles. Every one of them is a spine and
+wings now: a short readable route to the door, and rooms hanging off it that the
+route does not enter, with the riser into a wing at the end *away* from what the
+wing holds. What makes a room a room is a full-height run of `#` inside a band,
+which is the one thing none of these floors had — sector 16 was four full-width
+storeys with the risers staggered end to end, so the walk crossed everything on
+every floor by construction. The inventory of each map is unchanged to the
+character (guards, dogs, mines, spikes, fans, cameras, items, props), so the
+hazard budgets, the rocket rota, the prop counts and every derived sector list
+in the prose are the figures they were; what moved is masonry, ladders and where
+the keys stand. Measured after: **nought free keys anywhere, and the cheapest
+key on each floor costs 34% to 52% of that floor's own walk.**
+
+Two things the rebuild ran into are worth more than the maps, because both are
+the campaign answering back.
+
+- **A wing takes the checkpoint with it.** A bank is taken at a card, a medkit,
+  a terminal or a paired door, and only counts when standing at it costs ten
+  steps or fewer than not standing at it — so a floor whose keys have *all*
+  moved off the route has nothing banking on it at all, and dies replaying
+  whole. `test_no_sector_asks_for_a_long_walk_with_nothing_banked` failed on
+  sectors 5, 8 and 9 the moment their keys moved, which is that check doing
+  exactly what it was written for. The answer is that the `K` goes back on the
+  spine: **the checkpoint comes from the medkit you find on the way, not from
+  the key you had to hunt for**, which is a better reading of both objects than
+  the one they had.
+- **Cutting a storey into rooms empties the spawn room.**
+  `test_the_grace_period_is_not_an_empty_building` fired on sector 16 and then
+  on sector 1: the man who had been patrolling past the way in is two rooms away
+  once there are rooms. It also fired in the *other* direction on sector 5,
+  where the rework accidentally gave the plant's spawn corner a watcher — and
+  that test is an equality rather than a ceiling precisely so that losing the
+  one sector that opens on a pocket nothing watches is a failure. The comment
+  saying so was written about a crate; it held against a floor plan.
+
+Four more things came out of doing it, and the first two are general.
+
+**A ladder is the one structure a placement pass must not overwrite.** The
+generator that draws these maps allows an item on open floor and refuses one on
+masonry, and for a while it allowed one on a rung — so an alarm switch landed on
+the bottom tile of sector 9's spawn riser, the model went on promising the step
+onto it, and `test_the_body_delivers_every_route_the_model_promises` failed with
+two undelivered edges naming the tile either side of it. That check is
+`route_neighbours` against the body, and this is the first time it has fired on
+a map rather than on a mutation.
+
+**A hazard is a wall wherever the band is too short to hop it.** A spike costs
+one heart and is hopped by covering 58px with the whole body above floor level,
+which needs two open rows over the standing row. Sector 17's service level is
+*two rows*, so the two spikes laid along it were not hazards at all — they were
+masonry, and they cut the run that is the only way past both breaches in the
+deck. The editor reported the consequence (`the way out cannot be reached`) and
+not the cause, which is fair: it is a fact about the band rather than about the
+tile. Worth knowing before drawing a crawl-height corridor.
+
+**A falling panel is a chute, and a chute beside the spawn is a free ride to
+whatever is under it.** Sector 17's first draft put its two `F` in the deck by
+the way in; the service level's own terminal is at that end, and the panel took
+its detour from 39% to 7% without moving anything. The panels are in the middle
+deck now. Same shape as the balcony on sector 1, which in its first draft could
+be walked off the open end straight onto the gallery — a wing with two mouths is
+a route, and the fix was a wall rather than a longer walk.
+
+**And "the key must cost a detour" is not the same rule as "the key must be far
+from the other keys".** The vault puts three of its five down one chain of rooms
+on purpose: finding the wing is what pays, and a floor where every wing holds
+exactly one key is a floor with no shape to learn. The check asks only what it
+means to ask, which is why it says nothing about that.
+
+All of it was **checked by breaking the thing it guards and watching the new
+checks fail** — five mutations, and they are chosen to fire the two halves
+separately, because a check whose halves cannot fail independently is one half
+of a check. `test_a_locked_door_makes_the_player_look_for_the_key` requires that
+**no** key sits on a shortest path (which is the half the seed makes matter: the
+player cannot know which of them is live, so one free key hands over the floor
+whatever the others cost) and that the **cheapest** costs `KEY_DETOUR_PERCENT`
+of the sector's own walk. A card swapped onto the vault's spine fails both and
+names the tile; the same card two tiles off it fails the percentage alone with
+no mention of a shortest path. `check_key_detour` in
+[editor_validate.c](editor/editor_validate.c) asks the same two of the map being
+drawn, as a **warning** and a **note** in that order — nought is the mechanic not
+existing in any degree, the way the weak wall's threshold is, while how much of
+a detour is worth making under an alarm is a judgement this model has no standing
+to fail a build over. Both fire in isolation on the same two mutations. And the
+sixth mutation is the one this page keeps asking for and could not have here: a
+prose fix has none, so the plan table's seven rewritten rows are held by nothing
+but having been rewritten in the same commit as the maps.
+
+Re-measured afterwards: `make coverage` at `none` functions and **475**
+unexecuted lines, up from 459 — the sixteen are the editor's new check, whose
+own arms the shipped campaign no longer reaches now that it is clean, which is
+the honest kind of regression to have and the same one `check_weak_wall_shortcut`
+already carries.

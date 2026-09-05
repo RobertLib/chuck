@@ -13806,8 +13806,8 @@ static void test_a_crate_never_comes_to_rest_in_the_rungs(void)
     /* ---- and the body, on the floor this was found on ------------------- */
     {
         const int sector = 8;      /* sector 9, 0-based */
-        const int ladder_col = 30; /* the run the box used to sit over */
-        const int stand_row = 13;
+        const int ladder_col = 20; /* the run the box is shoved along towards */
+        const int stand_row = 11;
         float clear = 0.0f;
         float shoved = 0.0f;
 
@@ -26201,6 +26201,142 @@ static void test_the_docket_sheet_costs_a_detour(void)
     CHECK(measured == 12);
 }
 
+/* How much of a sector's own walk the cheapest way to unlock its door has to
+ * cost. Proportional for the reason the docket sheet's bar is: a floor plan
+ * runs from 38 steps to 58, so a fixed number of steps is a decision on one and
+ * a rounding error on another. */
+#define KEY_DETOUR_PERCENT 30
+
+/* The flood from the spawn goes into `checkpoint_from_start` rather than an
+ * array of its own, because `checkpoint_standing_cell` reads that one to answer
+ * "is this reachable at all" — a card hanging over a walkway is taken from the
+ * floor under it, and resolving that against a stale flood is a check agreeing
+ * with whatever the last test left behind. */
+static int key_from_key[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
+
+/*
+ * A locked door is a thing the player goes looking for the key to.
+ *
+ * Seven interiors leave by a security door that a card or a console opens, and
+ * the premise of every one of them is a search: the manual sells the card as a
+ * thing that lies and the console as a thing that takes `TERMINAL_HACK_TIME`
+ * standing still. Nothing measured whether either was ever a decision, and
+ * measured, six of the seven handed the door over for free — every card and
+ * every terminal on sector 16's 132-step walk sat on a *shortest* path to its
+ * own exit, so a player who walked to the door arrived to find it already open,
+ * on a floor whose whole subject is a strongroom. Sector 1 was the same with
+ * one card, sector 9 had three of five free and sector 4 two of four.
+ *
+ * This is `test_the_docket_sheet_costs_a_detour` asking the same question about
+ * the one pickup that is not optional, and the weak wall's rule a third time:
+ * a claim about what a mechanic is *for*, settled prose for as long as it went
+ * unmeasured. What it holds is two things rather than one. **No key is on a
+ * shortest path**, because which of them the seed makes live is exactly what
+ * the player cannot know, so a single free one hands over the floor whatever
+ * the others cost. And the *cheapest* of them costs a real walk, because five
+ * keys that each cost two steps is not a search either.
+ *
+ * The bar is a floor rather than a target and the campaign clears it with room:
+ * 34% to 52% of the sector's own walk, against a rule of 30.
+ *
+ * What this deliberately does not ask is that the keys be far from *each
+ * other*. Sector 16 puts three of its five down one chain of rooms on purpose —
+ * finding the wing is what pays, and a floor where every wing holds exactly one
+ * key is a floor with no shape to learn.
+ */
+static void test_a_locked_door_makes_the_player_look_for_the_key(void)
+{
+    static Level level;
+    static RouteMap route;
+    int measured = 0;
+
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT; ++i)
+    {
+        Rng rng;
+        rng_seed(&rng, 7700 + (uint64_t)i);
+        REQUIRE(level_load_data(&level, EMBEDDED_LEVELS[i].name,
+                                EMBEDDED_LEVELS[i].data,
+                                EMBEDDED_LEVELS[i].size, &rng));
+        /*
+         * Only the floors where the lock is the way forward. A climb has no
+         * door, and an interior with a `Y` has its security door barricaded —
+         * `gameplay_unlock_exit` returns without doing anything on one — so its
+         * cards and consoles are score and a checkpoint and nothing else.
+         */
+        if (level.map.mode == LEVEL_MODE_FACADE || level.map.has_window)
+            continue;
+        if (level.runtime.card_count == 0 && level.map.terminal_count == 0)
+            continue;
+
+        route_map_init(&route, &level);
+        RouteCell start = route_player_start(&route);
+        RouteCell goal = {level.map.exit_col, level.map.exit_row};
+        checkpoint_bfs(&route, checkpoint_from_start, start);
+        int direct = checkpoint_from_start[goal.row][goal.col];
+        REQUIRE(direct > 0);
+
+        int cheapest = -1;
+        int keys = 0;
+        for (int k = 0; k < level.runtime.item_count + level.map.terminal_count;
+             ++k)
+        {
+            RouteCell at;
+            bool card = k < level.runtime.item_count;
+            if (card)
+            {
+                if (level.runtime.items[k].type != ITEM_CARD)
+                    continue;
+                at = (RouteCell){
+                    (int)(level.runtime.items[k].x / TILE_SIZE),
+                    (int)(level.runtime.items[k].y / TILE_SIZE)};
+            }
+            else
+            {
+                const Terminal *terminal =
+                    &level.map.terminals[k - level.runtime.item_count];
+                at = (RouteCell){terminal->col, terminal->row};
+            }
+
+            RouteCell stand;
+            REQUIRE(checkpoint_standing_cell(&route, at.col, at.row, &stand));
+            checkpoint_bfs(&route, key_from_key, stand);
+            int back = key_from_key[goal.row][goal.col];
+            REQUIRE(back >= 0);
+            int detour =
+                checkpoint_from_start[stand.row][stand.col] + back - direct;
+
+            /* Every one of them, because the seed picks which is live. */
+            if (detour <= 0)
+            {
+                fprintf(stderr,
+                        "  %s: the %s at (%d,%d) is on a shortest way to its "
+                        "own door\n",
+                        EMBEDDED_LEVELS[i].name, card ? "card" : "terminal",
+                        at.col, at.row);
+            }
+            CHECK(detour > 0);
+            if (cheapest < 0 || detour < cheapest)
+                cheapest = detour;
+            keys++;
+        }
+
+        REQUIRE(keys > 0);
+        if (cheapest * 100 < direct * KEY_DETOUR_PERCENT)
+        {
+            fprintf(stderr,
+                    "  %s: the cheapest key costs %d steps of a %d-step walk, "
+                    "under the %d%% a search is worth\n",
+                    EMBEDDED_LEVELS[i].name, cheapest, direct,
+                    KEY_DETOUR_PERCENT);
+        }
+        CHECK(cheapest * 100 >= direct * KEY_DETOUR_PERCENT);
+        measured++;
+    }
+    /* And every locked floor was reached, the way the docket sweep counts its
+     * own twelve: one `continue` in the wrong place checks nothing and passes. */
+    CHECK(measured == 7);
+}
+
 /*
  * A weak wall has to be a shortcut somewhere, because that is what the docs say
  * it is.
@@ -27298,6 +27434,7 @@ int main(void)
     test_progress_only_ever_climbs();
     test_every_interior_lays_out_exactly_one_docket_sheet();
     test_the_docket_sheet_costs_a_detour();
+    test_a_locked_door_makes_the_player_look_for_the_key();
     test_a_docket_sheet_is_counted_by_the_run();
     test_a_weak_wall_is_a_shortcut_somewhere_in_the_campaign();
     test_a_patch_that_deletes_the_way_out_is_not_a_shortcut();

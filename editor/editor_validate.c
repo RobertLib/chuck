@@ -39,6 +39,12 @@
 #define ED_FACADE_MIN_WALLS 40
 #define ED_FACADE_MAX_ITEMS 4
 #define ED_INTERIOR_MIN_ALARMS 2
+/* How much of a sector's own walk the cheapest way to unlock its door has to
+ * cost. Proportional for the reason the docket sheet's bar is: a floor plan
+ * runs from 38 steps to 58, so a fixed number of steps is a decision on one
+ * and a rounding error on another. The suite pins the same figure over the
+ * shipped campaign in `test_a_locked_door_makes_the_player_look_for_the_key`. */
+#define ED_KEY_DETOUR_PERCENT 30
 /* The outer 80px of a climb is behind the inset, so masonry starts here. */
 #define ED_FACADE_FIRST_COLUMN 2
 
@@ -1887,6 +1893,119 @@ static void check_weak_wall_shortcut(const Level *level, EdReport *report,
 
 /* ---- Can the sector actually be finished? ----------------------------- */
 
+/*
+ * A locked door is a thing the player goes looking for the key to.
+ *
+ * The premise of a `C` and a `T` is a search: one card of the two or three on
+ * the floor is live and the rest buzz, and a console costs `TERMINAL_HACK_TIME`
+ * standing still. Nothing measured whether either was ever a decision, and
+ * measured, six of the seven interiors that leave by a locked door handed it
+ * over for free — every card and every terminal on the vault's 132-step walk
+ * sat on a *shortest* path to its own exit, so a player who walked to the door
+ * arrived to find it already open.
+ *
+ * That is the weak wall's rule and the docket sheet's a third time: a claim
+ * about what a mechanic is for, settled prose for as long as it went
+ * unmeasured, and the one thing no rule about a single tile can see. So it is
+ * asked here, of the floor plan, in two halves with two severities.
+ *
+ * A key on a *shortest* path is a **warning**, on the same reasoning as the
+ * patch that shortens nothing: nought is not a threshold somebody picked, it is
+ * the mechanic not existing in any degree — and which of them the seed makes
+ * live is exactly what the player cannot know, so one free key hands over the
+ * floor whatever the others cost. The cheapest key being a short walk is a
+ * **note**, because how much of a detour is worth making is a judgement about
+ * risk — a card under an alarm two rooms away is not the same walk as the same
+ * card on a quiet floor — and this model counts steps.
+ */
+static void check_key_detour(const Level *level, EdReport *report,
+                             RouteCell start, RouteCell goal)
+{
+    /* Only the floors where the lock is the way forward: a `Y` leaves the
+     * security door barricaded, so cards and consoles there are score and a
+     * checkpoint rather than the route. */
+    if (level->map.has_window || !level->map.has_exit)
+        return;
+    if (level->runtime.card_count == 0 && level->map.terminal_count == 0)
+        return;
+
+    walk_distances(&report->route, start);
+    int direct = distance_to(&report->route, goal.col, goal.row, NULL);
+    if (direct <= 0)
+        return; /* the way out is already reported unreachable */
+
+    static int from_start[MAX_LEVEL_HEIGHT][MAX_LEVEL_WIDTH];
+    memcpy(from_start, distances, sizeof(from_start));
+
+    int cheapest = -1;
+    int cheapest_col = -1;
+    int cheapest_row = -1;
+    int keys = level->runtime.item_count + level->map.terminal_count;
+    for (int k = 0; k < keys; ++k)
+    {
+        bool card = k < level->runtime.item_count;
+        int col;
+        int row;
+        if (card)
+        {
+            if (level->runtime.items[k].type != ITEM_CARD)
+                continue;
+            col = (int)(level->runtime.items[k].x / TILE_SIZE);
+            row = (int)(level->runtime.items[k].y / TILE_SIZE);
+        }
+        else
+        {
+            const Terminal *terminal =
+                &level->map.terminals[k - level->runtime.item_count];
+            col = terminal->col;
+            row = terminal->row;
+        }
+
+        /* Where the player has to stand to use it, which is `route_reaches`'s
+         * own rule: the tile when that is standable, else the floor a body
+         * dropped there lands on. */
+        RouteCell stand = {col, row};
+        RouteCell landing;
+        if (!route_standing(&report->route, col, row))
+        {
+            if (!route_landing(&report->route, col, row, &landing))
+                continue; /* unreachable, and already reported as that */
+            stand = landing;
+        }
+        int there = from_start[stand.row][stand.col];
+        if (there < 0)
+            continue;
+
+        walk_distances(&report->route, stand);
+        int back = distance_to(&report->route, goal.col, goal.row, NULL);
+        if (back < 0)
+            continue;
+
+        int detour = there + back - direct;
+        if (detour <= 0)
+        {
+            report_add(report, ED_SEV_WARN, col, row,
+                       "This %s is on a shortest way to the door it opens, so "
+                       "the door opens by walking to it",
+                       card ? "key card" : "terminal");
+        }
+        if (cheapest < 0 || detour < cheapest)
+        {
+            cheapest = detour;
+            cheapest_col = col;
+            cheapest_row = row;
+        }
+    }
+
+    if (cheapest > 0 && cheapest * 100 < direct * ED_KEY_DETOUR_PERCENT)
+    {
+        report_add(report, ED_SEV_NOTE, cheapest_col, cheapest_row,
+                   "The cheapest way to open the door costs %d steps of a "
+                   "%d-step walk; %d%% is what makes the search a decision",
+                   cheapest, direct, ED_KEY_DETOUR_PERCENT);
+    }
+}
+
 static void check_route(const Level *level, EdReport *report)
 {
     if (count_of(report, 'S') != 1)
@@ -2011,6 +2130,7 @@ static void check_route(const Level *level, EdReport *report)
      * `escape` is the goal resolved onto the floor it is entered from, which is
      * the pair this needs.
      */
+    check_key_detour(level, report, report->start, goal);
     check_weak_wall_shortcut(level, report, report->start, escape);
     /* And the same map once the rockets have been spent, which is the floor plan
      * a run spends most of a sector in and the one nothing here had looked at. */

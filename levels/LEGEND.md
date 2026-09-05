@@ -164,6 +164,9 @@ has to be added there as well, or it is a character the editor cannot paint.
   because it is the sector that teaches what a card is for. Every card has to
   be reachable, live or not, and the editor calls an unreachable one an error
   rather than a note for exactly that reason.
+  **And on a floor whose door it opens, it goes where the way out does not** —
+  see the authoring rule below, which is the one thing about a card that is
+  about the floor plan rather than about the tile.
 - `G` : Gun item (`ITEM_GUN`). Fills the sidearm, and **the only pickup that
   comes back** — `ITEM_RESPAWN_TIME` after it is taken it is there again,
   because the sidearm is what a sector is played with and a player who has
@@ -355,7 +358,8 @@ sector above it.
   sets it off too — a grenade, a rocket, a mine or another canister — so a pair
   placed within `GAS_CANISTER_RADIUS` of each other will chain.
 - `T` : Access terminal. One randomly selected terminal is active; the rest are
-  decorative. **A console is also a way of putting more men on the floor**: one
+  decorative. **On a floor whose door it opens it goes where the way out
+  does not**, exactly as a `C` does — see the authoring rule below. **A console is also a way of putting more men on the floor**: one
   hacked while the alarm is up sends for up to
   `TERMINAL_REINFORCEMENT_MAX_COUNT` guards out of a `D`, once per console, and
   they need somewhere to stand alongside the men already drawn and the corpses of
@@ -770,23 +774,23 @@ to it is the eleventh thing in one room.
 
 | # | Theme | Plan |
 | --- | --- | --- |
-| 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the double-height atrium to a gallery, a service ladder up to the security wing where the exit is, and a second service ladder down behind the reception line to the staff corridor with the restroom. The hall empties past Chuck as he walks in — see `f` — and the front desk stays staffed after it has, see `k` |
+| 1 | `LOBBY` | the glazed entrance hall: a grand stair out of the double-height atrium to a gallery, a service ladder up to the security wing where the exit is, and a second service ladder down off the gallery to the staff corridor behind the reception line, which holds the card, the restroom and the docket sheet. A mezzanine store walled off from the gallery hangs over the atrium with the console on it, reached by its own ladder and left by walking off the open end. The hall empties past Chuck as he walks in — see `f` — and the front desk stays staffed after it has, see `k` |
 | 2 | `OFFICE` | three open-plan floors cut into blocks by floor-to-ceiling partitions, the ladders staggered so every partition is passed by changing floor; a welded stair core at the far end, the executive gallery back across the top, and a service crawl underneath reached by one ladder, where the bazooka lies beside a blocked-up opening (`%`) that saves the teleport across |
 | 3 | `FACADE_NIGHT` | one wide breach per course, walking slowly from side to side |
-| 4 | `SERVER` | a serpentine of four aisles walked in alternating directions, plus two fenced pockets — the vault above, the terminal room below — joined by a service ladder, entered by an airlock door pair or by dropping through the cable gap in the hot-aisle floor |
-| 5 | `PLANT` | catwalk towers either side of a solid plant block, goods lift onto its roof, crane platform across the hall to the exit ledge; spiked pit under the crane gap. **It lays out no grenade and no rocket, and that is the washroom's job**: it is the only interior above a hazard budget of 20 with neither on its plan — sectors 2 and 4 under it carry both — so the floor's blast is behind the `U`, which is what makes that detour worth the walk here rather than a free medkit. Written down because a supply outlier nobody has explained is indistinguishable from an oversight, and the obvious "fix" is to drop an `N` in the plant hall and delete the reason. `test_every_interior_can_reach_a_blast` holds the rule rather than the list: a floor with no explosive on its plan has a door to one |
+| 4 | `SERVER` | four aisles, each fenced into rooms so the serpentine passes one room of it and the rest are pockets: the terminal room off the second aisle, the vault behind the airlock door pair, the cold aisle under the cable gap in the hot-aisle floor, and the far bay reached only by dropping through it. The way through is one room per aisle and everything worth taking is one room off it |
+| 5 | `PLANT` | a solid plant block with the goods lift up its face, the block's roof and the crane platform across to the exit ledge, and a spiked pit under the crane gap. The lift is boarded at the bottom of the hall and left on the roof and nowhere between, so the catwalk tower beside it is a climb of its own off the hall floor rather than a landing, and the hall's own lower storeys are reached from the ledge by the far ladder. **It lays out no grenade and no rocket, and that is the washroom's job**: it is the only interior above a hazard budget of 20 with neither on its plan — sectors 2 and 4 under it carry both — so the floor's blast is behind the `U`, which is what makes that detour worth the walk here rather than a free medkit. Written down because a supply outlier nobody has explained is indistinguishable from an oversight, and the obvious "fix" is to drop an `N` in the plant hall and delete the reason. `test_every_interior_can_reach_a_blast` holds the rule rather than the list: a floor with no explosive on its plan has a door to one |
 | 6 | `CANTEEN` | a double-height dining hall against a tight galley stack; the way up is the kitchen and its dumbwaiter, and a blast through the galley wall is the way back down |
 | 7 | `FACADE_STORM` | short balconies instead of courses, so cover for the wind is sparse |
 | 8 | `LAB` | a spine corridor with sealed clean-room bays combed off it above — each an airlock reached by its own ladder — and basement chambers and a deep-storage crawl below; the rocket vault opens only through a paired door |
-| 9 | `ARCHIVE` | a grid of canyons between blocks of shelving, linked only where an aisle was cut through; the route weaves up, across the reading room, and back down before the exit stair |
+| 9 | `ARCHIVE` | a grid of canyons between blocks of shelving, linked only where an aisle was cut through, so each storey is two or three rooms that do not join. The route weaves up, doubles back the length of the middle storey and climbs again; the terminals are down the two arms it turns away from, and the far one is three rooms deep |
 | 10 | `SECURITY` | a patrol ring around the control bunker; both corridors are bricked up, so the bunker's lower floor is the only way across, and the airlock doors flanking it are where the reinforcements come out. A single lens has been overhead since sector 5, but **sector 10 is the first with a pair of them**, which is the floor the monitor wall belongs to |
 | 11 | `FACADE_MOON` | two breaches that braid, swapping sides as the climb rises and merging where the lines cross |
 | 12 | `DUCTS` | six crawl levels chopped into runs, one riser each; climb, drop through a missing panel, climb again. The rocket pocket hides behind a blocked-up bulkhead. Two cameras, and the crawl that gets a player past a guard's cone does nothing at all about them |
 | 13 | `FACADE_HIGH` | offset stubs laid like brickwork: every band is a lateral detour |
 | 14 | `PENTHOUSE` | the only symmetrical plan: panelled rooms with single doorways around a double-height reception hall crossed by balcony stubs. The far bay keeps a medkit and the rocket behind a paired door whose other end is the one guards come out of; the `%` in the bay's end wall is a second way in, for anyone who can spare a blast. **The second medkit is on the middle storey between the first heavy and a mine**, and it is there because this floor was the campaign's one outlier on supply: the highest pressure below the roof, and the only late interior with no crate and no canister on it, so the two floors under it were carrying more of both on less of a budget Two cameras over the middle storey. **It leaves by the window and its stair core is therefore welded** — sector 15 is a climb and a climb is entered from a window — which makes it the fifth of the welded sectors and the only one of them that still lays out cards and a terminal, since both score and bank a checkpoint whatever the door is doing. It is also the reason it shows no report: see [intel.c](../src/intel.c) |
 | 15 | `FACADE_SLEET` | paired courses with the breach swapping side every band, so no two are left by the column they were entered on — the tallest climb in the game and the only one that ends at a roof rather than a window |
-| 16 | `VAULT` | four storeys of unequal depth around the strongroom core: the trolley run they emptied it onto at the bottom, the boxes themselves above it, the handling floor where they were still working, and the way out over the top. The risers are staggered end to end, so every floor is crossed the full width. Two cameras, and the report after it is the one that answers sector 8 |
-| 17 | `ROOF` | a skyline, not a floor plan: plant rooms of five heights under open sky, a gondola strung between the two towers, and a fan-choked service level beneath the deck that is the only way past the two breaches in it. **The last stretch is where the crew is**: the roof of the final plant room is mined under its own guard, the run out of the service level past the second breach is mined at both ends under a fan and three more times along its length, and the helicopter pad is held by a **heavy** standing on it — the last man in the campaign is the one a boot bounces off, so the free answer is gone exactly where the player most wants it. Voss's remaining crew between Chuck and the ride, which is the one thing the finale has to say |
+| 16 | `VAULT` | four storeys of unequal depth around the strongroom core: the trolley run they emptied it onto at the bottom, the boxes themselves above it, the handling floor where they were still working, and the way out over the top. The risers are staggered so the way up crosses one room of each storey and the rest are strongrooms off it: a card down the trolley run, a card and the far console behind the boxes, the console and the rocket in the sealed bay at the bottom of the core, and the docket sheet in the attic over the way out. Two cameras, and the report after it is the one that answers sector 8 |
+| 17 | `ROOF` | a skyline, not a floor plan: three plant rooms of different heights under open sky, a gondola strung across the gap in the middle deck, and a fan-choked service level beneath the deck that is the only way past the two breaches in it — so the run under the deck is the way across and the deck itself is three stretches hanging off it, each with a plant room at its far end and a ladder up the side of it. **The last stretch is where the crew is**: the roof of the final plant room is mined under its own guard, the run out of the service level past the second breach is mined at both ends under a fan and three more times along its length, and the helicopter pad is held by a **heavy** standing on it — the last man in the campaign is the one a boot bounces off, so the free answer is gone exactly where the player most wants it. Voss's remaining crew between Chuck and the ride, which is the one thing the finale has to say |
 
 ### Restrooms
 
@@ -1057,6 +1061,43 @@ a hall. These rules come from the tuning in
   direction being crossed — a blast opens the face it goes off against, not a
   tunnel — and leave the row above a floor-level patch solid so the hole reads
   as a doorway.
+- **A locked door is a thing the player goes looking for the key to.** Seven
+  interiors leave by a security door a `C` or a `T` opens, and the premise of
+  every one of them is a search — one card of the two or three is live and the
+  rest buzz, a console costs `TERMINAL_HACK_TIME` standing still. Nothing
+  measured whether either was ever a decision, and measured, **six of the seven
+  handed the door over for free**: every card and every terminal on the vault's
+  132-step walk sat on a *shortest* path to its own exit, so a player who walked
+  to the door arrived to find it already open, on the floor whose whole subject
+  is a strongroom. Sector 1 was the same with one card, sector 9 had three of
+  five free and sector 4 two of four.
+  So a key goes where the way out does not: two things are held rather than one,
+  and both are asked of the floor plan by `check_key_detour` in
+  [editor_validate.c](../editor/editor_validate.c) and of the shipped campaign
+  by `test_a_locked_door_makes_the_player_look_for_the_key`. **No key may sit on
+  a shortest path** — a warning, because which of them the seed makes live is
+  exactly what the player cannot know, so one free key hands over the floor
+  whatever the others cost, and nought is not a threshold somebody picked but
+  the mechanic not existing in any degree. And **the cheapest of them costs
+  30% of the sector's own walk** — a note rather than a warning, because how
+  much of a detour is worth making is a judgement about risk and this model
+  counts steps. What the campaign ships is 34% to 52%.
+  The shape that delivers it is a spine and wings: a short readable route to the
+  door, and rooms hanging off it that the route does not enter. Partitions are
+  what make a room a room — a full-height run of `#` inside a band — and a riser
+  into a wing belongs at the end *away* from what the wing holds, or the wing is
+  a corridor with a card at the mouth of it. Two things are worth knowing before
+  drawing one. **A wing takes the checkpoint with it**: a bank is taken at a
+  card, a medkit, a terminal or a paired door, so a floor whose keys have all
+  moved off the route has nothing left banking on it, and the `K` is what goes
+  back — see `test_no_sector_asks_for_a_long_walk_with_nothing_banked`. And
+  **a partitioned floor can leave the spawn room empty**, which
+  `test_the_grace_period_is_not_an_empty_building` calls out by name: cutting a
+  storey into rooms is exactly how the man who was patrolling past the way in
+  ends up two rooms away.
+  Keys need not be one to a wing. The vault puts three of its five down one
+  chain of rooms on purpose: finding the wing is what pays, and a floor where
+  every wing holds exactly one key is a floor with no shape to learn.
 - **Every interior reaches a blast, and the washroom counts.** Ten of the twelve
   lay out an `N` or a `Z`; sectors 1 and 5 do not, and both have a `U`, and every
   washroom hands out a grenade. So the rule is a reachability one rather than a
