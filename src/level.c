@@ -180,6 +180,253 @@ float level_backdrop_sink(const LevelMap *map, float cam_y, float view_h,
     return climbed * factor;
 }
 
+/* ---- Backdrop rooms: see level.h ------------------------------------- */
+
+/* The first masonry within a hole's width of (col, row), stepping `step`. */
+static bool backdrop_flank(const Level *level, int col, int row, int step,
+                           int *at)
+{
+    for (int d = 1; d <= LEVEL_BACKDROP_HOLE_MAX + 1; ++d)
+    {
+        int c = col + step * d;
+        if (level_is_solid(level, c, row))
+        {
+            *at = c;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Masonry with air directly above or below it is a slab, or the lip of one;
+ * masonry with masonry above and below is a wall standing up. */
+static bool backdrop_is_slab(const Level *level, int col, int row)
+{
+    return !level_is_solid(level, col, row - 1) ||
+           !level_is_solid(level, col, row + 1);
+}
+
+bool level_backdrop_blocks(const Level *level, int col, int row)
+{
+    if (level_is_solid(level, col, row))
+        return true;
+    int left = 0;
+    int right = 0;
+    if (!backdrop_flank(level, col, row, -1, &left) ||
+        !backdrop_flank(level, col, row, 1, &right) ||
+        right - left - 1 > LEVEL_BACKDROP_HOLE_MAX)
+        return false;
+    /* A gap across a slab joins the air above it to the air below it. One that
+     * does not — a notch in a ceiling, a closet between two partitions — is
+     * part of the room it opens off, and the flanks being walls rather than a
+     * slab is what tells a closet from a ladder hole. */
+    bool through = !level_is_solid(level, col, row - 1) &&
+                   !level_is_solid(level, col, row + 1);
+    return through && (backdrop_is_slab(level, left, row) ||
+                       backdrop_is_slab(level, right, row));
+}
+
+static int backdrop_root(int *parent, int i)
+{
+    while (parent[i] != i)
+    {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    return i;
+}
+
+static void backdrop_join(int *parent, int a, int b)
+{
+    a = backdrop_root(parent, a);
+    b = backdrop_root(parent, b);
+    if (a != b)
+        parent[b < a ? a : b] = b < a ? b : a;
+}
+
+static int backdrop_abs(int v)
+{
+    return v < 0 ? -v : v;
+}
+
+/* The piece in `col` whose run passes beside rows top..floor, if any. */
+static int backdrop_piece_beside(const LevelBackdropPlan *plan, int col,
+                                 int top, int floor)
+{
+    for (int i = 0; i < plan->piece_count; ++i)
+    {
+        const LevelBackdropPiece *p = &plan->pieces[i];
+        if (col >= p->col0 && col <= p->col1 && p->top <= top &&
+            p->bottom >= floor)
+            return i;
+    }
+    return -1;
+}
+
+bool level_backdrop_plan(const Level *level, LevelBackdropPlan *plan)
+{
+    plan->room_count = 0;
+    plan->piece_count = 0;
+    bool complete = true;
+    int width = level->map.width;
+    int height = level->map.height;
+
+    /* Pieces: each column's open runs, a run that repeats the one directly to
+     * its left extending that piece rather than starting another. */
+    int left_piece[MAX_LEVEL_HEIGHT];
+    for (int row = 0; row < MAX_LEVEL_HEIGHT; ++row)
+        left_piece[row] = -1;
+    for (int col = 0; col < width; ++col)
+    {
+        int here_piece[MAX_LEVEL_HEIGHT];
+        for (int row = 0; row < MAX_LEVEL_HEIGHT; ++row)
+            here_piece[row] = -1;
+        int row = 0;
+        while (row < height)
+        {
+            if (level_backdrop_blocks(level, col, row))
+            {
+                ++row;
+                continue;
+            }
+            int top = row;
+            while (row < height && !level_backdrop_blocks(level, col, row))
+                ++row;
+            int bottom = row - 1;
+            int index = left_piece[top];
+            if (index >= 0 && plan->pieces[index].bottom == bottom)
+            {
+                plan->pieces[index].col1 = col;
+            }
+            else if (plan->piece_count < LEVEL_BACKDROP_MAX_PIECES)
+            {
+                index = plan->piece_count++;
+                plan->pieces[index] = (LevelBackdropPiece){
+                    .room = -1, .col0 = col, .col1 = col, .top = top,
+                    .bottom = bottom};
+            }
+            else
+            {
+                complete = false;
+                continue;
+            }
+            here_piece[top] = index;
+        }
+        for (int r = 0; r < MAX_LEVEL_HEIGHT; ++r)
+            left_piece[r] = here_piece[r];
+    }
+
+    /* Rooms: pieces on the same floor that read as one space. */
+    int parent[LEVEL_BACKDROP_MAX_PIECES];
+    for (int i = 0; i < plan->piece_count; ++i)
+        parent[i] = i;
+    for (int i = 0; i < plan->piece_count; ++i)
+    {
+        const LevelBackdropPiece *a = &plan->pieces[i];
+        int nearest = -1;
+        int nearest_gap = 0;
+        for (int j = 0; j < plan->piece_count; ++j)
+        {
+            const LevelBackdropPiece *b = &plan->pieces[j];
+            bool touching = b->col0 == a->col1 + 1 || b->col1 == a->col0 - 1;
+            if (j == i || !touching || b->bottom != a->bottom)
+                continue;
+            int gap = backdrop_abs(b->top - a->top);
+            if (gap <= 1)
+                backdrop_join(parent, i, j);
+            if (nearest < 0 || gap < nearest_gap)
+            {
+                nearest = j;
+                nearest_gap = gap;
+            }
+        }
+        if (a->col1 - a->col0 + 1 <= 2 && nearest >= 0)
+            backdrop_join(parent, i, nearest);
+    }
+
+    int room_of_root[LEVEL_BACKDROP_MAX_PIECES];
+    for (int i = 0; i < plan->piece_count; ++i)
+        room_of_root[i] = -1;
+    for (int i = 0; i < plan->piece_count; ++i)
+    {
+        LevelBackdropPiece *p = &plan->pieces[i];
+        int root = backdrop_root(parent, i);
+        if (room_of_root[root] < 0)
+        {
+            if (plan->room_count >= LEVEL_BACKDROP_MAX_ROOMS)
+            {
+                complete = false;
+                p->room = -1;
+                continue;
+            }
+            room_of_root[root] = plan->room_count++;
+            plan->rooms[room_of_root[root]] = (LevelBackdropRoom){
+                .top = p->top, .floor = p->bottom + 1, .col0 = p->col0,
+                .col1 = p->col1};
+        }
+        LevelBackdropRoom *room = &plan->rooms[room_of_root[root]];
+        p->room = room_of_root[root];
+        if (p->top < room->top)
+            room->top = p->top;
+        if (p->col0 < room->col0)
+            room->col0 = p->col0;
+        if (p->col1 > room->col1)
+            room->col1 = p->col1;
+    }
+
+    /* Mezzanines: a room that is open along its whole height to a taller room
+     * beside it — standing on a platform in that room's air, or tucked under
+     * one, or one step of a stair climbing out of it — is part of that room's
+     * space, and takes its layout: the platform is in front of the wall, not
+     * the floor of a different one. Open along its *whole* height at its own
+     * edge, because a storey reached from a hall through a doorway is its own
+     * room with its own ceiling. Repeated until nothing changes, so a stair of
+     * one-column steps ends up with the hall's layout rather than a staircase
+     * of layouts; every change makes a room strictly taller, so it stops. */
+    bool changed = true;
+    for (int pass = 0; changed && pass < LEVEL_BACKDROP_MAX_ROOMS; ++pass)
+    {
+        changed = false;
+        for (int i = 0; i < plan->room_count; ++i)
+        {
+            LevelBackdropRoom *room = &plan->rooms[i];
+            const LevelBackdropRoom *host = NULL;
+            for (int side = 0; side < 2; ++side)
+            {
+                int edge = side == 0 ? room->col0 : room->col1;
+                int col = side == 0 ? room->col0 - 1 : room->col1 + 1;
+                int own = backdrop_piece_beside(plan, edge, room->top,
+                                                room->floor - 1);
+                if (own < 0 || plan->pieces[own].room != i)
+                    continue;
+                int beside = backdrop_piece_beside(plan, col, room->top,
+                                                   room->floor - 1);
+                if (beside < 0 || plan->pieces[beside].room < 0 ||
+                    plan->pieces[beside].room == i)
+                    continue;
+                const LevelBackdropRoom *candidate =
+                    &plan->rooms[plan->pieces[beside].room];
+                bool contains = candidate->top <= room->top &&
+                                candidate->floor >= room->floor &&
+                                (candidate->top < room->top ||
+                                 candidate->floor > room->floor);
+                if (!contains)
+                    continue;
+                if (host == NULL || candidate->floor - candidate->top >
+                                        host->floor - host->top)
+                    host = candidate;
+            }
+            if (host != NULL)
+            {
+                room->top = host->top;
+                room->floor = host->floor;
+                changed = true;
+            }
+        }
+    }
+    return complete;
+}
+
 /*
  * A room is embedded under its whole path — `levels/sublevels/restroom_plant.txt`
  * — and named by its stem. One reading of that, here beside the table, because
@@ -290,8 +537,10 @@ static void place_spike(Level *level, int col, int row)
     if (level->map.spike_count >= MAX_SPIKES)
         return;
     SpikeSpawn *s = &level->map.spike_spawns[level->map.spike_count++];
+    /* Resting on the floor of the tile, the way a mine is: the bed is the box
+     * the blades are drawn in, not the tile they stand in. */
     s->x = col * TILE_SIZE;
-    s->y = row * TILE_SIZE;
+    s->y = (row + 1) * TILE_SIZE - SPIKE_H;
 }
 
 static void place_ceiling_fan(Level *level, int col, int row)

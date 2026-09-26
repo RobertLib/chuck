@@ -641,7 +641,7 @@ static void detonate_flashbang(GameplayState *state, CampaignState *campaign,
     flash->active = false;
     float x = flash->x + FLASH_W * 0.5f;
     float y = flash->y + FLASH_H * 0.5f;
-    game_events_explosion(&state->events, x, y, 40);
+    game_events_flash(&state->events, x, y);
     gameplay_world_sound(state, SFX_MINE_ARM, x, y);
     game_events_camera_shake(&state->events, 3.0f, 0.14f);
     campaign->score += FLASH_SCORE;
@@ -1627,6 +1627,11 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state,
     }
 }
 
+bool gameplay_stomp_wounds(Rng *rng)
+{
+    return rng_range(rng, 100) < ENEMY_STOMP_WOUND_CHANCE;
+}
+
 void gameplay_combat_check_contacts(GameplayState *state,
                                     CampaignState *campaign)
 {
@@ -1648,11 +1653,16 @@ void gameplay_combat_check_contacts(GameplayState *state,
                                     PLAYER_W, height,
                                     enemy->x, enemy->y,
                                     ENEMY_W, ENEMY_H))
+        {
+            /* The boxes have parted, so whatever lands on him next is a new
+             * landing and gets a roll of its own. */
+            enemy->stomp_refused = false;
             continue;
+        }
 
         /* Shallower vertical overlap than horizontal means Chuck fell onto
-         * the guard's head rather than walking into its side: bounce off
-         * instead of dying, and land a hit like any other attack. */
+         * the guard's head rather than walking into its side — and then it is
+         * a roll whether that is a stomp or just another way of meeting him. */
         float overlap_x = fminf(state->player.x + PLAYER_W,
                                 enemy->x + ENEMY_W) -
                           fmaxf(state->player.x, enemy->x);
@@ -1668,24 +1678,36 @@ void gameplay_combat_check_contacts(GameplayState *state,
                           enemy->y + ENEMY_H * 0.5f;
         /* A helmet is the one answer this man takes away. Everything else
          * about him is an ordinary guard with more rounds in him and less pace,
-         * and that is deliberate: the stomp is the free kill — no ammunition,
-         * no position, no noise — and it is what a player reaches for the
-         * moment a floor gets busy. Landing on him costs the heart a side
-         * contact costs instead, which is what the branch below already does. */
+         * and that is deliberate: the stomp costs no ammunition, no position
+         * and no noise, and it is what a player reaches for the moment a floor
+         * gets busy. Landing on him costs the heart a side contact costs
+         * instead, which is what the branch below already does — and he is
+         * asked before the roll, so a heavy is not a roll that always fails
+         * but no roll at all. */
         if (state->player.vy > 0.0f && overlap_y < overlap_x && from_above &&
-            enemy_kind_can_be_stomped(enemy->kind))
+            enemy_kind_can_be_stomped(enemy->kind) && !enemy->stomp_refused)
         {
-            /* Climbing down onto a guard would otherwise just have the
-             * ladder overwrite this with the climb speed next frame. */
-            state->player.vy = -ENEMY_STOMP_BOUNCE_SPEED;
-            state->player.on_ladder = false;
-            state->player.ladder_direction = 0;
-            state->player.ladder_lockout_timer = ENEMY_STOMP_LADDER_LOCKOUT;
-            /* The bounce is not a jump: releasing the jump key must never
-             * shorten it back down into the guard. */
-            state->player.jump_cut_ok = false;
-            damage_enemy(state, campaign, i);
-            return;
+            if (gameplay_stomp_wounds(&state->rng))
+            {
+                /* Climbing down onto a guard would otherwise just have the
+                 * ladder overwrite this with the climb speed next frame. */
+                state->player.vy = -ENEMY_STOMP_BOUNCE_SPEED;
+                state->player.on_ladder = false;
+                state->player.ladder_direction = 0;
+                state->player.ladder_lockout_timer =
+                    ENEMY_STOMP_LADDER_LOCKOUT;
+                /* The bounce is not a jump: releasing the jump key must never
+                 * shorten it back down into the guard. */
+                state->player.jump_cut_ok = false;
+                damage_enemy(state, campaign, i);
+                return;
+            }
+            /* The three landings in four that do not wound are no stomp at
+             * all: no bounce, and he meets the guard below exactly as a side
+             * contact would. Remembered until the boxes part, because without
+             * a bounce the next step finds the same shallow overlap, and a
+             * one-in-four chance asked 240 times a second is a certainty. */
+            enemy->stomp_refused = true;
         }
 
         /* Walking into a second guard costs nothing during the window, but the

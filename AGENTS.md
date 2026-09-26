@@ -1550,7 +1550,7 @@ Two layers, and the split is the most important invariant in the codebase:
   [game.c](src/game.c) (state machine, level loading, per-frame orchestration),
   [game_input.c](src/game_input.c), [game_render.c](src/game_render.c),
   [render_figures.c](src/render_figures.c),
-  [render_sprite.c](src/render_sprite.c),
+  [render_sprite.c](src/render_sprite.c), [render_chuck.c](src/render_chuck.c),
   [chase_render.c](src/chase_render.c), [level_art.c](src/level_art.c),
   [audio.c](src/audio.c), [screenshot.c](src/screenshot.c),
   [intro.c](src/intro.c), [manual.c](src/manual.c),
@@ -1578,6 +1578,15 @@ Two layers, and the split is the most important invariant in the codebase:
   time, and the pad is opened and questioned over there. It is in
   `TEST_SOURCES`. See the note above on why "it needs hardware" is worth
   testing as a claim.
+  [chuck_pose.c](src/chuck_pose.c) is the third kind: Chuck's skeleton, which
+  both renderers draw him from through [render_chuck.c](src/render_chuck.c) —
+  the sector at one pixel to the unit, the film at 1.4 on shorter legs. It is
+  presentation and no gameplay module may include it, but it links no SDL and
+  is in `TEST_SOURCES`, because what was wrong with his walk was a property
+  rather than a look: a planted foot travelling a sixth as far as the body over
+  it. The suite holds that the foot stays put, that no pose lengthens a bone,
+  and that no joint jumps anywhere in a cycle. See
+  [docs/art-and-audio.md](docs/art-and-audio.md).
 - **Gameplay core** (no SDL, no knowledge of `Game`): `src/gameplay_*.c`,
   [level.c](src/level.c), [level_route.c](src/level_route.c),
   [player.c](src/player.c), [enemy.c](src/enemy.c),
@@ -4876,7 +4885,7 @@ first draft came to use the fan's.
 seam where a gameplay module's feedback becomes sound and light, and a kind the
 shell's switch does not name is an event that is emitted, asserted on by the
 suite, and silent in the game — the `THEME_MUSIC` failure mode on the other side
-of the same boundary. All seven kinds in `GameEventKind` have a case. It is a
+of the same boundary. All eight kinds in `GameEventType` have a case — the eighth, `GAME_EVENT_FLASH`, arrived because the flash charge was reporting itself as an explosion and the shell dutifully drew it a fireball. It is a
 thing worth re-reading whenever one is added rather than a check, because the
 compiler already offers `-Wswitch-enum` for it and this tree does not set it.
 
@@ -6035,3 +6044,107 @@ to the SUV with the crew either side of her, and the reunion — before and afte
 the full sweep are all clean, and `make coverage` is unmoved at `none` functions
 and 459 lines, which is what a renderer fix on the far side of the boundary
 looks like.
+
+**And then a player said spikes are hard to jump, and the certified hop over one
+had a take-off window one simulation step wide.** A bed's hazard box was its
+whole tile, while `draw_spike_strip` puts the tips half a tile up, so clearing it
+meant lifting the boots a full tile over air. Under open sky that was merely
+stingy: 0.12s of take-off where it is 0.23s now. Under the two open rows
+`route_neighbours` asks of a hop, the ceiling caps the rise at 64px, and the
+stretch the box spends a tile up covers 58.4px of the 58 a bed and a body ask
+for: **half a pixel, about 4ms**. 26 of the campaign's 56 certified hops sit at
+exactly that clearance, on five floors, and sectors 8 and 16 put their way out
+behind them. `SPIKE_H` is the drawn half-tile now, the strip is drawn from the
+box's own top edge with a `_Static_assert` tying the two, and captures of sectors
+5 and 9 are byte-identical before and after.
+
+- **The gate that should have seen it was green by the luck of the lattice.**
+  `test_the_route_model_promises_only_moves_the_player_can_make` presses every
+  two pixels and asks for one press that clears; the window was 14.12 to 14.50,
+  and the sweep lands on 14. At a stride of three it would have failed. **A check
+  that a move exists is not a check that a hand can make it.**
+  `test_every_spike_hop_the_model_promises_forgives_a_human_press` asks every hop
+  how far a press may be out, by a run-up and by a stand flush against the bed,
+  and requires `PLAYER_COYOTE_TIME`: the game's own figure for how late a jump is
+  still honoured.
+- **And the edge sweep that "delivers every route" had its hazards switched
+  off.** `edge_attempt` reset the hearts for every attempt and not
+  `invuln_timer`, which only game.c ticks, so after the first contact in the
+  campaign `gameplay_combat_update_hazards` returned at its first line for every
+  attempt after it. That is the monkey's mercy-latch bug, one sweep over. It is
+  reset now, and the sweep's header says what "delivered" means: arrived, not
+  arrived for free. All 56 hops are delivered by walking through the bed.
+- **The two-abreast refusal was cited as measured and was measured by nothing.**
+  LEGEND.md said the test above measured it, and that test's loop skips every
+  bed the model refuses. It asks now, under open sky, with one spike as the
+  control. The margin is about a pixel in 90, and a bed inset by a pixel either
+  side fails it, which is why the bed keeps its full width.
+- **And a sweep with the blades in it found sector 16.** Two fans hung over two
+  hops, one directly above a bed and one two columns along, and both beds are on
+  the only way to the vault's door and to two cards. So the route charged two
+  hearts of three whichever way it was played, with either box. `check_fans`
+  looks down from the blades, `check_mines` asks only the charge's own column,
+  and `check_spikes` asked only about two abreast. Measured: a fan one row above
+  the walk row takes the hop away within two columns, one two rows up within one
+  column, and one three rows up never. `check_spike_blades` warns at the fan,
+  `test_the_editor_knows_which_fans_take_a_spike_hop_away` holds both spans to
+  the body in both directions, and each fan moved three columns.
+
+All of it was **checked by breaking the thing it guards and watching the new
+tests fail**. There were six mutations: the bed put back to the whole tile
+(28 of the 56 hops fail, and the fixture reads 0.006s); the bed inset by a pixel
+(two abreast cross with 0.007s to spare); the editor's reach narrowed; the reach
+widened, which also fails on the shipped campaign; the editor's second row
+dropped; and sector 16's fans put back, which fails both the hop sweep and the
+campaign's nought-warnings bar. `make test`, `make lint` and `make sanitize` with
+the full sweep are clean. `make coverage` is at `none` functions and **472**
+lines, and every file's count matches the commit before this pass. That commit
+was already at 472, so the 459 written at the end of the previous entry had
+drifted by thirteen before this began, which is this file's own warning about a
+figure in prose coming true again.
+
+One thing was found and left, because it is not a spike. Sector 12's slab has a
+one-tile drop at `(48,6)` with a fan at `(49,7)` one column over. The blades reach
+a pixel into the shaft, so every fall through it costs a heart. That is the
+falling panel's ±1 rule, arriving on an ordinary hole, and no check asks it.
+
+**And then the author asked for the stomp to be a gamble: one landing in four
+wounds the guard and bounces Chuck off, and the other three are no stomp at all
+— no bounce, just Chuck running into him.** That is a design
+change rather than a defect, and it turns the closing line of the aim pass above
+— "a guard who could be killed by three free jumps on the head charges a heart
+of three for it now" — into a reading of a rule that no longer holds.
+`ENEMY_STOMP_WOUND_CHANCE` is 25, a percentage like every other chance in
+[game_config.h](src/game_config.h), and `gameplay_stomp_wounds` is the one place
+it is spent. Three things are worth keeping.
+
+- **A landing is rolled once, and without a bounce something has to say so.**
+  The first version bounced on both outcomes, which was not what was asked for
+  and was also the only thing keeping the roll honest: a failed landing that
+  does not bounce leaves Chuck falling on into the guard with the overlap still
+  shallow, the next step rolls again, and at 240 steps a second a one-in-four
+  chance comes up inside a handful of frames. `Enemy.stomp_refused` is set by
+  the roll that says no and cleared when the boxes part, and
+  `test_a_landing_is_rolled_once` fails 120 times over without it. A heavy is
+  asked *before* the roll, so he is no roll at all rather than one that always
+  fails.
+- **An unseeded fixture hangs rather than failing.** `rng_range` rejects the
+  bottom of its range and draws again, and xorshift cannot leave an all-zero
+  state, so the `GameplayState state = {0}` fixtures that staged a stomp spun
+  forever on the first run instead of printing a line. `make test` has no
+  watchdog, and a suite that hangs reads as a slow machine. Tests about what
+  *follows* a wound now choose that outcome through `rig_next_stomp` and
+  `check_contacts_with_every_stomp_landing`, asked through the game's own roll.
+  The aim test has to: with failed landings costing hearts of their own,
+  `hearts_lost > 0` would pass with the guard aiming at the ceiling.
+- **The price, measured rather than guessed.** On the aim test's fixture with a
+  player who commits, a stomp kill now takes twelve landings, 7.6 seconds and
+  5.9 hearts on average over 512 seeds, and from a full three hearts the player
+  is dead first on 463 of them. It used to cost one. The harness has to *hold*
+  jump: pressed for one frame, the jump is cut to a hop that never clears the
+  guard a failed landing left him standing in, so the boxes never part, nothing
+  is rolled again, and it reads as a player stuck in a man. FIGHTING says "one
+  time in four" in the three rows the old sentence had, and
+  `test_the_sheets_spell_the_tuning_they_quote` derives the phrase from the
+  constant, so a chance that stops dividing a hundred fails until the sheet is
+  reworded.

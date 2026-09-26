@@ -256,8 +256,9 @@ sector above it.
   The stomp costs no ammunition and no position, and it is what a player
   reaches for the moment a floor gets busy; a heavy is where a sector takes it
   away. It was the *free* answer until a guard learnt to fire up the column the
-  boot came down, which now charges a heart for the kill — so a heavy asks the
-  same heart and gives nothing back for it. The blade behind him is deliberately
+  boot came down, and it is a gamble now on top of that — one landing in four
+  wounds (`ENEMY_STOMP_WOUND_CHANCE`) and the other three cost a heart — so a
+  heavy is the same gamble with the good outcome taken out. The blade behind him is deliberately
   unchanged, because a takedown is a knife across a throat rather than damage,
   which makes him a floor's clearest argument for the quiet route. Worth
   `ENEMY_HEAVY_HAZARD_WEIGHT` of the budget below rather than a guard's three.
@@ -981,11 +982,21 @@ a hall. These rules come from the tuning in
   interiors nothing rests on the old reading: seventy-three one-tile gaps, two
   two-tile gaps that both have three open rows, and four six-tile ones that are
   storey breaks.
-- **Spikes are area denial, not an obstacle course.** Clearing a single 32px
-  spike means covering 58px of ground while the whole 26px-wide player box is
-  above floor level, and even an unobstructed jump only offers about 73px of
-  that. Two spikes side by side cannot be jumped at all. Use `^` to split a
-  floor into halves that are each reached some other way.
+- **Spikes are area denial, not an obstacle course.** A bed is the lower half
+  of its tile, because that is where the blades are drawn and `SPIKE_H` is the
+  box they are drawn in. Clearing a single 32px spike means covering 58px of
+  ground while the whole 26px-wide player box is above the blade tips, half a
+  tile off the floor; open sky offers about 89px of that and the two open rows
+  the route model asks of a hop about 74, which is a take-off window of 0.23s
+  and 0.12s. Two spikes side by side ask for 90 and cannot be jumped at all.
+  Use `^` to split a floor into halves that are each reached some other way.
+  **The bed was the whole tile for as long as this bullet existed**, and "about
+  73px" was that figure under open sky. Under the model's own clearance the
+  ceiling left 58.4px of the 58, a take-off window of half a pixel, and sectors
+  8 and 16 put their way out behind hops at exactly that clearance: a jump that
+  visibly cleared the blades took a heart anyway.
+  `test_every_spike_hop_the_model_promises_forgives_a_human_press` holds every
+  hop the model certifies to a window at least `PLAYER_COYOTE_TIME` wide.
 - **Ceiling fans** hit a 46px-wide, 8px-tall band across the middle of their
   tile. Placed in an air row they only catch a jumping player, which is the
   intent — but the blades overhang the neighbouring columns, so keep `O` at
@@ -1000,6 +1011,15 @@ a hall. These rules come from the tuning in
   which is the one way to build a sector the test calls finishable and the
   player cannot finish. Keep `O` at least two columns clear of any hole in the
   floor below it.
+  **A spike bed is a gap that has to be jumped too**, with a heart on it
+  already: the hop is its only free answer, and blades in the arc take it away.
+  Measured, a fan in the row directly above the walk row does that within two
+  columns of the bed and one a row higher within one column; three rows up it
+  never touches the jump. The editor warns at the fan, and
+  `test_the_editor_knows_which_fans_take_a_spike_hop_away` holds both spans to
+  the body. The vault hung one directly over a bed and one two columns along,
+  both on the only way to its door, so the route there charged two hearts of
+  three whichever way it was played; each fan moved three columns.
 - **Ladders need not run the full height.** A run from the destination floor's
   headroom down to the source floor's standing row can be mounted and left at
   both ends; staggering short runs is what turns a floor plan into a route.

@@ -1,5 +1,6 @@
 #include "camera.h"
 #include "chase.h"
+#include "chuck_pose.h"
 #include "credits.h"
 #include "crew.h"
 #include "editor_doc.h"
@@ -918,6 +919,15 @@ static void test_campaign_levels_are_distinct_and_solvable(void)
  * because the way this check would rot is not a false alarm — it is somebody
  * widening `mover_involved` until the sweep asks nothing. A bound that silently
  * swallowed the campaign would read exactly like a clean run.
+ *
+ * **Delivered means arrived, not arrived for free**, and that is worth saying
+ * because for the spike hop it is the whole question. Every script starts in
+ * the middle of the source cell and none takes a run-up, so each of the
+ * campaign's 56 hops is delivered by walking through the bed and paying a
+ * heart; the harness also latched the mercy window on the first contact, so for
+ * most of the sweep the bed could not charge anything at all. What a hop costs
+ * a hand is `test_every_spike_hop_the_model_promises_forgives_a_human_press`'s
+ * to ask.
  */
 static bool edge_cell_in_duct(const Level *level, int col, int row)
 {
@@ -1002,6 +1012,12 @@ static bool edge_attempt(GameplayState *state, const LevelRuntime *pristine,
         state->player.crawling = false;
     }
     state->teleport_cooldown = 0.0f;
+    /* The mercy window is ticked by game.c and by nothing on this side of the
+     * boundary, so it is reset here or it latches: the first contact anywhere
+     * in the sweep left it at `PLAYER_HIT_INVULN` for every attempt after it,
+     * and `gameplay_combat_update_hazards` returned at its first line for the
+     * rest of the campaign. The sweep called the hazards and ran none of them. */
+    state->invuln_timer = 0.0f;
 
     int jump_step = script->jump_at < 0.0f ? -1
                                            : (int)(script->jump_at / SIM_STEP_DT);
@@ -3011,6 +3027,176 @@ static void test_the_cordon_fades_as_the_climb_rises(void)
  * (`FACADE_CLIMB_SPEED` covers 0.47px a step), so a jump cannot hide between
  * two samples.
  */
+/* The room a back wall is drawn with at (col, row), or NULL if no piece of the
+ * plan covers that tile. */
+static const LevelBackdropRoom *backdrop_room_at(const LevelBackdropPlan *plan,
+                                                 int col, int row)
+{
+    for (int i = 0; i < plan->piece_count; ++i)
+    {
+        const LevelBackdropPiece *p = &plan->pieces[i];
+        if (col >= p->col0 && col <= p->col1 && row >= p->top &&
+            row <= p->bottom)
+            return p->room >= 0 ? &plan->rooms[p->room] : NULL;
+    }
+    return NULL;
+}
+
+static bool backdrop_layout_is(const LevelBackdropRoom *room, int top,
+                               int floor)
+{
+    return room != NULL && room->top == top && room->floor == floor;
+}
+
+/*
+ * The back wall is a property of a room, so the map is read into rooms.
+ *
+ * Every interior backdrop used to be one screen-sized picture pinned to the
+ * screen, so it did not move when the camera climbed and every storey showed
+ * whatever slice of it was behind that storey — a rack or a window cut in half
+ * by the slab and carrying on above it. `level_backdrop_plan` is what the
+ * renderer lays a wall out against now, and these three maps are the three
+ * shapes it has to get right: storeys joined by holes that are not rooms, a hall
+ * with a platform standing in it, and a storey that opens off a hall through a
+ * door and is not part of it.
+ */
+static void test_the_back_wall_is_laid_out_per_room(void)
+{
+    static Level level;
+    static LevelBackdropPlan plan;
+    Rng rng;
+
+    /* Two storeys. A ladder and a pair of falling panels go through the slab
+     * between them, and neither is a room; the partition upstairs has a door in
+     * its foot, and the door is part of the storey rather than a strip of a
+     * shorter room cut into it. */
+    static const char storeys[] =
+        "################\n"
+        "#      #       #\n"
+        "#      #       #\n"
+        "#S            E#\n"
+        "####H#####FF####\n"
+        "#   H          #\n"
+        "#   H          #\n"
+        "#   H          #\n"
+        "################\n";
+    rng_seed(&rng, 7101);
+    REQUIRE(level_load_data(&level, "storeys", storeys, strlen(storeys), &rng));
+    REQUIRE(level_backdrop_plan(&level, &plan));
+    CHECK(level_backdrop_blocks(&level, 4, 4));
+    CHECK(level_backdrop_blocks(&level, 10, 4));
+    CHECK(level_backdrop_blocks(&level, 11, 4));
+    CHECK(!level_backdrop_blocks(&level, 7, 3));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 2, 1), 1, 4));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 7, 3), 1, 4));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 12, 2), 1, 4));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 4, 5), 5, 8));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 10, 7), 5, 8));
+    CHECK(backdrop_room_at(&plan, 4, 4) == NULL);
+
+    /* A hall with a platform standing free in it: the air above the platform
+     * and the air under it are the hall, because the platform is in front of
+     * the wall rather than the floor of another room. */
+    static const char hall[] =
+        "##############\n"
+        "#            #\n"
+        "#            #\n"
+        "#    ####    #\n"
+        "#            #\n"
+        "#S          E#\n"
+        "##############\n";
+    rng_seed(&rng, 7102);
+    REQUIRE(level_load_data(&level, "hall", hall, strlen(hall), &rng));
+    REQUIRE(level_backdrop_plan(&level, &plan));
+    CHECK(!level_backdrop_blocks(&level, 2, 3));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 2, 3), 1, 6));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 6, 1), 1, 6));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 6, 5), 1, 6));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 11, 4), 1, 6));
+
+    /* And a storey reached from a hall through a door keeps its own ceiling:
+     * the mezzanine rule is about air open along a room's whole height, and a
+     * doorway is not that. Taken too far, the rule would lay the hall's tall
+     * wall out behind a low room and cut it with the slab — the defect this
+     * whole plan exists to remove. */
+    static const char doorway[] =
+        "###########\n"
+        "#    #    #\n"
+        "#    #    #\n"
+        "#    ######\n"
+        "#    #    #\n"
+        "#S       E#\n"
+        "###########\n";
+    rng_seed(&rng, 7103);
+    REQUIRE(level_load_data(&level, "doorway", doorway, strlen(doorway), &rng));
+    REQUIRE(level_backdrop_plan(&level, &plan));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 2, 2), 1, 6));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 7, 1), 1, 3));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 7, 5), 4, 6));
+    CHECK(backdrop_layout_is(backdrop_room_at(&plan, 5, 5), 4, 6));
+}
+
+/*
+ * And over every map the game ships, the properties the renderer relies on:
+ * every tile of air a back wall shows through is covered by exactly one piece,
+ * no piece covers masonry, every piece is a whole run from ceiling to floor,
+ * and every piece sits inside the layout its room is drawn with — so nothing a
+ * theme stands on a room's floor can be clipped by a slab it was not laid out
+ * for.
+ */
+static void test_every_shipped_interior_reads_into_rooms(void)
+{
+    static Level level;
+    static LevelBackdropPlan plan;
+    int interiors = 0;
+    for (size_t i = 0; i < EMBEDDED_LEVEL_COUNT + EMBEDDED_SUBLEVEL_COUNT; ++i)
+    {
+        const EmbeddedLevelData *data =
+            i < EMBEDDED_LEVEL_COUNT ? &EMBEDDED_LEVELS[i]
+                                     : &EMBEDDED_SUBLEVELS[i - EMBEDDED_LEVEL_COUNT];
+        Rng rng;
+        rng_seed(&rng, 7200 + (uint64_t)i);
+        REQUIRE(level_load_data(&level, data->name, data->data, data->size,
+                                &rng));
+        if (level.map.mode == LEVEL_MODE_FACADE)
+            continue;
+        ++interiors;
+        CHECK(level_backdrop_plan(&level, &plan));
+        for (int p = 0; p < plan.piece_count; ++p)
+        {
+            const LevelBackdropPiece *piece = &plan.pieces[p];
+            CHECK(piece->room >= 0 && piece->room < plan.room_count);
+            if (piece->room < 0 || piece->room >= plan.room_count)
+                continue;
+            const LevelBackdropRoom *room = &plan.rooms[piece->room];
+            CHECK(room->top <= piece->top);
+            CHECK(room->floor > piece->bottom);
+            CHECK(room->col0 <= piece->col0 && room->col1 >= piece->col1);
+            for (int col = piece->col0; col <= piece->col1; ++col)
+            {
+                CHECK(level_backdrop_blocks(&level, col, piece->top - 1));
+                CHECK(level_backdrop_blocks(&level, col, piece->bottom + 1));
+            }
+        }
+        for (int row = 0; row < level.map.height; ++row)
+        {
+            for (int col = 0; col < level.map.width; ++col)
+            {
+                int covering = 0;
+                for (int p = 0; p < plan.piece_count; ++p)
+                {
+                    const LevelBackdropPiece *piece = &plan.pieces[p];
+                    if (col >= piece->col0 && col <= piece->col1 &&
+                        row >= piece->top && row <= piece->bottom)
+                        ++covering;
+                }
+                CHECK(covering == (level_backdrop_blocks(&level, col, row) ? 0 : 1));
+            }
+        }
+    }
+    CHECK(interiors == 16);
+}
+
 static void test_a_backdrop_layer_sinks_as_the_climb_rises(void)
 {
     const float view_h = (float)(VIEW_H - HUD_HEIGHT);
@@ -5139,7 +5325,70 @@ static ChaseCar *chase_place_car_ahead(Chase *chase, int slot)
     car->kind = CHASE_CAR_TRAFFIC;
     car->x = chase->player.x;
     car->y = chase->player.y + CHASE_CAR_LENGTH * 0.6f;
+    car->lane_x = car->x;
+    car->heading = 1.0f;
     return car;
+}
+
+/* A car in a lane doing its own speed, the way `generate_block` lays one down. */
+static ChaseCar *chase_place_lane_car(Chase *chase, int slot, int lane, float y,
+                                      float cruise)
+{
+    ChaseCar *car = &chase->cars[slot];
+    memset(car, 0, sizeof(*car));
+    car->active = true;
+    bool oncoming = lane < CHASE_FIRST_FORWARD_LANE;
+    car->kind = oncoming ? CHASE_CAR_ONCOMING : CHASE_CAR_TRAFFIC;
+    car->x = chase_lane_center(lane);
+    car->lane_x = car->x;
+    car->y = y;
+    car->heading = oncoming ? -1.0f : 1.0f;
+    car->cruise = cruise;
+    car->vy = car->heading * cruise;
+    return car;
+}
+
+/*
+ * A road with nothing on it but what the test puts there: no junction to send
+ * cross traffic, no block left to lay down, and the SUV far enough up the road
+ * to be nobody's obstacle — still inside `CHASE_LOSE_GAP`, so the attempt
+ * carries on.
+ */
+static void chase_quiet_road(Chase *chase)
+{
+    chase_clear_traffic(chase);
+    for (int i = 0; i < CHASE_MAX_INTERSECTIONS; ++i)
+        chase->intersections[i].active = false;
+    chase->generated_y = 1.0e9f;
+    chase->target.y = chase->player.y + CHASE_LOSE_GAP - 60.0f;
+}
+
+static float chase_car_half_x(const ChaseCar *car)
+{
+    return (car->kind == CHASE_CAR_CROSSING ? CHASE_CAR_LENGTH
+                                            : CHASE_CAR_WIDTH) * 0.5f;
+}
+
+static float chase_car_half_y(const ChaseCar *car)
+{
+    return (car->kind == CHASE_CAR_CROSSING ? CHASE_CAR_WIDTH
+                                            : CHASE_CAR_LENGTH) * 0.5f;
+}
+
+/* How far two boxes are inside each other: the shallower of the two axes, and
+ * nought or less when they are not overlapping at all. */
+static float chase_box_depth(float ax, float ay, float ahw, float ahh, float bx,
+                             float by, float bhw, float bhh)
+{
+    float into_x = ahw + bhw - fabsf(ax - bx);
+    float into_y = ahh + bhh - fabsf(ay - by);
+    return into_x < into_y ? into_x : into_y;
+}
+
+static float chase_cars_depth(const ChaseCar *a, const ChaseCar *b)
+{
+    return chase_box_depth(a->x, a->y, chase_car_half_x(a), chase_car_half_y(a),
+                           b->x, b->y, chase_car_half_x(b), chase_car_half_y(b));
 }
 
 static void test_chase_is_reproducible_from_a_seed(void)
@@ -5207,8 +5456,14 @@ static void test_chase_departure_hands_over_to_the_drive(void)
     CHECK(chase.phase == CHASE_PHASE_PURSUIT);
     CHECK(chase.player.engine_running);
     CHECK(chase.player.integrity == CHASE_INTEGRITY);
-    /* The SUV's head start is pulled back to one fixed opening gap. */
-    CHECK(fabsf(chase_gap(&chase) - CHASE_START_GAP) < 12.0f);
+    /* The SUV's head start is pulled back to one fixed opening gap, and never
+     * pushed out to it: the crew drive off in traffic like anybody else and
+     * can be held at a junction for cross traffic, which leaves them nearer —
+     * on screen, where moving them would be seen. Measured over 512 seeds a
+     * quarter open nearer and none nearer than 228, but never close enough
+     * for the pursuit to open with them already bolting. */
+    CHECK(chase_gap(&chase) < CHASE_START_GAP + 12.0f);
+    CHECK(chase_gap(&chase) > CHASE_MIN_GAP);
 
     /* Skipping the beat reaches the same phase without waiting it out. */
     Chase skipped;
@@ -5703,6 +5958,9 @@ static void test_chase_cross_traffic_obeys_the_signal(void)
     junction->y = chase.player.y + 420.0f;
     junction->signal_offset = 0.0f;
     junction->cross_spawn_timer = 0.05f;
+    /* The SUV opens the drive right on this junction, and cross traffic waits
+     * for a car in the junction however green its light is. */
+    chase.target.y = chase.player.y + CHASE_LOSE_GAP - 60.0f;
 
     /* Red for the cross street: nothing may pull into the junction. */
     chase.time = CHASE_SIGNAL_CROSS_GREEN + 0.4f;
@@ -5763,18 +6021,20 @@ static void test_chase_generated_traffic_matches_its_lane(void)
             const ChaseCar *car = &chase.cars[i];
             if (!car->active || car->wreck_time > 0.0f)
                 continue;
+            /* A car can be standing, queued behind a wreck; it is never
+             * reversing, and never on the other side of the centre line. */
             if (car->kind == CHASE_CAR_TRAFFIC)
             {
                 lane_cars++;
                 /* Runs with the pursuit, on the pursuit's side, and slower. */
-                CHECK(car->vy > 0.0f);
+                CHECK(car->vy >= 0.0f);
                 CHECK(car->vy <= CHASE_TRAFFIC_SPEED_MAX);
                 CHECK(car->x > CHASE_ROAD_WIDTH * 0.5f);
             }
             else if (car->kind == CHASE_CAR_ONCOMING)
             {
                 oncoming_cars++;
-                CHECK(car->vy < 0.0f);
+                CHECK(car->vy <= 0.0f);
                 CHECK(car->x < CHASE_ROAD_WIDTH * 0.5f);
             }
         }
@@ -5783,6 +6043,584 @@ static void test_chase_generated_traffic_matches_its_lane(void)
     CHECK(junctions > 0);
     CHECK(lane_cars > 0);
     CHECK(oncoming_cars > 0);
+}
+
+/*
+ * No car in the traffic is ever inside another one.
+ *
+ * Every car used to be handed a speed of its own and nothing else. So a
+ * quicker one that came up behind a slower one in the same lane drove slowly
+ * through it, three seconds end to end; cross traffic swept straight through
+ * whatever was in the lanes; and a wreck sat in the road while traffic, the
+ * SUV and Chuck all passed over it. Measured over 64 drives with nobody at the
+ * wheel before this, a car in a lane was drawn inside another for 74 seconds,
+ * a cross-street car inside a lane car for 56, and Chuck's car on top of a
+ * wreck for four and a half minutes.
+ *
+ * The drive is run end to end as a hand that does nothing, one that holds the
+ * throttle and one that mashes everything, and every pair of cars on the road
+ * is asked about on every step, wrecks included. It also has to have been a
+ * drive worth asking about: something was wrecked, something crossed, and
+ * something was held below its own pace by whatever was in front of it.
+ *
+ * Chuck's car and the SUV are not in the pairs, and that is deliberate rather
+ * than a gap. Running into traffic is the thing the player does wrong and the
+ * thing the crew do on purpose; both are crashes, with rules and tests of
+ * their own.
+ */
+static void test_chase_traffic_never_drives_through_itself(void)
+{
+    float deepest = 0.0f;
+    bool wrecked = false;
+    bool crossed = false;
+    bool held_up = false;
+    for (unsigned seed = 0; seed < 6u; ++seed)
+    {
+        for (int style = 0; style < 3; ++style)
+        {
+            Chase chase;
+            chase_init(&chase, 8080u + seed * 7919u);
+            Rng hand;
+            rng_seed(&hand, 99u + seed);
+            Input input = {0};
+            for (int step = 0; step < SIM_STEPS(150.0f); ++step)
+            {
+                if (style == 1)
+                    input.gas = true;
+                if (style == 2 && step % SIM_STEPS(0.4f) == 0)
+                {
+                    int press = rng_range(&hand, 6);
+                    input.gas = press == 1 || press == 3;
+                    input.brake = press == 2;
+                    input.left = press == 3 || press == 4;
+                    input.right = press == 5;
+                }
+                input.use_door = chase.attempts >= CHASE_SKIP_AFTER_ATTEMPTS &&
+                                 style != 0;
+                if (chase_step(&chase, &input) == CHASE_REACHED_BUILDING)
+                    break;
+                for (int i = 0; i < CHASE_MAX_CARS; ++i)
+                {
+                    const ChaseCar *a = &chase.cars[i];
+                    if (!a->active)
+                        continue;
+                    if (a->wreck_time > 0.0f)
+                        wrecked = true;
+                    else if (a->kind == CHASE_CAR_CROSSING)
+                        crossed = true;
+                    else if (fabsf(a->vy) < a->cruise - 1.0f)
+                        held_up = true;
+                    for (int j = i + 1; j < CHASE_MAX_CARS; ++j)
+                    {
+                        if (!chase.cars[j].active)
+                            continue;
+                        float depth = chase_cars_depth(a, &chase.cars[j]);
+                        if (depth > deepest)
+                            deepest = depth;
+                    }
+                }
+            }
+        }
+    }
+    CHECK(deepest < 0.5f);
+    CHECK(wrecked);
+    CHECK(crossed);
+    CHECK(held_up);
+}
+
+/*
+ * The case that was nearly all of it: two cars in one lane, the one behind
+ * quicker. It closes, eases off, and settles in at `CHASE_TRAFFIC_GAP` doing
+ * the leader's speed — and it does not pull out, because a car doing a
+ * hundred and fifty is traffic, not an obstruction.
+ */
+static void test_chase_a_quicker_car_settles_in_behind_a_slower_one(void)
+{
+    Chase chase;
+    chase_init(&chase, 3131);
+    chase_skip_departure(&chase);
+    chase_quiet_road(&chase);
+    ChaseCar *slow = chase_place_lane_car(&chase, 0, CHASE_FIRST_FORWARD_LANE,
+                                          chase.player.y + 700.0f,
+                                          CHASE_TRAFFIC_SPEED_MIN);
+    ChaseCar *quick = chase_place_lane_car(&chase, 1, CHASE_FIRST_FORWARD_LANE,
+                                           chase.player.y + 450.0f,
+                                           CHASE_TRAFFIC_SPEED_MAX);
+
+    /* Long enough to close and settle; short enough that Chuck, driving past
+     * at his own pace, has not left either of them behind the camera. */
+    Input input = {0};
+    float nearest = 1.0e9f;
+    for (int step = 0; step < SIM_STEPS(5.5f); ++step)
+    {
+        chase_step(&chase, &input);
+        REQUIRE(slow->active && quick->active);
+        float bumper = slow->y - quick->y - CHASE_CAR_LENGTH;
+        if (bumper < nearest)
+            nearest = bumper;
+    }
+    /* Without the rule it was through the leader inside three seconds. */
+    CHECK(nearest > CHASE_TRAFFIC_GAP - 1.0f);
+    CHECK(fabsf(quick->vy - slow->vy) < 1.0f);
+    CHECK(slow->y - quick->y - CHASE_CAR_LENGTH < CHASE_TRAFFIC_GAP + 4.0f);
+    CHECK(quick->x == chase_lane_center(CHASE_FIRST_FORWARD_LANE));
+}
+
+/*
+ * Cross traffic pulls out only when it can get all the way over. Two cars
+ * come through a junction on its green, one each way, holding their own
+ * speed; the cross street pulls out around them and never into them. The
+ * evidence is that nobody gives way: not the lane cars, whose speed would
+ * drop for a car sweeping across in front of them, and not the cross traffic,
+ * which never once drives below the pace it pulled out at. A cross street
+ * that pulled out on the light alone, as it used to, has every one of those
+ * braking — or, as it used to, driving straight through.
+ */
+static void test_chase_cross_traffic_waits_for_its_gap(void)
+{
+    Chase chase;
+    chase_init(&chase, 2468);
+    chase_skip_departure(&chase);
+    chase_quiet_road(&chase);
+
+    ChaseIntersection *junction = &chase.intersections[0];
+    junction->active = true;
+    junction->y = chase.player.y + 800.0f;
+    junction->signal_offset = 0.0f;
+    junction->cross_spawn_timer = 0.02f;
+    chase.time = 0.0f;
+    ChaseCar *up = chase_place_lane_car(&chase, 0, CHASE_FIRST_FORWARD_LANE,
+                                        junction->y - 200.0f, 200.0f);
+    ChaseCar *down = chase_place_lane_car(&chase, 1, CHASE_FIRST_FORWARD_LANE - 1,
+                                          junction->y + 250.0f, 180.0f);
+
+    Input input = {0};
+    int pulled_out = 0;
+    bool cross_slowed = false;
+    bool lanes_slowed = false;
+    float deepest = 0.0f;
+    bool seen[CHASE_MAX_CARS] = {false};
+    /* Two seconds and a bit: the green is still on, and Chuck has not reached
+     * the junction to become part of it. */
+    for (int step = 0; step < SIM_STEPS(2.2f); ++step)
+    {
+        chase_step(&chase, &input);
+        if (fabsf(up->vy) < up->cruise - 0.5f ||
+            fabsf(down->vy) < down->cruise - 0.5f)
+            lanes_slowed = true;
+        for (int i = 0; i < CHASE_MAX_CARS; ++i)
+        {
+            const ChaseCar *car = &chase.cars[i];
+            if (!car->active || car->kind != CHASE_CAR_CROSSING)
+                continue;
+            if (!seen[i])
+                pulled_out++;
+            seen[i] = true;
+            if (fabsf(car->vx) < car->cruise - 0.5f)
+                cross_slowed = true;
+            for (int j = 0; j < CHASE_MAX_CARS; ++j)
+            {
+                if (j != i && chase.cars[j].active)
+                {
+                    float depth = chase_cars_depth(car, &chase.cars[j]);
+                    if (depth > deepest)
+                        deepest = depth;
+                }
+            }
+        }
+    }
+    CHECK(pulled_out > 0);
+    CHECK(!cross_slowed);
+    CHECK(!lanes_slowed);
+    CHECK(deepest < 0.5f);
+}
+
+/*
+ * A car held up by something that has stopped pulls round it into the other
+ * lane on its own side — and only on its own side — instead of queueing
+ * behind it for the rest of the drive, or driving through it as it used to.
+ * Chuck is in the far oncoming lane, where he is nobody's mirror.
+ */
+static void test_chase_traffic_pulls_round_a_wreck(void)
+{
+    Chase chase;
+    chase_init(&chase, 1357);
+    chase_skip_departure(&chase);
+    chase_quiet_road(&chase);
+    chase.player.x = chase_lane_center(0);
+
+    ChaseCar *wreck = chase_place_lane_car(&chase, 0, CHASE_LANE_COUNT - 1,
+                                           chase.player.y + 900.0f, 0.0f);
+    wreck->wreck_time = 1.0f;
+    ChaseCar *car = chase_place_lane_car(&chase, 1, CHASE_LANE_COUNT - 1,
+                                         chase.player.y + 650.0f, 200.0f);
+
+    Input input = {0};
+    float deepest = 0.0f;
+    float leftmost = car->x;
+    for (int step = 0; step < SIM_STEPS(3.5f); ++step)
+    {
+        chase_step(&chase, &input);
+        REQUIRE(car->active && wreck->active);
+        float depth = chase_cars_depth(car, wreck);
+        if (depth > deepest)
+            deepest = depth;
+        if (car->x < leftmost)
+            leftmost = car->x;
+    }
+    CHECK(deepest < 0.5f);
+    CHECK(car->x == chase_lane_center(CHASE_LANE_COUNT - 2));
+    CHECK(leftmost >= chase_lane_center(CHASE_FIRST_FORWARD_LANE) - 0.01f);
+    CHECK(car->y > wreck->y + CHASE_CAR_LENGTH);
+    CHECK(fabsf(car->vy - car->cruise) < 1.0f);
+}
+
+/*
+ * The crew still drive through whatever they cannot get round, and what they
+ * hit is still a wreck — but it is shoved out of their road, not driven over.
+ * A car doing a hundred and fifty rammed square from behind used to be passed
+ * through end to end, which is a second and more of SUV drawn on top of it.
+ */
+static void test_chase_the_suv_shoves_what_it_rams(void)
+{
+    Chase chase;
+    chase_init(&chase, 97531);
+    chase_skip_departure(&chase);
+    chase_quiet_road(&chase);
+    chase.target.y = chase.player.y + CHASE_START_GAP;
+    chase.target.x = chase_lane_center(CHASE_LANE_COUNT - 1);
+    chase.target.lane_target_x = chase.target.x;
+    ChaseCar *car = chase_place_lane_car(
+        &chase, 0, CHASE_LANE_COUNT - 1,
+        chase.target.y + (CHASE_SUV_LENGTH + CHASE_CAR_LENGTH) * 0.5f + 1.0f,
+        CHASE_TRAFFIC_SPEED_MIN);
+
+    Input input = {0};
+    float buried = 0.0f;
+    for (int step = 0; step < SIM_STEPS(2.0f); ++step)
+    {
+        chase_step(&chase, &input);
+        REQUIRE(car->active);
+        if (chase_box_depth(chase.target.x, chase.target.y,
+                            CHASE_SUV_WIDTH * 0.5f, CHASE_SUV_LENGTH * 0.5f,
+                            car->x, car->y, chase_car_half_x(car),
+                            chase_car_half_y(car)) > 0.5f)
+            buried += CHASE_STEP;
+    }
+    CHECK(car->wreck_time > 0.0f);
+    CHECK(buried < 0.1f);
+}
+
+/*
+ * A wreck is no threat to Chuck, on purpose, so that one crash cannot chain
+ * into the next — and that is exactly why he used to drive the whole length
+ * of every car he hit: slowed by the crash, back up to pace a second later,
+ * and the wreck braking to a halt in front of him. His car shoves it aside
+ * now, and the crash still costs one hit and only one.
+ */
+static void test_chase_chuck_shoves_his_own_wreck_aside(void)
+{
+    Chase chase;
+    chase_init(&chase, 86420);
+    chase_skip_departure(&chase);
+    chase_quiet_road(&chase);
+    chase.player.invuln_timer = 0.0f;
+    ChaseCar *car = chase_place_lane_car(&chase, 0, CHASE_LANE_COUNT - 1,
+                                         chase.player.y + 120.0f,
+                                         CHASE_TRAFFIC_SPEED_MIN);
+
+    Input input = {0};
+    float buried = 0.0f;
+    bool hit = false;
+    for (int step = 0; step < SIM_STEPS(3.0f); ++step)
+    {
+        chase_step(&chase, &input);
+        REQUIRE(car->active);
+        if (car->wreck_time <= 0.0f)
+            continue;
+        hit = true;
+        if (chase_box_depth(chase.player.x, chase.player.y,
+                            CHASE_CAR_WIDTH * 0.5f, CHASE_CAR_LENGTH * 0.5f,
+                            car->x, car->y, chase_car_half_x(car),
+                            chase_car_half_y(car)) > 0.5f)
+            buried += CHASE_STEP;
+    }
+    CHECK(hit);
+    CHECK(chase.player.integrity == CHASE_INTEGRITY - 1);
+    CHECK(buried < 0.1f);
+}
+
+/*
+ * A car stopped against another is left exactly touching it, and "exactly" is
+ * a float: often the two centres come out a hair nearer than the two
+ * half-widths add up to. Read as an overlap, that pair was one the rule lets
+ * through each other — a wreck shoved sideways into a parked car went into it
+ * a pixel a frame. So a wreck is slid into a parked car from a few hundred
+ * starting points whose sums do not come out even, and none of them may end
+ * up inside it.
+ */
+static void test_chase_a_car_touching_another_stays_out_of_it(void)
+{
+    float deepest = 0.0f;
+    int staged = 0;
+    for (int k = 0; k < 240; ++k)
+    {
+        Chase chase;
+        chase_init(&chase, 7070);
+        chase_skip_departure(&chase);
+        chase_quiet_road(&chase);
+        ChaseCar *parked = chase_place_lane_car(&chase, 0, CHASE_FIRST_FORWARD_LANE,
+                                                chase.player.y + 300.0f +
+                                                    (float)k * 0.137f,
+                                                0.0f);
+        parked->x += (float)k * 0.0731f;
+        ChaseCar *wreck = chase_place_lane_car(&chase, 1, CHASE_FIRST_FORWARD_LANE,
+                                               parked->y + 31.3f, 0.0f);
+        wreck->x = parked->x - CHASE_CAR_WIDTH - 1.0f - (float)k * 0.0113f;
+        wreck->lane_x = wreck->x;
+        wreck->wreck_time = 1.0f;
+        wreck->vx = CHASE_WRECK_DRIFT;
+
+        Input input = {0};
+        bool hair = false;
+        for (int step = 0; step < SIM_STEPS(0.6f); ++step)
+        {
+            chase_step(&chase, &input);
+            float depth = chase_cars_depth(parked, wreck);
+            if (depth > 0.0f && depth < 0.01f)
+                hair = true;
+            if (depth > deepest)
+                deepest = depth;
+        }
+        if (hair)
+            staged++;
+    }
+    /* The float has to have done its worst somewhere, or this asked nothing. */
+    CHECK(staged > 0);
+    CHECK(deepest < 0.5f);
+}
+
+/*
+ * At the building the SUV and Chuck both brake onto marks in the kerb lane, and
+ * a car still in that lane ahead of him pulls out to let him in, so he lands
+ * on his mark and at a stop. He used to be put there, through the car.
+ */
+static void test_chase_traffic_makes_room_at_the_kerb(void)
+{
+    Chase chase;
+    chase_init(&chase, 5150);
+    chase_skip_departure(&chase);
+    chase_quiet_road(&chase);
+    chase.target.y = chase.player.y + CHASE_START_GAP;
+    ChaseCar *car = chase_place_lane_car(&chase, 0, CHASE_LANE_COUNT - 1,
+                                         chase.player.y + 200.0f,
+                                         CHASE_TRAFFIC_SPEED_MIN);
+
+    Input input = {0};
+    chase.pursuit_time = CHASE_PURSUIT_DURATION;
+    chase_step(&chase, &input);
+    REQUIRE(chase.phase == CHASE_PHASE_ARRIVAL);
+    REQUIRE(car->active);
+
+    /* And while the car is still in front of him he eases in behind it rather
+     * than stopping dead against its bumper — the script asks for a speed, the
+     * traffic decides whether he gets it. */
+    float buried = 0.0f;
+    float nearest = 1.0e9f;
+    for (int step = 0; step < SIM_STEPS(CHASE_ARRIVAL_DURATION + 0.2f); ++step)
+    {
+        chase_step(&chase, &input);
+        if (!car->active)
+            continue;
+        float depth = chase_box_depth(chase.player.x, chase.player.y,
+                                      CHASE_CAR_WIDTH * 0.5f,
+                                      CHASE_CAR_LENGTH * 0.5f, car->x, car->y,
+                                      chase_car_half_x(car),
+                                      chase_car_half_y(car));
+        if (depth > buried)
+            buried = depth;
+        if (fabsf(car->x - chase.player.x) < CHASE_CAR_WIDTH &&
+            car->y > chase.player.y)
+        {
+            float bumper = car->y - chase.player.y - CHASE_CAR_LENGTH;
+            if (bumper < nearest)
+                nearest = bumper;
+        }
+    }
+    CHECK(chase.phase == CHASE_PHASE_DONE);
+    CHECK(buried < 0.5f);
+    CHECK(nearest > CHASE_TRAFFIC_GAP * 0.5f);
+    CHECK(fabsf(chase.player.y -
+                (chase.building_y - CHASE_ARRIVAL_PLAYER_STOP)) < 0.5f);
+    CHECK(chase.player.speed == 0.0f);
+}
+
+/*
+ * The one thing Chuck's car does not stop for is a wreck: it shoves it aside.
+ * Stopping for one could box him in on his way onto the mark — here he is in
+ * the far oncoming lane when the beat starts, a wreck from the junction lies
+ * against his right-hand side and a car is coming down his lane at him, which
+ * stops for him as he stops for it. Measured before this, one drive in 384
+ * parked him that way for the whole beat, thirteen hundred pixels short and
+ * on the wrong side of the road.
+ */
+static void test_chase_a_wreck_cannot_box_chuck_in_at_the_building(void)
+{
+    Chase chase;
+    chase_init(&chase, 5150);
+    chase_skip_departure(&chase);
+    chase_quiet_road(&chase);
+    chase.target.y = chase.player.y + CHASE_START_GAP;
+    chase.player.x = chase_lane_center(0);
+
+    Input input = {0};
+    chase.pursuit_time = CHASE_PURSUIT_DURATION;
+    chase_step(&chase, &input);
+    REQUIRE(chase.phase == CHASE_PHASE_ARRIVAL);
+
+    ChaseCar *wreck = &chase.cars[0];
+    memset(wreck, 0, sizeof(*wreck));
+    wreck->active = true;
+    wreck->kind = CHASE_CAR_CROSSING;
+    wreck->heading = 1.0f;
+    wreck->wreck_time = 1.0f;
+    wreck->x = chase.player.x + CHASE_CAR_WIDTH * 0.5f + CHASE_CAR_LENGTH * 0.5f;
+    wreck->y = chase.player.y + 20.0f;
+    wreck->lane_x = wreck->x;
+    chase_place_lane_car(&chase, 1, 0,
+                         chase.player.y + CHASE_CAR_LENGTH + CHASE_TRAFFIC_GAP,
+                         CHASE_ONCOMING_SPEED_MIN);
+
+    for (int step = 0; step < SIM_STEPS(CHASE_ARRIVAL_DURATION + 0.2f); ++step)
+        chase_step(&chase, &input);
+    CHECK(chase.phase == CHASE_PHASE_DONE);
+    CHECK(fabsf(chase.player.y -
+                (chase.building_y - CHASE_ARRIVAL_PLAYER_STOP)) < 0.5f);
+    CHECK(chase.player.x == chase_lane_center(CHASE_LANE_COUNT - 1));
+}
+
+/*
+ * A new block of road is never laid down with a car on top of anything already
+ * on it — including cross-street wrecks, which the check used to skip because
+ * cross traffic stays at its junction. A wreck does not: the SUV carries what
+ * it rams up the road at its own speed. So the stretch the next block covers is
+ * paved with cross-street wrecks, one lane to each, and nothing laid down may
+ * land in one of them.
+ */
+static void test_chase_a_new_block_never_lands_on_a_wreck(void)
+{
+    for (unsigned seed = 0; seed < 8u; ++seed)
+    {
+        Chase chase;
+        chase_init(&chase, 4040u + seed * 131u);
+        chase_skip_departure(&chase);
+        chase_quiet_road(&chase);
+        chase.generated_y = chase.camera_y + CHASE_SPAWN_MARGIN - 1.0f;
+        int slot = 0;
+        for (int row = 0; row < 5; ++row)
+        {
+            for (int lane = 0; lane < CHASE_LANE_COUNT; ++lane)
+            {
+                ChaseCar *wreck = &chase.cars[slot++];
+                memset(wreck, 0, sizeof(*wreck));
+                wreck->active = true;
+                wreck->kind = CHASE_CAR_CROSSING;
+                wreck->heading = 1.0f;
+                wreck->wreck_time = 1.0f;
+                wreck->x = chase_lane_center(lane);
+                wreck->lane_x = wreck->x;
+                wreck->y = chase.generated_y + 140.0f + 170.0f * (float)row;
+            }
+        }
+
+        Input input = {0};
+        chase_step(&chase, &input);
+        REQUIRE(chase.generated_y > chase.camera_y + CHASE_SPAWN_MARGIN);
+        for (int i = slot; i < CHASE_MAX_CARS; ++i)
+        {
+            const ChaseCar *car = &chase.cars[i];
+            if (!car->active)
+                continue;
+            for (int j = 0; j < slot; ++j)
+                CHECK(chase_cars_depth(car, &chase.cars[j]) <= 0.0f);
+        }
+    }
+}
+
+/*
+ * Two cars that are already inside each other are let come apart. It is a
+ * state traffic never gets itself into, but a crash can leave it: the attempt
+ * below ends with a cross-street car halfway through Chuck's door, and his car
+ * is solid to traffic for the beat that follows. Kept out of each other's way
+ * by the rule that stops a car driving into another, they would sit like that
+ * until the drive rewound; the cross-street car has to drive on out of him.
+ */
+static void test_chase_cars_left_inside_each_other_come_apart(void)
+{
+    Chase chase;
+    chase_init(&chase, 6060);
+    chase_skip_departure(&chase);
+    chase_quiet_road(&chase);
+    chase.player.invuln_timer = 0.0f;
+    chase.player.integrity = 1;
+    chase_place_car_ahead(&chase, 0);
+    ChaseCar *across = &chase.cars[1];
+    memset(across, 0, sizeof(*across));
+    across->active = true;
+    across->kind = CHASE_CAR_CROSSING;
+    across->heading = 1.0f;
+    across->cruise = CHASE_CROSS_SPEED_MIN;
+    across->vx = CHASE_CROSS_SPEED_MIN;
+    across->x = chase.player.x - CHASE_CAR_LENGTH * 0.5f;
+    across->y = chase.player.y - 10.0f;
+    across->lane_x = across->x;
+
+    Input input = {0};
+    chase_step(&chase, &input);
+    REQUIRE(chase.phase == CHASE_PHASE_FAILED);
+    REQUIRE(across->active && across->wreck_time <= 0.0f);
+    for (int step = 0; step < SIM_STEPS(1.0f); ++step)
+        chase_step(&chase, &input);
+    CHECK(chase_box_depth(chase.player.x, chase.player.y,
+                          CHASE_CAR_WIDTH * 0.5f, CHASE_CAR_LENGTH * 0.5f,
+                          across->x, across->y, chase_car_half_x(across),
+                          chase_car_half_y(across)) <= 0.0f);
+}
+
+/*
+ * Before the chase the crew are not being chased, and they drive off like
+ * anybody else: coming up behind a car crawling along the kerb lane they ease
+ * in behind it, rather than driving into it or stopping dead against it. The
+ * car starts well clear, so how near they come is the SUV's doing.
+ */
+static void test_chase_the_suv_drives_off_in_traffic(void)
+{
+    Chase chase;
+    chase_init(&chase, 4242);
+    chase_clear_traffic(&chase);
+    for (int i = 0; i < CHASE_MAX_INTERSECTIONS; ++i)
+        chase.intersections[i].active = false;
+    chase.generated_y = 1.0e9f;
+    ChaseCar *car = chase_place_lane_car(&chase, 0, CHASE_LANE_COUNT - 1,
+                                         chase.target.y + 200.0f, 60.0f);
+
+    Input input = {0};
+    float nearest = 1.0e9f;
+    while (chase.phase == CHASE_PHASE_DEPARTURE)
+    {
+        chase_step(&chase, &input);
+        REQUIRE(car->active);
+        if (fabsf(car->x - chase.target.x) <
+            (CHASE_CAR_WIDTH + CHASE_SUV_WIDTH) * 0.5f)
+        {
+            float bumper = car->y - chase.target.y -
+                           (CHASE_CAR_LENGTH + CHASE_SUV_LENGTH) * 0.5f;
+            if (bumper < nearest)
+                nearest = bumper;
+        }
+    }
+    CHECK(nearest < CHASE_TRAFFIC_GAP * 3.0f);
+    CHECK(nearest > CHASE_TRAFFIC_GAP * 0.5f);
 }
 
 static void test_gameplay_reset_preserves_rng_only(void)
@@ -12542,12 +13380,14 @@ static void test_the_route_model_will_not_take_a_fatal_fall(void)
 }
 
 /* A probe floor for the test below: one gap in a flat run, the way out on the
- * far side, and two open rows over the walk row — which is what the model's own
- * two-tile hop asks for. `hazard` fills the gap with spikes instead of air. */
-static void route_probe_build(char *out, size_t size, int hole, char hazard)
+ * far side, and `headroom` open rows over the walk row — two is what the
+ * model's own two-tile hop asks for. `hazard` fills the gap with spikes instead
+ * of air. */
+static void route_probe_build(char *out, size_t size, int hole, char hazard,
+                              int headroom)
 {
     const int width = 20;
-    const int height = 5;
+    const int height = headroom + 3;
     const int walk = height - 2;
     const int floor = height - 1;
     size_t at = 0;
@@ -12619,6 +13459,136 @@ static bool route_probe_model_crosses(const Level *level)
 }
 
 /*
+ * One try at a spike bed from the floor beside it, made the way a hand makes it.
+ *
+ * The player stands with his leading edge `lead` pixels short of the bed, jump
+ * goes on the first step, and the direction is held from `steer_at` seconds
+ * until the whole box is past the far side and then let go — which is what lands
+ * a hop on a single tile between two beds instead of carrying it into the
+ * second. A run-up is a `steer_at` of nought; standing flush and jumping before
+ * steering is a `lead` of nought. True if he comes to rest past the bed with
+ * every heart he started with. A stance the floor does not offer — in a wall, or
+ * over nothing — is a press nobody can make, so it is a miss.
+ */
+static bool spike_hop_attempt(GameplayState *state,
+                              const LevelRuntime *pristine, float bed_x,
+                              float bed_w, int row, int dir, float lead,
+                              float steer_at)
+{
+    state->level.runtime = *pristine;
+    memset(&state->player, 0, sizeof(state->player));
+    state->player.x = dir > 0 ? bed_x - lead - (float)PLAYER_W
+                              : bed_x + bed_w + lead;
+    state->player.y = (float)((row + 1) * TILE_SIZE - PLAYER_H);
+    state->player.hp = PLAYER_MAX_HP;
+    state->player.facing = dir;
+    state->player.on_ground = true;
+    /* Reset for the reason edge_attempt gives: nothing here ticks it. */
+    state->invuln_timer = 0.0f;
+    if (!gameplay_box_tiles_clear(state, state->player.x, state->player.y,
+                                  (float)PLAYER_W, (float)PLAYER_H,
+                                  STANCE_UPRIGHT))
+        return false;
+    int first = (int)floorf(state->player.x / TILE_SIZE);
+    int last = (int)floorf((state->player.x + PLAYER_W - 1.0f) / TILE_SIZE);
+    bool supported = false;
+    for (int col = first; col <= last; ++col)
+        supported = supported || level_is_solid(&state->level, col, row + 1);
+    if (!supported)
+        return false;
+
+    /* Coming to rest before the far side is not the end of the try: a rung over
+     * the bed catches a hop as surely as the floor beyond it does, and the
+     * direction stays on until he is past. A hop that lands short walks into
+     * the bed on the next step and is answered there. */
+    bool airborne = false;
+    for (int step = 0; step < SIM_STEPS(1.5f); ++step)
+    {
+        bool past = dir > 0 ? state->player.x >= bed_x + bed_w
+                            : state->player.x + PLAYER_W <= bed_x;
+        if (past && airborne &&
+            (state->player.on_ground || state->player.on_ladder))
+            return true;
+        bool steer = !past && (float)step * SIM_STEP_DT >= steer_at;
+        Input input = {0};
+        input.right = steer && dir > 0;
+        input.left = steer && dir < 0;
+        input.jump = step == 0;
+        input.jump_held = true;
+        state->events.count = 0;
+        player_update(&state->player, &state->level, &input, SIM_STEP_DT);
+        gameplay_combat_update_hazards(state);
+        if (state->player.hp < PLAYER_MAX_HP)
+            return false;
+        if (!state->player.on_ground && !state->player.on_ladder)
+            airborne = true;
+    }
+    return false;
+}
+
+/*
+ * How much a hand may be out by and still clear the bed, in seconds of its own
+ * timing: the longest unbroken run of presses that work, the better of the two
+ * ways a hop is made. A run-up is swept over where the jump is pressed, which
+ * at the walk speed is when; a stand flush against the bed is swept over how
+ * long after the jump the direction goes on. It stops as soon as it has seen
+ * `enough`, since a sweep over the campaign only needs to know a hop is fair.
+ */
+static float spike_hop_forgiveness(GameplayState *state,
+                                   const LevelRuntime *pristine, float bed_x,
+                                   float bed_w, int row, int dir, float enough)
+{
+    const float lead_step = 0.25f;
+    float best = 0.0f;
+    float run = 0.0f;
+    for (float lead = 0.0f; lead <= 3.0f * TILE_SIZE; lead += lead_step)
+    {
+        if (!spike_hop_attempt(state, pristine, bed_x, bed_w, row, dir, lead,
+                               0.0f))
+        {
+            run = 0.0f;
+            continue;
+        }
+        run += lead_step / PLAYER_WALK_SPEED;
+        best = run > best ? run : best;
+        if (best >= enough)
+            return best;
+    }
+    run = 0.0f;
+    for (int step = 0; step < SIM_STEPS(0.6f); ++step)
+    {
+        if (!spike_hop_attempt(state, pristine, bed_x, bed_w, row, dir, 0.0f,
+                               (float)step * SIM_STEP_DT))
+        {
+            run = 0.0f;
+            continue;
+        }
+        run += SIM_STEP_DT;
+        best = run > best ? run : best;
+        if (best >= enough)
+            return best;
+    }
+    return best;
+}
+
+/* A probe floor loaded into `state` with nobody on it, and the runtime every
+ * attempt is restored from. */
+static void spike_probe_load(GameplayState *state, LevelRuntime *pristine,
+                             int bed, int headroom)
+{
+    static char data[1024];
+    route_probe_build(data, sizeof(data), bed, '^', headroom);
+    memset(state, 0, sizeof(*state));
+    rng_seed(&state->rng, 7200u + (unsigned)(bed * 16 + headroom));
+    gameplay_state_begin_level(state);
+    Rng load = state->rng;
+    REQUIRE(level_load_data(&state->level, "spikes", data, strlen(data),
+                            &load));
+    REQUIRE(state->level.map.spike_count == bed);
+    *pristine = state->level.runtime;
+}
+
+/*
  * Nothing the model promises is a move the man cannot make.
  *
  * The route model is what certifies every shipped map: `route_reaches` is how
@@ -12655,7 +13625,7 @@ static void test_the_route_model_promises_only_moves_the_player_can_make(void)
     for (int hole = 1; hole <= 6; ++hole)
     {
         static char data[512];
-        route_probe_build(data, sizeof(data), hole, 0);
+        route_probe_build(data, sizeof(data), hole, 0, 2);
 
         static GameplayState state;
         memset(&state, 0, sizeof(state));
@@ -12687,7 +13657,7 @@ static void test_the_route_model_promises_only_moves_the_player_can_make(void)
     for (int bed = 1; bed <= 4; ++bed)
     {
         static char spikes[512];
-        route_probe_build(spikes, sizeof(spikes), bed, '^');
+        route_probe_build(spikes, sizeof(spikes), bed, '^', 2);
 
         static GameplayState probe;
         memset(&probe, 0, sizeof(probe));
@@ -12741,6 +13711,237 @@ static void test_the_route_model_promises_only_moves_the_player_can_make(void)
         CHECK(crossed_unhurt > 0);
     }
     CHECK(beds_promised >= 1);
+
+    /* And the refusal, which is a claim about the body too: two spikes abreast
+     * cannot be jumped, so the model is right not to route them. LEGEND.md has
+     * said this test measures that since the sentence was written, and the loop
+     * above skips every bed the model refuses, so it never had. It is asked
+     * under open sky, which is the jump's best case, by both of the ways a hand
+     * makes a hop — and the same floor with one spike is the control, so what
+     * is asserted is the width rather than the fixture. The margin is thin
+     * since the bed became the half-tile it is drawn as, about a pixel of the
+     * ninety two spikes ask for, which is exactly why it wants holding. */
+    static GameplayState sky;
+    static LevelRuntime sky_pristine;
+    const int open_sky = 4;
+    const float bed_x = (float)(8 * TILE_SIZE);
+    const int walk_row = open_sky + 1;
+    spike_probe_load(&sky, &sky_pristine, 1, open_sky);
+    CHECK(spike_hop_forgiveness(&sky, &sky_pristine, bed_x, (float)TILE_SIZE,
+                                walk_row, 1, INFINITY) > 0.0f);
+    spike_probe_load(&sky, &sky_pristine, 2, open_sky);
+    float two_abreast = spike_hop_forgiveness(
+        &sky, &sky_pristine, bed_x, 2.0f * TILE_SIZE, walk_row, 1, INFINITY);
+    if (two_abreast > 0.0f)
+        fprintf(stderr, "  two spikes abreast cross for free with %.3fs to "
+                        "spare\n", two_abreast);
+    CHECK(two_abreast == 0.0f);
+}
+
+/*
+ * Every spike hop the model promises forgives a press as late as a ledge does.
+ *
+ * The route model hops a single spike under two open rows, and the test above
+ * asks whether that hop *exists* — one press in a sweep that clears the bed.
+ * What it never asked is how many presses do, and the answer was one. The bed
+ * was the whole tile while the blades are drawn in its lower half, so the boots
+ * had to rise a full tile over air; two open rows cap the jump at 64px, and the
+ * time the box spends a tile up under that cap covers 58.4px of the 58 a bed
+ * and a body ask for. The take-off window was 0.5px — about 4ms, one step of
+ * the simulation — and the sweep above, pressing every two pixels, landed on it
+ * by the luck of the lattice: at a stride of three it would have missed.
+ *
+ * That is not a fixture's problem. Sectors 8 and 16 put their way out behind
+ * hops at exactly that clearance and five of the seven floors carrying a hop
+ * have one there; what a player met was a jump that looked like it cleared the
+ * blades and took a heart anyway, on the certified route. See SPIKE_H.
+ *
+ * The bound is the game's own statement of how imprecise a press is allowed to
+ * be: `PLAYER_COYOTE_TIME`, the beat a jump is still honoured after the boots
+ * leave a ledge. A hop the model certifies has to forgive at least that much,
+ * by the better of the two ways a hand makes one — a run-up, or a stand flush
+ * against the bed and a jump before steering, which is the only way off a
+ * single tile between two beds. It walks every hop on every interior and every
+ * washroom, and the probe floor at the model's own clearance besides, so the
+ * bound still holds the rule on the day no map happens to use its tightest
+ * case. Measured with the bed at half a tile: 0.117s at that clearance, which is
+ * also the campaign's worst — 26 of its 56 hops sit exactly there — and 0.23s
+ * under open sky. The run-up alone would put sector 9's `(35,18)` lower, at
+ * 0.103s, because the slab over the take-off cuts it short; the stand flush
+ * against the bed does not need the run-up, which is why a hand is asked both.
+ */
+static void test_every_spike_hop_the_model_promises_forgives_a_human_press(void)
+{
+    static GameplayState state;
+    static LevelRuntime pristine;
+    static RouteMap route;
+    const float enough = PLAYER_COYOTE_TIME;
+    int hops = 0;
+    int unfair = 0;
+
+    /* The model's own clearance, whatever the maps do with it. */
+    spike_probe_load(&state, &pristine, 1, 2);
+    float fixture = spike_hop_forgiveness(&state, &pristine,
+                                          (float)(8 * TILE_SIZE),
+                                          (float)TILE_SIZE, 3, 1, enough);
+    if (fixture < enough)
+        fprintf(stderr, "  a hop under two open rows forgives %.3fs of a "
+                        "%.3fs press\n", fixture, enough);
+    CHECK(fixture >= enough);
+
+    for (size_t index = 0;
+         index < EMBEDDED_LEVEL_COUNT + EMBEDDED_SUBLEVEL_COUNT; ++index)
+    {
+        const EmbeddedLevelData *source =
+            index < EMBEDDED_LEVEL_COUNT
+                ? &EMBEDDED_LEVELS[index]
+                : &EMBEDDED_SUBLEVELS[index - EMBEDDED_LEVEL_COUNT];
+        memset(&state, 0, sizeof(state));
+        rng_seed(&state.rng, 7300u + (unsigned)index);
+        gameplay_state_begin_level(&state);
+        Rng load = state.rng;
+        REQUIRE(level_load_data(&state.level, source->name, source->data,
+                                source->size, &load));
+        if (state.level.map.mode == LEVEL_MODE_FACADE ||
+            state.level.map.spike_count == 0)
+            continue;
+        /* The model's map, which has no crates on it; see the edge sweep. */
+        state.level.runtime.crate_count = 0;
+        pristine = state.level.runtime;
+
+        route_map_init(&route, &state.level);
+        route_flood(&route, route_player_start(&route));
+        for (int r = 0; r < state.level.map.height; ++r)
+        {
+            for (int c = 0; c < state.level.map.width; ++c)
+            {
+                if (!route.seen[r][c])
+                    continue;
+                RouteCell next[ROUTE_MAX_NEIGHBOURS];
+                int count = route_neighbours(&route, c, r, next);
+                for (int k = 0; k < count; ++k)
+                {
+                    int across = next[k].col - c;
+                    if (next[k].row != r || (across != 2 && across != -2) ||
+                        !route.spike[r][c + across / 2])
+                        continue;
+                    ++hops;
+                    int dir = across > 0 ? 1 : -1;
+                    float bed_x = (float)((c + dir) * TILE_SIZE);
+                    float slack = spike_hop_forgiveness(&state, &pristine,
+                                                        bed_x,
+                                                        (float)TILE_SIZE, r,
+                                                        dir, enough);
+                    if (slack >= enough)
+                        continue;
+                    ++unfair;
+                    fprintf(stderr, "  %s hops (%d,%d) -> (%d,%d) with %.3fs "
+                                    "to spare of the %.3fs a press needs\n",
+                            source->name, c, r, next[k].col, next[k].row,
+                            slack, enough);
+                }
+            }
+        }
+    }
+    CHECK(unfair == 0);
+    /* Fifty-six today. Nought would mean the sweep stopped finding the hops,
+     * and a sweep that finds nothing reads exactly like a clean one. */
+    CHECK(hops > 0);
+}
+
+/*
+ * The editor knows which fans take a spike hop away, and knows it from the body.
+ *
+ * The sweep above found the one thing it could not have found without the
+ * blades in it: sector 16 hung a fan over two of its hops, one directly above
+ * a bed and one two columns along, and both beds are on the only way to the
+ * vault's door and to two of its cards. So the jump that cleared each bed went
+ * into the blades, walking through cost the bed's own heart, and the certified
+ * route charged two of three hearts whichever way it was played. Nothing in the
+ * editor could say so: `check_fans` asks five questions, all of them looking
+ * down from the blades, `check_mines` asks about blades over a charge's own
+ * column only, and `check_spikes` asked whether two beds were abreast.
+ *
+ * The editor's answer is two spans, and this is what makes them a claim about
+ * the jump rather than two numbers: every fan position near a bed is driven
+ * through the simulation, and the editor has to warn exactly where the hop no
+ * longer forgives a press — no list of offsets here to go stale. It is asked at
+ * the model's own clearance and a row above it, and it requires both answers to
+ * occur, because a rule that never fires and a rule that always fires both
+ * agree with a fixture that asks nothing.
+ */
+static void test_the_editor_knows_which_fans_take_a_spike_hop_away(void)
+{
+    static GameplayState state;
+    static LevelRuntime pristine;
+    static EdReport report;
+    static char text[1024];
+    const int width = 24;
+    const int bed = 11;
+    int warned = 0;
+    int spared = 0;
+
+    for (int headroom = 2; headroom <= 3; ++headroom)
+    {
+        const int height = headroom + 3;
+        const int walk = height - 2;
+        for (int up = 1; up <= headroom; ++up)
+        {
+            for (int along = -3; along <= 3; ++along)
+            {
+                size_t at = 0;
+                for (int row = 0; row < height; ++row)
+                {
+                    for (int col = 0; col < width; ++col)
+                    {
+                        char c = ' ';
+                        if (row == 0 || row == height - 1 || col == 0 ||
+                            col == width - 1)
+                            c = '#';
+                        else if (row == walk && col == 2)
+                            c = 'S';
+                        else if (row == walk && col == width - 3)
+                            c = 'E';
+                        else if (row == walk && col == bed)
+                            c = '^';
+                        else if (row == walk - up && col == bed + along)
+                            c = 'O';
+                        text[at++] = c;
+                    }
+                    text[at++] = '\n';
+                }
+                text[at] = '\0';
+
+                memset(&state, 0, sizeof(state));
+                rng_seed(&state.rng, 7400u);
+                gameplay_state_begin_level(&state);
+                Rng load = state.rng;
+                REQUIRE(level_load_data(&state.level, "blades", text, at,
+                                        &load));
+                pristine = state.level.runtime;
+                bool fair = spike_hop_forgiveness(
+                                &state, &pristine, (float)(bed * TILE_SIZE),
+                                (float)TILE_SIZE, walk, 1,
+                                PLAYER_COYOTE_TIME) >= PLAYER_COYOTE_TIME;
+
+                memset(&report, 0, sizeof(report));
+                validate_text(text, NULL, &report);
+                bool warns = report_mentions(&report, ED_SEV_WARN,
+                                             "Blades over the spike bed");
+                if (warns == fair)
+                    fprintf(stderr, "  a fan %d up and %+d along a bed under "
+                                    "%d open rows: the hop is %s and the "
+                                    "editor %s\n",
+                            up, along, headroom, fair ? "fair" : "gone",
+                            warns ? "warns" : "says nothing");
+                CHECK(warns != fair);
+                warned += warns ? 1 : 0;
+                spared += warns ? 0 : 1;
+            }
+        }
+    }
+    CHECK(warned > 0);
+    CHECK(spared > 0);
 }
 
 /*
@@ -12936,8 +14137,10 @@ static void test_a_two_tile_step_up_is_the_bodys_move_not_the_models(void)
  *
  * The spike bullet three lines below it in the same file gets the same 26px
  * *right* — "clearing a single 32px spike means covering 58px of ground while
- * the whole 26px-wide player box is above floor level" — because a spike does
- * have to be cleared entirely. Two adjacent rules about the same body, one
+ * the whole 26px-wide player box is above the blade tips" — because a spike
+ * does have to be cleared entirely. (It had the height wrong instead: the bed
+ * was the whole tile, so "above" meant a tile up rather than over the blades.
+ * See SPIKE_H.) Two adjacent rules about the same body, one
  * adding the box and one forgetting to subtract it, and only one of them was
  * ever measured against the simulation.
  *
@@ -15936,13 +17139,59 @@ static void test_the_janitor_walks_mops_and_turns_at_the_wall(void)
 }
 
 
+/*
+ * A stomp is a roll (`ENEMY_STOMP_WOUND_CHANCE`), so a test about what follows
+ * one particular outcome has to choose it. It does so by stepping the stream to
+ * the next draw that answers the way the test wants, asked through
+ * `gameplay_stomp_wounds` so the chance is not written down a second time.
+ *
+ * The stream has to be seeded. xorshift cannot leave an all-zero state, and
+ * `rng_range` rejects the low end of the range and draws again, so on a stream
+ * that only ever says nought it never returns — which is how every one of the
+ * unseeded `{0}` fixtures below used to look the moment the stomp learnt to
+ * roll.
+ */
+static void rig_next_stomp(Rng *rng, bool wounds)
+{
+    REQUIRE(rng->state != 0);
+    for (int burned = 0; burned < 256; ++burned)
+    {
+        Rng peek = *rng;
+        if (gameplay_stomp_wounds(&peek) == wounds)
+            return;
+        rng_next(rng);
+    }
+    CHECK(!"256 draws in a row answered the stomp the same way");
+}
+
+/*
+ * The contact pass with every stomp in it landing, for a harness whose subject
+ * is what happens *after* a guard is wounded — his aim, or the ladder under the
+ * man — rather than the odds of wounding him. The stream is rigged only for a
+ * step that really rolls: a pass that consumed no draw had no stomp in it, and
+ * the AI gets its own stream back untouched.
+ */
+static void check_contacts_with_every_stomp_landing(GameplayState *state,
+                                                    CampaignState *campaign)
+{
+    Rng untouched = state->rng;
+    rig_next_stomp(&state->rng, true);
+    Rng rigged = state->rng;
+    gameplay_combat_check_contacts(state, campaign);
+    if (state->rng.state == rigged.state)
+        state->rng = untouched;
+}
+
 /* The mercy window after a hit stops the guard hurting Chuck. It must not stop
- * Chuck landing on the guard: a stomp that silently does nothing reads as the
- * move failing at random, because the player cannot see the timer. */
+ * Chuck landing on the guard: the stomp keeps its chance through the window,
+ * because the player cannot see the timer and a chance that silently dropped
+ * to nought would read as the odds changing for no reason. */
 static void test_stomp_still_lands_during_the_mercy_window(void)
 {
     GameplayState state = {0};
     CampaignState campaign = {0};
+    rng_seed(&state.rng, 1601);
+    rig_next_stomp(&state.rng, true);
     state.enemy_count = 1;
     state.enemies[0] = (Enemy){.x = 100.0f, .y = 200.0f, .hp = ENEMY_HP};
     state.invuln_timer = PLAYER_HIT_INVULN;
@@ -15955,6 +17204,27 @@ static void test_stomp_still_lands_during_the_mercy_window(void)
 
     CHECK(state.player.vy == -ENEMY_STOMP_BOUNCE_SPEED);
     CHECK(state.enemies[0].hp == ENEMY_HP - 1);
+
+    /* And the landings that do not wound, which are an ordinary contact:
+     * inside the window that costs nothing, and there is no bounce — he goes
+     * on falling into the guard, exactly as he would have walked into him. */
+    state = (GameplayState){0};
+    campaign = (CampaignState){0};
+    rng_seed(&state.rng, 1601);
+    rig_next_stomp(&state.rng, false);
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){.x = 100.0f, .y = 200.0f, .hp = ENEMY_HP};
+    state.invuln_timer = PLAYER_HIT_INVULN;
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.x = 100.0f;
+    state.player.y = 200.0f - (float)PLAYER_H + 5.0f;
+    state.player.vy = 50.0f;
+
+    gameplay_combat_check_contacts(&state, &campaign);
+
+    CHECK(state.player.vy == 50.0f);
+    CHECK(state.player.hp == PLAYER_MAX_HP);
+    CHECK(state.enemies[0].hp == ENEMY_HP);
 
     /* The other half of the same window: a side contact still costs nothing. */
     state = (GameplayState){0};
@@ -15978,6 +17248,8 @@ static void test_stomp_on_enemy_bounces_player_and_damages_it(void)
 {
     GameplayState state = {0};
     CampaignState campaign = {0};
+    rng_seed(&state.rng, 1602);
+    rig_next_stomp(&state.rng, true);
     state.enemy_count = 1;
     state.enemies[0] = (Enemy){.x = 100.0f, .y = 200.0f, .hp = ENEMY_HP};
 
@@ -16006,6 +17278,134 @@ static void test_stomp_on_enemy_bounces_player_and_damages_it(void)
 
     CHECK(state.player.dying);
     CHECK(state.enemies[0].hp == ENEMY_HP);
+}
+
+/*
+ * One landing in four wounds the guard and bounces Chuck off him; the other
+ * three are no stomp at all, just Chuck meeting the guard the way a side
+ * contact does.
+ *
+ * Staged thousands of times on one stream rather than rigged, because here the
+ * odds are the subject — and one stream because that is what the game has: the
+ * roll shares `GameplayState.rng` with everything else on the floor. What a
+ * single landing has to do is asserted on every one of them: exactly one of the
+ * two men is hurt, only the wound bounces, and the rest is a hit like any other
+ * — the mercy window opens and nothing is scored.
+ */
+static void test_a_stomp_wounds_one_time_in_four(void)
+{
+    const int landings = 4000;
+    int wounded = 0;
+    int thrown = 0;
+    Rng stream;
+    rng_seed(&stream, 1603);
+    for (int n = 0; n < landings; ++n)
+    {
+        GameplayState state = {0};
+        CampaignState campaign = {0};
+        state.rng = stream;
+        state.enemy_count = 1;
+        state.enemies[0] = (Enemy){.x = 100.0f, .y = 200.0f, .hp = ENEMY_HP};
+        state.player.hp = PLAYER_MAX_HP;
+        state.player.x = 100.0f;
+        state.player.y = 200.0f - (float)PLAYER_H + 5.0f;
+        state.player.vy = 50.0f;
+
+        gameplay_combat_check_contacts(&state, &campaign);
+        stream = state.rng;
+
+        CHECK(!state.player.dying);
+        bool guard_hurt = state.enemies[0].hp == ENEMY_HP - 1;
+        bool player_hurt = state.player.hp == PLAYER_MAX_HP - 1;
+        CHECK(guard_hurt != player_hurt);
+        if (guard_hurt)
+        {
+            ++wounded;
+            CHECK(state.player.vy == -ENEMY_STOMP_BOUNCE_SPEED);
+        }
+        if (player_hurt)
+        {
+            ++thrown;
+            CHECK(state.player.vy != -ENEMY_STOMP_BOUNCE_SPEED);
+            CHECK(state.enemies[0].hp == ENEMY_HP);
+            CHECK(state.invuln_timer == PLAYER_HIT_INVULN);
+            CHECK(campaign.score == 0);
+        }
+    }
+    CHECK(wounded + thrown == landings);
+    /* Against the chance to within three points either way. At four thousand
+     * landings three standard deviations is a little over two points, so this
+     * fails on a chance that has moved rather than on the draw. */
+    int per_mille = wounded * 1000 / landings;
+    if (per_mille < (ENEMY_STOMP_WOUND_CHANCE - 3) * 10 ||
+        per_mille > (ENEMY_STOMP_WOUND_CHANCE + 3) * 10)
+        fprintf(stderr, "  %d of %d landings wounded the guard (%d.%d%%) "
+                        "against a chance of %d%%\n",
+                wounded, landings, per_mille / 10, per_mille % 10,
+                ENEMY_STOMP_WOUND_CHANCE);
+    CHECK(per_mille >= (ENEMY_STOMP_WOUND_CHANCE - 3) * 10);
+    CHECK(per_mille <= (ENEMY_STOMP_WOUND_CHANCE + 3) * 10);
+}
+
+/*
+ * A landing is rolled once, however long the boots stay on the helmet.
+ *
+ * A failed stomp does not bounce, so Chuck goes on falling into the guard with
+ * the overlap shallow for dozens of steps — and every one of them satisfies the
+ * stomp's geometry again. Asked on each, a one-in-four chance comes up inside a
+ * handful of frames and the odds are a certainty in all but name. Staged inside
+ * the mercy window, because that is where the fall carries on unbroken: outside
+ * it the contact's own hit pops him clear. What has to hold is that the whole
+ * fall draws nothing after the first roll, and that the guard comes out of it
+ * untouched; and then that parting the two boxes makes the next landing a new
+ * one, or the fix would be a guard who can only ever be stomped once.
+ */
+static void test_a_landing_is_rolled_once(void)
+{
+    GameplayState state = {0};
+    CampaignState campaign = {0};
+    rng_seed(&state.rng, 1604);
+    rig_next_stomp(&state.rng, false);
+    state.enemy_count = 1;
+    state.enemies[0] = (Enemy){.x = 100.0f, .y = 200.0f, .hp = ENEMY_HP};
+    state.invuln_timer = PLAYER_HIT_INVULN;
+    state.player.hp = PLAYER_MAX_HP;
+    state.player.x = 100.0f;
+    state.player.y = 200.0f - (float)PLAYER_H + 1.0f;
+    state.player.vy = 60.0f;
+
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(state.enemies[0].stomp_refused);
+    Rng after_the_roll = state.rng;
+
+    /* Down through him, one step at a time, for as long as the geometry still
+     * reads as a boot on a helmet and a little past it. */
+    int steps_on_the_helmet = 0;
+    for (int step = 0; step < SIM_STEPS(0.5f); ++step)
+    {
+        state.player.y += state.player.vy * SIM_STEP_DT;
+        float overlap_y = state.player.y + PLAYER_H - state.enemies[0].y;
+        if (overlap_y < (float)PLAYER_W)
+            ++steps_on_the_helmet;
+        gameplay_combat_check_contacts(&state, &campaign);
+        CHECK(state.player.vy == 60.0f);
+    }
+    /* The fall really did spend long enough on the helmet to have rolled it
+     * right a few times over, or the check below proves nothing. */
+    CHECK(steps_on_the_helmet > 12);
+    CHECK(state.rng.state == after_the_roll.state);
+    CHECK(state.enemies[0].hp == ENEMY_HP);
+    CHECK(state.player.hp == PLAYER_MAX_HP);
+
+    /* Parted, and landed on again: a new landing, and this one wounds. */
+    state.player.y = 200.0f - (float)PLAYER_H - 20.0f;
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(!state.enemies[0].stomp_refused);
+    rig_next_stomp(&state.rng, true);
+    state.player.y = 200.0f - (float)PLAYER_H + 1.0f;
+    gameplay_combat_check_contacts(&state, &campaign);
+    CHECK(state.enemies[0].hp == ENEMY_HP - 1);
+    CHECK(state.player.vy == -ENEMY_STOMP_BOUNCE_SPEED);
 }
 
 /*
@@ -16102,10 +17502,12 @@ static void test_a_stomped_guard_shoots_at_the_man_on_his_head(void)
         state.player.x = guard->x + (ENEMY_W - PLAYER_W) * 0.5f;
         if (overhead)
         {
-            /* Boots just into the top of him, already falling. */
+            /* Boots just into the top of him, already falling — and the one
+             * landing in four that wounds, because what is under test is his
+             * answer to it. */
             state.player.y = guard->y - (float)PLAYER_H + 4.0f;
             state.player.vy = 60.0f;
-            gameplay_combat_check_contacts(&state, &campaign);
+            check_contacts_with_every_stomp_landing(&state, &campaign);
             CHECK(guard->hp == ENEMY_HP - 1);
             CHECK(state.player.vy == -ENEMY_STOMP_BOUNCE_SPEED);
             CHECK(guard->aim_vdir == -1);
@@ -16127,6 +17529,10 @@ static void test_a_stomped_guard_shoots_at_the_man_on_his_head(void)
      * the air and land it. `player_update` is in the loop because the bounce
      * arc is what carries him into and out of the round's way, and a harness
      * that staged him at the apex instead would be measuring its own staging.
+     *
+     * Every stomp lands. The three in four that do not would cost hearts of
+     * their own, and then `hearts_lost > 0` below would pass with the guard
+     * aiming at the ceiling — which is precisely the defect it is there for.
      */
     int hearts_lost = 0;
     int rounds = 0;
@@ -16170,7 +17576,7 @@ static void test_a_stomped_guard_shoots_at_the_man_on_his_head(void)
             gameplay_ai_update_combat(&state, SIM_STEP_DT);
             gameplay_combat_update_enemy_bullets(&state, &campaign,
                                                  SIM_STEP_DT);
-            gameplay_combat_check_contacts(&state, &campaign);
+            check_contacts_with_every_stomp_landing(&state, &campaign);
             int now = 0;
             for (int b = 0; b < MAX_ENEMY_BULLETS; ++b)
                 if (state.enemy_bullets[b].active)
@@ -16241,13 +17647,16 @@ static void test_a_heavy_cannot_be_stomped_but_can_still_be_knifed(void)
     CHECK(state.player.hp < PLAYER_MAX_HP || state.player.dying);
 
     /* The same landing on an ordinary guard still bounces, so the rule is the
-     * armour rather than something that quietly broke the stomp for everyone. */
+     * armour rather than something that quietly broke the stomp for everyone —
+     * taken on the one landing in four that wounds, because on the other three
+     * an ordinary guard costs the heart too and the two would look alike. */
     state = (GameplayState){0};
     campaign = (CampaignState){0};
     rng_seed(&state.rng, 616);
     state.enemy_count = 1;
     enemy_init(&state.enemies[0], 100.0f, 200.0f, ENEMY_KIND_GUARD,
                &state.rng);
+    rig_next_stomp(&state.rng, true);
     state.player.hp = PLAYER_MAX_HP;
     state.player.x = 100.0f;
     state.player.y = 200.0f - (float)PLAYER_H + 5.0f;
@@ -16401,6 +17810,20 @@ static void test_a_flash_charge_blinds_the_room_without_changing_it(void)
          ++step)
         gameplay_combat_update_explosives(&state, &campaign, SIM_STEP_DT);
     CHECK(!state.flashbangs[0].active);
+
+    /* What it looks like is light, not fire. It used to report itself as an
+     * explosion with a count of forty, so the shell drew a fireball, embers and
+     * soot over the one device in the game sold as safe in the room you are
+     * standing in. */
+    bool saw_flash = false;
+    bool saw_explosion = false;
+    for (int i = 0; i < state.events.count; ++i)
+    {
+        saw_flash |= state.events.items[i].type == GAME_EVENT_FLASH;
+        saw_explosion |= state.events.items[i].type == GAME_EVENT_EXPLOSION;
+    }
+    CHECK(saw_flash);
+    CHECK(!saw_explosion);
 
     /* Blinded, stopped, and on his way to no alarm switch. */
     CHECK(guard->blind_timer > 0.0f);
@@ -17206,11 +18629,16 @@ static void test_ladder_descent_onto_enemy_bounces_instead_of_killing(void)
         .hp = ENEMY_HP,
         .on_ground = true};
 
+    /* Every stomp lands. The subject is the ladder handing the bounce back to
+     * the climb, and with no hearts to spare that is only visible if the
+     * contact that kills him can be nothing but the deep one the bug drives
+     * him into — a failed stomp costs a heart of its own and would read the
+     * same. */
     Input down = {.down = true};
     for (int frame = 0; frame < SIM_STEPS(5.0f) && !state.enemies[0].dead; ++frame)
     {
         player_update(&state.player, &state.level, &down, SIM_STEP_DT);
-        gameplay_combat_check_contacts(&state, &campaign);
+        check_contacts_with_every_stomp_landing(&state, &campaign);
         CHECK(!state.player.dying);
     }
 
@@ -22272,6 +23700,8 @@ static void test_the_sheets_spell_the_tuning_they_quote(void)
         {"HEARTS PER LIFE INSTEAD OF", {0}},
         {"MOVE AT", {0}},
         {"FASTER CREW,", {0}},
+        /* The stomp's odds, on FIGHTING — see the end of the list below. */
+        {"a guard's head", {0}},
     };
     const char *words[10];
     words[0] = spelled_number((int)TERMINAL_HACK_TIME);
@@ -22372,6 +23802,17 @@ static void test_the_sheets_spell_the_tuning_they_quote(void)
     /* `NO CONTINUES` is the words for a number too, and nought is the one
      * figure this sheet spells by leaving it out. */
     CHECK(VETERAN_CONTINUES == 0);
+
+    /* And how often a boot on a helmet wounds, which FIGHTING spells as odds
+     * and the header keeps as a percentage like every other chance in it. The
+     * odds only exist while the percentage divides a hundred; a chance of 30
+     * has no "one time in N" to print, and the sheet wants rewording then
+     * rather than rounding. */
+    CHECK(100 % ENEMY_STOMP_WOUND_CHANCE == 0);
+    const char *stomp_odds = spelled_number(100 / ENEMY_STOMP_WOUND_CHANCE);
+    REQUIRE(stomp_odds != NULL);
+    snprintf(claims[18].must, sizeof claims[18].must, "ONE TIME IN %s",
+             stomp_odds);
 
     for (size_t c = 0; c < sizeof(claims) / sizeof(claims[0]); ++c)
     {
@@ -26966,6 +28407,391 @@ static void test_a_value_that_is_not_a_number_changes_nothing(void)
     CHECK(settings.assist.infinite_lives);
 }
 
+/*
+ * Chuck's skeleton ([chuck_pose.h](../src/chuck_pose.h)).
+ *
+ * The renderers are out of this binary's reach, and that is why the skeleton was
+ * put on this side of the line: the three things that were wrong with his walk
+ * are properties rather than looks, and the old cycle broke every one of them.
+ * The feet slid — a planted foot travelled a sixth of the distance the body did
+ * over it. The limbs changed length from pose to pose, because a knee that is
+ * placed rather than solved can make a shin any length it likes. And the walk
+ * and the run were the same pedal at two speeds, so neither was either.
+ */
+
+static float chuck_distance(ChuckPoint a, ChuckPoint b)
+{
+    float dx = a.x - b.x;
+    float dy = a.y - b.y;
+    return sqrtf(dx * dx + dy * dy);
+}
+
+/*
+ * The fits the film's shorter legs are held at, and the sector's own legs as
+ * the fit of one. See `chuck_pose_fit_legs`.
+ */
+static const float CHUCK_TEST_FITS[] = {1.0f, 0.82f, 0.7f};
+#define CHUCK_TEST_FIT_COUNT \
+    ((int)(sizeof(CHUCK_TEST_FITS) / sizeof(CHUCK_TEST_FITS[0])))
+
+/*
+ * A planted foot does not move against the floor.
+ *
+ * Walked through the whole of each foot's stance a sliver of distance at a
+ * time, the ankle's place *in the world* — the distance the body has travelled
+ * plus where the ankle is under it — has to stay put. This is the check the old
+ * cycle fails by a factor of six, and it is written against the solved ankle
+ * rather than the one asked for, so a hip held too high for the leg under it,
+ * which would pull the foot up and back, fails it too.
+ *
+ * A fitted gait covers the fit's share of the ground per cycle, so it is
+ * driven the way the film drives it — the cycle from distance over the fit —
+ * and the planted foot has to stay put on the shorter legs as well.
+ */
+static void test_a_planted_foot_stays_where_it_was_put(void)
+{
+    for (int f = 0; f < CHUCK_TEST_FIT_COUNT; ++f)
+    {
+        float fit = CHUCK_TEST_FITS[f];
+        for (int g = 0; g < CHUCK_GAIT_COUNT; ++g)
+        {
+            ChuckGait gait = (ChuckGait)g;
+            float stride = chuck_gait_stride(gait) * fit;
+            float duty = chuck_gait_duty(gait);
+
+            for (int side = 0; side < 2; ++side)
+            {
+                /* The near foot strikes at 0, the far one half a cycle
+                   later. */
+                float strike = side == CHUCK_NEAR ? 0.0f : 0.5f * stride;
+                float first = 0.0f;
+                float worst = 0.0f;
+
+                for (int i = 0; i <= 96; ++i)
+                {
+                    float distance = strike + stride * duty * 0.998f *
+                                                  (float)i / 96.0f;
+                    ChuckPose pose;
+                    chuck_pose_gait(&pose, gait,
+                                    chuck_gait_cycle(gait, distance / fit));
+                    chuck_pose_fit_legs(&pose, fit);
+                    chuck_pose_solve(&pose);
+                    float world = distance + pose.ankle[side].x;
+                    if (i == 0)
+                        first = world;
+                    worst = fmaxf(worst, fabsf(world - first));
+                }
+                if (worst >= 0.02f)
+                    fprintf(stderr,
+                            "gait %d side %d fit %.2f: planted foot slid "
+                            "%.3f\n",
+                            g, side, (double)fit, (double)worst);
+                CHECK(worst < 0.02f);
+            }
+        }
+    }
+}
+
+/* One skeleton, every move: no pose may lengthen a bone to reach something. */
+static void check_chuck_bones(const ChuckPose *pose)
+{
+    CHECK(fabsf(chuck_distance(pose->pelvis, pose->neck) - CHUCK_SPINE) <
+          0.01f);
+    for (int side = 0; side < 2; ++side)
+    {
+        CHECK(fabsf(chuck_distance(pose->hip[side], pose->knee[side]) -
+                    CHUCK_THIGH * pose->legs) < 0.01f);
+        CHECK(fabsf(chuck_distance(pose->knee[side], pose->ankle[side]) -
+                    CHUCK_SHIN * pose->legs) < 0.01f);
+        CHECK(fabsf(chuck_distance(pose->shoulder[side], pose->elbow[side]) -
+                    CHUCK_UPPER_ARM) < 0.01f);
+        CHECK(fabsf(chuck_distance(pose->elbow[side], pose->hand[side]) -
+                    CHUCK_FOREARM) < 0.01f);
+        /* A knee breaks forward and an elbow back, whatever the limb does. */
+        ChuckPoint mid = {(pose->hip[side].x + pose->ankle[side].x) * 0.5f,
+                          (pose->hip[side].y + pose->ankle[side].y) * 0.5f};
+        CHECK(pose->knee[side].x >= mid.x - 0.01f);
+        /* No foot goes through the floor it is standing on. */
+        CHECK(pose->ankle[side].y <= CHUCK_ANKLE_Y + 0.001f);
+    }
+}
+
+static void test_every_pose_keeps_his_bones_the_length_they_are(void)
+{
+    ChuckPose pose;
+
+    for (int g = 0; g < CHUCK_GAIT_COUNT; ++g)
+    {
+        for (int i = 0; i < 97; ++i)
+        {
+            chuck_pose_gait(&pose, (ChuckGait)g, (float)i / 97.0f);
+            chuck_pose_solve(&pose);
+            check_chuck_bones(&pose);
+        }
+    }
+    for (int i = -8; i <= 8; ++i)
+    {
+        chuck_pose_air(&pose, (float)i / 8.0f);
+        chuck_pose_solve(&pose);
+        check_chuck_bones(&pose);
+
+        chuck_pose_stand(&pose, (float)i / 8.0f);
+        chuck_pose_sink(&pose, (float)(i + 8) * 0.2f);
+        chuck_pose_solve(&pose);
+        check_chuck_bones(&pose);
+    }
+
+    /* A fitted move keeps the fitted bones: the legs scaled as a whole, the
+       spine and the arms the sector's, and a foot that was on the floor still
+       on it — the film's man stands on the same pavement as the crew. */
+    for (int f = 0; f < CHUCK_TEST_FIT_COUNT; ++f)
+    {
+        float fit = CHUCK_TEST_FITS[f];
+        for (int g = 0; g < CHUCK_GAIT_COUNT; ++g)
+        {
+            for (int i = 0; i < 97; ++i)
+            {
+                chuck_pose_gait(&pose, (ChuckGait)g, (float)i / 97.0f);
+                chuck_pose_fit_legs(&pose, fit);
+                chuck_pose_solve(&pose);
+                check_chuck_bones(&pose);
+                CHECK(fabsf(pose.legs - fit) < 0.0001f);
+            }
+        }
+        chuck_pose_stand(&pose, 0.5f);
+        chuck_pose_sink(&pose, 0.6f);
+        chuck_pose_fit_legs(&pose, fit);
+        chuck_pose_solve(&pose);
+        check_chuck_bones(&pose);
+        for (int side = 0; side < 2; ++side)
+            CHECK(fabsf(pose.ankle[side].y - CHUCK_ANKLE_Y) < 0.001f);
+    }
+
+    /* A blend between two moves is a move too, and has to be solved as one. */
+    ChuckPose run;
+    chuck_pose_stand(&pose, 0.0f);
+    chuck_pose_gait(&run, CHUCK_GAIT_RUN, 0.37f);
+    chuck_pose_blend(&pose, &run, 0.5f);
+    chuck_pose_solve(&pose);
+    check_chuck_bones(&pose);
+
+    /* A hand sent further than the arm reaches stops at the end of it: the
+       gun is not allowed to grow him a longer arm. */
+    chuck_pose_stand(&pose, 0.0f);
+    chuck_pose_solve(&pose);
+    chuck_pose_reach(&pose, CHUCK_NEAR,
+                     (ChuckPoint){pose.shoulder[CHUCK_NEAR].x + 40.0f,
+                                  pose.shoulder[CHUCK_NEAR].y});
+    check_chuck_bones(&pose);
+    CHECK(chuck_distance(pose.shoulder[CHUCK_NEAR], pose.hand[CHUCK_NEAR]) <=
+          CHUCK_UPPER_ARM + CHUCK_FOREARM + 0.001f);
+
+    /* And the two ways a reach can ask for less than an arm can give: a point
+       on the shoulder itself, and one nearer than an upper arm and a forearm of
+       different lengths can fold to. Both come back as a real arm. */
+    ChuckPoint targets[2] = {pose.shoulder[CHUCK_NEAR],
+                             {pose.shoulder[CHUCK_NEAR].x + 0.05f,
+                              pose.shoulder[CHUCK_NEAR].y}};
+    for (int i = 0; i < 2; ++i)
+    {
+        chuck_pose_reach(&pose, CHUCK_NEAR, targets[i]);
+        check_chuck_bones(&pose);
+    }
+}
+
+/*
+ * There is no frame in a cycle where anything jumps.
+ *
+ * Every quantity a gait produces is meant to be continuous across the two
+ * seams in each foot's stride — planted to swinging and back — and across the
+ * wrap from the end of the cycle to its start. A thousandth of a cycle moves a
+ * foot a hundredth of a unit at the most; a seam shows up as a tenth or more.
+ */
+static void test_a_gait_has_no_frame_where_a_foot_jumps(void)
+{
+    for (int g = 0; g < CHUCK_GAIT_COUNT; ++g)
+    {
+        ChuckPose prev;
+        float worst = 0.0f;
+        chuck_pose_gait(&prev, (ChuckGait)g, 0.0f);
+        chuck_pose_solve(&prev);
+        for (int i = 1; i <= 2000; ++i)
+        {
+            ChuckPose pose;
+            chuck_pose_gait(&pose, (ChuckGait)g, (float)i / 2000.0f);
+            chuck_pose_solve(&pose);
+            for (int side = 0; side < 2; ++side)
+            {
+                worst = fmaxf(worst,
+                              chuck_distance(pose.ankle[side], prev.ankle[side]));
+                worst = fmaxf(worst,
+                              chuck_distance(pose.knee[side], prev.knee[side]));
+                worst = fmaxf(worst,
+                              chuck_distance(pose.hand[side], prev.hand[side]));
+            }
+            worst = fmaxf(worst, chuck_distance(pose.neck, prev.neck));
+            prev = pose;
+        }
+        if (worst >= 0.1f)
+            fprintf(stderr, "gait %d: a joint jumped %.3f in one step\n", g,
+                    (double)worst);
+        CHECK(worst < 0.1f);
+    }
+}
+
+/*
+ * A walk and a run are two different things a body does, not one thing at two
+ * speeds, and the difference is which way up the bounce is. Walking, the body
+ * vaults over a stiff leg and is highest with one foot under it; running, it
+ * lands on a bending one and is lowest there, highest in the flight between.
+ * The run must also actually fly — a stretch of the cycle with neither foot
+ * planted — and the walk must never. Both runs are runs: the film's plain one
+ * takes the acting out and leaves the flight in, which is what lets its foot
+ * stay planted at the film's speeds.
+ */
+static void test_a_walk_vaults_and_a_run_springs(void)
+{
+    for (int g = 0; g < CHUCK_GAIT_COUNT; ++g)
+    {
+        ChuckGait gait = (ChuckGait)g;
+        float duty = chuck_gait_duty(gait);
+        ChuckPose mid_stance;
+        ChuckPose between;
+
+        chuck_pose_gait(&mid_stance, gait, duty * 0.5f);
+        /* Halfway from the near foot's toe-off to the far foot's strike: in the
+           air for a run, the far foot still down for a walk. */
+        chuck_pose_gait(&between, gait, (duty + 0.5f) * 0.5f);
+        chuck_pose_solve(&mid_stance);
+        chuck_pose_solve(&between);
+
+        if (gait != CHUCK_GAIT_WALK)
+        {
+            CHECK(duty < 0.5f);
+            CHECK(mid_stance.pelvis.y > between.pelvis.y + 0.3f);
+        }
+        else
+        {
+            CHECK(duty > 0.5f);
+            CHECK(mid_stance.pelvis.y < between.pelvis.y - 0.2f);
+        }
+    }
+}
+
+/*
+ * The film's run is the run with the acting taken out, and both halves of that
+ * are held.
+ *
+ * It is a run in its timing: it flies, and its stride is no shorter than the
+ * sector's run, because a shorter stride is more steps a second at the same
+ * speed and the film eases him across the screen at up to two hundred and sixty
+ * pixels a second — that cadence is the pedalling this skeleton was built to
+ * end. And it carries no more motion than his own *walk* on any axis a viewer
+ * can see: the height the swinging foot comes up, how far the spine leans, how
+ * far the hands travel and the elbows fold, how much the hips rise and fall,
+ * and how far the headband trails. The soles never tip, because the cast's shoe
+ * is a block that does not.
+ *
+ * The comparison is to the walk rather than to numbers, so it names no figure
+ * anybody would have to re-guess: beside the crew — who walk, soles flat,
+ * bodies still — the sector's run read as a man drawn for another film, and
+ * what the owner asked for was that he move the way they do.
+ */
+typedef struct
+{
+    float lift;        /* highest a foot comes off the floor */
+    float lean_most;   /* furthest the neck gets ahead of the hips */
+    float lean_least;
+    float hand_travel; /* how far either hand ranges fore and aft */
+    float bend;        /* most an elbow folds */
+    float hips;        /* how far the pelvis rises and falls */
+    float tail;
+    float pitch;       /* most a sole tips either way */
+} ChuckMotion;
+
+static ChuckMotion chuck_gait_motion(ChuckGait gait)
+{
+    ChuckMotion m = {0.0f, -99.0f, 99.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    float hand_lo[2] = {99.0f, 99.0f};
+    float hand_hi[2] = {-99.0f, -99.0f};
+    float hip_lo = 99.0f;
+    float hip_hi = -99.0f;
+
+    for (int i = 0; i < 400; ++i)
+    {
+        ChuckPose pose;
+        chuck_pose_gait(&pose, gait, (float)i / 400.0f);
+        chuck_pose_solve(&pose);
+        for (int side = 0; side < 2; ++side)
+        {
+            float hand = pose.hand[side].x - pose.shoulder[side].x;
+            m.lift = fmaxf(m.lift, CHUCK_ANKLE_Y - pose.ankle[side].y);
+            hand_lo[side] = fminf(hand_lo[side], hand);
+            hand_hi[side] = fmaxf(hand_hi[side], hand);
+            m.bend = fmaxf(m.bend, pose.arm_bend[side]);
+            m.pitch = fmaxf(m.pitch, fabsf(pose.pitch[side]));
+        }
+        float lean = pose.neck.x - pose.pelvis.x;
+        m.lean_most = fmaxf(m.lean_most, lean);
+        m.lean_least = fminf(m.lean_least, lean);
+        hip_lo = fminf(hip_lo, pose.pelvis.y);
+        hip_hi = fmaxf(hip_hi, pose.pelvis.y);
+        m.tail = fmaxf(m.tail, pose.tail);
+    }
+    for (int side = 0; side < 2; ++side)
+        m.hand_travel = fmaxf(m.hand_travel, hand_hi[side] - hand_lo[side]);
+    m.hips = hip_hi - hip_lo;
+    return m;
+}
+
+static void test_the_films_run_is_the_run_with_the_acting_taken_out(void)
+{
+    ChuckMotion walk = chuck_gait_motion(CHUCK_GAIT_WALK);
+    ChuckMotion run = chuck_gait_motion(CHUCK_GAIT_RUN);
+    ChuckMotion plain = chuck_gait_motion(CHUCK_GAIT_PLAIN_RUN);
+
+    /* A run in its timing. */
+    CHECK(chuck_gait_duty(CHUCK_GAIT_PLAIN_RUN) < 0.5f);
+    CHECK(chuck_gait_stride(CHUCK_GAIT_PLAIN_RUN) >=
+          chuck_gait_stride(CHUCK_GAIT_RUN));
+
+    /* A walk, or less, in everything a viewer sees. */
+    CHECK(plain.lift <= walk.lift);
+    CHECK(plain.lean_most <= walk.lean_least);
+    CHECK(plain.hand_travel <= walk.hand_travel);
+    CHECK(plain.bend <= walk.bend);
+    CHECK(plain.hips <= walk.hips);
+    CHECK(plain.tail <= walk.tail);
+    CHECK(plain.pitch < 0.001f);
+
+    /* And the sector's run is the one with the acting in it, or the check
+       above compares two things that were never different. */
+    CHECK(run.lift > walk.lift);
+    CHECK(run.lean_least > walk.lean_most);
+    CHECK(run.pitch > 0.5f);
+}
+
+/* The arms against the legs: as the near heel strikes out in front, the near
+   hand is back and the far one forward, and half a cycle on it is the other
+   way round. That opposition is the whole of what makes it a gait. */
+static void test_the_arms_swing_against_the_legs(void)
+{
+    for (int g = 0; g < CHUCK_GAIT_COUNT; ++g)
+    {
+        for (int half = 0; half < 2; ++half)
+        {
+            ChuckPose pose;
+            chuck_pose_gait(&pose, (ChuckGait)g, (float)half * 0.5f);
+            chuck_pose_solve(&pose);
+            int forward_leg = half == 0 ? CHUCK_NEAR : CHUCK_FAR;
+            int back_leg = half == 0 ? CHUCK_FAR : CHUCK_NEAR;
+            CHECK(pose.ankle[forward_leg].x > pose.ankle[back_leg].x);
+            /* The arm on the same side as the forward leg is the one behind. */
+            CHECK(pose.elbow[forward_leg].x < pose.elbow[back_leg].x);
+        }
+    }
+}
+
 int main(void)
 {
     test_camera_axis_target();
@@ -26994,6 +28820,8 @@ int main(void)
     test_every_theme_names_a_score_of_its_own();
     test_the_cordon_fades_as_the_climb_rises();
     test_a_backdrop_layer_sinks_as_the_climb_rises();
+    test_the_back_wall_is_laid_out_per_room();
+    test_every_shipped_interior_reads_into_rooms();
     test_editor_round_trips_every_map_file();
     test_editor_edits_and_undo();
     test_editor_resizes_deletes_and_survives_a_real_file();
@@ -27026,6 +28854,18 @@ int main(void)
     test_chase_surviving_the_drive_parks_at_the_building();
     test_chase_cross_traffic_obeys_the_signal();
     test_chase_generated_traffic_matches_its_lane();
+    test_chase_traffic_never_drives_through_itself();
+    test_chase_a_quicker_car_settles_in_behind_a_slower_one();
+    test_chase_cross_traffic_waits_for_its_gap();
+    test_chase_traffic_pulls_round_a_wreck();
+    test_chase_the_suv_shoves_what_it_rams();
+    test_chase_chuck_shoves_his_own_wreck_aside();
+    test_chase_a_car_touching_another_stays_out_of_it();
+    test_chase_traffic_makes_room_at_the_kerb();
+    test_chase_a_wreck_cannot_box_chuck_in_at_the_building();
+    test_chase_a_new_block_never_lands_on_a_wreck();
+    test_chase_cars_left_inside_each_other_come_apart();
+    test_chase_the_suv_drives_off_in_traffic();
     test_campaign_continue_flow();
     test_campaign_continue_countdown_expires();
     test_score_pays_out_extra_lives();
@@ -27127,6 +28967,8 @@ int main(void)
     test_weak_wall_is_masonry_to_the_route_model();
     test_the_route_model_will_not_take_a_fatal_fall();
     test_the_route_model_promises_only_moves_the_player_can_make();
+    test_every_spike_hop_the_model_promises_forgives_a_human_press();
+    test_the_editor_knows_which_fans_take_a_spike_hop_away();
     test_a_two_tile_step_up_is_the_bodys_move_not_the_models();
     test_a_jump_clears_a_wider_hole_than_the_model_will_route();
     test_empty_pistol_uses_close_range_knife();
@@ -27163,6 +29005,8 @@ int main(void)
     test_the_janitor_walks_mops_and_turns_at_the_wall();
     test_hazards_emit_specific_impact_sounds();
     test_stomp_on_enemy_bounces_player_and_damages_it();
+    test_a_stomp_wounds_one_time_in_four();
+    test_a_landing_is_rolled_once();
     test_a_stomp_has_to_come_from_above();
     test_a_stomped_guard_shoots_at_the_man_on_his_head();
     test_a_heavy_cannot_be_stomped_but_can_still_be_knifed();
@@ -27309,6 +29153,12 @@ int main(void)
     test_progress_survives_the_file();
     test_progress_file_damage_is_not_a_reset();
     test_a_value_that_is_not_a_number_changes_nothing();
+    test_a_planted_foot_stays_where_it_was_put();
+    test_every_pose_keeps_his_bones_the_length_they_are();
+    test_a_gait_has_no_frame_where_a_foot_jumps();
+    test_a_walk_vaults_and_a_run_springs();
+    test_the_arms_swing_against_the_legs();
+    test_the_films_run_is_the_run_with_the_acting_taken_out();
 
     if (failures != 0)
     {

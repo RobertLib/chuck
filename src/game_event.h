@@ -13,6 +13,10 @@ typedef enum
     GAME_EVENT_WORLD_SOUND,
     GAME_EVENT_PARTICLES,
     GAME_EVENT_EXPLOSION,
+    /* A flash charge going off. Not an explosion with a smaller number on it:
+     * the charge burns nothing and kills nobody, and a fireball and a cloud of
+     * soot over it told the player the opposite of what had just happened. */
+    GAME_EVENT_FLASH,
     /* Masonry dust rather than sparks: what comes off a surface, not out of
      * something. Blood-red fragments arcing away from a broken wall would read
      * as the wrong material however many of them there were. */
@@ -68,6 +72,11 @@ typedef struct
         {
             float x;
             float y;
+        } flash;
+        struct
+        {
+            float x;
+            float y;
             int count;
             float spread; /* how wide the surface it came off was, in pixels */
         } dust;
@@ -109,6 +118,7 @@ bool game_events_particles(GameEventBuffer *events, float x, float y,
                            int count, int direction);
 bool game_events_explosion(GameEventBuffer *events, float x, float y,
                            int count);
+bool game_events_flash(GameEventBuffer *events, float x, float y);
 bool game_events_dust(GameEventBuffer *events, float x, float y, int count,
                       float spread);
 bool game_events_camera_shake(GameEventBuffer *events, float strength,

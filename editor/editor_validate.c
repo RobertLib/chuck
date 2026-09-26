@@ -1172,10 +1172,56 @@ static void check_panels(const EditorDoc *doc, EdReport *report)
     }
 }
 
+/*
+ * Blades over a spike bed take away the only free answer to it.
+ *
+ * A single `^` is hopped, and a hop puts the player's head a row up for most of
+ * the arc — which is where a fan in the air row is. So the jump that clears the
+ * bed goes into the blades, and walking through costs the bed's own heart: one
+ * either way, on a tile the route model certifies as free. This is the spike's
+ * half of `Blades over this mine`, and the mine's rule does not cover it,
+ * because that one asks only about the charge's own column and a hop travels.
+ *
+ * The span is measured rather than borrowed, because borrowing a fan's number
+ * from a rule whose justification does not come with it is how the mine's
+ * first draft went wrong. Driven through the simulation, a fan in the row
+ * directly above the walk row takes the hop away anywhere within two columns
+ * of the bed, one a row higher within one column, and one three rows up never
+ * touches it; `test_the_editor_knows_which_fans_take_a_spike_hop_away` holds
+ * these two spans to the body in both directions. Only a bed with the two open
+ * rows a hop needs is asked, since a fan cannot take away a jump the ceiling
+ * never allowed. Reported at the fan, for the panel check's reason: a spike is
+ * where the floor needs denying, and blades can go anywhere.
+ */
+static void check_spike_blades(const EditorDoc *doc, EdReport *report, int col,
+                               int row)
+{
+    if (doc_blocks(doc, col, row - 1) || doc_blocks(doc, col, row - 2))
+        return;
+    for (int up = 1; up <= 2; ++up)
+    {
+        int reach = up == 1 ? 2 : 1;
+        for (int c = col - reach; c <= col + reach; ++c)
+        {
+            if (doc_at(doc, c, row - up) != 'O')
+                continue;
+            report_add(report, ED_SEV_WARN, c, row - up,
+                       "Blades over the spike bed at column %d: the hop that "
+                       "clears it goes into them, so it costs a heart either way",
+                       col);
+        }
+    }
+}
+
 static void check_spikes(const EditorDoc *doc, EdReport *report)
 {
     for (int row = 0; row < doc->grid.height; ++row)
     {
+        for (int col = 0; col < doc->grid.width; ++col)
+        {
+            if (doc_at(doc, col, row) == '^')
+                check_spike_blades(doc, report, col, row);
+        }
         for (int col = 0; col + 1 < doc->grid.width; ++col)
         {
             if (doc_at(doc, col, row) != '^' || doc_at(doc, col + 1, row) != '^')

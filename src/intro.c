@@ -1111,16 +1111,22 @@ static void draw_chuck(SDL_Renderer *r, float x, float feet_y, float scale,
      * whole body.
      *
      * And they are the game's colours: the jacket is FX_HERO at street-lamp
-     * level, the skin FX_SKIN a step down, the cap FX_RUST — the same man
-     * the first level hands over, not a fourth jacket for the same coat.
+     * level, the skin FX_SKIN a step down, and the red headband with its tail
+     * — the same man the first level hands over, not a fourth jacket for the
+     * same coat. He wore a rust cap here for a long time under a comment
+     * claiming exactly this, while every sector and every cutscene put the
+     * headband on him: the one thing the figure's own comment in
+     * render_figures.c calls "the identity", missing from the first frame
+     * anybody sees.
      */
     const SDL_Color coat = fx_dim(FX_HERO, 0.60f); /* front, toward the lobby */
     const SDL_Color coat_dk = fx_dim(coat, 0.55f); /* back, toward the lamp   */
     const SDL_Color trouser = fx_mix(FX_SHADOW, FX_BASE, 0.55f);
     const SDL_Color boot = fx_dim(FX_SHADOW, 0.55f);
     const SDL_Color skin = fx_dim(FX_SKIN, 0.70f);
-    const SDL_Color cap = fx_dim(FX_RUST, 0.53f);
-    const SDL_Color cap_dk = fx_dim(cap, 0.56f);
+    const SDL_Color hair = fx_dim(FX_HAIR, 0.5f);
+    const SDL_Color band = fx_dim(FX_RED, 0.62f);
+    const SDL_Color band_dk = fx_dim(band, 0.62f);
     const SDL_Color cold = fx_dim(FX_LAMP, 0.80f);
     const SDL_Color warm = fx_mix(FX_SODIUM, FX_WARM, 0.55f);
 
@@ -1151,7 +1157,7 @@ static void draw_chuck(SDL_Renderer *r, float x, float feet_y, float scale,
     color_rect(r, fx_dim(coat, 0.62f), x + U(12.5f), body + U(3.0f), U(3.5f), U(8.5f));
     color_rect(r, fx_dim(skin, 0.72f), x + U(12.5f), body + U(11.0f), U(3.0f), U(2.5f));
 
-    /* Head in profile, tipped back: neck, skull, face, nose, cap, brim. */
+    /* Head in profile, tipped back: neck, skull, face, nose, hair, band. */
     float head = top + U(1.5f) + U(breath);
     color_rect(r, fx_dim(skin, 0.5f), x + U(9.5f), head + U(7.5f), U(4.0f), U(2.5f));
     color_rect(r, fx_dim(FX_HAIR, 0.5f), x + U(7.0f), head + U(2.5f),
@@ -1161,19 +1167,23 @@ static void draw_chuck(SDL_Renderer *r, float x, float feet_y, float scale,
     color_rect(r, fx_dim(skin, 0.55f), x + U(11.0f), head + U(7.0f), U(5.0f), U(1.5f));
     color_rect(r, fx_dim(FX_HAIR, 0.36f), x + U(13.5f), head + U(4.0f),
                U(1.5f), U(1.0f)); /* eye, aimed up the wall */
-    color_rect(r, cap, x + U(6.5f), head, U(10.0f), U(3.0f));
-    color_rect(r, cap_dk, x + U(6.5f), head + U(2.0f), U(10.0f), U(1.5f));
-    color_rect(r, cap_dk, x + U(16.0f), head - U(0.5f), U(4.5f), U(2.0f));
+    color_rect(r, hair, x + U(6.5f), head, U(10.0f), U(2.5f));
+    color_rect(r, band, x + U(6.5f), head + U(2.0f), U(10.5f), U(1.5f));
+    /* The tail of it hangs off the back of his head, a shade darker. */
+    color_rect(r, band_dk, x + U(3.5f), head + U(2.5f), U(3.5f), U(1.5f));
+    color_rect(r, band_dk, x + U(2.5f), head + U(3.5f), U(2.0f), U(1.0f));
 
-    /* Rim accents only: cap, shoulder blade, calf, and the coat's front edge
+    /* Rim accents only: crown, shoulder blade, calf, and the coat's front edge
      * where the lobby light catches it. */
-    color_rect(r, fx_mix(cap, FX_CREAM, 0.45f), x + U(6.5f), head, U(10.0f), U(1.0f));
+    color_rect(r, fx_mix(hair, FX_CREAM, 0.30f), x + U(7.5f), head, U(8.0f), U(1.0f));
+    color_rect(r, fx_mix(band, FX_CREAM, 0.30f), x + U(6.5f), head + U(2.0f),
+               U(10.5f), U(0.5f));
     color_rect(r, cold, x + U(4.5f), body + U(1.0f), U(1.0f), U(9.0f));
     color_rect(r, fx_dim(cold, 0.7f), x + U(6.0f), head + U(2.5f), U(1.0f), U(5.0f));
     color_rect(r, fx_dim(cold, 0.55f), x + U(6.0f), top + U(24.0f), U(1.0f), U(7.5f));
     color_rect(r, fx_dim(warm, 0.85f), x + U(17.0f), body + U(1.0f), U(1.0f), U(5.0f));
     color_rect(r, fx_dim(warm, 0.6f), x + U(17.0f), body + U(8.0f), U(1.0f), U(3.0f));
-    color_rect(r, fx_dim(warm, 0.8f), x + U(19.0f), head - U(0.5f), U(1.5f), U(1.0f));
+    color_rect(r, fx_dim(warm, 0.8f), x + U(16.5f), head + U(2.0f), U(1.0f), U(1.5f));
 #undef U
 }
 
@@ -1224,10 +1234,32 @@ static void draw_suv(SDL_Renderer *r, float x, float base_y, float time)
                84.0f, 1.0f); /* beltline catching the entrance light */
     color_rect(r, COL_VOID, x, base_y - 8.0f, 88.0f, 6.0f);
 
-    color_rect(r, FX_INK, x + 10.0f, base_y - 9.0f, 17.0f, 9.0f);
-    color_rect(r, FX_INK, x + 59.0f, base_y - 9.0f, 17.0f, 9.0f);
-    color_rect(r, fx_mix(FX_BASE, FX_MID, 0.5f), x + 13.0f, base_y - 6.0f, 10.0f, 4.0f);
-    color_rect(r, fx_mix(FX_BASE, FX_MID, 0.5f), x + 62.0f, base_y - 6.0f, 10.0f, 4.0f);
+    /* Round wheels under the sill, the rim catching the lobby light: two
+     * rectangles here read as a trailer on blocks rather than a car. */
+    for (int wheel = 0; wheel < 2; ++wheel)
+    {
+        float cx = x + (wheel == 0 ? 18.5f : 67.5f);
+        float cy = base_y - 7.0f;
+        for (int dy = -7; dy <= 6; ++dy)
+        {
+            float yy = (float)dy + 0.5f;
+            float tyre = sqrtf(fmaxf(0.0f, 7.4f * 7.4f - yy * yy));
+            float rim = sqrtf(fmaxf(0.0f, 3.6f * 3.6f - yy * yy));
+            color_rect(r, FX_INK, floorf(cx - tyre + 0.5f), cy + (float)dy,
+                       floorf(tyre * 2.0f + 0.5f), 1.0f);
+            if (rim > 0.5f)
+                color_rect(r, fx_mix(FX_BASE, FX_MID, 0.5f),
+                           floorf(cx - rim + 0.5f), cy + (float)dy,
+                           floorf(rim * 2.0f + 0.5f), 1.0f);
+        }
+        color_rect(r, fx_mix(FX_MID, FX_SODIUM, 0.35f), cx + 1.0f, cy - 3.0f,
+                   2.0f, 1.0f);
+    }
+    /* The glass holds a streak of the lobby's light on the diagonal. */
+    for (int i = 0; i < 9; ++i)
+        color_rect(r, fx_mix(glass, FX_WARM, 0.18f),
+                   x + 26.0f + (float)(9 - i) * 0.8f, base_y - 34.0f + (float)i,
+                   2.0f, 1.0f);
 
     if (brake > 0.01f)
     {

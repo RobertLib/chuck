@@ -894,6 +894,21 @@ SUV's headlights are a parameter separate from `moving`, because a rolling
 vehicle throwing no beam is the one detail anybody would remember, and Chuck
 stops a clear seventy pixels short of the SUV's tail, because a figure
 standing on the vehicle he cannot reach says the opposite of the scene.
+**And he has to be seen to take it in**, because it is the one beat of the
+campaign he is given nothing to do in but watch. He used to stand at ease at
+the coffee window through the brakes, the rifles and the scream, and then set
+off upright with his hands at his sides, which read as a man who had seen
+nothing worth hurrying for. `draw_kerb_chuck` gives him the three reactions in
+the order they would happen to anybody: he comes up straight at the brakes,
+starts back with his hands up and his mouth open under a red `!` when the men
+get out, and at her scream drops into his knees with his fists closed and the
+brow down. From there he runs pitched forward with his fists driving — the
+film's plain legs, so the foot still stays put — and the set face
+(`CHUCK_FACE_FURY` in [render_chuck.h](../src/render_chuck.h)) holds through
+the shot he cannot take and the run back to his car, which he starts the
+moment the SUV moves off and covers at a real run. His footsteps are read off his feet rather than listed beside the run,
+so a step is heard where one comes down. The faces exist for the film only; the sector draws him at ease, at a size where a face is an eye and
+a mouth.
 
 **The drive** ([chase.c](../src/chase.c)) is a top-down, forward-only car chase:
 Chuck tails the SUV through night traffic until it parks at the building the
@@ -958,6 +973,64 @@ than `CHASE_MAX_CARS_ABREAST` cars wide, so at least two lanes are always open,
 and the SUV holds a speed that keeps Chuck at arm's length once it is being
 tailed, so holding the accelerator settles into a stable tail instead of ramming
 the car his wife is in.
+
+**And no car in the traffic is ever drawn inside another one.** Every car used
+to be handed a speed of its own and nothing else, so a quicker one that caught a
+slower one in its lane drove slowly through it for three seconds, cross traffic
+swept straight through the lanes, and a wreck lay in the road while traffic, the
+SUV and Chuck all passed over it — measured over 64 drives with nobody at the
+wheel, 74 seconds of a lane car inside another, 56 of a cross-street car inside
+one, and four and a half minutes of Chuck's car on top of a wreck. Now each car holds its cruising speed until something is
+in front of it and then eases in behind at `CHASE_TRAFFIC_GAP`; nothing ever
+moves into another box (`clear_step`); a car held up by something that has
+stopped pulls round it into the other lane on its own side of the centre line,
+never across it; and cross traffic pulls out only when it can get all the way
+across (`crossing_path_is_clear`), asked once at the kerb so that it never has
+to stop halfway over, standing across a lane. The SUV still rams whatever it
+cannot get round and Chuck still crashes into whatever he drives into — those
+are the drive — but what either of them hits is shoved out of the way rather
+than driven over. The SUV is solid to traffic throughout; Chuck's car only
+while nobody is driving it — parked at the kerb, rolling to a halt after a
+failure, and braking onto its mark at the building, where traffic in the kerb
+lane pulls out to let him in. What overlap is left is the crash itself, for the
+few frames before it registers, and one that is deliberate: for
+`CHASE_HIT_INVULN` after a crash Chuck's car flashes and passes through
+traffic, which is the mercy that stops one crash turning into three.
+
+Waiting for a gap costs a junction some of its cross traffic, so the cross
+street pulls out more often when it can (`CHASE_CROSS_GAP_MIN`..`MAX`, down from
+0.85–1.40 s). Measured over 384 drives by three kinds of driver, a junction has
+0.56 cars on it as Chuck crosses where it had 0.58, and he crashes a little less
+— 9.5 times a drive against 10.5 — because a car in a lane no longer has a
+cross-street car arriving inside it. `test_chase_traffic_never_drives_through_itself`
+drives the whole route three ways and asks every pair of cars on every step.
+
+**The tower's front door** (`STATE_OPENING_CUTSCENE`, `opening_cutscene_*` in
+[cutscene.c](../src/cutscene.c)) is the third beat: the SUV and Chuck's car pull
+up outside Kessler Tower, two men walk Ellen from the SUV's door to the lobby,
+and Chuck is out of his car the moment it stops and running after them — the
+kerb's run, with the kerb's face — and reaches the glass a second after it has
+closed on her. He used to sit at the wheel for three seconds while they walked
+her in and get out only once the doors had shut, which undid the kerb: a man who
+cannot get there in time reads as a man who did not try. His footsteps are read
+off his feet the way the kerb's are (`agent_footfall`).
+
+**Who is in front of what is one rule in both street scenes.** The camera is
+across the road, so the parked cars are nearer to it than the pavement, and the
+car doors people use are the ones on this side. Anybody on the pavement — Chuck
+at the coffee window, Ellen walking up to where the SUV stops, the cup she drops
+— is drawn behind the cars; anybody at a road-side door, or on the way round a
+bonnet from one, in front of them. Everybody used to be drawn over every car in
+the scene, so the SUV drove *behind* a man standing at a shop window, stopped
+with her standing on its bonnet, and pulled away underneath the cup lying on the
+pavement. At the tower everybody is on the road side until they are past the
+SUV's nose; Chuck could have taken the pavement behind it just as well, and that
+was tried and dropped, because it hid him for the second in which the doors take
+her. The drive has the top-down half of the same rule: a street lamp's pool and
+its reflection lie on the road under the traffic, while its mast, arm and lantern
+are over it (`StreetlightLayer` in [chase_render.c](../src/chase_render.c)).
+They used to be drawn in one pass under the cars, so every car in the kerb lane
+drove over the lamp heads.
 
 ## The field manual
 

@@ -100,8 +100,9 @@ hop small gaps to keep up, and fan out to sweep around Chuck's last known
 position; the alarm shuts itself off after he stays out of sight long enough.
 Guards can be eliminated with weapons, avoided by taking another route, or
 bypassed by crawling, timing movement, and using cover. Landing on a guard's
-head while falling bounces Chuck off unharmed and costs the guard a hit,
-unlike touching one any other way, which costs a heart.
+head while falling is a gamble: one time in four it costs the guard a hit and
+bounces Chuck clear, and the other three it is no stomp at all — Chuck simply
+runs into him, which costs a heart exactly as touching one any other way does.
 
 The options sheet has one switch that runs the other way from the assists. Turn
 `VETERAN` on and the crew moves faster than the campaign was tuned for, you get
@@ -135,7 +136,7 @@ a dozen abandoned ones.
 The back half of the building also has men in plate carriers. A heavy guard
 takes twice the rounds from the front and moves slower for carrying it, and he
 cannot be stomped at all — which is the point of him, because the stomp is the
-free answer that costs no ammunition and no position. The knife behind him works
+answer that costs no ammunition and no position, even at one landing in four. The knife behind him works
 exactly as it does on anybody else, so he is the floor's clearest argument for
 going quietly rather than a wall to unload into.
 

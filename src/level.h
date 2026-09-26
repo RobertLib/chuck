@@ -294,7 +294,7 @@ typedef struct
 
 typedef struct
 {
-    float x, y; /* spawn position (top-left of spike tile) */
+    float x, y; /* top-left of the spike bed, resting on its tile's floor */
 } SpikeSpawn;
 
 typedef struct
@@ -555,6 +555,78 @@ float level_theme_cordon(LevelTheme theme);
  */
 float level_backdrop_sink(const LevelMap *map, float cam_y, float view_h,
                           float factor);
+
+/*
+ * The rooms an interior's back wall is drawn in.
+ *
+ * Every interior backdrop used to be one picture the size of the screen, pinned
+ * to the screen: it slid sideways with the camera and not at all up or down, so
+ * climbing a ladder moved the building past a wall that stayed put, and every
+ * storey showed whatever horizontal slice of that one picture happened to be
+ * behind it — a rack, a stack of shelving or a window cut in half by the slab
+ * above it and carrying on in the storey above. A back wall is a property of a
+ * room, so it has to be drawn per room, anchored to the building, and sized to
+ * the room it is behind.
+ *
+ * So the map is read into rooms. A **piece** is a run of adjacent columns whose
+ * open run between masonry is the same rows — the clip a back wall is drawn in.
+ * A **room** is the layout those pieces share: the ceiling row and the floor
+ * row everything standing in it is laid out against. Three rules turn the
+ * grid into rooms rather than into a bar chart:
+ *
+ * - A gap of up to `LEVEL_BACKDROP_HOLE_MAX` tiles across a slab — a ladder
+ *   through the floor, a lift shaft, a pair of falling panels, a blown patch —
+ *   belongs to the slab, not to the rooms either side of it. Otherwise every
+ *   ladder would join two storeys into one room the height of both.
+ * - Adjacent pieces standing on the same floor are one room when their
+ *   ceilings are within a row of each other, and a piece at most two columns
+ *   wide (a doorway under its lintel, a notch) joins whichever neighbour's
+ *   ceiling is nearest — so a door does not cut a strip of a different wall
+ *   into the one it is set in, and does not bridge a low storey into a tall
+ *   hall beside it either.
+ * - A piece standing on a platform that the same taller room surrounds on both
+ *   sides is a mezzanine in that hall, and is drawn with the hall's layout: the
+ *   platform is in front of the wall, not the floor of a different one.
+ *
+ * All of it is a question about the map, so it is answered here, on the side
+ * of the boundary a test can reach.
+ */
+#define LEVEL_BACKDROP_HOLE_MAX 3
+#define LEVEL_BACKDROP_MAX_ROOMS 256
+#define LEVEL_BACKDROP_MAX_PIECES 512
+
+typedef struct
+{
+    int top;   /* the room's highest open row: its ceiling is the row above */
+    int floor; /* the masonry row the room stands on */
+    int col0;  /* the columns its pieces span, inclusive */
+    int col1;
+} LevelBackdropRoom;
+
+typedef struct
+{
+    int room; /* index into LevelBackdropPlan.rooms */
+    int col0; /* inclusive column range */
+    int col1;
+    int top;    /* inclusive open rows this piece clips to */
+    int bottom;
+} LevelBackdropPiece;
+
+typedef struct
+{
+    LevelBackdropRoom rooms[LEVEL_BACKDROP_MAX_ROOMS];
+    int room_count;
+    LevelBackdropPiece pieces[LEVEL_BACKDROP_MAX_PIECES];
+    int piece_count;
+} LevelBackdropPlan;
+
+/* True when this tile is behind the back wall rather than in front of it:
+ * masonry, or a gap across a slab that the rule above hands to the slab. */
+bool level_backdrop_blocks(const Level *level, int col, int row);
+/* Read the whole map into rooms and pieces. Pieces are ordered by column and
+ * then by row; a plan that would overflow drops the rest and says so by
+ * returning false, and what it holds is still consistent. */
+bool level_backdrop_plan(const Level *level, LevelBackdropPlan *plan);
 
 /* True when an embedded sublevel path is the file that stem names. */
 bool level_sublevel_name_is(const char *path, const char *stem);

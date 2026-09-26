@@ -538,6 +538,14 @@ no weak wall opens, no charge in reach chains, and **the player is untouched** �
 a flash that could hurt Chuck would be a grenade with a worse radius, and the
 point of it is that it is safe to use in the room you are standing in.
 
+**And it looks like what it does.** It used to tell the shell it was an
+explosion with a count of forty, so the device sold as harmless drew a fireball,
+embers and soot. It emits `GAME_EVENT_FLASH` now, and `particle_system_flash`
+draws light and nothing else: a white instant wider than a blast's, a cold ring,
+a few falling magnesium sparks and a pale haze —
+`test_a_flash_charge_blinds_the_room_without_changing_it` requires the flash and
+refuses the explosion.
+
 **One is laid out on sectors 8, 10, 12, 14, 16 and 17**, which is a decision
 about where a sector can go wrong: the lab where the mines start, the security
 floor, the duct run, the penthouse, the vault and the roof. Nothing below the lab
@@ -730,7 +738,9 @@ shoot at where the boot came from — see
 correction leaves the heavy *sharper* rather than blunter, which is the reverse
 of what taking the edge off a mechanic usually does to the thing built on top of
 it: an ordinary guard now trades a heart for the kill, and a heavy charges the
-same heart for nothing at all.
+same heart for nothing at all. Since then the stomp has become a roll as well —
+see [one landing in four](#one-landing-in-four) — and the heavy's rule survives
+it for the same reason: he is the landing that never comes up.
 
 **The blade behind him is deliberately unchanged**, and that is the half that
 makes him interesting rather than merely tough: a takedown is a knife across a
@@ -769,12 +779,14 @@ Never on a climb: sector 15 is a facade and a facade carries no men at all.
 
 Walking into a guard costs a heart, but `gameplay_combat_check_contacts`
 ([gameplay_combat.c](../src/gameplay_combat.c))
-carves out one free answer: landing on its head. It tells a stomp from a side
+carves out one exception: landing on its head. It tells a stomp from a side
 collision without swept collision by comparing penetration depth on each
 axis — a falling player (`vy > 0`) whose vertical overlap with the guard is
 shallower than the horizontal overlap only just tagged the top of the box, so
-it bounces Chuck upward (`ENEMY_STOMP_BOUNCE_SPEED`) and calls the same
-`damage_enemy` a bullet or knife hit would, instead of hurting him. Dogs are
+it rolls: one landing in four bounces Chuck upward (`ENEMY_STOMP_BOUNCE_SPEED`)
+and calls the same `damage_enemy` a bullet or knife hit would, and the other
+three are no stomp at all — no bounce, and Chuck meets the guard exactly as a
+side contact would. Dogs are
 unaffected; only guards can be stomped. The bounce also clears
 `jump_cut_ok`, because it is not a player-started jump: releasing the jump
 key must never shorten it back down into the guard.
@@ -821,11 +833,11 @@ is a miss before the trigger is pulled. Outside the strip and outside
 `ENEMY_VERTICAL_SHOOT_HALF_W` he fires down his corridor exactly as he always
 has, so the change is confined to the case that was broken.
 
-Measured after, on the same fixture: a stomp kill costs **one heart of three**,
-in 1.95 seconds. The first stomp is free — he is not provoked until it lands —
-and the round arrives during the second bounce; the third is inside
-`PLAYER_HIT_INVULN`, which is what caps the engagement at a single heart however
-many bounces it takes. Two other behaviours were driven for comparison and both
+Measured after, on the same fixture and while every landing still wounded: a
+stomp kill cost **one heart of three**, in 1.95 seconds. The first stomp was
+free — he is not provoked until it lands — and the round arrived during the
+second bounce; the third was inside `PLAYER_HIT_INVULN`, which is what capped
+the engagement at a single heart however many bounces it took. Two other behaviours were driven for comparison and both
 are worse: one stomp and leave costs 0.41 hearts and does not kill, and breaking
 off out of the column between bounces costs **2.08** hearts, because a player
 beside the guard is level with him and gets the horizontal round the fix left
@@ -847,6 +859,45 @@ back down into what now reads as a deep side hit. The stomp handler
 also clears `on_ladder` and arms `ladder_lockout_timer`
 (`ENEMY_STOMP_LADDER_LOCKOUT`) so the ladder cannot be re-grabbed until the
 bounce has had time to actually clear the guard.
+
+### One landing in four
+
+A boot on a helmet wounds the man under it one time in four
+(`ENEMY_STOMP_WOUND_CHANCE`, a percentage like every other chance in
+[game_config.h](../src/game_config.h)), and only that landing bounces. The other
+three are not a stomp at all: no bounce, and the contact falls through to the
+same branch walking into his side takes — a heart, unless the mercy window is
+up, and the hit's own pop off the source. The roll is `gameplay_stomp_wounds`,
+one draw on the floor's own stream, and it is the only place the chance is
+spent.
+
+**The roll is one per landing, and something has to make it one.** With no
+bounce a failed landing leaves Chuck falling on into the guard, and for dozens of
+steps the overlap is still shallow enough to read as a boot on a helmet; asked on
+each of them, a one-in-four chance comes up inside a handful of frames and the
+odds would quietly be a certainty. `Enemy.stomp_refused` is set by the roll that
+says no and cleared the moment the two boxes part, so the next landing is a new
+one. `test_a_landing_is_rolled_once` drives a fall through the guard and requires
+it to draw nothing after the first roll. A heavy is asked before the roll rather
+than after it, so he is not a roll that always fails but no roll at all.
+
+The mercy window keeps the chance, for the reason
+`test_stomp_still_lands_during_the_mercy_window` gives: a landing inside it still
+wounds one time in four, and one that does not is a contact inside the window —
+it costs nothing, and Chuck falls through the guard to the floor, where the next
+contact after the window closes costs a heart like any other. A failed stomp
+does not provoke the guard, because a side contact does not either; he answers
+with the rifle when the boot has actually hurt him.
+
+Measured on the fixture above with a committed player — steering back over the
+helmet and jumping whenever there is floor under him — a stomp kill now takes
+**twelve landings, 7.6 seconds and 5.9 hearts** on average over 512 seeds, and
+from a full three hearts the player is dead first on **463 of the 512**. The
+stomp has stopped being a way to clear a floor: it is a heart spent, three times
+in four, on the chance of one wound. `test_a_stomp_wounds_one_time_in_four`
+holds the share and what each landing does; the tests about what *follows* a
+wound choose the landing that gives one, through the game's own roll rather than
+a second copy of it.
 
 ## One blast, one rule
 

@@ -178,6 +178,22 @@ typedef struct
      * because `--screen pause` is the name that draws it.
      */
     bool staged_frame;
+
+    /*
+     * The offscreen frame and the chain the glow is built in.
+     *
+     * The frame is drawn into `frame` rather than straight into the window so
+     * that the finishing pass can read it back: every light in the game — a
+     * lamp, a screen, a sign, a muzzle, a blast — gets a soft halo from the
+     * frame's own brightest pixels, taken down through `glow[]` at a half, a
+     * quarter, an eighth and a sixteenth of the frame. Created on first use;
+     * `glow_state` is nought until then, positive once the renderer has shown
+     * it can do all of it, and negative if it could not, in which case the
+     * game draws straight into the window exactly as it always did.
+     */
+    SDL_Texture *frame;
+    SDL_Texture *glow[4];
+    int glow_state;
 } PlatformState;
 
 typedef struct

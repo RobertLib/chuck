@@ -68,6 +68,16 @@ bool game_events_explosion(GameEventBuffer *events, float x, float y,
     return true;
 }
 
+bool game_events_flash(GameEventBuffer *events, float x, float y)
+{
+    GameEvent *event = next_event(events, GAME_EVENT_FLASH);
+    if (event == NULL)
+        return false;
+    event->data.flash.x = x;
+    event->data.flash.y = y;
+    return true;
+}
+
 bool game_events_dust(GameEventBuffer *events, float x, float y, int count,
                       float spread)
 {

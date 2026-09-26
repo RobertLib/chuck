@@ -48,6 +48,7 @@ void enemy_init(Enemy *enemy, float x, float y, EnemyKind kind, Rng *rng)
     enemy->talk_partner = -1;
     enemy->talk_cooldown = 0.0f;
     enemy->body_turn_cooldown = 0.0f;
+    enemy->stomp_refused = false;
     /* Spread across the whole gap rather than starting at the top of it, so a
      * shift that came on together does not report in chorus. */
     enemy->radio_timer =

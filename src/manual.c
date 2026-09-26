@@ -421,53 +421,166 @@ static void draw_figure(SDL_Renderer *r, float x, float feet_y, int dir,
 
 /* A slab: the material, then the shading, then the arris on top — the order a
  * wall tile is built in, because a highlight dimmed by the shading pass stops
- * being one. */
+ * being one. The arris gets a bevel under it so the walking surface reads as a
+ * face turned up to the lamp rather than as a line, and the plate joints run
+ * on a longer module than the rivets: the rivets say how big a plate is, the
+ * joints how big the floor is. Both are counted from the slab's own left end,
+ * so a slab cut by a hole starts its rhythm afresh. */
 static void draw_slab(SDL_Renderer *r, float x, float y, float w, float h)
 {
+    SDL_Color under = {14, 19, 28, 255};
     fx_vgrad(r, x, y, w, h, FX_STEEL_DK, 255,
              (SDL_Color){24, 31, 43, 255}, 255);
     color_rect(r, (SDL_Color){126, 142, 156, 255}, x, y, w, 1.0f);
-    color_rect(r, (SDL_Color){14, 19, 28, 255}, x, y + h - 1.0f, w, 1.0f);
+    color_rect(r, fx_mix(FX_STEEL_DK, FX_STEEL, 0.55f), x, y + 1.0f, w, 1.0f);
+    for (float seam = x + 40.0f; seam < x + w - 6.0f; seam += 44.0f)
+    {
+        color_rect(r, under, seam, y + 2.0f, 1.0f, h - 3.0f);
+        color_rect(r, fx_mix(FX_STEEL_DK, FX_STEEL, 0.3f), seam + 1.0f,
+                   y + 2.0f, 1.0f, h - 3.0f);
+    }
     for (float rivet = x + 8.0f; rivet < x + w - 4.0f; rivet += 22.0f)
+    {
         color_rect(r, FX_STEEL, rivet, y + 5.0f, 2.0f, 2.0f);
+        color_rect(r, FX_STEEL_LT, rivet, y + 5.0f, 1.0f, 1.0f);
+        color_rect(r, under, rivet + 1.0f, y + 7.0f, 2.0f, 1.0f);
+    }
+    color_rect(r, under, x, y + h - 1.0f, w, 1.0f);
 }
 
+/*
+ * The wall behind a vignette.
+ *
+ * A figure on a slab across an empty plate is a figure on a line across a
+ * void. Faint panel joints on the wall's own module, and a skirting where it
+ * meets the floor, are what put the slab in a room — kept to a whisper, because
+ * the plate is a diagram and the figures are what it is about.
+ */
+static void draw_wall(SDL_Renderer *r, float x, float top, float w,
+                      float floor_y)
+{
+    float h = floor_y - top;
+    if (h <= 8.0f)
+        return;
+    for (float px = x + 28.0f; px < x + w - 4.0f; px += 52.0f)
+    {
+        fx_rect_a(r, FX_INK, 70, px, top, 1.0f, h);
+        fx_rect_a(r, FX_STEEL_DK, 60, px + 1.0f, top, 1.0f, h);
+    }
+    fx_rect_a(r, FX_STEEL_DK, 120, x, floor_y - 6.0f, w, 1.0f);
+    fx_rect_a(r, FX_INK, 70, x, floor_y - 5.0f, w, 5.0f);
+}
+
+/*
+ * A ceiling fitting and the light it throws, as the sectors light a room:
+ * one cool tube, a cone falling through the air, and a pool where it lands.
+ * Drawn under the figures so they stand in it.
+ */
+static void draw_ceiling_lamp(SDL_Renderer *r, float x, float ceiling_y,
+                              float floor_y)
+{
+    float drop = floor_y - ceiling_y - 4.0f;
+    fx_light_cone(r, x, ceiling_y + 4.0f, 5.0f, 34.0f, drop, FX_LAMP, 26);
+    fx_glow(r, x, floor_y - 1.0f, 34.0f, FX_LAMP, 22);
+    color_rect(r, FX_INK, x - 8.0f, ceiling_y, 16.0f, 5.0f);
+    color_rect(r, FX_STEEL_DK, x - 7.0f, ceiling_y, 14.0f, 2.0f);
+    color_rect(r, fx_mix(FX_LAMP, FX_CREAM, 0.45f), x - 6.0f, ceiling_y + 2.0f,
+               12.0f, 2.0f);
+}
+
+/*
+ * A ladder, painted the way every ladder in the building is: amber steel with
+ * the light running down the outer face of each rail, rungs worn bare where
+ * they are stood on, and the shadow the run throws on the wall it is bolted
+ * to. It was drawn in the sheet's own blue steel, which made it the one prop
+ * on these plates that did not look like the thing the player climbs.
+ */
 static void draw_ladder(SDL_Renderer *r, float x, float y, float h)
 {
-    color_rect(r, FX_STEEL_DK, x, y, 3.0f, h);
-    color_rect(r, FX_STEEL_DK, x + 15.0f, y, 3.0f, h);
-    color_rect(r, FX_STEEL_LT, x, y, 1.0f, h);
-    color_rect(r, FX_STEEL_LT, x + 15.0f, y, 1.0f, h);
-    for (float rung = y + 5.0f; rung < y + h - 2.0f; rung += 9.0f)
+    SDL_Color rail_dk = {47, 46, 38, 255};
+    SDL_Color rail = {196, 148, 62, 255};
+    SDL_Color rung = {226, 180, 84, 255};
+    SDL_Color rung_dk = {52, 42, 28, 255};
+    SDL_Color glint = {255, 224, 150, 255};
+
+    fx_rect_a(r, FX_INK, 90, x + 3.0f, y, 3.0f, h);
+    fx_rect_a(r, FX_INK, 90, x + 18.0f, y, 3.0f, h);
+    for (float step = y + 5.0f; step < y + h - 2.0f; step += 9.0f)
+        fx_rect_a(r, FX_INK, 70, x + 5.0f, step + 3.0f, 12.0f, 2.0f);
+
+    for (int side = 0; side < 2; ++side)
     {
-        color_rect(r, FX_STEEL, x + 3.0f, rung, 12.0f, 2.0f);
-        color_rect(r, FX_STEEL_LT, x + 3.0f, rung, 12.0f, 1.0f);
+        float rx = x + (side == 0 ? 0.0f : 15.0f);
+        color_rect(r, rail_dk, rx, y, 3.0f, h);
+        color_rect(r, rail, rx, y, 2.0f, h);
+        fx_rect_a(r, glint, 90, rx, y, 1.0f, h);
+    }
+    for (float step = y + 5.0f; step < y + h - 2.0f; step += 9.0f)
+    {
+        color_rect(r, rung_dk, x + 3.0f, step + 1.0f, 12.0f, 2.0f);
+        color_rect(r, rung, x + 3.0f, step, 12.0f, 2.0f);
+        color_rect(r, fx_mix(rung, glint, 0.6f), x + 3.0f, step, 12.0f, 1.0f);
+        fx_rect_a(r, FX_PALE, 90, x + 7.0f, step, 4.0f, 1.0f);
+    }
+    /* A bracket to the wall every few rungs, so the run is fixed to something. */
+    for (float b = y + 12.0f; b < y + h - 8.0f; b += 36.0f)
+    {
+        color_rect(r, rail_dk, x - 3.0f, b, 3.0f, 3.0f);
+        color_rect(r, rail_dk, x + 18.0f, b, 3.0f, 3.0f);
+        color_rect(r, fx_mix(rail_dk, rail, 0.5f), x - 3.0f, b, 3.0f, 1.0f);
+        color_rect(r, fx_mix(rail_dk, rail, 0.5f), x + 18.0f, b, 3.0f, 1.0f);
     }
 }
 
+/* The crate the sectors draw — a framed box with a cross brace — rather than a
+ * plank-coloured square: the thing the sheet tells the player to shove has to
+ * be the thing they will find. */
 static void draw_crate(SDL_Renderer *r, float x, float y, float size)
 {
-    FxRamp wood = fx_ramp(FX_WOOD);
+    fx_contact_shadow(r, x + size * 0.5f, y + size, size * 0.62f, 0.0f, 170);
     ink_block(r, x, y, size, size);
-    fx_form_block(r, x, y, size, size, wood, 1);
-    color_rect(r, FX_WOOD_DK, x + 2.0f, y + size * 0.5f - 1.0f, size - 4.0f, 2.0f);
-    color_rect(r, FX_WOOD_LT, x + 2.0f, y + size * 0.5f - 1.0f, size - 4.0f, 1.0f);
+    color_rect(r, (SDL_Color){105, 67, 38, 255}, x, y, size, size);
+    color_rect(r, (SDL_Color){161, 103, 53, 255}, x + 1.0f, y + 1.0f,
+               size - 2.0f, 3.0f);
+    color_rect(r, (SDL_Color){73, 48, 32, 255}, x + 1.0f, y + size - 4.0f,
+               size - 2.0f, 3.0f);
+    color_rect(r, (SDL_Color){143, 90, 47, 255}, x + 1.0f, y + 1.0f, 3.0f,
+               size - 2.0f);
+    color_rect(r, (SDL_Color){70, 47, 33, 255}, x + size - 4.0f, y + 1.0f, 3.0f,
+               size - 2.0f);
+    set_color(r, (SDL_Color){68, 44, 30, 255});
+    SDL_RenderLine(r, x + 4.0f, y + 4.0f, x + size - 5.0f, y + size - 5.0f);
+    SDL_RenderLine(r, x + size - 5.0f, y + 4.0f, x + 4.0f, y + size - 5.0f);
+    set_color(r, (SDL_Color){188, 125, 67, 255});
+    SDL_RenderLine(r, x + 5.0f, y + 4.0f, x + size - 5.0f, y + size - 6.0f);
+    color_rect(r, FX_WOOD_LT, x + 1.0f, y + 1.0f, size - 2.0f, 1.0f);
 }
 
+/* Steel teeth on a strip bolted to the floor: each tooth lit down the side the
+ * lamp reaches and shaded down the other, the tip the brightest pixel. */
 static void draw_spikes(SDL_Renderer *r, float x, float y, int count)
 {
+    float span = (float)(count - 1) * 11.0f + 7.0f;
+    fx_contact_shadow(r, x + span * 0.5f, y + 7.0f, span * 0.62f, 0.0f, 150);
     for (int i = 0; i < count; ++i)
     {
         float sx = x + (float)i * 11.0f;
         for (int row = 0; row < 7; ++row)
         {
             float w = 7.0f - (float)row;
-            SDL_Color tip = fx_mix(FX_PALE, FX_STEEL_DK, (float)row / 7.0f);
-            color_rect(r, tip, sx + (7.0f - w) * 0.5f, y + 7.0f - (float)row - 1.0f,
-                       w, 1.0f);
+            float t = (float)row / 6.0f;
+            float left = sx + (7.0f - w) * 0.5f;
+            float ry = y + 7.0f - (float)row - 1.0f;
+            color_rect(r, fx_mix(FX_STEEL_LT, FX_PALE, t), left, ry, w, 1.0f);
+            if (w >= 3.0f)
+                color_rect(r, fx_mix(FX_STEEL, FX_STEEL_LT, t),
+                           left + floorf(w * 0.5f) + 1.0f, ry,
+                           w - floorf(w * 0.5f) - 1.0f, 1.0f);
         }
-        color_rect(r, FX_STEEL_DK, sx - 1.0f, y + 6.0f, 9.0f, 2.0f);
+        color_rect(r, fx_mix(FX_PALE, FX_CREAM, 0.5f), sx + 3.0f, y, 1.0f, 1.0f);
     }
+    color_rect(r, FX_STEEL_DK, x - 2.0f, y + 6.0f, span + 4.0f, 2.0f);
+    color_rect(r, FX_STEEL, x - 2.0f, y + 6.0f, span + 4.0f, 1.0f);
 }
 
 /*
@@ -514,24 +627,58 @@ static void draw_brickwork(SDL_Renderer *r, SDL_FRect p)
                 unsigned h = fx_hash(fx_salt(bx * 3.0f + y * 71.0f));
                 SDL_Color face = fx_dim((SDL_Color){86, 62, 54, 255},
                                         0.62f + (float)(h % 30u) * 0.011f);
+                /* The odd brick sooted from the street, keyed to the brick
+                 * rather than scattered, so the wall is weathered rather
+                 * than noisy. */
+                if ((h >> 8) % 15u == 0u)
+                    face = fx_mix(face, FX_INK, 0.26f);
                 float left = bx < p.x ? p.x : bx;
                 float span = bx + w > p.x + p.w ? p.x + p.w - left : w - (left - bx);
-                if (span > 0.0f)
-                    color_rect(r, face, left, y, span, 8.0f);
+                if (span <= 0.0f)
+                    continue;
+                color_rect(r, face, left, y, span, 8.0f);
+                /* Each brick is a small solid under the moon, which is up and
+                 * to the left: its top arris and its left end catch the light,
+                 * its underside drops into the joint. */
+                color_rect(r, fx_mix(face, (SDL_Color){186, 150, 128, 255}, 0.28f),
+                           left, y, span, 1.0f);
+                if (bx >= p.x)
+                    color_rect(r, fx_mix(face, (SDL_Color){186, 150, 128, 255},
+                                         0.14f),
+                               left, y + 1.0f, 1.0f, 6.0f);
+                color_rect(r, fx_dim(face, 0.78f), left, y + 7.0f, span, 1.0f);
             }
         }
     }
 }
 
 /* A cornice: the ledge the climber routes around, and the only cover out
- * there. */
-static void draw_cornice(SDL_Renderer *r, float x, float y, float w)
+ * there. A moulded top, a row of dentils under it throwing their own small
+ * shadows, and an end face wherever the run stops short of the plate — lit on
+ * the left, where the moon is, and dark on the right. */
+static void draw_cornice(SDL_Renderer *r, SDL_FRect plate, float x, float y,
+                         float w)
 {
-    fx_vgrad(r, x, y, w, 13.0f, (SDL_Color){112, 108, 98, 255}, 255,
-             (SDL_Color){46, 44, 42, 255}, 255);
+    SDL_Color stone = {112, 108, 98, 255};
+    SDL_Color stone_dk = {46, 44, 42, 255};
+    fx_vgrad(r, x, y, w, 13.0f, stone, 255, stone_dk, 255);
     color_rect(r, (SDL_Color){186, 180, 164, 255}, x, y, w, 1.0f);
     color_rect(r, (SDL_Color){22, 20, 20, 255}, x, y + 12.0f, w, 1.0f);
     color_rect(r, (SDL_Color){138, 132, 120, 255}, x, y + 3.0f, w, 1.0f);
+    color_rect(r, fx_mix(stone, stone_dk, 0.75f), x, y + 4.0f, w, 1.0f);
+    for (float d = x + 2.0f; d < x + w - 3.0f; d += 6.0f)
+    {
+        color_rect(r, fx_mix(stone, stone_dk, 0.35f), d, y + 7.0f, 3.0f, 3.0f);
+        color_rect(r, fx_mix(stone, (SDL_Color){186, 180, 164, 255}, 0.4f), d,
+                   y + 7.0f, 3.0f, 1.0f);
+        color_rect(r, (SDL_Color){22, 20, 20, 255}, d + 1.0f, y + 10.0f, 3.0f,
+                   1.0f);
+    }
+    if (x > plate.x + 1.0f)
+        color_rect(r, fx_mix(stone, (SDL_Color){186, 180, 164, 255}, 0.5f), x, y,
+                   1.0f, 12.0f);
+    if (x + w < plate.x + plate.w - 1.0f)
+        color_rect(r, (SDL_Color){22, 20, 20, 255}, x + w - 1.0f, y, 1.0f, 13.0f);
 }
 
 /* ---- Pickup icons ---------------------------------------------------- */
@@ -628,6 +775,76 @@ static void draw_access_chip(SDL_Renderer *r, float x, float y, float w,
 
 /* ---- Illustrations --------------------------------------------------- */
 
+/* A cutout in the case's foam: a recess, so its upper lip throws a shadow
+ * down into it and its floor catches the lamp along the far edge. */
+static void draw_recess(SDL_Renderer *r, SDL_Color cut, SDL_Color foam,
+                        float x, float y, float w, float h)
+{
+    color_rect(r, cut, x, y, w, h);
+    fx_vgrad(r, x, y, w, 5.0f, FX_INK, 170, FX_INK, 0);
+    color_rect(r, fx_mix(cut, foam, 0.55f), x, y + h - 1.0f, w, 1.0f);
+}
+
+/* A frag in its cup: the body lit on its upper left, the segments cut into
+ * it, the fuze head, the spoon down its side and the ring of the pin. */
+static void draw_frag(SDL_Renderer *r, float gx, float gy)
+{
+    SDL_Color olive = {57, 64, 47, 255};
+    fx_mass(r, olive, gx, gy, 14.0f, 20.0f, 2, 2);
+    for (float row = gy + 5.0f; row < gy + 18.0f; row += 5.0f)
+        color_rect(r, fx_mix(olive, FX_INK, 0.45f), gx + 1.0f, row, 12.0f, 1.0f);
+    color_rect(r, fx_mix(olive, FX_INK, 0.40f), gx + 7.0f, gy + 2.0f, 1.0f, 16.0f);
+    SDL_Color sheen = {86, 94, 70, 255};
+    color_rect(r, sheen, gx + 2.0f, gy + 2.0f, 6.0f, 1.0f);
+    color_rect(r, sheen, gx + 2.0f, gy + 3.0f, 1.0f, 9.0f);
+    color_rect(r, fx_mix(olive, FX_INK, 0.5f), gx + 2.0f, gy + 19.0f, 10.0f, 1.0f);
+    color_rect(r, FX_STEEL_DK, gx + 4.0f, gy - 4.0f, 6.0f, 5.0f);
+    color_rect(r, FX_STEEL, gx + 4.0f, gy - 4.0f, 6.0f, 1.0f);
+    color_rect(r, FX_STEEL_LT, gx + 10.0f, gy - 3.0f, 2.0f, 11.0f);
+    color_rect(r, FX_STEEL_LT, gx + 1.0f, gy - 6.0f, 3.0f, 1.0f);
+    color_rect(r, FX_STEEL_LT, gx + 1.0f, gy - 4.0f, 3.0f, 1.0f);
+    color_rect(r, FX_STEEL_LT, gx + 1.0f, gy - 5.0f, 1.0f, 1.0f);
+}
+
+/* The rifle, as a rifle rather than an ink stencil of one: blued metal with
+ * its top edges lit, a polymer stock and grip a step warmer, and the handguard
+ * vented so the barrel has a shape. */
+static void draw_case_rifle(SDL_Renderer *r, float x, float y)
+{
+    SDL_Color metal = fx_mix(FX_INK, FX_STEEL_DK, 0.55f);
+    SDL_Color lit = fx_mix(metal, FX_STEEL_LT, 0.45f);
+    SDL_Color stock = fx_mix(FX_WOOD_DK, FX_INK, 0.45f);
+    SDL_Color stock_lit = fx_mix(stock, FX_WOOD_LT, 0.30f);
+
+    /* Stock, tapering to the butt. */
+    color_rect(r, stock, x, y - 3.0f, 14.0f, 8.0f);
+    color_rect(r, stock, x + 14.0f, y - 2.0f, 4.0f, 6.0f);
+    color_rect(r, stock_lit, x, y - 3.0f, 14.0f, 1.0f);
+    color_rect(r, fx_mix(stock, FX_INK, 0.4f), x, y - 3.0f, 2.0f, 8.0f);
+    /* Receiver, with the rear sight on it. */
+    color_rect(r, metal, x + 18.0f, y - 2.0f, 32.0f, 7.0f);
+    color_rect(r, lit, x + 18.0f, y - 2.0f, 32.0f, 1.0f);
+    color_rect(r, metal, x + 22.0f, y - 5.0f, 5.0f, 3.0f);
+    color_rect(r, lit, x + 22.0f, y - 5.0f, 5.0f, 1.0f);
+    /* Grip and magazine hanging under it. */
+    color_rect(r, stock, x + 30.0f, y + 5.0f, 5.0f, 5.0f);
+    color_rect(r, stock, x + 29.0f, y + 9.0f, 5.0f, 3.0f);
+    color_rect(r, metal, x + 38.0f, y + 5.0f, 7.0f, 6.0f);
+    color_rect(r, metal, x + 39.0f, y + 10.0f, 7.0f, 4.0f);
+    color_rect(r, lit, x + 38.0f, y + 5.0f, 1.0f, 6.0f);
+    /* Handguard, vented, then the barrel, the front sight and the muzzle. */
+    color_rect(r, metal, x + 50.0f, y - 1.0f, 34.0f, 5.0f);
+    color_rect(r, lit, x + 50.0f, y - 1.0f, 34.0f, 1.0f);
+    for (float v = x + 53.0f; v < x + 82.0f; v += 5.0f)
+        color_rect(r, FX_INK, v, y + 1.0f, 2.0f, 1.0f);
+    color_rect(r, metal, x + 84.0f, y, 22.0f, 2.0f);
+    color_rect(r, lit, x + 84.0f, y, 22.0f, 1.0f);
+    color_rect(r, metal, x + 80.0f, y - 4.0f, 2.0f, 3.0f);
+    color_rect(r, metal, x + 106.0f, y - 1.0f, 4.0f, 4.0f);
+    color_rect(r, lit, x + 106.0f, y - 1.0f, 4.0f, 1.0f);
+}
+
+
 /*
  * What Meridian Facility Services wheeled through the goods entrance, opened
  * on the floor of a sector.
@@ -693,6 +910,14 @@ static void illus_night(SDL_Renderer *r, SDL_FRect p, float time,
                    box.y + box.h - 44.0f, 9.0f, 3.0f);
     }
 
+    /* The piano hinge the lid swings on, down the seam between the halves. */
+    for (float hy = top_y + 12.0f; hy < top_y + 232.0f; hy += 10.0f)
+    {
+        color_rect(r, FX_STEEL_DK, cx - 8.0f, hy, 10.0f, 6.0f);
+        color_rect(r, FX_STEEL, cx - 8.0f, hy, 10.0f, 1.0f);
+        color_rect(r, FX_INK, cx - 8.0f, hy + 6.0f, 10.0f, 1.0f);
+    }
+
     /* The lid liner, so the docket is stencilled on something. */
     color_rect(r, (SDL_Color){31, 36, 39, 255}, lid.x + 9.0f, lid.y + 10.0f,
                lid.w - 18.0f, lid.h - 24.0f);
@@ -732,17 +957,11 @@ static void illus_night(SDL_Renderer *r, SDL_FRect p, float time,
                bed.w - 14.0f, 1.0f);
 
     /* Rifle. */
-    color_rect(r, cut, bed.x + 12.0f, bed.y + 16.0f, bed.w - 24.0f, 30.0f);
-    color_rect(r, FX_INK, bed.x + 20.0f, bed.y + 28.0f, 104.0f, 5.0f);
-    color_rect(r, (SDL_Color){76, 83, 80, 255}, bed.x + 20.0f, bed.y + 28.0f,
-               104.0f, 1.0f);
-    color_rect(r, FX_INK, bed.x + 48.0f, bed.y + 25.0f, 28.0f, 10.0f);
-    color_rect(r, (SDL_Color){66, 60, 45, 255}, bed.x + 52.0f, bed.y + 34.0f,
-               10.0f, 9.0f);
-    color_rect(r, FX_INK, bed.x + 16.0f, bed.y + 24.0f, 14.0f, 9.0f);
+    draw_recess(r, cut, foam, bed.x + 12.0f, bed.y + 16.0f, bed.w - 24.0f, 30.0f);
+    draw_case_rifle(r, bed.x + 18.0f, bed.y + 28.0f);
 
     /* Launcher tube. */
-    color_rect(r, cut, bed.x + 12.0f, bed.y + 52.0f, bed.w - 24.0f, 34.0f);
+    draw_recess(r, cut, foam, bed.x + 12.0f, bed.y + 52.0f, bed.w - 24.0f, 34.0f);
     fx_vgrad(r, bed.x + 18.0f, bed.y + 60.0f, 112.0f, 17.0f,
              (SDL_Color){80, 76, 53, 255}, 255,
              (SDL_Color){36, 34, 26, 255}, 255);
@@ -750,38 +969,51 @@ static void illus_night(SDL_Renderer *r, SDL_FRect p, float time,
                112.0f, 1.0f);
     color_rect(r, FX_INK, bed.x + 18.0f, bed.y + 57.0f, 6.0f, 23.0f);
     color_rect(r, FX_INK, bed.x + 124.0f, bed.y + 57.0f, 6.0f, 23.0f);
+    /* The end caps are rims, and a rim catches the light along its top. */
+    color_rect(r, FX_STEEL_DK, bed.x + 19.0f, bed.y + 58.0f, 4.0f, 21.0f);
+    color_rect(r, FX_STEEL_DK, bed.x + 125.0f, bed.y + 58.0f, 4.0f, 21.0f);
+    color_rect(r, FX_STEEL, bed.x + 19.0f, bed.y + 58.0f, 4.0f, 1.0f);
+    color_rect(r, FX_STEEL, bed.x + 125.0f, bed.y + 58.0f, 4.0f, 1.0f);
+    color_rect(r, fx_mix(FX_INK, FX_STEEL_DK, 0.6f), bed.x + 44.0f, bed.y + 55.0f,
+               10.0f, 5.0f);
+    color_rect(r, FX_STEEL, bed.x + 44.0f, bed.y + 55.0f, 10.0f, 1.0f);
     color_rect(r, FX_RUST, bed.x + 64.0f, bed.y + 65.0f, 16.0f, 3.0f);
 
     /* Four frags in their own cups. */
-    color_rect(r, cut, bed.x + 12.0f, bed.y + 92.0f, bed.w - 24.0f, 42.0f);
+    draw_recess(r, cut, foam, bed.x + 12.0f, bed.y + 92.0f, bed.w - 24.0f, 42.0f);
     for (int i = 0; i < 4; ++i)
     {
         float gx = bed.x + 24.0f + (float)i * 28.0f;
         color_rect(r, (SDL_Color){9, 12, 12, 255}, gx - 3.0f, bed.y + 98.0f,
                    20.0f, 30.0f);
-        fx_mass(r, (SDL_Color){57, 64, 47, 255}, gx, bed.y + 104.0f, 14.0f,
-                20.0f, 2, 2);
-        color_rect(r, (SDL_Color){86, 94, 70, 255}, gx + 2.0f, bed.y + 106.0f,
-                   6.0f, 1.0f);
-        color_rect(r, FX_STEEL_DK, gx + 4.0f, bed.y + 100.0f, 6.0f, 5.0f);
-        color_rect(r, FX_STEEL_LT, gx + 10.0f, bed.y + 101.0f, 2.0f, 11.0f);
+        draw_frag(r, gx, bed.y + 104.0f);
     }
 
     /* Rockets, nose down. */
-    color_rect(r, cut, bed.x + 12.0f, bed.y + 140.0f, bed.w - 24.0f, 44.0f);
+    draw_recess(r, cut, foam, bed.x + 12.0f, bed.y + 140.0f, bed.w - 24.0f, 44.0f);
     for (int i = 0; i < 3; ++i)
     {
         float rx = bed.x + 28.0f + (float)i * 36.0f;
+        SDL_Color head = {70, 64, 46, 255};
         color_rect(r, FX_INK, rx - 1.0f, bed.y + 147.0f, 16.0f, 30.0f);
-        fx_mass(r, (SDL_Color){70, 64, 46, 255}, rx, bed.y + 148.0f, 14.0f,
-                12.0f, 3, 0);
+        fx_mass(r, head, rx, bed.y + 148.0f, 14.0f, 12.0f, 3, 0);
+        fx_mass(r, fx_mix(head, FX_WOOD_LT, 0.30f), rx + 3.0f, bed.y + 148.0f,
+                3.0f, 9.0f, 1, 0);
+        color_rect(r, fx_mix(head, FX_INK, 0.45f), rx, bed.y + 159.0f, 14.0f,
+                   1.0f);
         color_rect(r, (SDL_Color){44, 48, 46, 255}, rx + 2.0f, bed.y + 160.0f,
                    10.0f, 16.0f);
+        color_rect(r, fx_mix((SDL_Color){44, 48, 46, 255}, FX_STEEL_LT, 0.35f),
+                   rx + 3.0f, bed.y + 160.0f, 1.0f, 16.0f);
         color_rect(r, FX_RUST, rx + 2.0f, bed.y + 163.0f, 10.0f, 2.0f);
+        /* The fins, folded against the motor. */
+        color_rect(r, (SDL_Color){44, 48, 46, 255}, rx, bed.y + 171.0f, 2.0f, 5.0f);
+        color_rect(r, (SDL_Color){44, 48, 46, 255}, rx + 12.0f, bed.y + 171.0f,
+                   2.0f, 5.0f);
     }
 
     /* Magazines, stacked flat. */
-    color_rect(r, cut, bed.x + 12.0f, bed.y + 190.0f, bed.w - 24.0f, 40.0f);
+    draw_recess(r, cut, foam, bed.x + 12.0f, bed.y + 190.0f, bed.w - 24.0f, 40.0f);
     for (int i = 0; i < 5; ++i)
     {
         float my = bed.y + 196.0f + (float)i * 7.0f;
@@ -842,9 +1074,19 @@ static void illus_crew(SDL_Renderer *r, SDL_FRect p, float time,
     float pw = bw - 20.0f;
     float ph = bh - 30.0f;
     color_rect(r, FX_INK, px + 2.0f, py + 3.0f, pw, ph);
-    color_rect(r, paper, px, py, pw, ph);
+    /* The sheet under the desk lamp: brightest at the head, where the lamp is
+     * nearest, and a touch greyer toward the foot. */
+    fx_vgrad(r, px, py, pw, ph, fx_mix(paper, FX_CREAM, 0.12f), 255,
+             fx_mix(paper, FX_STEEL, 0.18f), 255);
     color_rect(r, fx_mix(paper, FX_CREAM, 0.55f), px, py, pw, 1.0f);
     color_rect(r, fx_mix(paper, FX_INK, 0.35f), px, py + ph - 1.0f, pw, 1.0f);
+    /* The corner that has been thumbed, lifting off the board. */
+    color_rect(r, fx_mix(paper, FX_INK, 0.30f), px + pw - 6.0f, py + ph - 2.0f,
+               6.0f, 1.0f);
+    color_rect(r, fx_mix(paper, FX_CREAM, 0.30f), px + pw - 4.0f, py + ph - 4.0f,
+               3.0f, 1.0f);
+    /* The clip throws its shadow down onto the sheet it holds. */
+    fx_vgrad(r, cx - 38.0f, by + 25.0f, 76.0f, 6.0f, FX_INK, 110, FX_INK, 0);
 
     /* The spring clip, biting the head of the sheet. */
     color_rect(r, FX_INK, cx - 41.0f, by + 2.0f, 82.0f, 24.0f);
@@ -853,6 +1095,12 @@ static void illus_crew(SDL_Renderer *r, SDL_FRect p, float time,
     color_rect(r, fx_mix(FX_STEEL_LT, FX_CREAM, 0.4f), cx - 40.0f, by + 3.0f,
                80.0f, 1.0f);
     color_rect(r, FX_INK, cx - 31.0f, by + 11.0f, 62.0f, 4.0f);
+    for (int side = 0; side < 2; ++side)
+    {
+        float rx = side == 0 ? cx - 36.0f : cx + 33.0f;
+        color_rect(r, FX_STEEL_DK, rx, by + 18.0f, 3.0f, 3.0f);
+        color_rect(r, FX_PALE, rx, by + 18.0f, 1.0f, 1.0f);
+    }
 
     draw_tracked(r, px + 9.0f, py + 30.0f, 1.0f, ink, "MERIDIAN FACILITY");
     draw_text(r, px + 9.0f, py + 42.0f, 1.0f, faint, "NIGHT ACCESS LOG");
@@ -917,22 +1165,86 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time,
         float twinkle = 0.5f + 0.5f * sinf(time * 1.6f + (float)(h % 61u));
         color_rect(r, fx_dim(FX_PALE, 0.30f + twinkle * 0.45f), sx, sy, 1.0f, 1.0f);
     }
-    fx_glow(r, p.x + p.w * 0.20f, p.y + 34.0f, 30.0f,
-            (SDL_Color){170, 196, 214, 255}, 26);
-    color_rect(r, (SDL_Color){206, 222, 230, 255}, p.x + p.w * 0.20f - 5.0f,
-               p.y + 30.0f, 10.0f, 9.0f);
+    /* The moon, up and to the left where every lit thing in the game has its
+     * light from: a disc rather than a tile, with its seas on it, and a halo
+     * wide enough to be the air it is shining through. */
+    float moon_x = floorf(p.x + p.w * 0.20f);
+    float moon_y = p.y + 30.0f;
+    SDL_Color moon = {206, 222, 230, 255};
+    fx_glow(r, moon_x, moon_y + 5.0f, 58.0f, (SDL_Color){170, 196, 214, 255}, 20);
+    fx_glow(r, moon_x, moon_y + 5.0f, 22.0f, (SDL_Color){170, 196, 214, 255}, 40);
+    fx_mass(r, moon, moon_x - 5.0f, moon_y, 11.0f, 11.0f, 3, 3);
+    color_rect(r, fx_mix(moon, FX_STEEL_LT, 0.45f), moon_x - 3.0f, moon_y + 3.0f,
+               3.0f, 2.0f);
+    color_rect(r, fx_mix(moon, FX_STEEL_LT, 0.35f), moon_x + 1.0f, moon_y + 6.0f,
+               2.0f, 2.0f);
+    color_rect(r, fx_mix(moon, FX_STEEL_LT, 0.30f), moon_x + 3.0f, moon_y + 8.0f,
+               2.0f, 1.0f);
 
-    /* The tower, tapering because the shot looks up at it from the kerb. */
+    /* The city behind it: a far row a step off the haze, so the tower stands in
+     * front of something rather than against an empty sky. Keyed to the index,
+     * so the same row is drawn every frame. */
+    for (unsigned i = 0; i < 9u; ++i)
+    {
+        unsigned h = fx_hash(i * 2246822519u + 5u);
+        float bw = 18.0f + (float)(h % 22u);
+        float bh = 50.0f + (float)((h >> 5) % 90u);
+        float bx = p.x + (float)i * 36.0f - 10.0f + (float)((h >> 12) % 10u);
+        SDL_Color far = fx_mix(FX_SHADOW, FX_NIGHT, 0.2f);
+        color_rect(r, far, bx, street - bh, bw, bh);
+        color_rect(r, fx_mix(far, FX_STEEL_DK, 0.5f), bx, street - bh, bw, 1.0f);
+        for (unsigned k = 0; k < 6u; ++k)
+        {
+            unsigned w = fx_hash(h + k * 97u);
+            if ((w % 100u) >= 32u)
+                continue;
+            float lx = bx + 3.0f + (float)fx_spread(w >> 8, bw - 6.0f);
+            float ly = street - bh + 6.0f + (float)fx_spread(w >> 16, bh - 12.0f);
+            color_rect(r, fx_dim((w & 1u) ? FX_WARM : COL_COLD, 0.34f),
+                       floorf(lx), floorf(ly), 1.0f, 1.0f);
+        }
+    }
+
+    /* The tower, tapering because the shot looks up at it from the kerb. The
+     * flank toward the moon takes a line of light down its whole height and the
+     * far one falls into shade: it is a mass standing in the light, not a
+     * shape cut out of the sky. */
     for (float y = roof; y < street; y += 1.0f)
     {
         float t = (y - roof) / (street - roof);
         float half = top_half + (base_half - top_half) * t;
-        color_rect(r, fx_mix((SDL_Color){20, 26, 38, 255},
-                             (SDL_Color){34, 43, 58, 255}, t),
-                   cx - half, y, half * 2.0f, 1.0f);
+        SDL_Color body = fx_mix((SDL_Color){20, 26, 38, 255},
+                                (SDL_Color){34, 43, 58, 255}, t);
+        color_rect(r, body, cx - half, y, half * 2.0f, 1.0f);
+        color_rect(r, fx_mix(body, FX_PALE, 0.22f), floorf(cx - half), y, 1.0f,
+                   1.0f);
+        color_rect(r, fx_mix(body, FX_INK, 0.40f), floorf(cx + half) - 4.0f, y,
+                   4.0f, 1.0f);
     }
     color_rect(r, (SDL_Color){52, 64, 80, 255}, cx - top_half - 3.0f, roof - 3.0f,
                top_half * 2.0f + 6.0f, 3.0f);
+    color_rect(r, fx_mix((SDL_Color){52, 64, 80, 255}, FX_PALE, 0.35f),
+               cx - top_half - 3.0f, roof - 3.0f, top_half * 2.0f + 6.0f, 1.0f);
+
+    /* The plant room on the roof and a mast over it, with the one red light a
+     * tower this tall has to carry for the helicopters — slow, as an aviation
+     * light is, so it is a beacon rather than an alarm. */
+    {
+        float room_w = top_half * 1.1f;
+        float room_x = floorf(cx - room_w * 0.5f);
+        /* Kept inside the plate: the roof is set only 26px under its top
+         * edge, so the mast is as tall as that leaves room for. */
+        color_rect(r, (SDL_Color){24, 31, 44, 255}, room_x, roof - 9.0f, room_w,
+                   6.0f);
+        color_rect(r, fx_mix((SDL_Color){24, 31, 44, 255}, FX_PALE, 0.25f), room_x,
+                   roof - 9.0f, room_w, 1.0f);
+        color_rect(r, FX_STEEL_DK, room_x + 6.0f, roof - 19.0f, 1.0f, 10.0f);
+        bool beacon = fmodf(time, 1.6f) < 0.7f;
+        if (beacon)
+            fx_glow(r, room_x + 6.5f, roof - 20.0f, 9.0f, FX_RED, 110);
+        color_rect(r, beacon ? FX_RED : FX_RED_DK, room_x + 5.0f, roof - 21.0f,
+                   3.0f, 2.0f);
+    }
 
     /* The courses fill whatever height the plate has rather than a fixed
      * count, so the building never ends short of its own street. */
@@ -954,6 +1266,12 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time,
                                            0.55f + (float)(h % 6u) * 0.06f)
                                   : (SDL_Color){13, 18, 27, 255};
             color_rect(r, glass, wx, wy, pane, 9.0f);
+            /* A lit office is brightest under its own ceiling fitting; a dark
+             * one has the moon in the corner of its glass. */
+            if (lit)
+                color_rect(r, fx_mix(glass, FX_CREAM, 0.30f), wx, wy, pane, 1.0f);
+            else if ((h & 16u) != 0u)
+                color_rect(r, (SDL_Color){30, 40, 54, 255}, wx, wy, 2.0f, 1.0f);
             color_rect(r, FX_NIGHT, wx, wy + 9.0f, pane, 1.0f);
         }
     }
@@ -1007,10 +1325,22 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time,
      * a building in a city. */
     color_rect(r, (SDL_Color){14, 18, 27, 255}, p.x, street - 62.0f, 40.0f, 62.0f);
     color_rect(r, (SDL_Color){24, 30, 42, 255}, p.x, street - 62.0f, 40.0f, 1.0f);
+    color_rect(r, fx_mix((SDL_Color){14, 18, 27, 255}, FX_INK, 0.45f),
+               p.x + 37.0f, street - 61.0f, 3.0f, 61.0f);
+    for (unsigned i = 0; i < 4u; ++i)
+    {
+        unsigned h = fx_hash(i * 69069u + 29u);
+        if ((h % 100u) >= 50u)
+            continue;
+        color_rect(r, fx_dim(COL_COLD, 0.30f), p.x + 8.0f + (float)(i % 2u) * 14.0f,
+                   street - 52.0f + (float)(i / 2u) * 20.0f, 6.0f, 5.0f);
+    }
     color_rect(r, (SDL_Color){14, 18, 27, 255}, p.x + p.w - 52.0f, street - 88.0f,
                52.0f, 88.0f);
     color_rect(r, (SDL_Color){24, 30, 42, 255}, p.x + p.w - 52.0f, street - 88.0f,
                52.0f, 1.0f);
+    color_rect(r, (SDL_Color){24, 30, 42, 255}, p.x + p.w - 52.0f, street - 88.0f,
+               1.0f, 88.0f);
     for (unsigned i = 0; i < 9u; ++i)
     {
         unsigned h = fx_hash(i * 40503u + 7u);
@@ -1021,12 +1351,37 @@ static void illus_mission(SDL_Renderer *r, SDL_FRect p, float time,
         color_rect(r, fx_dim(FX_WARM, 0.42f), lx, ly, 6.0f, 5.0f);
     }
 
+    /* The front door he walked her through, lit at the foot of the tower,
+     * and the wet street under it giving the light back. */
+    {
+        float door_w = 18.0f;
+        float door_x = floorf(cx - door_w * 0.5f);
+        fx_glow(r, cx, street - 4.0f, 30.0f, FX_WARM, 34);
+        color_rect(r, FX_INK, door_x - 1.0f, street - 14.0f, door_w + 2.0f, 14.0f);
+        fx_vgrad(r, door_x, street - 13.0f, door_w, 13.0f, fx_dim(FX_WARM, 0.80f),
+                 255, fx_dim(FX_WARM, 0.45f), 255);
+        color_rect(r, FX_INK, door_x + door_w * 0.5f - 0.5f, street - 13.0f, 1.0f,
+                   13.0f);
+        color_rect(r, FX_STEEL_DK, door_x - 5.0f, street - 17.0f, door_w + 10.0f,
+                   3.0f);
+        color_rect(r, FX_STEEL_LT, door_x - 5.0f, street - 17.0f, door_w + 10.0f,
+                   1.0f);
+    }
+
     /* Street, lamp, and the man looking up at it. */
     color_rect(r, (SDL_Color){18, 22, 30, 255}, p.x, street, p.w,
                p.y + p.h - street);
     color_rect(r, (SDL_Color){44, 52, 62, 255}, p.x, street, p.w, 1.0f);
+    color_rect(r, fx_mix(FX_NIGHT, FX_INK, 0.3f), p.x, street + 1.0f, p.w, 1.0f);
+    fx_vgrad(r, floorf(cx - 9.0f), street + 2.0f, 18.0f, 14.0f,
+             fx_dim(FX_WARM, 0.60f), 90, fx_dim(FX_WARM, 0.60f), 0);
+    fx_vgrad(r, p.x + 26.0f, street + 2.0f, 8.0f, 12.0f, FX_LAMP, 70, FX_LAMP, 0);
+    fx_light_cone(r, p.x + 30.0f, street - 39.0f, 3.0f, 22.0f, 39.0f, FX_LAMP, 34);
     fx_glow(r, p.x + 30.0f, street - 6.0f, 40.0f, FX_LAMP, 40);
     color_rect(r, FX_STEEL_DK, p.x + 29.0f, street - 40.0f, 2.0f, 40.0f);
+    color_rect(r, FX_STEEL, p.x + 29.0f, street - 40.0f, 1.0f, 40.0f);
+    color_rect(r, FX_STEEL_DK, p.x + 27.0f, street - 2.0f, 6.0f, 2.0f);
+    color_rect(r, FX_STEEL_DK, p.x + 25.0f, street - 44.0f, 10.0f, 2.0f);
     color_rect(r, (SDL_Color){206, 226, 232, 255}, p.x + 26.0f, street - 42.0f,
                8.0f, 3.0f);
     fx_contact_shadow(r, p.x + 52.0f, street, 9.0f, 0.0f, 150);
@@ -1123,8 +1478,15 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time,
 
     const PadHints *hints = pad != NULL ? pad : &PAD_HINTS_XBOX;
 
-    color_rect(r, FX_STEEL_DK, gx + 22.0f, gy - 6.0f, 30.0f, 6.0f);
-    color_rect(r, FX_STEEL_DK, gx + gw - 52.0f, gy - 6.0f, 30.0f, 6.0f);
+    /* The bumpers, lit along the top edge the lamp reaches. */
+    for (int side = 0; side < 2; ++side)
+    {
+        float bumper_x = side == 0 ? gx + 22.0f : gx + gw - 52.0f;
+        fx_mass(r, FX_INK, bumper_x - 1.0f, gy - 7.0f, 32.0f, 8.0f, 2, 0);
+        fx_mass(r, FX_STEEL_DK, bumper_x, gy - 6.0f, 30.0f, 6.0f, 2, 0);
+        color_rect(r, fx_mix(FX_STEEL_DK, FX_STEEL_LT, 0.5f), bumper_x + 2.0f,
+                   gy - 6.0f, 26.0f, 1.0f);
+    }
     /* A shoulder is hardware exactly as much as a face button is: L and R on a
      * Switch pad, L1 and R1 on a PlayStation. The control table beside this
      * drawing already spells them out of `$LB $RB`, so a drawing that says LB
@@ -1136,17 +1498,65 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time,
               gy - 18.0f, 1.0f, FX_LABEL, hints->shoulder_l);
     draw_text(r, gx + gw - 37.0f - text_width(hints->shoulder_r) * 0.5f,
               gy - 18.0f, 1.0f, FX_LABEL, hints->shoulder_r);
+    /* The shell as a moulded solid: a contact shadow on the desk, the top
+     * face catching the lamp, and the belly and grips rolling away into shade. */
+    SDL_Color shell = {40, 50, 64, 255};
+    fx_contact_shadow(r, gx + gw * 0.5f, gy + 71.0f, gw * 0.46f, 0.0f, 160);
     fx_mass(r, FX_INK, gx - 1.0f, gy - 1.0f, gw + 2.0f, 72.0f, 7, 10);
-    fx_mass(r, (SDL_Color){40, 50, 64, 255}, gx, gy, gw, 70.0f, 7, 10);
+    for (int row = 0; row < 70; ++row)
+    {
+        float inset = fx_taper(row, 70, 7, 10);
+        float shade = smoothstep01(((float)row - 30.0f) / 40.0f) * 0.42f;
+        color_rect(r, fx_mix(shell, FX_INK, shade), gx + inset, gy + (float)row,
+                   gw - inset * 2.0f, 1.0f);
+    }
     fx_mass(r, (SDL_Color){62, 76, 94, 255}, gx, gy, gw, 3.0f, 7, 0);
+    color_rect(r, fx_mix((SDL_Color){62, 76, 94, 255}, FX_PALE, 0.35f),
+               gx + 8.0f, gy, gw - 16.0f, 1.0f);
 
-    /* D-pad left, face buttons right, both far enough apart to be read. */
+    /* Two sticks in the middle of the shell, and the two small buttons between
+     * the halves: without them the drawing is a d-pad glued to four buttons
+     * rather than the thing in the player's hands. */
+    for (int side = 0; side < 2; ++side)
+    {
+        float sx = gx + (side == 0 ? 64.0f : 94.0f);
+        float sy = gy + 44.0f;
+        fx_mass(r, FX_INK, sx, sy, 16.0f, 16.0f, 5, 5);
+        fx_mass(r, fx_mix(shell, FX_INK, 0.55f), sx + 1.0f, sy + 1.0f, 14.0f,
+                14.0f, 4, 4);
+        fx_mass(r, FX_STEEL_DK, sx + 3.0f, sy + 2.0f, 10.0f, 10.0f, 3, 3);
+        fx_mass(r, FX_STEEL, sx + 4.0f, sy + 3.0f, 8.0f, 3.0f, 2, 0);
+        color_rect(r, fx_mix(FX_STEEL_DK, FX_INK, 0.4f), sx + 5.0f, sy + 10.0f,
+                   6.0f, 1.0f);
+    }
+    for (int side = 0; side < 2; ++side)
+    {
+        float mx = gx + (side == 0 ? 76.0f : 93.0f);
+        fx_mass(r, FX_INK, mx - 1.0f, gy + 17.0f, 9.0f, 5.0f, 1, 1);
+        color_rect(r, FX_STEEL_DK, mx, gy + 18.0f, 7.0f, 3.0f);
+        color_rect(r, FX_STEEL, mx, gy + 18.0f, 7.0f, 1.0f);
+    }
+
+    /* D-pad left, face buttons right, both far enough apart to be read. The
+     * cross sits in a well moulded into the shell, lit on its upper and left
+     * faces, with a dimple where the thumb goes. */
     float dx = gx + 40.0f;
     float dy = gy + 32.0f;
-    color_rect(r, FX_STEEL_DK, dx - 5.0f, dy - 15.0f, 10.0f, 30.0f);
-    color_rect(r, FX_STEEL_DK, dx - 15.0f, dy - 5.0f, 30.0f, 10.0f);
+    SDL_Color pad_arm = fx_mix(FX_STEEL_DK, FX_STEEL, 0.35f);
+    color_rect(r, fx_mix(shell, FX_INK, 0.5f), dx - 6.0f, dy - 16.0f, 12.0f, 32.0f);
+    color_rect(r, fx_mix(shell, FX_INK, 0.5f), dx - 16.0f, dy - 6.0f, 32.0f, 12.0f);
+    color_rect(r, pad_arm, dx - 5.0f, dy - 15.0f, 10.0f, 30.0f);
+    color_rect(r, pad_arm, dx - 15.0f, dy - 5.0f, 30.0f, 10.0f);
     color_rect(r, FX_STEEL_LT, dx - 5.0f, dy - 15.0f, 10.0f, 1.0f);
     color_rect(r, FX_STEEL_LT, dx - 15.0f, dy - 5.0f, 1.0f, 10.0f);
+    color_rect(r, fx_mix(pad_arm, FX_STEEL_LT, 0.4f), dx - 15.0f, dy - 5.0f,
+               10.0f, 1.0f);
+    color_rect(r, fx_mix(pad_arm, FX_INK, 0.45f), dx - 5.0f, dy + 14.0f, 10.0f,
+               1.0f);
+    color_rect(r, fx_mix(pad_arm, FX_INK, 0.45f), dx + 5.0f, dy + 4.0f, 10.0f,
+               1.0f);
+    fx_mass(r, fx_mix(pad_arm, FX_INK, 0.35f), dx - 3.0f, dy - 3.0f, 6.0f, 6.0f,
+            2, 2);
 
     float bx = gx + gw - 44.0f;
     float by = gy + 32.0f;
@@ -1168,6 +1578,11 @@ static void illus_controls(SDL_Renderer *r, SDL_FRect p, float time,
         float py = by + oy - 7.0f;
         fx_mass(r, FX_INK, px - 1.0f, py - 1.0f, 16.0f, 16.0f, 4, 4);
         fx_mass(r, fx_dim(FACE_TINT[i], 0.50f), px, py, 14.0f, 14.0f, 4, 4);
+        /* A domed cap: the lamp on its crown, its lower edge turned away. */
+        fx_mass(r, fx_dim(FACE_TINT[i], 0.68f), px + 2.0f, py + 1.0f, 10.0f,
+                2.0f, 1, 0);
+        fx_mass(r, fx_dim(FACE_TINT[i], 0.34f), px + 1.0f, py + 11.0f, 12.0f,
+                2.0f, 0, 2);
         /* Centred rather than set at a fixed inset: a PlayStation pad spells
          * two of its faces with two characters, and a cap the label hangs out
          * of is worse than no cap at all. */
@@ -1216,6 +1631,8 @@ static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time,
     float gap_right = gap_left + 50.0f;
 
     /* Two storeys and the hole between the upper slabs. */
+    draw_wall(r, p.x, p.y, p.w, upper_y);
+    draw_wall(r, p.x, upper_y + 14.0f, p.w, floor_y);
     draw_slab(r, p.x, upper_y, gap_left - p.x, 14.0f);
     draw_slab(r, gap_right, upper_y, p.x + p.w - gap_right, 14.0f);
     draw_slab(r, p.x, floor_y, p.w, 20.0f);
@@ -1224,6 +1641,9 @@ static void illus_movement(SDL_Renderer *r, SDL_FRect p, float time,
      * beside a wall is lit too, and without it the slab floats. */
     fx_vgrad(r, p.x, upper_y + 14.0f, p.w, 16.0f, FX_INK, 130, FX_INK, 0);
     fx_vgrad(r, p.x, floor_y - 14.0f, p.w, 14.0f, FX_INK, 0, FX_INK, 90);
+    /* A fitting on each storey, clear of the jump and the climb. */
+    draw_ceiling_lamp(r, p.x + 76.0f, p.y, upper_y);
+    draw_ceiling_lamp(r, p.x + 218.0f, upper_y + 14.0f, floor_y);
 
     /* The jump: one tile of hole, and a shadow left behind on the slab. */
     dash_arc(r, fx_dim(FX_CYAN, 0.8f), gap_left - 14.0f, upper_y - 6.0f,
@@ -1265,11 +1685,16 @@ static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time,
      * with the arrow in the clear gap between the boots and the helmet — put
      * on the figure itself it disappears into him. */
     float ledge_y = p.y + p.h * 0.42f;
+    float floor_y = p.y + p.h - 34.0f;
+    draw_wall(r, p.x, p.y, p.w, ledge_y);
+    draw_wall(r, p.x, ledge_y + 14.0f, p.w, floor_y);
     draw_slab(r, p.x, ledge_y, p.w, 14.0f);
     fx_vgrad(r, p.x, ledge_y + 14.0f, p.w, 14.0f, FX_INK, 120, FX_INK, 0);
+    draw_ceiling_lamp(r, p.x + p.w * 0.84f, p.y, ledge_y);
     draw_text(r, p.x + 8.0f, p.y + 8.0f, 1.0f, FX_LABEL, "FROM ABOVE");
 
     float stomp_x = p.x + p.w * 0.56f;
+    fx_contact_shadow(r, stomp_x + 6.0f, ledge_y, 9.0f, 0.0f, 150);
     draw_figure(r, stomp_x, ledge_y, -1, POSE_STAND, look_guard(), time);
     float bob = sinf(time * 2.4f) * 2.0f;
     draw_figure(r, stomp_x - 2.0f, ledge_y - 46.0f + bob, -1, POSE_JUMP,
@@ -1279,10 +1704,11 @@ static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time,
     draw_text(r, p.x + 8.0f, ledge_y - 40.0f, 1.0f, FX_AMBER, "LAND ON");
     draw_text(r, p.x + 8.0f, ledge_y - 28.0f, 1.0f, FX_AMBER, "HIS HEAD");
 
-    /* Lower vignette: the cone, and the only side of it worth being on. */
-    float floor_y = p.y + p.h - 34.0f;
+    /* Lower vignette: the cone, and the only side of it worth being on —
+     * which is also the side the lamp is on. */
     draw_slab(r, p.x, floor_y, p.w, 20.0f);
     fx_vgrad(r, p.x, floor_y - 14.0f, p.w, 14.0f, FX_INK, 0, FX_INK, 90);
+    draw_ceiling_lamp(r, p.x + p.w - 46.0f, ledge_y + 14.0f, floor_y);
     /* The reach of the cone below, spelled in [manual_pages.h](manual_pages.h)
    * beside the sentence on this same sheet that states it, because it is a
    * number out of `game_config.h` rather than a caption. */
@@ -1293,6 +1719,7 @@ static void illus_combat(SDL_Renderer *r, SDL_FRect p, float time,
     float eye_y = floor_y - 22.0f;
     draw_sight_cone(r, guard_x + 1.0f, eye_y, -1, 118.0f, 34.0f, FX_RED, 52);
     dash_h(r, fx_dim(FX_RED, 0.7f), guard_x - 118.0f, eye_y - 34.0f, 6.0f, 3.0f, 3.0f);
+    fx_contact_shadow(r, guard_x + 6.0f, floor_y, 9.0f, 0.0f, 150);
     draw_figure(r, guard_x, floor_y, -1, POSE_STAND, look_guard(), time);
 
     /* Chuck behind the cone, answering it. */
@@ -1320,20 +1747,38 @@ static void draw_downed_figure(SDL_Renderer *r, float x, float floor_y,
                                int dir, FigureLook look)
 {
     FxRamp coat = fx_ramp(look.garment);
+    FxRamp trouser = fx_ramp(look.legs);
     float body_w = FIG_H * 0.72f;
     float body_h = 7.0f;
     float y = floor_y - body_h;
+    fx_contact_shadow(r, x + body_w * 0.5f, floor_y, body_w * 0.62f, 0.0f, 160);
     ink_block(r, x, y, body_w, body_h);
     color_rect(r, coat.base, x, y, body_w, body_h);
     color_rect(r, coat.lit, x, y, body_w, 2.0f);
+    color_rect(r, coat.dark, x, y + body_h - 2.0f, body_w, 2.0f);
+
+    /* The legs at the far end from the head, dropped into the dark the way
+     * they are on a figure standing up, with the boots on the end of them —
+     * a body is two values lying down as well. */
+    float legs_w = floorf(body_w * 0.42f);
+    float legs_x = dir > 0 ? x : x + body_w - legs_w;
+    color_rect(r, trouser.base, legs_x, y + 1.0f, legs_w, body_h - 1.0f);
+    color_rect(r, trouser.lit, legs_x, y + 1.0f, legs_w, 1.0f);
+    color_rect(r, FX_INK, dir > 0 ? x : x + body_w - 2.0f, y + 1.0f, 2.0f,
+               body_h - 1.0f);
 
     /* The head at the trailing end, so the figure reads as having been dragged
        feet first — which is how it is actually being carried. */
     float head = dir > 0 ? x + body_w - 1.0f : x - 5.0f;
     ink_block(r, head, y - 3.0f, 6.0f, 6.0f);
-    color_rect(r, fx_ramp(FX_SKIN).base, head, y - 3.0f, 6.0f, 6.0f);
+    FxRamp skin = fx_ramp(FX_SKIN);
+    color_rect(r, skin.base, head, y - 3.0f, 6.0f, 6.0f);
+    color_rect(r, skin.dark, head, y + 2.0f, 6.0f, 1.0f);
     if (look.helmet)
+    {
         color_rect(r, fx_ramp(look.cap).base, head, y - 3.0f, 6.0f, 3.0f);
+        color_rect(r, fx_ramp(look.cap).lit, head, y - 3.0f, 6.0f, 1.0f);
+    }
 }
 
 /*
@@ -1353,12 +1798,16 @@ static void illus_quiet(SDL_Renderer *r, SDL_FRect p, float time,
 
     /* Upper: the bolt in the air, and the man turning to where it will land. */
     float upper_floor = p.y + p.h * 0.44f;
+    float floor_y = p.y + p.h - 30.0f;
+    draw_wall(r, p.x, p.y, p.w, upper_floor);
+    draw_wall(r, p.x, upper_floor + 14.0f, p.w, floor_y);
     draw_slab(r, p.x, upper_floor, p.w, 14.0f);
     fx_vgrad(r, p.x, upper_floor + 14.0f, p.w, 14.0f, FX_INK, 120, FX_INK, 0);
     draw_text(r, p.x + 8.0f, p.y + 8.0f, 1.0f, FX_LABEL, "THROW IT PAST HIM");
 
     float thrower_x = p.x + 26.0f;
     float landing_x = p.x + p.w - 30.0f;
+    fx_contact_shadow(r, thrower_x + 6.0f, upper_floor, 9.0f, 0.0f, 150);
     draw_figure(r, thrower_x, upper_floor, 1, POSE_AIM, look_chuck(), time);
 
     /* The arc, and the bolt riding it. `dash_arc` takes the height the curve
@@ -1376,6 +1825,7 @@ static void illus_quiet(SDL_Renderer *r, SDL_FRect p, float time,
     /* The guard between them, looking the way the noise went rather than at the
        man who made it — which is the entire mechanic in one figure. */
     float guard_x = p.x + p.w * 0.56f;
+    fx_contact_shadow(r, guard_x + 6.0f, upper_floor, 9.0f, 0.0f, 150);
     draw_figure(r, guard_x, upper_floor, 1, POSE_STAND, look_guard(), time);
     draw_sight_cone(r, guard_x + 11.0f, upper_floor - 22.0f, 1, 62.0f, 22.0f,
                     FX_AMBER, 46);
@@ -1383,10 +1833,11 @@ static void illus_quiet(SDL_Renderer *r, SDL_FRect p, float time,
     fx_glow(r, landing_x + 3.0f, upper_floor - 2.0f, 13.0f * ring, FX_AMBER,
             (Uint8)(90.0f * ring));
 
-    /* Lower: the body going out of the room it fell in. */
-    float floor_y = p.y + p.h - 30.0f;
+    /* Lower: the body going out of the room it fell in, toward the dark end
+     * of it. */
     draw_slab(r, p.x, floor_y, p.w, 18.0f);
     fx_vgrad(r, p.x, floor_y - 14.0f, p.w, 14.0f, FX_INK, 0, FX_INK, 90);
+    draw_ceiling_lamp(r, p.x + p.w - 70.0f, upper_floor + 14.0f, floor_y);
     draw_text(r, p.x + 8.0f, upper_floor + 34.0f, 1.0f, FX_LABEL,
               "AND MOVE WHAT IS LEFT");
 
@@ -1414,8 +1865,8 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time,
 
     float lower = p.y + p.h - 76.0f;
     float upper = p.y + 108.0f;
-    draw_cornice(r, p.x, lower, p.w * 0.62f);
-    draw_cornice(r, p.x + p.w * 0.30f, upper, p.w * 0.70f);
+    draw_cornice(r, p, p.x, lower, p.w * 0.62f);
+    draw_cornice(r, p, p.x + p.w * 0.30f, upper, p.w * 0.70f);
     fx_vgrad(r, p.x, lower + 13.0f, p.w * 0.62f, 12.0f, FX_INK, 120, FX_INK, 0);
     fx_vgrad(r, p.x + p.w * 0.30f, upper + 13.0f, p.w * 0.70f, 12.0f,
              FX_INK, 120, FX_INK, 0);
@@ -1423,9 +1874,30 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time,
     /* The thrower: a shout and a lean, and only then the brick. */
     float win_x = p.x + 14.0f;
     float win_y = p.y + 30.0f;
-    color_rect(r, FX_INK, win_x - 2.0f, win_y - 2.0f, 34.0f, 30.0f);
-    color_rect(r, (SDL_Color){14, 16, 22, 255}, win_x, win_y, 30.0f, 26.0f);
-    color_rect(r, fx_dim(FX_WARM, 0.35f), win_x + 2.0f, win_y + 2.0f, 26.0f, 8.0f);
+    SDL_Color stone = {112, 108, 98, 255};
+    SDL_Color stone_lit = {186, 180, 164, 255};
+    SDL_Color stone_dk = {46, 44, 42, 255};
+    /* The room behind him is lit, and a lit room spills onto the brick round
+     * its own window. */
+    fx_glow(r, win_x + 15.0f, win_y + 10.0f, 34.0f, FX_WARM, 34);
+    /* The opening is set in the same stone as the cornices: a lintel over it
+     * and a sill under it, throwing its shadow down the wall. */
+    fx_vgrad(r, win_x - 5.0f, win_y - 8.0f, 40.0f, 6.0f, stone, 255, stone_dk,
+             255);
+    color_rect(r, stone_lit, win_x - 5.0f, win_y - 8.0f, 40.0f, 1.0f);
+    color_rect(r, FX_INK, win_x - 5.0f, win_y - 2.0f, 40.0f, 1.0f);
+    fx_vgrad(r, win_x - 6.0f, win_y + 29.0f, 42.0f, 4.0f, stone, 255, stone_dk,
+             255);
+    color_rect(r, stone_lit, win_x - 6.0f, win_y + 29.0f, 42.0f, 1.0f);
+    fx_vgrad(r, win_x - 6.0f, win_y + 33.0f, 42.0f, 6.0f, FX_INK, 130, FX_INK,
+             0);
+    SDL_Color room = {14, 16, 22, 255};
+    color_rect(r, FX_INK, win_x - 2.0f, win_y - 2.0f, 34.0f, 31.0f);
+    color_rect(r, room, win_x, win_y, 30.0f, 27.0f);
+    fx_vgrad(r, win_x, win_y, 30.0f, 14.0f, fx_dim(FX_WARM, 0.42f), 255, room,
+             255);
+    color_rect(r, fx_dim(FX_WARM, 0.62f), win_x + 9.0f, win_y + 1.0f, 12.0f,
+               1.0f);
     draw_figure(r, win_x + 9.0f, win_y + 26.0f, 1, POSE_STAND, look_guard(),
                 time);
     float wind_up = 0.5f + 0.5f * sinf(time * 2.0f);
@@ -1446,6 +1918,14 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time,
     color_rect(r, FX_INK, shelter_x - 1.0f, lower - 43.0f, 20.0f, 30.0f);
     fx_vgrad(r, shelter_x, lower - 42.0f, 18.0f, 29.0f,
              (SDL_Color){112, 108, 98, 255}, 255, (SDL_Color){52, 50, 46, 255}, 255);
+    /* A block standing proud of the wall: the face toward the moon lit, the
+     * far one in its own shade, and a shadow cast down and to the right. */
+    color_rect(r, fx_mix((SDL_Color){112, 108, 98, 255},
+                         (SDL_Color){186, 180, 164, 255}, 0.35f),
+               shelter_x, lower - 41.0f, 1.0f, 28.0f);
+    color_rect(r, fx_mix((SDL_Color){52, 50, 46, 255}, FX_INK, 0.35f),
+               shelter_x + 15.0f, lower - 41.0f, 3.0f, 28.0f);
+    fx_rect_a(r, FX_INK, 110, shelter_x + 19.0f, lower - 40.0f, 3.0f, 27.0f);
     color_rect(r, (SDL_Color){186, 180, 164, 255}, shelter_x, lower - 42.0f,
                18.0f, 1.0f);
     draw_text(r, climber_x - 10.0f, lower + 20.0f, 1.0f, FX_AMBER, "SHELTER");
@@ -1470,9 +1950,24 @@ static void illus_climb(SDL_Renderer *r, SDL_FRect p, float time,
     float bird_y = p.y + 62.0f;
     float wing = sinf(time * 9.0f) * 3.0f;
     SDL_Color feather = {162, 158, 150, 255};
-    color_rect(r, feather, bird_x, bird_y, 3.0f, 2.0f);
-    color_rect(r, feather, bird_x - 5.0f, bird_y - wing, 5.0f, 2.0f);
-    color_rect(r, feather, bird_x + 3.0f, bird_y + wing, 5.0f, 2.0f);
+    SDL_Color belly = fx_mix(feather, FX_INK, 0.45f);
+    /* A body with a head on the end it is flying toward, and each wing in two
+     * joints so a beat folds it rather than sliding a bar up and down. */
+    float heading = cosf(time * 0.9f) >= 0.0f ? 1.0f : -1.0f;
+    float bx = floorf(bird_x);
+    float by = floorf(bird_y);
+    float fold = floorf(wing * 0.5f);
+    float tip = floorf(wing);
+    color_rect(r, feather, bx - 3.0f, by - fold, 3.0f, 1.0f);
+    color_rect(r, feather, bx - 6.0f, by - tip, 3.0f, 1.0f);
+    color_rect(r, feather, bx + 3.0f, by - fold, 3.0f, 1.0f);
+    color_rect(r, feather, bx + 6.0f, by - tip, 3.0f, 1.0f);
+    color_rect(r, feather, bx - 1.0f, by, 5.0f, 2.0f);
+    color_rect(r, belly, bx - 1.0f, by + 1.0f, 5.0f, 1.0f);
+    color_rect(r, feather, heading > 0.0f ? bx + 4.0f : bx - 3.0f, by - 1.0f,
+               2.0f, 2.0f);
+    color_rect(r, FX_AMBER_DK, heading > 0.0f ? bx + 6.0f : bx - 4.0f, by,
+               1.0f, 1.0f);
     draw_text(r, bird_x - 14.0f, bird_y - 16.0f, 1.0f, fx_dim(feather, 0.8f),
               "BIRD");
 
@@ -1630,9 +2125,18 @@ static void illus_record(SDL_Renderer *r, SDL_FRect p, float time,
     /* The card itself, lit from the lamp above the desk like every other prop
      * on this sheet. */
     SDL_FRect card = {p.x + 10.0f, p.y + 12.0f, p.w - 20.0f, p.h - 24.0f};
-    color_rect(r, COL_SHEET, card.x, card.y, card.w, card.h);
+    fx_rect_a(r, FX_INK, 150, card.x + 3.0f, card.y + 4.0f, card.w, card.h);
+    fx_vgrad(r, card.x, card.y, card.w, card.h, fx_mix(COL_SHEET, COL_SHEET_LIT, 0.18f),
+             255, COL_SHEET, 255);
     color_rect(r, fx_dim(COL_SHEET_LIT, 0.8f), card.x, card.y, card.w, 1.0f);
+    color_rect(r, fx_mix(COL_SHEET, COL_SHEET_LIT, 0.35f), card.x, card.y, 1.0f,
+               card.h);
     color_rect(r, FX_INK, card.x, card.y + card.h - 1.0f, card.w, 1.0f);
+    /* A printed card: the punched hole it hangs by, and a faint rule under
+     * every row so the times read across as a ledger does. */
+    fx_mass(r, FX_INK, card.x + card.w - 22.0f, card.y + 8.0f, 8.0f, 8.0f, 2, 2);
+    color_rect(r, fx_mix(COL_SHEET, COL_SHEET_LIT, 0.5f), card.x + card.w - 21.0f,
+               card.y + 15.0f, 6.0f, 1.0f);
 
     draw_text(r, card.x + 12.0f, card.y + 10.0f, 1.0f, FX_CREAM,
               "SECTOR TIMES");
@@ -1652,6 +2156,10 @@ static void illus_record(SDL_Renderer *r, SDL_FRect p, float time,
     int per_column = (count + 1) / 2;
     float row_pitch = 14.0f;
     float grid_y = card.y + 32.0f;
+    for (int row = 0; row < per_column; ++row)
+        dash_h(r, fx_mix(COL_SHEET, FX_STEEL_DK, 0.55f), card.x + 12.0f,
+               grid_y + (float)row * row_pitch + 10.0f, card.w - 24.0f, 1.0f,
+               2.0f);
 
     for (int i = 0; i < count; ++i)
     {
@@ -2067,12 +2575,29 @@ static void render_panel(SDL_Renderer *r, const ManualPageText *page,
                        frame.w - PANEL_FRAME * 2.0f,
                        frame.h - PANEL_FRAME * 2.0f};
 
-    color_rect(r, fx_dim((SDL_Color){30, 39, 54, 255}, appear), frame.x, frame.y,
-               frame.w, frame.h);
+    SDL_Color bezel = {30, 39, 54, 255};
+    color_rect(r, fx_dim(bezel, appear), frame.x, frame.y, frame.w, frame.h);
+    /* The bezel is a moulding: lit along the top and the left where the desk
+     * lamp is, dark along the bottom and the right. */
+    color_rect(r, fx_dim(fx_mix(bezel, FX_STEEL_LT, 0.35f), appear), frame.x,
+               frame.y, frame.w, 1.0f);
+    color_rect(r, fx_dim(fx_mix(bezel, FX_STEEL_LT, 0.18f), appear), frame.x,
+               frame.y, 1.0f, frame.h);
+    color_rect(r, fx_dim(fx_mix(bezel, FX_INK, 0.55f), appear), frame.x,
+               frame.y + frame.h - 1.0f, frame.w, 1.0f);
+    color_rect(r, fx_dim(fx_mix(bezel, FX_INK, 0.40f), appear),
+               frame.x + frame.w - 1.0f, frame.y, 1.0f, frame.h);
     color_rect(r, fx_dim(FX_INK, appear), inner.x - 1.0f, inner.y - 1.0f,
                inner.w + 2.0f, inner.h + 2.0f);
 
     PAGE_ILLUSTRATIONS[index](r, inner, time, pad, records);
+
+    /* The plate sits a step behind its bezel, so the bezel's lip shades the
+     * top and the left of whatever is drawn in it. */
+    fx_vgrad(r, inner.x, inner.y, inner.w, 5.0f, FX_INK,
+             (Uint8)(120.0f * appear), FX_INK, 0);
+    fx_hgrad(r, inner.x, inner.y, 4.0f, inner.h, FX_INK,
+             (Uint8)(90.0f * appear), FX_INK, 0);
 
     /* The wash a turning sheet passes under. The illustrations do not know
      * about the page turn, so the veil is what carries them through it. */

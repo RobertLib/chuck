@@ -792,6 +792,11 @@ _Static_assert((int)PLAYER_DRAG_SPEED < (int)PLAYER_CRAWL_SPEED,
  * the thing built on top of it: on an ordinary guard the stomp now trades a
  * heart for a kill, and on a heavy it costs the same heart for nothing at all.
  *
+ * **And then the stomp became a roll** (`ENEMY_STOMP_WOUND_CHANCE`): one
+ * landing in four wounds a guard and the other three cost the heart any contact
+ * costs. The heavy's rule survives it unchanged and for the same reason — he is
+ * the landing that never comes up.
+ *
  * `ENEMY_HEAVY_HP` is what he takes from the front. The blade behind him is
  * deliberately *not* raised with it: a takedown is a knife across a throat
  * rather than damage, so the man in the vest goes down to it exactly as the
@@ -808,11 +813,29 @@ _Static_assert((int)PLAYER_DRAG_SPEED < (int)PLAYER_CRAWL_SPEED,
 /* Worth more of a sector's budget than a plain guard's 3, and less than a
  * guard-and-dog pair's 5: he denies an answer rather than covering ground. */
 #define ENEMY_HEAVY_HAZARD_WEIGHT 4
-/* Stomping a guard from above bounces Chuck off instead of killing him. */
+/* A stomp that wounds bounces Chuck off the helmet. */
 #define ENEMY_STOMP_BOUNCE_SPEED 300.0f
 /* Briefly blocks re-grabbing a ladder after a stomp, so climbing down onto a
  * guard below doesn't just overwrite the bounce with the climb speed. */
 #define ENEMY_STOMP_LADDER_LOCKOUT 0.3f
+/*
+ * How often a boot on a helmet actually wounds the man under it: one time in
+ * four, written as a percentage because every other chance in this file is one.
+ *
+ * Only that one bounces. The other three are not a stomp at all: no bounce, and
+ * Chuck meets the guard exactly as if he had walked into him — the heart a side
+ * contact costs, unless the mercy window is up. So the stomp is a gamble rather
+ * than an answer, and a heavy is the same gamble with the good outcome taken
+ * out.
+ *
+ * **The roll is one per landing**, and something has to make it one. With no
+ * bounce a failed landing leaves him falling on into the guard with the overlap
+ * still shallow, so the very next step would ask again — and at 240 steps a
+ * second a one-in-four roll comes up inside a handful of frames, which would
+ * quietly make it certain. `Enemy.stomp_refused` is what stops that: set by the
+ * roll that says no, cleared when the two boxes part.
+ */
+#define ENEMY_STOMP_WOUND_CHANCE 25
 
 /* Perception. Guards no longer see only along their exact floor row: they have
  * a forward vision cone (wide field of view, diagonal sight up and down) with a
@@ -1173,8 +1196,29 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
 
 /* Hazards */
 #define MAX_SPIKES 128
+/*
+ * A spike bed is the lower half of its tile, because that is what is drawn.
+ *
+ * It was the whole tile. `draw_spike_strip` puts the tips half a tile above the
+ * floor, so a box the full tile tall had sixteen pixels of empty air on top of
+ * it, and clearing the bed meant lifting the boots a whole tile rather than
+ * over the blades the player can see. Measured under the two open rows the
+ * route model asks of a hop, the ceiling caps the rise at 64px, and what
+ * that left was a take-off window **0.5px wide** — about 4ms at the walk speed,
+ * one simulation step. Sectors 8 and 16 put their way out behind hops at
+ * exactly that clearance, so the certified route was a frame-perfect jump or a
+ * heart.
+ *
+ * At half a tile the same hop forgives 15.75px, 0.117s, and one with open sky
+ * above it 0.229s. The width stays the whole tile on purpose: the base plate is
+ * drawn edge to edge, and any inset lets a jump under open sky cross **two**
+ * spikes in a window a few pixels wide — which would turn the rule that two
+ * abreast cannot be jumped into a barrier a lucky player walks through.
+ * Measured at the full width, the best a jump offers is about 89px of the 90 two
+ * spikes and a body ask for.
+ */
 #define SPIKE_W TILE_SIZE
-#define SPIKE_H TILE_SIZE
+#define SPIKE_H (TILE_SIZE / 2)
 #define MAX_CEILING_FANS 64
 #define CEILING_FAN_BLADE_LENGTH 23.0f
 #define CEILING_FAN_HIT_HEIGHT 8.0f
@@ -1276,13 +1320,44 @@ _Static_assert((int)MAX_FALL_SPEED < TILE_SIZE * MIN_FRAME_RATE,
 #define CHASE_ONCOMING_SPEED_MAX 205.0f
 #define CHASE_CROSS_SPEED_MIN 195.0f
 #define CHASE_CROSS_SPEED_MAX 265.0f
-#define CHASE_CROSS_GAP_MIN 0.85f
-#define CHASE_CROSS_GAP_MAX 1.40f
+/* The gap a junction leaves between one car pulling out and the next. It is
+ * short because a car only pulls out once the lanes are clear for it (see
+ * CHASE_CROSS_CLEARANCE below), so much of every green is spent waiting: left
+ * at the 0.85-1.40 s it was when cross traffic drove straight through the
+ * lanes, a junction had a car on it as Chuck crossed 32% of the time where it
+ * had 45%. At this it is 38%, and 0.56 cars on it on average against 0.58. */
+#define CHASE_CROSS_GAP_MIN 0.50f
+#define CHASE_CROSS_GAP_MAX 0.85f
 #define CHASE_CROSS_LANE_OFFSET 42.0f
 #define CHASE_CROSS_ALERT_RANGE 900.0f
 #define CHASE_SIGNAL_PERIOD 7.4f
 #define CHASE_SIGNAL_CROSS_GREEN 3.1f
 #define CHASE_WRECK_DRIFT 95.0f
+
+/* How traffic keeps out of itself. Every car holds its own cruising speed until
+ * something is in front of it, then eases in behind at CHASE_TRAFFIC_GAP: it
+ * plans its stop on CHASE_TRAFFIC_EASE and has CHASE_TRAFFIC_BRAKE in hand, so
+ * the plan can always be kept. Without this the speeds are drawn per car, a
+ * quicker one catches a slower one in the same lane, and it drives slowly
+ * through it for three seconds. */
+#define CHASE_TRAFFIC_ACCEL 140.0f
+#define CHASE_TRAFFIC_EASE 260.0f
+#define CHASE_TRAFFIC_BRAKE 520.0f
+#define CHASE_TRAFFIC_GAP 26.0f
+#define CHASE_TRAFFIC_LOOKAHEAD 260.0f
+/* A car held up by something that has stopped — a wreck, the parked SUV —
+ * pulls into the other lane on its own side of the road once there is room,
+ * rather than queueing behind it for the rest of the night. It checks for a
+ * car coming up that lane CHASE_TRAFFIC_MERGE_LOOK seconds out. */
+#define CHASE_TRAFFIC_MERGE_RANGE 150.0f
+#define CHASE_TRAFFIC_MERGE_BELOW 40.0f
+#define CHASE_TRAFFIC_MERGE_SPEED 110.0f
+#define CHASE_TRAFFIC_MERGE_LOOK 0.9f
+/* Cross traffic pulls out only when it can get all the way across without
+ * meeting anything, with this much room to spare either side; a car that
+ * cannot tries again CHASE_CROSS_RETRY later. */
+#define CHASE_CROSS_CLEARANCE 12.0f
+#define CHASE_CROSS_RETRY 0.15f
 
 /* The hunted SUV */
 #define CHASE_TARGET_SPEED 300.0f

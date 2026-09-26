@@ -5,7 +5,7 @@
 #include "pad_hint.h"
 
 #define ABDUCTION_CUTSCENE_DURATION 13.6f
-#define OPENING_CUTSCENE_DURATION 12.4f
+#define OPENING_CUTSCENE_DURATION 11.15f
 #define LEVEL_TRANSITION_DURATION 9.4f
 /* The outro's clock runs on past its own last beat, because the thank-you card
  * is held for the rest of it and the credits take the frame when it runs out.

@@ -114,6 +114,11 @@ typedef struct
     /* Debounce on the one reversal that answers a thing which moves; see
      * ENEMY_BODY_TURN_COOLDOWN for what it costs to be without it. */
     float body_turn_cooldown;
+    /* Set when a boot landed on this man's helmet and the roll said no, and
+     * cleared the moment the two boxes stop touching. A failed stomp does not
+     * bounce, so without it the same landing would be rolled again on every
+     * step of the fall; see `ENEMY_STOMP_WOUND_CHANCE`. */
+    bool stomp_refused;
 } Enemy;
 
 typedef enum

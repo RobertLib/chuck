@@ -12,8 +12,10 @@
 
 #include <math.h>
 
+#include "chuck_pose.h"
 #include "fx.h"
 #include "game_config.h"
+#include "render_chuck.h"
 #include "render_sprite.h"
 
 /*
@@ -28,13 +30,56 @@
  */
 static const SDL_Color PLAYER_HAIR_LT = {102, 62, 42, 255};
 
+/*
+ * A frag grenade, in a hand mid-throw, lying on the floor as a pickup, and in
+ * the HUD's carry row.
+ *
+ * Every other pickup in the building is a lit object — the medkit a case with a
+ * crown and an underside, the pistol and the launcher shaded down their length
+ * — and this was a flat olive box with a lighter stripe on it. It is a lit egg
+ * now, inside exactly the box it always filled, because the HUD's carry row
+ * measures that box (`HUD_GRENADE_INK_W`): chamfered to an oval, the crown lit
+ * and the underside dropped into shade, the segmented body a frag has always
+ * been drawn with, a glint where the lamp catches the upper curve, the brass
+ * spoon running from the fuse head down the leading flank, and the ring of the
+ * pin at the other side of the head. Olive, brass and a ring is the whole of
+ * what tells it from a flash charge at a glance, and the flash charge is drawn
+ * as the other half of the palette on purpose.
+ */
 void draw_grenade(SDL_Renderer *r, float x, float y, float fuse)
 {
-  color_rect(r, COL_OUTLINE, x - 1.0f, y + 1.0f, 12.0f, 10.0f);
-  color_rect(r, (SDL_Color){68, 92, 61, 255}, x, y + 2.0f, 10.0f, 8.0f);
-  color_rect(r, (SDL_Color){101, 124, 78, 255}, x + 2.0f, y + 2.0f, 3.0f, 7.0f);
-  color_rect(r, (SDL_Color){169, 144, 85, 255}, x + 3.0f, y, 5.0f, 3.0f);
-  color_rect(r, FX_INK, x + 7.0f, y - 1.0f, 4.0f, 2.0f);
+  FxRamp olive = fx_ramp((SDL_Color){68, 92, 61, 255});
+  FxRamp brass = fx_ramp((SDL_Color){169, 144, 85, 255});
+
+  /* The body: an oval, lit from the ceiling. */
+  fx_mass(r, COL_OUTLINE, x - 1.0f, y + 1.0f, 12.0f, 10.0f, 2, 2);
+  fx_form_mass(r, x, y + 2.0f, 10.0f, 8.0f, olive, 1, 2, 2);
+  /* The segments, cut into it as grooves in the shade colour. */
+  color_rect(r, olive.dark, x + 3.0f, y + 3.0f, 1.0f, 6.0f);
+  color_rect(r, olive.dark, x + 6.0f, y + 3.0f, 1.0f, 6.0f);
+  color_rect(r, olive.dark, x + 1.0f, y + 6.0f, 8.0f, 1.0f);
+  /* The lamp on the upper curve of the near segment. */
+  color_rect(r, olive.lit, x + 1.0f, y + 4.0f, 2.0f, 1.0f);
+  color_rect(r, fx_mix(olive.lit, FX_CREAM, 0.45f), x + 1.0f, y + 3.0f, 1.0f,
+             1.0f);
+
+  /* The fuse head on top, in steel. */
+  color_rect(r, COL_OUTLINE, x + 2.0f, y - 1.0f, 6.0f, 4.0f);
+  color_rect(r, FX_STEEL, x + 3.0f, y, 4.0f, 2.0f);
+  color_rect(r, FX_STEEL_LT, x + 3.0f, y, 4.0f, 1.0f);
+  /* The spoon, out of the head and down the leading flank. */
+  color_rect(r, COL_OUTLINE, x + 7.0f, y - 1.0f, 4.0f, 3.0f);
+  color_rect(r, brass.base, x + 7.0f, y, 2.0f, 1.0f);
+  color_rect(r, brass.lit, x + 7.0f, y, 1.0f, 1.0f);
+  color_rect(r, brass.base, x + 8.0f, y + 1.0f, 2.0f, 1.0f);
+  color_rect(r, brass.base, x + 9.0f, y + 2.0f, 1.0f, 5.0f);
+  color_rect(r, brass.dark, x + 9.0f, y + 6.0f, 1.0f, 1.0f);
+  /* The pin's ring, at the other side of the head. */
+  color_rect(r, COL_OUTLINE, x, y - 1.0f, 3.0f, 3.0f);
+  color_rect(r, FX_STEEL_LT, x + 1.0f, y - 1.0f, 1.0f, 1.0f);
+  color_rect(r, FX_STEEL_LT, x, y, 1.0f, 1.0f);
+  color_rect(r, FX_STEEL, x + 1.0f, y + 1.0f, 1.0f, 1.0f);
+
   if (fuse > 0.0f && ((int)(fuse * 14.0f) & 1) == 0)
   {
     color_rect(r, (SDL_Color){255, 235, 128, 255}, x + 10.0f, y - 2.0f, 2.0f, 2.0f);
@@ -64,19 +109,60 @@ void draw_decoy(SDL_Renderer *r, float x, float y)
  *
  * It has to be told from a grenade at a glance, because one of the two is about
  * to kill whoever is standing next to it. So it is the other half of the
- * palette: a steel cylinder with a white band and a cyan tell-tale rather than
- * an olive body with a brass spoon, and the tell-tale is what strobes as the
- * fuse runs down. Same size, opposite colours.
+ * palette and the other half of the geometry: a steel *cylinder* rather than an
+ * olive egg, shaded across its width the way a can is — a specular stripe near
+ * the lit side, the far side falling into shade — with the white band round
+ * its middle, a straight rolled seam round the base where a frag has grooves, a
+ * pull-ring on the right of its cap where a frag has its ring on the left, and
+ * a cyan tell-tale in the cap that strobes as the fuse runs down. Same box as
+ * the grenade (`HUD_FLASH_INK_W` measures it), opposite everything else.
  */
 void draw_flashbang(SDL_Renderer *r, float x, float y, float fuse)
 {
-  color_rect(r, COL_OUTLINE, x - 1.0f, y + 1.0f, 12.0f, 10.0f);
-  color_rect(r, FX_STEEL, x, y + 2.0f, 10.0f, 8.0f);
-  color_rect(r, FX_CREAM, x, y + 4.0f, 10.0f, 2.0f);
-  color_rect(r, FX_STEEL_LT, x + 2.0f, y + 2.0f, 2.0f, 7.0f);
-  color_rect(r, FX_INK, x + 7.0f, y - 1.0f, 4.0f, 2.0f);
+  SDL_Color edge = fx_mix(FX_STEEL, FX_STEEL_DK, 0.55f);
+  SDL_Color shade = fx_mix(FX_STEEL_DK, FX_INK, 0.30f);
+  SDL_Color band_shade = fx_mix(FX_CREAM, FX_STEEL, 0.50f);
+  /* Across the can, left to right: the rim turning away, the lit side, the
+     specular stripe, the face, and the far side in shade. */
+  static const float COLUMN_MIX[10] = {0.0f, 0.6f, 1.0f, 0.6f, 0.3f,
+                                       0.3f, 0.3f, -0.4f, -1.0f, -1.0f};
+
+  fx_mass(r, COL_OUTLINE, x - 1.0f, y + 1.0f, 12.0f, 10.0f, 1, 1);
+  for (int col = 0; col < 10; ++col)
+  {
+    float m = COLUMN_MIX[col];
+    SDL_Color body = col == 0 ? edge
+                     : m >= 0.0f ? fx_mix(FX_STEEL, FX_PALE, m * 0.75f)
+                                 : fx_mix(FX_STEEL, shade, -m);
+    SDL_Color band = m >= 0.0f ? fx_mix(band_shade, FX_CREAM, 0.5f + m * 0.5f)
+                               : fx_mix(band_shade, FX_STEEL, -m * 0.5f);
+    float top = (col == 0 || col == 9) ? 3.0f : 2.0f;
+    float bottom = (col == 0 || col == 9) ? 9.0f : 10.0f;
+    color_rect(r, body, x + (float)col, y + top, 1.0f, bottom - top);
+    color_rect(r, band, x + (float)col, y + 5.0f, 1.0f, 2.0f);
+  }
+  /* The cap's lit rim, and its seam, and the base in shade. */
+  color_rect(r, FX_STEEL_LT, x + 1.0f, y + 2.0f, 7.0f, 1.0f);
+  color_rect(r, shade, x + 1.0f, y + 3.0f, 8.0f, 1.0f);
+  color_rect(r, shade, x + 1.0f, y + 9.0f, 8.0f, 1.0f);
+  /* A rolled seam round the base, where a frag has its grooves: straight
+     across a can, where the grooves cross an egg. */
+  color_rect(r, fx_mix(FX_STEEL, shade, 0.6f), x + 1.0f, y + 8.0f, 8.0f, 1.0f);
+
+  /* The fuse head on the cap, with the tell-tale in it. */
+  color_rect(r, COL_OUTLINE, x + 2.0f, y - 1.0f, 6.0f, 4.0f);
+  color_rect(r, FX_STEEL_DK, x + 3.0f, y, 4.0f, 2.0f);
+  color_rect(r, FX_STEEL, x + 3.0f, y, 4.0f, 1.0f);
+  color_rect(r, FX_CYAN_DK, x + 4.0f, y + 1.0f, 1.0f, 1.0f);
+  /* The pull-ring, on the right of the cap. */
+  color_rect(r, COL_OUTLINE, x + 7.0f, y - 1.0f, 4.0f, 3.0f);
+  color_rect(r, FX_STEEL_LT, x + 8.0f, y - 1.0f, 1.0f, 1.0f);
+  color_rect(r, FX_STEEL_LT, x + 9.0f, y, 1.0f, 1.0f);
+  color_rect(r, FX_STEEL, x + 8.0f, y + 1.0f, 1.0f, 1.0f);
+
   if (fuse > 0.0f && ((int)(fuse * 18.0f) & 1) == 0)
   {
+    color_rect(r, FX_CYAN, x + 4.0f, y + 1.0f, 1.0f, 1.0f);
     color_rect(r, FX_CREAM, x + 10.0f, y - 2.0f, 2.0f, 2.0f);
     color_rect(r, FX_CYAN, x + 11.0f, y - 1.0f, 2.0f, 2.0f);
   }
@@ -86,23 +172,51 @@ void draw_flashbang(SDL_Renderer *r, float x, float y, float fuse)
  * A sheet off the docket, lying where it fell out of a case.
  *
  * Paper rather than kit, so it is drawn as paper: a pale leaf with a corner
- * turned, two ruled lines and the red stamp that makes it Meridian's rather
- * than the building's. It is the one pickup that is not a weapon, a heart or a
- * door, and it has to read that way from across a room or a player will walk
- * past it assuming they are full up on whatever it is.
+ * turned, a clip at the head of it, ruled lines and the red stamp that makes it
+ * Meridian's rather than the building's. It is the one pickup that is not a
+ * weapon, a heart or a door, and it has to read that way from across a room or
+ * a player will walk past it assuming they are full up on whatever it is.
+ *
+ * It is lit like everything else in the room, which a flat cream rectangle was
+ * not: bright where the lamp reaches its top edge and cooling down the sheet,
+ * the turned corner showing the back of the leaf with its shadow under it, and
+ * the clip catching the light. Same footprint as it always had.
  */
 void draw_evidence_pickup(SDL_Renderer *r, float x, float y)
 {
+  SDL_Color paper_mid = fx_mix(FX_CREAM, FX_PALE, 0.45f);
+  SDL_Color back = fx_mix(FX_PALE, FX_STEEL_LT, 0.35f);
+
   color_rect(r, COL_OUTLINE, x + 2.0f, y + 1.0f, 12.0f, 15.0f);
+  /* The sheet, lit from its top edge down. */
   color_rect(r, FX_CREAM, x + 3.0f, y + 2.0f, 10.0f, 13.0f);
+  color_rect(r, paper_mid, x + 3.0f, y + 9.0f, 10.0f, 3.0f);
   color_rect(r, FX_PALE, x + 3.0f, y + 12.0f, 10.0f, 3.0f);
-  /* The turned corner, which is what stops it reading as a plain white box. */
-  color_rect(r, COL_OUTLINE, x + 10.0f, y + 2.0f, 4.0f, 4.0f);
-  color_rect(r, FX_PALE, x + 10.0f, y + 2.0f, 3.0f, 3.0f);
+  /* The right edge curling a little off the floor, into its own shade. */
+  color_rect(r, paper_mid, x + 12.0f, y + 6.0f, 1.0f, 3.0f);
+  color_rect(r, FX_PALE, x + 12.0f, y + 9.0f, 1.0f, 3.0f);
+  color_rect(r, back, x + 12.0f, y + 12.0f, 1.0f, 3.0f);
+  /* The turned corner: the back of the leaf, the fold's lit edge, and the
+     shadow it throws on the sheet under it. */
+  color_rect(r, COL_OUTLINE, x + 11.0f, y + 2.0f, 2.0f, 1.0f);
+  color_rect(r, COL_OUTLINE, x + 12.0f, y + 3.0f, 1.0f, 1.0f);
+  color_rect(r, back, x + 10.0f, y + 2.0f, 1.0f, 3.0f);
+  color_rect(r, back, x + 11.0f, y + 3.0f, 1.0f, 2.0f);
+  color_rect(r, FX_CREAM, x + 9.0f, y + 2.0f, 1.0f, 1.0f);
+  color_rect(r, paper_mid, x + 10.0f, y + 5.0f, 3.0f, 1.0f);
+  color_rect(r, paper_mid, x + 12.0f, y + 4.0f, 1.0f, 1.0f);
   /* Ruled lines and the contractor's stamp. */
-  color_rect(r, FX_LABEL, x + 5.0f, y + 6.0f, 6.0f, 1.0f);
+  color_rect(r, FX_LABEL, x + 5.0f, y + 6.0f, 5.0f, 1.0f);
   color_rect(r, FX_LABEL, x + 5.0f, y + 8.0f, 6.0f, 1.0f);
-  color_rect(r, FX_RED_DK, x + 5.0f, y + 10.0f, 4.0f, 2.0f);
+  color_rect(r, fx_mix(FX_LABEL, FX_PALE, 0.4f), x + 5.0f, y + 10.0f, 3.0f,
+             1.0f);
+  color_rect(r, FX_RED_DK, x + 8.0f, y + 10.0f, 4.0f, 2.0f);
+  color_rect(r, fx_mix(FX_RED_DK, FX_CREAM, 0.30f), x + 9.0f, y + 10.0f, 2.0f,
+             1.0f);
+  /* The clip at the head of the sheet, catching the lamp. */
+  color_rect(r, COL_OUTLINE, x + 4.0f, y + 1.0f, 3.0f, 5.0f);
+  color_rect(r, FX_STEEL_LT, x + 5.0f, y + 2.0f, 1.0f, 3.0f);
+  color_rect(r, FX_PALE, x + 5.0f, y + 2.0f, 1.0f, 1.0f);
 }
 
 /*
@@ -120,6 +234,119 @@ static void draw_muzzle_flash(SDL_Renderer *r, float bx, float by,
   /* Sprite space resolved here, the light itself in `fx_muzzle_glow`, which is
      what the cutscene's shots draw with as well — see the note beside it. */
   fx_muzzle_glow(r, sprite_point_x(bx, sprite_w, dir, lx), by + ly, 1.0f, tint);
+}
+
+/*
+ * A body built out of several masses, outlined as one.
+ *
+ * `sprite_body` outlines each part as it draws it, which is right for a head on
+ * a torso — the chin is supposed to be a line — and wrong for an animal, whose
+ * chest, barrel and haunch are one hide: drawn part by part, each outline cuts
+ * through the fill of the part before it and the dog comes out as three boxes
+ * glued together. So the outlines of every part go down first and the fills
+ * over all of them afterwards, and the only ink left is the silhouette.
+ */
+static void sprite_mass_outline(SDL_Renderer *r, float bx, float by,
+                                float sprite_w, int dir, float lx, float ly,
+                                float w, float h, int top, int bottom)
+{
+  sprite_mass(r, bx, by, sprite_w, dir, lx - 1.0f, ly - 1.0f, w + 2.0f,
+              h + 2.0f, COL_OUTLINE, top + 1, bottom + 1);
+}
+
+static void sprite_mass_form(SDL_Renderer *r, float bx, float by,
+                             float sprite_w, int dir, float lx, float ly,
+                             float w, float h, SDL_Color base, int top,
+                             int bottom)
+{
+  float x = floorf((dir >= 0) ? bx + lx : bx + sprite_w - lx - w);
+  fx_form_mass(r, x, floorf(by + ly), w, h, fx_ramp(base), dir, top, bottom);
+}
+
+/*
+ * The crew's carbine.
+ *
+ * Every rifle in the building came out of Meridian's flight cases, and the
+ * cutscenes arm the twelve with one for exactly the reason given there: a
+ * low-ready rifle makes a captor unmistakable at pixel scale. In play the same
+ * men used to walk their floors empty-handed and produce a pistol only for the
+ * aim — so a patrolling guard read as a man in a green shirt, and the one
+ * silhouette that says "armed" arrived at the same moment as the shot. It is
+ * carried now, and the pose it is carried in is the telegraph: slung while he
+ * talks, low and pointing at the floor while he walks, and brought up along
+ * the line the round will take while he aims.
+ *
+ * Laid along a line in sprite space from the butt to the muzzle, so one drawing
+ * serves every angle it is held at. The magazine and the grip hang from the
+ * side of the gun that is *under* it — down for a rifle pointed forward,
+ * forward for one pointed at the ceiling — which is what keeps it a rifle
+ * rather than a stick at every angle. Material rather than semantic colour:
+ * blued steel a step off the dark, polymer furniture a step under that, and one
+ * lit pixel along the top of the receiver, because the ceiling lights a gun the
+ * same way it lights the man holding it.
+ */
+static const SDL_Color CARBINE_STEEL = {43, 48, 49, 255};
+static const SDL_Color CARBINE_STEEL_LT = {88, 97, 96, 255};
+static const SDL_Color CARBINE_FURNITURE = {31, 35, 30, 255};
+
+static void draw_carbine(SDL_Renderer *r, float x, float y, float sprite_w,
+                         int dir, float butt_x, float butt_y,
+                         float muzzle_x, float muzzle_y)
+{
+  float dx = muzzle_x - butt_x;
+  float dy = muzzle_y - butt_y;
+  float length = sqrtf(dx * dx + dy * dy);
+  if (length < 4.0f)
+    return;
+  float ux = dx / length;
+  float uy = dy / length;
+  /* Under the gun, in sprite space: (0, 1) for a rifle pointed forward. */
+  float nx = -uy;
+  float ny = ux;
+  float rx = butt_x + dx * 0.62f;
+  float ry = butt_y + dy * 0.62f;
+  float gx = butt_x + dx * 0.32f;
+  float gy = butt_y + dy * 0.32f;
+  float mx = butt_x + dx * 0.48f;
+  float my = butt_y + dy * 0.48f;
+
+  /* Every outline first, so the parts join without ink between them. */
+  sprite_segment(r, x, y, sprite_w, dir, rx, ry, muzzle_x, muzzle_y, 3,
+                 COL_OUTLINE);
+  sprite_segment(r, x, y, sprite_w, dir, butt_x, butt_y, rx, ry, 4,
+                 COL_OUTLINE);
+  sprite_segment(r, x, y, sprite_w, dir, mx, my, mx + nx * 4.0f - ux,
+                 my + ny * 4.0f - uy, 4, COL_OUTLINE);
+  sprite_segment(r, x, y, sprite_w, dir, gx, gy, gx + nx * 3.0f - ux,
+                 gy + ny * 3.0f - uy, 3, COL_OUTLINE);
+
+  sprite_segment(r, x, y, sprite_w, dir, butt_x, butt_y,
+                 butt_x + dx * 0.30f, butt_y + dy * 0.30f, 2,
+                 CARBINE_FURNITURE);
+  sprite_segment(r, x, y, sprite_w, dir, butt_x + dx * 0.28f,
+                 butt_y + dy * 0.28f, rx, ry, 2, CARBINE_STEEL);
+  sprite_segment(r, x, y, sprite_w, dir, rx, ry, muzzle_x, muzzle_y, 1,
+                 CARBINE_STEEL);
+  sprite_segment(r, x, y, sprite_w, dir, mx + nx, my + ny,
+                 mx + nx * 3.5f - ux, my + ny * 3.5f - uy, 2,
+                 CARBINE_FURNITURE);
+  sprite_segment(r, x, y, sprite_w, dir, gx + nx, gy + ny,
+                 gx + nx * 2.5f - ux, gy + ny * 2.5f - uy, 1,
+                 CARBINE_FURNITURE);
+  sprite_segment_shifted(r, x, y, sprite_w, dir, butt_x + dx * 0.30f,
+                         butt_y + dy * 0.30f, rx, ry, 1, 1.0f,
+                         CARBINE_STEEL_LT);
+}
+
+/* A hand closed on something, which is two pixels of skin inside an outline —
+   and without it every arm that holds a weapon ends in the weapon. */
+static void draw_closed_hand(SDL_Renderer *r, float x, float y,
+                             float sprite_w, int dir, float hx, float hy,
+                             SDL_Color skin)
+{
+  sprite_rect(r, x, y, sprite_w, dir, hx - 1.5f, hy - 1.5f, 4.0f, 4.0f,
+              COL_OUTLINE);
+  sprite_rect(r, x, y, sprite_w, dir, hx - 0.5f, hy - 0.5f, 2.0f, 2.0f, skin);
 }
 
 static void draw_bazooka_weapon(SDL_Renderer *r, float x, float y,
@@ -208,6 +435,19 @@ static void draw_standing_legs(SDL_Renderer *r, float x, float y,
  * body at a constant rate, and only the swing half lifts and reaches forward.
  * A sine does the opposite — it is slowest exactly where the foot should be
  * carrying the figure fastest.
+ *
+ * It also decides what the rest of a walking figure has to be timed from. A
+ * foot is furthest forward at the start of its cycle, heel strike, so how far
+ * forward the near foot is — the number the arms swing against and the body
+ * bobs on — is a cosine of the phase and not a sine. Driven by the sine, the
+ * arms and the bob ran a quarter of a stride out of step with the feet: the
+ * near arm reached its furthest forward just as the legs crossed, and the body
+ * rose at heel strike and sank as the legs passed, which is a walk played
+ * backwards.
+ *
+ * Chuck does not walk on this any more — see [chuck_pose.h](chuck_pose.h),
+ * whose gait is driven by distance rather than by a clock — but the crew, the
+ * janitor, the civilians and the receptionist still do.
  */
 static void draw_walking_leg(SDL_Renderer *r, float x, float y, float sprite_w,
                              int dir, float hip_x, float hip_y, float cycle,
@@ -387,67 +627,228 @@ static void draw_thrown_in_hand(SDL_Renderer *r, const Player *p,
   draw_grenade(r, x, y, 0.0f);
 }
 
+/* ---- Chuck ---------------------------------------------------------- */
+
+/*
+ * Chuck, in the four views the sector has of him: side on (standing, running,
+ * in the air and every weapon), flat on his elbows, and from behind on a ladder
+ * and at a console.
+ *
+ * Side on he is drawn from his skeleton — [chuck_pose.h](chuck_pose.h) for the
+ * joints, [render_chuck.h](render_chuck.h) for the drawing — which is the same
+ * code the film draws him with, at one pixel to the unit instead of one and a
+ * half. The other three views keep hand-placed forms, because a skeleton seen
+ * from behind or lying down is a different drawing rather than a different
+ * pose, but they are held to the same proportions: the cast's eleven-row head,
+ * a square-shouldered jacket ten deep over the hips, and the legs from 20.7 down —
+ * a little longer than the guards' beside him, and otherwise their template. A
+ * climb seen from behind in one set of proportions beside a run in another would
+ * be two men.
+ */
+
+static const SDL_Color PLAYER_TROUSER = {29, 55, 80, 255};
+static const SDL_Color PLAYER_TROUSER_FAR = {21, 40, 59, 255};
+static const SDL_Color PLAYER_BOOT = {34, 39, 49, 255};
+static const SDL_Color PLAYER_BOOT_FAR = {26, 31, 40, 255};
+static const SDL_Color PLAYER_BOOT_LT = {63, 72, 86, 255};
+static const SDL_Color PLAYER_SLEEVE = {42, 118, 153, 255};
+static const SDL_Color PLAYER_FOREARM = {209, 154, 105, 255};
+static const SDL_Color PLAYER_STRAP = {21, 54, 76, 255};
+static const SDL_Color PLAYER_GUNMETAL = {31, 38, 43, 255};
+static const SDL_Color PLAYER_GRIP = {44, 49, 49, 255};
+static const SDL_Color KNIFE_HANDLE = {55, 43, 31, 255};
+static const SDL_Color KNIFE_STEEL = {205, 221, 225, 255};
+static const SDL_Color KNIFE_TIP = {241, 247, 239, 255};
+static const SDL_Color MUZZLE_HOT = {255, 242, 184, 255};
+
+static ChuckView player_view(SDL_Renderer *r, float x, float y, int dir)
+{
+  return (ChuckView){r, x, y, dir, 1.0f, COL_OUTLINE};
+}
+
+/* ---- From behind ---------------------------------------------------- */
+
+/*
+ * One leg seen from behind: the trouser leg from the seat to the ankle and the
+ * back of the boot under it. `raise` lifts the boot up the leg, which is what a
+ * knee drawn up toward a rung looks like from behind — the thigh goes into the
+ * picture and the leg foreshortens.
+ */
+static void draw_back_leg(SDL_Renderer *r, float x, float y, float lx,
+                          float raise, SDL_Color trouser)
+{
+  float top = 20.0f;
+  float ankle = 29.0f - raise;
+
+  sprite_rect(r, x, y, PLAYER_W, 1, lx - 1.0f, top, 5.0f, ankle - top + 1.0f,
+              COL_OUTLINE);
+  sprite_form(r, x, y, PLAYER_W, 1, lx, top, 3.0f, ankle - top, trouser);
+  sprite_rect(r, x, y, PLAYER_W, 1, lx - 1.0f, ankle, 5.0f, 4.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, 1, lx, ankle + 1.0f, 3.0f, 2.0f,
+              PLAYER_BOOT);
+  sprite_rect(r, x, y, PLAYER_W, 1, lx, ankle + 1.0f, 3.0f, 1.0f,
+              PLAYER_BOOT_LT);
+}
+
+/* The jacket from behind: square across the shoulders, in to the belt, the
+   shoulder blades catching the lamp either side of the webbing's back strap. */
+static void draw_back_torso(SDL_Renderer *r, float x, float y, float bob)
+{
+  sprite_body(r, x, y, PLAYER_W, 1, 9.0f, 19.0f + bob, 8.0f, 3.0f,
+              PLAYER_TROUSER, COL_OUTLINE, 1, 1);
+  /* Square across the shoulders: two rows off the top corners is shoulders
+     sloping away from the neck, and with a full-width belt under them the back
+     view came out as a bell. */
+  sprite_body(r, x, y, PLAYER_W, 1, 7.0f, 11.0f + bob, 12.0f, 10.0f, FX_HERO,
+              COL_OUTLINE, 1, 1);
+  sprite_rect(r, x, y, PLAYER_W, 1, 8.0f, 13.0f + bob, 3.0f, 4.0f,
+              FX_HERO_LT);
+  sprite_rect(r, x, y, PLAYER_W, 1, 15.0f, 13.0f + bob, 3.0f, 4.0f,
+              FX_HERO_LT);
+  sprite_rect(r, x, y, PLAYER_W, 1, 12.0f, 12.0f + bob, 2.0f, 6.0f,
+              PLAYER_STRAP);
+  sprite_rect(r, x, y, PLAYER_W, 1, 8.0f, 18.0f + bob, 10.0f, 2.0f, FX_AMBER);
+  sprite_rect(r, x, y, PLAYER_W, 1, 8.0f, 20.0f + bob, 10.0f, 1.0f,
+              fx_ramp(FX_HERO).dark);
+}
+
+/* The back of his head: hair down to the nape, the ears either side of it, and
+   the headband's knot at the back with its two ends hanging off it — the one
+   view where the knot the side view trails is actually in front of the eye. */
+static void draw_back_head(SDL_Renderer *r, float x, float y, float bob,
+                           float sway)
+{
+  sprite_body(r, x, y, PLAYER_W, 1, 9.0f, 2.0f + bob, 8.0f, 9.0f, FX_SKIN,
+              COL_OUTLINE, 2, 2);
+  sprite_mass(r, x, y, PLAYER_W, 1, 9.0f, 2.0f + bob, 8.0f, 7.0f, FX_HAIR, 2,
+              0);
+  sprite_rect(r, x, y, PLAYER_W, 1, 11.0f, 2.0f + bob, 4.0f, 1.0f,
+              PLAYER_HAIR_LT);
+  sprite_rect(r, x, y, PLAYER_W, 1, 10.0f, 9.0f + bob, 6.0f, 1.0f,
+              FX_SKIN_DK);
+  sprite_rect(r, x, y, PLAYER_W, 1, 8.0f, 5.0f + bob, 1.0f, 2.0f,
+              FX_SKIN_DK);
+  sprite_rect(r, x, y, PLAYER_W, 1, 17.0f, 5.0f + bob, 1.0f, 2.0f,
+              FX_SKIN_DK);
+  sprite_rect(r, x, y, PLAYER_W, 1, 8.0f, 4.0f + bob, 10.0f, 2.0f, FX_RED);
+  sprite_rect(r, x, y, PLAYER_W, 1, 8.0f, 4.0f + bob, 10.0f, 1.0f,
+              (SDL_Color){246, 104, 88, 255});
+  /* Tied off to one side of the middle: a knot dead centre with its ends
+     hanging straight down it draws a red cross on the back of his head. */
+  sprite_rect(r, x, y, PLAYER_W, 1, 14.0f, 4.0f + bob, 2.0f, 2.0f,
+              (SDL_Color){166, 38, 42, 255});
+  sprite_rect(r, x, y, PLAYER_W, 1, 14.0f + sway, 6.0f + bob, 1.0f, 2.0f,
+              (SDL_Color){166, 38, 42, 255});
+  sprite_rect(r, x, y, PLAYER_W, 1, 16.0f + sway * 1.5f, 5.0f + bob, 1.0f,
+              3.0f, (SDL_Color){166, 38, 42, 255});
+}
+
 static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, float y)
 {
   int dir = p->facing;
   float phase = p->anim_time * 3.2f;
   float shove = (fabsf(p->vx) > 1.0f) ? sinf(phase) * 2.0f : 0.0f;
   bool knife = p->action_timer > 0.0f && p->knife_attacking;
-  bool firing = p->action_timer > 0.0f && !knife;
+  /* A throw is not a shot, prone any more than standing: see the note on the
+     standing throw in `draw_player_side`. */
+  bool throwing = p->action_timer > 0.0f && p->grenade_throwing && !knife;
+  bool firing = p->action_timer > 0.0f && !knife && !throwing;
   bool bazooka = (p->active_weapon == PLAYER_WEAPON_BAZOOKA &&
                    p->bazooka_rockets > 0) ||
                  (firing && p->bazooka_firing);
 
-  /* Rear boot; the ground shadow is laid by the caller, anchored to the
-     floor rather than to the belly. */
-  sprite_rect(r, x, y, PLAYER_W, dir, 1.0f - shove, 12.0f, 8.0f, 5.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, PLAYER_W, dir, 2.0f - shove, 12.0f, 7.0f, 3.0f, fx_dim(FX_HERO_DK, 0.80f));
+  /* The legs. The ground shadow is laid by the caller, anchored to the floor
+     rather than to the belly.
+     This pose used to have one boot and no legs — a torso with a shoe stuck
+     on the back of it — so a man on his elbows read as a blue lump, which is
+     the one thing a crawl through a room full of guards must not do. Two
+     legs, as long as they are standing: the far one straight out behind, the
+     near one with its knee drawn up under him, the two trading places on the
+     shove so the crawl travels. */
+  float knee_far = 1.5f - shove * 0.8f;
+  float knee_near = 3.5f + shove * 0.8f;
+  sprite_limb_segment(r, x, y, PLAYER_W, dir, 8.0f, 12.0f, knee_far, 13.0f,
+                      PLAYER_TROUSER_FAR);
+  sprite_limb_segment(r, x, y, PLAYER_W, dir, knee_far, 13.0f, -3.5f, 14.0f,
+                      PLAYER_TROUSER_FAR);
+  sprite_rect(r, x, y, PLAYER_W, dir, -6.0f, 12.0f, 4.0f, 5.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, dir, -5.0f, 13.0f, 2.0f, 3.0f,
+              PLAYER_BOOT_FAR);
+  sprite_limb_segment(r, x, y, PLAYER_W, dir, 9.0f, 13.0f, knee_near, 15.5f,
+                      PLAYER_TROUSER);
+  sprite_limb_segment(r, x, y, PLAYER_W, dir, knee_near, 15.5f,
+                      -1.5f + shove * 0.4f, 14.5f, PLAYER_TROUSER);
+  /* Toe dug into the floor, heel to the ceiling. */
+  sprite_rect(r, x, y, PLAYER_W, dir, -3.5f + shove * 0.4f, 12.5f, 4.0f, 5.0f,
+              COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, dir, -2.5f + shove * 0.4f, 13.5f, 2.0f, 3.0f,
+              PLAYER_BOOT);
+  sprite_rect(r, x, y, PLAYER_W, dir, -2.5f + shove * 0.4f, 13.5f, 2.0f, 1.0f,
+              PLAYER_BOOT_LT);
 
-  /* Horizontal torso, shoulder plate and head at the leading edge. */
-  sprite_body(r, x, y, PLAYER_W, dir, 7.0f, 7.0f, 12.0f, 8.0f,
-              FX_HERO, COL_OUTLINE, 1, 1);
-  sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 7.0f, 10.0f, 2.0f, FX_HERO_LT);
-  sprite_body(r, x, y, PLAYER_W, dir, 18.0f, 4.0f, 6.0f, 7.0f, FX_SKIN,
-              COL_OUTLINE, 1, 2);
-  sprite_mass(r, x, y, PLAYER_W, dir, 18.0f, 4.0f, 6.0f, 3.0f,
-              FX_HAIR, 1, 0);
-  sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 6.0f, 2.0f, 2.0f, (SDL_Color){220, 239, 219, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 23.0f, 6.0f, 1.0f, 2.0f, (SDL_Color){40, 54, 64, 255});
-  sprite_rect(r, x, y, PLAYER_W, dir, 18.0f, 9.0f, 5.0f, 1.0f, FX_SKIN_DK);
-  sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 5.0f, 4.0f, 2.0f, FX_RED);
+  /* The seat of the trousers, then the jacket laid along the floor with the
+     belt across its tail and the webbing on the diagonal. */
+  sprite_body(r, x, y, PLAYER_W, dir, 5.0f, 9.0f, 4.0f, 6.0f, PLAYER_TROUSER,
+              COL_OUTLINE, 1, 1);
+  sprite_body(r, x, y, PLAYER_W, dir, 8.0f, 7.0f, 11.0f, 8.0f, FX_HERO,
+              COL_OUTLINE, 1, 1);
+  sprite_rect(r, x, y, PLAYER_W, dir, 9.0f, 7.0f, 9.0f, 2.0f, FX_HERO_LT);
+  sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 8.0f, 2.0f, 6.0f, FX_AMBER);
+  sprite_segment(r, x, y, PLAYER_W, dir, 11.0f, 9.0f, 17.0f, 13.0f, 2,
+                 PLAYER_STRAP);
 
-  /* Braced front arm with either the sidearm or an empty-ammo knife thrust. */
-  sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 11.0f, 7.0f, 4.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, PLAYER_W, dir, 17.0f, 11.0f, 6.0f, 2.0f, FX_SKIN);
+  /* The head, raised to look ahead along the floor: the same head as standing,
+     from the same code, so the face does not change when he gets down. */
+  ChuckView view = player_view(r, x, y, dir);
+  ChuckPose head_pose = {0};
+  head_pose.neck = (ChuckPoint){20.5f, 11.0f};
+  head_pose.pelvis = (ChuckPoint){20.5f, 11.0f + CHUCK_SPINE};
+  head_pose.tail = 0.4f + fabsf(shove) * 0.3f;
+  chuck_draw_head(&view, &head_pose, fx_blinking(p->anim_time, 0x1u));
+
+  /* Braced front arm: the elbow planted under the shoulder, the forearm along
+     the floor, and whatever it is holding out past the head. */
+  sprite_limb_segment(r, x, y, PLAYER_W, dir, 16.0f, 10.5f, 17.5f, 15.0f,
+                      PLAYER_SLEEVE);
+  sprite_limb_segment(r, x, y, PLAYER_W, dir, 17.5f, 15.0f, 21.5f, 14.5f,
+                      PLAYER_FOREARM);
+  sprite_rect(r, x, y, PLAYER_W, dir, 21.0f, 13.0f, 4.0f, 4.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 14.0f, 2.0f, 2.0f, FX_SKIN);
   if (knife)
   {
     float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f ? 2.0f : 0.0f;
-    sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 10.0f, 4.0f + thrust, 4.0f,
-                FX_SKIN);
-    sprite_rect(r, x, y, PLAYER_W, dir, 25.0f + thrust, 9.0f, 3.0f, 5.0f,
-                (SDL_Color){55, 43, 31, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 28.0f + thrust, 10.0f, 6.0f, 2.0f,
-                (SDL_Color){205, 221, 225, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 34.0f + thrust, 10.5f, 1.0f, 1.0f,
-                (SDL_Color){241, 247, 239, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 24.0f + thrust, 13.0f, 2.0f, 4.0f,
+                KNIFE_HANDLE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 26.0f + thrust, 14.0f, 6.0f, 2.0f,
+                KNIFE_STEEL);
+    sprite_rect(r, x, y, PLAYER_W, dir, 32.0f + thrust, 14.5f, 1.0f, 1.0f,
+                KNIFE_TIP);
+  }
+  else if (throwing)
+  {
+    /* Flat on the floor the throw is a flick along it: the fingers open out
+       past the head, the thing already skidding away. */
+    sprite_rect(r, x, y, PLAYER_W, dir, 24.0f, 13.0f, 2.0f, 1.0f, FX_SKIN);
+    sprite_rect(r, x, y, PLAYER_W, dir, 24.0f, 15.0f, 2.0f, 1.0f, FX_SKIN);
   }
   else if (bazooka)
   {
     draw_bazooka_weapon(r, x, y, PLAYER_W, dir,
-                        15.0f, 5.0f, p->bazooka_firing);
+                        14.0f, 3.0f, p->bazooka_firing);
   }
   else if ((p->active_weapon == PLAYER_WEAPON_PISTOL && p->bullets > 0) ||
            firing)
   {
-    sprite_rect(r, x, y, PLAYER_W, dir, 22.0f, 10.0f,
-                firing ? 7.0f : 5.0f, 3.0f,
-                (SDL_Color){36, 43, 48, 255});
+    sprite_rect(r, x, y, PLAYER_W, dir, 23.0f, 13.0f,
+                firing ? 7.0f : 5.0f, 3.0f, COL_OUTLINE);
+    sprite_rect(r, x, y, PLAYER_W, dir, 23.5f, 13.5f,
+                firing ? 6.0f : 4.0f, 2.0f, PLAYER_GUNMETAL);
     if (firing && p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
     {
       /* Prone or standing, a shot lights the floor it is fired across. */
-      draw_muzzle_flash(r, x, y, PLAYER_W, dir, 31.0f, 11.5f, FX_AMBER);
-      sprite_rect(r, x, y, PLAYER_W, dir, 29.0f, 9.0f, 3.0f, 5.0f, FX_AMBER);
-      sprite_rect(r, x, y, PLAYER_W, dir, 32.0f, 10.0f, 2.0f, 3.0f, FX_FLAME_HOT);
+      draw_muzzle_flash(r, x, y, PLAYER_W, dir, 31.0f, 14.5f, FX_AMBER);
+      sprite_rect(r, x, y, PLAYER_W, dir, 29.0f, 12.0f, 3.0f, 5.0f, FX_AMBER);
+      sprite_rect(r, x, y, PLAYER_W, dir, 32.0f, 13.0f, 2.0f, 3.0f, FX_FLAME_HOT);
     }
   }
 }
@@ -455,92 +856,565 @@ static void draw_player_crawling(SDL_Renderer *r, const Player *p, float x, floa
 static void draw_player_hacking(SDL_Renderer *r, float x, float y,
                                 float hack_time)
 {
-  const SDL_Color shirt = FX_HERO;
-  const SDL_Color shirt_light = FX_HERO_LT;
-  const SDL_Color trousers = FX_HERO_DK;
-  const SDL_Color boots = FX_SHADOW;
-  const SDL_Color skin = FX_SKIN;
   float type_phase = hack_time * 15.0f;
   float tap_a = sinf(type_phase) * 1.2f;
   float tap_b = sinf(type_phase + 3.14159265f) * 1.2f;
   float bob = sinf(hack_time * 5.0f) * 0.25f;
 
   /* Rear view: Chuck faces the wall-mounted terminal, so the camera sees
-     the back of his head, shoulders and torso. */
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              7.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
-  sprite_form(r, x, y, PLAYER_W, 1,
-              8.0f, 23.0f, 4.0f, 7.0f, trousers);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              6.0f, 29.0f, 8.0f, 3.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              7.0f, 30.0f, 7.0f, 2.0f, boots);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              13.0f, 22.0f, 6.0f, 10.0f, COL_OUTLINE);
-  sprite_form(r, x, y, PLAYER_W, 1,
-              14.0f, 23.0f, 4.0f, 7.0f, fx_mix(FX_HERO_DK, FX_HERO, 0.30f));
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              13.0f, 29.0f, 8.0f, 3.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              14.0f, 30.0f, 7.0f, 2.0f, boots);
+     the back of his head, shoulders and torso, planted on both feet. */
+  draw_back_leg(r, x, y, 9.0f, 0.0f, fx_mix(PLAYER_TROUSER_FAR, PLAYER_TROUSER,
+                                            0.5f));
+  draw_back_leg(r, x, y, 14.0f, 0.0f, PLAYER_TROUSER);
 
   /* Seen from behind, elbows flare outward and both forearms reach forward
      again to the terminal's lower keypad. */
   sprite_limb_segment(r, x, y, PLAYER_W, 1,
-                      8.0f, 14.0f + bob, 3.5f, 17.0f + bob,
-                      shirt);
+                      9.0f, 13.0f + bob, 4.5f, 16.0f + bob, FX_HERO);
   sprite_limb_segment(r, x, y, PLAYER_W, 1,
-                      3.5f, 17.0f + bob, 8.5f, 21.0f + tap_a,
-                      skin);
+                      4.5f, 16.0f + bob, 9.5f, 19.5f + tap_a, PLAYER_FOREARM);
   sprite_limb_segment(r, x, y, PLAYER_W, 1,
-                      18.0f, 14.0f + bob, 22.5f, 17.0f + bob,
-                      shirt_light);
+                      17.0f, 13.0f + bob, 21.5f, 16.0f + bob, FX_HERO_LT);
   sprite_limb_segment(r, x, y, PLAYER_W, 1,
-                      22.5f, 17.0f + bob, 17.5f, 21.0f + tap_b,
-                      skin);
+                      21.5f, 16.0f + bob, 16.5f, 19.5f + tap_b, PLAYER_FOREARM);
 
-  /* Broad, symmetrical back with shoulder panels and central webbing. */
-  sprite_body(r, x, y, PLAYER_W, 1,
-              8.0f, 11.0f + bob, 13.0f, 12.0f, shirt, COL_OUTLINE, 2, 1);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              8.0f, 12.0f + bob, 4.0f, 8.0f, shirt_light);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              17.0f, 12.0f + bob, 4.0f, 8.0f, shirt_light);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              13.0f, 12.0f + bob, 3.0f, 11.0f,
-              (SDL_Color){21, 54, 76, 255});
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              9.0f, 20.0f + bob, 11.0f, 2.0f, FX_AMBER);
-
-  /* Back of the head: no face or eye is visible from this angle. */
-  sprite_body(r, x, y, PLAYER_W, 1,
-              10.0f, 2.0f + bob, 8.0f, 9.0f, FX_HAIR, COL_OUTLINE, 2, 2);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              12.0f, 2.0f + bob, 4.0f, 1.0f, PLAYER_HAIR_LT);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              8.0f, 4.0f + bob, 12.0f, 2.0f, FX_RED);
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              9.0f, 7.0f + bob, 2.0f, 2.0f,
-              (SDL_Color){91, 48, 31, 255});
-  sprite_rect(r, x, y, PLAYER_W, 1,
-              17.0f, 7.0f + bob, 2.0f, 2.0f,
-              (SDL_Color){91, 48, 31, 255});
+  draw_back_torso(r, x, y, bob);
+  draw_back_head(r, x, y, bob, 0.0f);
 
   /* His hands are between his body and the terminal, so they are hidden
      from this rear angle; only the alternating elbow motion is visible. */
+}
+
+/*
+ * On a ladder, from behind. The beat is spent vertically on a climb — a hand
+ * and the opposite boot rise while the other pair hold — and across the rungs on
+ * a traverse; see `docs/art-and-audio.md`, "a traverse is not a climb".
+ */
+static void draw_player_climbing(SDL_Renderer *r, const Player *p, float x,
+                                 float y)
+{
+  const int dir = 1;
+  float phase = p->anim_time * 3.0f;
+  bool moving = fabsf(p->vx) > 2.0f;
+  bool knife = p->action_timer > 0.0f && p->knife_attacking;
+  bool grenade = p->action_timer > 0.0f && p->grenade_throwing;
+  bool firing = p->action_timer > 0.0f && !knife;
+  bool bazooka = (p->active_weapon == PLAYER_WEAPON_BAZOOKA &&
+                   p->bazooka_rockets > 0) ||
+                 (firing && p->bazooka_firing);
+  /* Across the rungs rather than up them. Vertical travel wins when both are
+     held: that is the part of the move the player is watching, and a pose
+     trying to say both at once says neither. */
+  bool shuffling = moving && fabsf(p->vy) <= 1.0f;
+  float shuffle_side = shuffling ? (p->vx > 0.0f ? 1.0f : -1.0f) : 0.0f;
+  float beat = sinf(phase);
+
+  /* The weight goes across as well as the limbs: the body hangs back off the
+     hand that is reaching and rides forward over the pair that gather. A pixel
+     and a half of it is the difference between someone shifting across a ladder
+     and two limbs waving on a figure travelling on rails. */
+  if (shuffling)
+    x -= shuffle_side * sinf(phase) * 0.7f;
+
+  /*
+   * A traverse is not a climb, and one beat is all that separates the two.
+   * Climbing spends it vertically: one hand and the opposite boot rise while
+   * the other pair hold. Going sideways spends the same beat across the
+   * rungs — the leading hand and boot reach out on the first half, the
+   * trailing pair gather across on the second — so the alternation stops and
+   * nothing is pumping up and down while the figure travels level.
+   */
+  float reach = shuffle_side * fmaxf(0.0f, beat) * 3.0f;
+  float gather = shuffle_side * fmaxf(0.0f, -beat) * 3.0f;
+  float left_step = shuffle_side > 0.0f ? gather : reach;
+  float right_step = shuffle_side > 0.0f ? reach : gather;
+  float climb = shuffling ? 0.0f : beat * 4.0f;
+  /* A boot that slides along a rung is a boot with no weight on it, so the
+     one that is moving clears it first. */
+  float left_raise = fmaxf(0.0f, -climb) + fabsf(left_step) * 0.5f;
+  float right_raise = fmaxf(0.0f, climb) + fabsf(right_step) * 0.5f;
+  /* Each hand travels with the boot below it, but stays on its own side of
+     the shoulders: a grip that crossed the body would swap the elbow flare
+     mid-beat and pop. Reaching outward is free, gathering inward is damped. */
+  float left_grip = 7.0f + (left_step > 0.0f ? left_step * 0.4f : left_step);
+  float right_grip = 19.0f + (right_step < 0.0f ? right_step * 0.4f
+                                                : right_step);
+  float bob = fabsf(beat) * 0.7f;
+  float left_hand_y = 4.5f - climb;
+  float right_hand_y = 4.5f + climb;
+
+  /* Seen from behind the legs are still trousers, and still darker than the
+     jacket above them — drawn at the torso's own value they turned the whole
+     climb into one blue column. */
+  draw_back_leg(r, x, y, 9.0f + left_step, left_raise,
+                fx_mix(PLAYER_TROUSER_FAR, PLAYER_TROUSER, 0.5f));
+  draw_back_leg(r, x, y, 14.0f + right_step, right_raise, PLAYER_TROUSER);
+  draw_back_torso(r, x, y, bob);
+
+  if (knife)
+  {
+    /* One hand stays on the ladder while the other follows the selected
+       attack direction. */
+    if (p->shot_vertical != 0)
+    {
+      float hand_y = p->shot_vertical < 0 ? 5.0f : 21.0f;
+      float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
+                         ? 2.0f
+                         : 0.0f;
+      draw_climbing_arm(r, x, y, PLAYER_W, dir, 9.0f, 13.0f + bob,
+                        left_grip, left_hand_y, PLAYER_SLEEVE,
+                        PLAYER_FOREARM);
+      sprite_limb_segment(r, x, y, PLAYER_W, dir, 17.0f, 13.0f + bob,
+                          20.0f, hand_y, PLAYER_SLEEVE);
+      sprite_rect(r, x, y, PLAYER_W, dir, 18.0f, hand_y - 2.0f, 5.0f, 5.0f,
+                  COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, dir, 19.0f, hand_y - 1.0f, 3.0f, 3.0f,
+                  PLAYER_FOREARM);
+      float handle_y = p->shot_vertical < 0 ? hand_y - 6.0f - thrust
+                                            : hand_y + 2.0f + thrust;
+      float blade_y = p->shot_vertical < 0 ? handle_y - 8.0f
+                                           : handle_y + 5.0f;
+      sprite_rect(r, x, y, PLAYER_W, dir, 18.0f, handle_y, 5.0f, 6.0f,
+                  KNIFE_HANDLE);
+      sprite_rect(r, x, y, PLAYER_W, dir, 19.0f, blade_y, 3.0f, 8.0f,
+                  KNIFE_STEEL);
+    }
+    else
+    {
+      /* The rear-facing ladder pose is fixed, so only the attacking arm is
+         mirrored for a sideways stab. */
+      if (p->facing > 0)
+        draw_climbing_arm(r, x, y, PLAYER_W, dir, 9.0f, 13.0f + bob,
+                          left_grip, left_hand_y, PLAYER_SLEEVE,
+                          PLAYER_FOREARM);
+      else
+        draw_climbing_arm(r, x, y, PLAYER_W, dir, 17.0f, 13.0f + bob,
+                          right_grip, right_hand_y, PLAYER_SLEEVE,
+                          PLAYER_FOREARM);
+
+      int knife_dir = p->facing;
+      float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
+                         ? 2.0f
+                         : 0.0f;
+      sprite_limb_segment(r, x, y, PLAYER_W, knife_dir, 16.0f, 13.0f + bob,
+                          20.0f + thrust, 14.0f + bob, PLAYER_SLEEVE);
+      sprite_rect(r, x, y, PLAYER_W, knife_dir, 19.0f + thrust, 12.0f + bob,
+                  6.0f, 5.0f, COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, knife_dir, 20.0f + thrust, 13.0f + bob,
+                  5.0f, 3.0f, PLAYER_FOREARM);
+      sprite_rect(r, x, y, PLAYER_W, knife_dir, 24.0f + thrust, 12.0f + bob,
+                  3.0f, 5.0f, KNIFE_HANDLE);
+      sprite_rect(r, x, y, PLAYER_W, knife_dir, 27.0f + thrust, 13.0f + bob,
+                  6.0f, 2.0f, KNIFE_STEEL);
+      sprite_rect(r, x, y, PLAYER_W, knife_dir, 33.0f + thrust, 13.5f + bob,
+                  1.0f, 1.0f, KNIFE_TIP);
+    }
+  }
+  else if (grenade)
+  {
+    draw_climbing_arm(r, x, y, PLAYER_W, dir, 9.0f, 13.0f + bob, left_grip,
+                      left_hand_y, PLAYER_SLEEVE, PLAYER_FOREARM);
+    if (p->shot_vertical != 0)
+    {
+      float hand_y = p->shot_vertical < 0 ? 4.0f : 21.0f;
+      sprite_limb_segment(r, x, y, PLAYER_W, dir, 17.0f, 13.0f + bob, 20.0f,
+                          hand_y, PLAYER_SLEEVE);
+      draw_thrown_in_hand(r, p, x + 16.0f,
+                          p->shot_vertical < 0 ? y - 6.0f : y + 22.0f);
+    }
+    else
+    {
+      int throw_dir = p->facing;
+      sprite_limb_segment(r, x, y, PLAYER_W, throw_dir, 16.0f, 13.0f + bob,
+                          22.0f, 9.0f + bob, PLAYER_SLEEVE);
+      draw_thrown_in_hand(r, p,
+                          throw_dir > 0 ? x + PLAYER_W + 2.0f
+                                        : x - GRENADE_W - 2.0f,
+                          y + 4.0f + bob);
+    }
+  }
+  else if (firing && p->shot_vertical == 0)
+  {
+    /* Horizontal ladder fire uses the stored facing direction while the
+       body remains turned toward the ladder. */
+    if (p->facing > 0)
+      draw_climbing_arm(r, x, y, PLAYER_W, dir, 9.0f, 13.0f + bob,
+                        left_grip, left_hand_y, PLAYER_SLEEVE,
+                        PLAYER_FOREARM);
+    else
+      draw_climbing_arm(r, x, y, PLAYER_W, dir, 17.0f, 13.0f + bob,
+                        right_grip, right_hand_y, PLAYER_SLEEVE,
+                        PLAYER_FOREARM);
+
+    int gun_dir = p->facing;
+    float recoil = p->action_timer > 0.075f ? -1.0f : 0.0f;
+    sprite_limb_segment(r, x, y, PLAYER_W, gun_dir, 16.0f, 13.0f + bob,
+                        21.0f + recoil, 14.0f + bob, PLAYER_SLEEVE);
+    if (bazooka)
+    {
+      draw_bazooka_weapon(r, x, y, PLAYER_W, gun_dir, 13.0f, 7.0f + bob,
+                          true);
+    }
+    else
+    {
+      sprite_rect(r, x, y, PLAYER_W, gun_dir, 20.0f + recoil, 12.0f + bob,
+                  7.0f, 5.0f, COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, gun_dir, 21.0f + recoil, 13.0f + bob,
+                  6.0f, 3.0f, PLAYER_FOREARM);
+      sprite_rect(r, x, y, PLAYER_W, gun_dir, 25.0f + recoil, 11.0f + bob,
+                  8.0f, 4.0f, PLAYER_GUNMETAL);
+      sprite_rect(r, x, y, PLAYER_W, gun_dir, 27.0f + recoil, 15.0f + bob,
+                  3.0f, 5.0f, PLAYER_GRIP);
+      if (p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
+      {
+        draw_muzzle_flash(r, x, y, PLAYER_W, gun_dir, 35.0f + recoil,
+                          13.0f + bob, FX_AMBER);
+        sprite_rect(r, x, y, PLAYER_W, gun_dir, 33.0f + recoil, 10.0f + bob,
+                    4.0f, 6.0f, FX_AMBER);
+        sprite_rect(r, x, y, PLAYER_W, gun_dir, 37.0f + recoil, 12.0f + bob,
+                    3.0f, 3.0f, MUZZLE_HOT);
+      }
+    }
+  }
+  else
+  {
+    /* Keep one hand on the ladder while the other operates the sidearm. */
+    draw_climbing_arm(r, x, y, PLAYER_W, dir, 9.0f, 13.0f + bob, left_grip,
+                      left_hand_y, PLAYER_SLEEVE, PLAYER_FOREARM);
+    if (firing && p->shot_vertical != 0)
+    {
+      float hand_y = p->shot_vertical < 0 ? 7.0f : 20.0f;
+      sprite_limb_segment(r, x, y, PLAYER_W, dir, 17.0f, 13.0f + bob, 20.0f,
+                          hand_y, PLAYER_SLEEVE);
+      sprite_rect(r, x, y, PLAYER_W, dir, 18.0f, hand_y - 2.0f, 5.0f, 5.0f,
+                  COL_OUTLINE);
+      sprite_rect(r, x, y, PLAYER_W, dir, 19.0f, hand_y - 1.0f, 3.0f, 3.0f,
+                  PLAYER_FOREARM);
+      if (bazooka)
+      {
+        draw_vertical_bazooka_weapon(r, x - 1.0f, y - 1.0f, p->shot_vertical,
+                                     true);
+      }
+      else
+      {
+        float gun_y = p->shot_vertical < 0 ? 0.0f : 18.0f;
+        sprite_rect(r, x, y, PLAYER_W, dir, 18.0f, gun_y, 5.0f, 8.0f,
+                    PLAYER_GUNMETAL);
+        if (p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
+        {
+          float flash_y = p->shot_vertical < 0 ? -6.0f : 26.0f;
+          draw_muzzle_flash(r, x, y, PLAYER_W, dir, 20.0f, flash_y + 2.0f,
+                            FX_AMBER);
+          sprite_rect(r, x, y, PLAYER_W, dir, 17.0f, flash_y, 7.0f, 5.0f,
+                      FX_AMBER);
+          sprite_rect(r, x, y, PLAYER_W, dir, 19.0f,
+                      p->shot_vertical < 0 ? flash_y - 3.0f
+                                           : flash_y + 5.0f,
+                      3.0f, 3.0f, MUZZLE_HOT);
+        }
+      }
+    }
+    else
+    {
+      draw_climbing_arm(r, x, y, PLAYER_W, dir, 17.0f, 13.0f + bob,
+                        right_grip, right_hand_y, PLAYER_SLEEVE,
+                        PLAYER_FOREARM);
+    }
+  }
+
+  /* Seen from behind: the nape of the neck below the hair, and no face. */
+  draw_back_head(r, x, y, bob, climb * 0.15f);
+}
+
+/* ---- Side on -------------------------------------------------------- */
+
+/*
+ * What is in his near hand side on, which decides what the arm does as well as
+ * what is drawn in it.
+ */
+typedef enum
+{
+  PLAYER_PROP_NONE,
+  PLAYER_PROP_PISTOL_CARRIED,
+  PLAYER_PROP_KNIFE_CARRIED,
+  PLAYER_PROP_PISTOL_AIMED,
+  PLAYER_PROP_KNIFE_THRUST,
+  PLAYER_PROP_THROW,
+  PLAYER_PROP_BAZOOKA
+} PlayerProp;
+
+/* The pistol held out along the line of the arm, over the fist that holds it:
+   slide, the lit line along its top, and the grip under the hand. */
+static void draw_pistol_aimed(const ChuckView *v, ChuckPoint hand)
+{
+  chuck_view_rect(v, hand.x - 1.0f, hand.y - 2.8f, 8.6f, 3.4f, COL_OUTLINE);
+  chuck_view_rect(v, hand.x - 0.2f, hand.y - 0.2f, 2.4f, 3.2f, COL_OUTLINE);
+  chuck_view_rect(v, hand.x + 0.2f, hand.y - 0.2f, 1.6f, 2.4f, PLAYER_GRIP);
+  chuck_view_rect(v, hand.x, hand.y - 1.8f, 6.6f, 1.8f, PLAYER_GUNMETAL);
+  chuck_view_rect(v, hand.x, hand.y - 1.8f, 6.6f, 0.8f,
+                  fx_ramp(PLAYER_GUNMETAL).lit);
+}
+
+/*
+ * Something carried in the near hand while the arm is doing something else —
+ * swinging with the run, hanging at his side — pointed on along the forearm and
+ * tipped a little forward of it, the way a man carries a pistol or a blade low
+ * without thinking about it. It is the one thing that says what the next press
+ * of the trigger will do: shoot, or stab.
+ */
+static void draw_carried(const ChuckView *v, const ChuckPose *pose,
+                         PlayerProp prop)
+{
+  ChuckPoint e = pose->elbow[CHUCK_NEAR];
+  ChuckPoint h = pose->hand[CHUCK_NEAR];
+  float dx = h.x - e.x;
+  float dy = h.y - e.y;
+  float len = sqrtf(dx * dx + dy * dy);
+  if (len < 0.001f)
+    return;
+  dx = dx / len + 0.55f;
+  dy = dy / len;
+  len = sqrtf(dx * dx + dy * dy);
+  dx /= len;
+  dy /= len;
+
+  if (prop == PLAYER_PROP_PISTOL_CARRIED)
+  {
+    ChuckPoint a = {h.x + dx * 0.4f, h.y + dy * 0.4f};
+    ChuckPoint b = {h.x + dx * 4.4f, h.y + dy * 4.4f};
+    chuck_view_band(v, a, b, 3.0f, COL_OUTLINE);
+    chuck_view_band(v, a, b, 1.2f, PLAYER_GUNMETAL);
+  }
+  else
+  {
+    ChuckPoint a = {h.x + dx * 1.2f, h.y + dy * 1.2f};
+    ChuckPoint b = {h.x + dx * 4.6f, h.y + dy * 4.6f};
+    chuck_view_band(v, a, b, 2.2f, COL_OUTLINE);
+    chuck_view_band(v, a, b, 1.0f, KNIFE_STEEL);
+  }
+}
+
+static void draw_player_side(SDL_Renderer *r, const Player *p, float x,
+                             float y, float land_squash)
+{
+  int dir = p->facing;
+  bool moving = fabsf(p->vx) > 2.0f;
+  bool airborne = !p->on_ground;
+  bool knife = p->action_timer > 0.0f && p->knife_attacking;
+  /*
+   * The underarm throw, on the ground. Every throw sets `grenade_throwing`
+   * and `action_timer` exactly as a shot does, and for a long time the
+   * standing pose had no branch for it — so a grenade, a flash charge or a
+   * bolt thrown on the floor fell through to the sidearm, and was drawn as a
+   * pistol going off, muzzle flash and all, beside the thing he had just
+   * lobbed.
+   */
+  bool throwing = p->action_timer > 0.0f && p->grenade_throwing && !knife;
+  bool firing = p->action_timer > 0.0f && !knife && !throwing;
+  bool bazooka = (p->active_weapon == PLAYER_WEAPON_BAZOOKA &&
+                   p->bazooka_rockets > 0) ||
+                 (firing && p->bazooka_firing);
+  PlayerProp prop = PLAYER_PROP_NONE;
+  ChuckPose pose;
+
+  if (knife)
+    prop = PLAYER_PROP_KNIFE_THRUST;
+  else if (throwing)
+    prop = PLAYER_PROP_THROW;
+  else if (bazooka)
+    prop = PLAYER_PROP_BAZOOKA;
+  else if (firing)
+    prop = PLAYER_PROP_PISTOL_AIMED;
+  else if (p->active_weapon == PLAYER_WEAPON_PISTOL && p->bullets > 0)
+    prop = PLAYER_PROP_PISTOL_CARRIED;
+  else if (p->active_weapon == PLAYER_WEAPON_KNIFE ||
+           p->active_weapon == PLAYER_WEAPON_PISTOL)
+    /* With a dry clip or the knife picked the trigger stabs rather than
+       shoots, and the hand that used to carry the pistol and then carried
+       nothing was the only thing that could have said which. */
+    prop = PLAYER_PROP_KNIFE_CARRIED;
+
+  /*
+   * The legs and the body. The gait's place in its cycle comes from how far he
+   * has travelled rather than from a clock: a planted foot then stays exactly
+   * where it was put on the floor while the hips pass over it, which is the
+   * whole of the difference between running and skating. `facing` turns the
+   * distance into distance forward, and a turn is a pop either way because the
+   * sprite mirrors on it.
+   */
+  if (airborne)
+  {
+    chuck_pose_air(&pose, -p->vy / PLAYER_JUMP_SPEED);
+  }
+  else if (moving)
+  {
+    /* Hauling a body is a walk: nobody runs with a man's collar in his fist. */
+    ChuckGait gait = p->dragging ? CHUCK_GAIT_WALK : CHUCK_GAIT_RUN;
+    chuck_pose_gait(&pose, gait,
+                    chuck_gait_cycle(gait, p->x * (float)p->facing));
+  }
+  else
+  {
+    chuck_pose_stand(&pose, sinf(p->anim_time * 2.0f));
+  }
+  /*
+   * Squash. Two or three pixels is all a thirty-two pixel figure can take
+   * before it turns into rubber, and it is the difference between a jump with
+   * weight and one that teleports. The hips drop with the feet left where they
+   * are, so the knees take it rather than the whole figure shrinking.
+   */
+  if (land_squash > 0.0f)
+    chuck_pose_sink(&pose, land_squash * 2.8f);
+
+  /* An arm doing something swings the other one back against it — which is
+     half of what makes a throw read as a throw. */
+  if (prop == PLAYER_PROP_KNIFE_THRUST)
+  {
+    pose.arm_swing[CHUCK_FAR] = -0.75f;
+    pose.arm_bend[CHUCK_FAR] = 0.9f;
+  }
+  else if (prop == PLAYER_PROP_THROW)
+  {
+    pose.arm_swing[CHUCK_FAR] = -1.15f;
+    pose.arm_bend[CHUCK_FAR] = 0.45f;
+  }
+  chuck_pose_solve(&pose);
+
+  ChuckPoint sh = pose.shoulder[CHUCK_NEAR];
+  ChuckHand near_hand = CHUCK_HAND_OPEN;
+  ChuckHand far_hand = CHUCK_HAND_OPEN;
+  float recoil = p->action_timer > 0.075f ? -1.0f : 0.0f;
+  float bazooka_lx = 12.5f;
+  float bazooka_ly = sh.y - 6.5f;
+
+  switch (prop)
+  {
+  case PLAYER_PROP_KNIFE_THRUST:
+  {
+    float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f ? 2.0f
+                                                                      : 0.0f;
+    chuck_pose_reach(&pose, CHUCK_NEAR,
+                     (ChuckPoint){sh.x + 6.2f + thrust, sh.y + 1.2f});
+    near_hand = CHUCK_HAND_GRIP;
+    break;
+  }
+  case PLAYER_PROP_THROW:
+  {
+    /* The throw leaves the hand the instant it is pressed (the projectile is
+       its own sprite from that frame on), so what the figure shows is the
+       release and the follow-through: the arm coming up through the front of
+       the swing, and an open hand. */
+    float follow = 1.0f - p->action_timer / PLAYER_THROW_ACTION_TIME;
+    follow = follow < 0.0f ? 0.0f : (follow > 1.0f ? 1.0f : follow);
+    ChuckPoint hand = {sh.x + 4.8f + follow * 2.4f, sh.y + 7.0f - follow * 8.0f};
+    if (p->shot_vertical < 0)
+      hand = (ChuckPoint){sh.x + 2.0f, sh.y - 8.4f - follow * 0.5f};
+    else if (p->shot_vertical > 0)
+      hand = (ChuckPoint){sh.x + 6.4f, sh.y + 6.2f};
+    chuck_pose_reach(&pose, CHUCK_NEAR, hand);
+    break;
+  }
+  case PLAYER_PROP_BAZOOKA:
+    /* The tube on the shoulder, the near hand on its grip and the far one
+       steadying it underneath further forward. */
+    chuck_pose_reach(&pose, CHUCK_NEAR,
+                     (ChuckPoint){bazooka_lx + 7.2f, bazooka_ly + 9.8f});
+    chuck_pose_reach(&pose, CHUCK_FAR,
+                     (ChuckPoint){bazooka_lx + 14.0f, bazooka_ly + 8.8f});
+    near_hand = CHUCK_HAND_GRIP;
+    far_hand = CHUCK_HAND_GRIP;
+    break;
+  case PLAYER_PROP_PISTOL_AIMED:
+    /* Out along the line the round will take, the far hand coming up under
+       the near one: two hands on a pistol is what a man trained to use one
+       does with it. */
+    chuck_pose_reach(&pose, CHUCK_NEAR,
+                     (ChuckPoint){sh.x + 8.2f + recoil, sh.y + 0.8f});
+    chuck_pose_reach(&pose, CHUCK_FAR,
+                     (ChuckPoint){sh.x + 7.2f + recoil, sh.y + 2.0f});
+    near_hand = CHUCK_HAND_GRIP;
+    far_hand = CHUCK_HAND_GRIP;
+    break;
+  case PLAYER_PROP_PISTOL_CARRIED:
+  case PLAYER_PROP_KNIFE_CARRIED:
+    near_hand = CHUCK_HAND_GRIP;
+    break;
+  case PLAYER_PROP_NONE:
+    break;
+  }
+
+  ChuckView view = player_view(r, x, y, dir);
+  chuck_draw_arm(&view, &pose, CHUCK_FAR, far_hand);
+  chuck_draw_legs(&view, &pose);
+  /* The launcher rides on the far shoulder, so the body and the head go on in
+     front of it: laid on the near one it sat across his face, and the one
+     thing a player aiming a rocket needs to see is which way the man is
+     looking. */
+  if (prop == PLAYER_PROP_BAZOOKA)
+    draw_bazooka_weapon(r, x, y, PLAYER_W, dir, bazooka_lx, bazooka_ly,
+                        p->bazooka_firing);
+  chuck_draw_torso(&view, &pose);
+  chuck_draw_head(&view, &pose, fx_blinking(p->anim_time, 0x1u));
+
+  switch (prop)
+  {
+  case PLAYER_PROP_BAZOOKA:
+    chuck_draw_arm(&view, &pose, CHUCK_NEAR, near_hand);
+    break;
+  case PLAYER_PROP_PISTOL_AIMED:
+  {
+    ChuckPoint hand = pose.hand[CHUCK_NEAR];
+    draw_pistol_aimed(&view, hand);
+    chuck_draw_arm(&view, &pose, CHUCK_NEAR, near_hand);
+    if (p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
+    {
+      float mx = hand.x + 7.0f;
+      float my = hand.y - 1.0f;
+      draw_muzzle_flash(r, x, y, PLAYER_W, dir, mx + 1.5f, my, FX_AMBER);
+      chuck_view_rect(&view, mx, my - 3.0f, 3.5f, 5.0f, FX_AMBER);
+      chuck_view_rect(&view, mx + 2.5f, my - 1.5f, 2.5f, 3.0f, MUZZLE_HOT);
+    }
+    break;
+  }
+  case PLAYER_PROP_KNIFE_THRUST:
+  {
+    ChuckPoint hand = pose.hand[CHUCK_NEAR];
+    chuck_draw_arm(&view, &pose, CHUCK_NEAR, near_hand);
+    chuck_view_rect(&view, hand.x + 1.6f, hand.y - 2.0f, 7.4f, 3.2f,
+                    COL_OUTLINE);
+    chuck_view_rect(&view, hand.x + 1.6f, hand.y - 1.4f, 1.2f, 2.2f,
+                    KNIFE_HANDLE);
+    chuck_view_rect(&view, hand.x + 2.8f, hand.y - 1.0f, 5.2f, 1.4f,
+                    KNIFE_STEEL);
+    chuck_view_rect(&view, hand.x + 8.0f, hand.y - 0.6f, 1.0f, 0.8f,
+                    KNIFE_TIP);
+    break;
+  }
+  case PLAYER_PROP_PISTOL_CARRIED:
+  case PLAYER_PROP_KNIFE_CARRIED:
+    draw_carried(&view, &pose, prop);
+    chuck_draw_arm(&view, &pose, CHUCK_NEAR, near_hand);
+    break;
+  case PLAYER_PROP_THROW:
+  case PLAYER_PROP_NONE:
+    chuck_draw_arm(&view, &pose, CHUCK_NEAR, near_hand);
+    break;
+  }
 }
 
 void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
                         float cam_x, float oy, bool hacking, float hacking_time,
                         float land_squash)
 {
-  float x = p->x - cam_x;
-  float y = p->y + oy;
-  int dir = p->facing;
+  /* Whole pixels, so every part of him moves as one piece: a sprite whose
+     parts each round their own fraction of a pixel shimmers as it travels. */
+  float x = floorf(p->x - cam_x);
+  float y = floorf(p->y + oy);
+  bool climbing = p->on_ladder || p->facade_climbing;
 
   if (hacking)
   {
-    /* Both special poses get the same floor-anchored pool as the standing
+    /* Every special pose gets the same floor-anchored pool as the standing
        figure; a pose is not a reason for the shadow to jump to the boots. */
     npc_contact_shadow(r, level, p->x + PLAYER_W * 0.5f, p->y + PLAYER_H,
                        11.0f, 195, cam_x, oy);
@@ -556,51 +1430,6 @@ void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
     return;
   }
 
-  float phase = p->anim_time * 3.0f;
-  bool moving = fabsf(p->vx) > 2.0f;
-  bool climbing = p->on_ladder || p->facade_climbing;
-  /* A back-facing ladder pose must not inherit or mirror the last walk direction. */
-  if (climbing)
-    dir = 1;
-  bool airborne = !p->on_ground && !climbing;
-  bool knife = p->action_timer > 0.0f && p->knife_attacking;
-  bool grenade = p->action_timer > 0.0f && p->grenade_throwing;
-  bool firing = p->action_timer > 0.0f && !knife;
-  bool bazooka = (p->active_weapon == PLAYER_WEAPON_BAZOOKA &&
-                   p->bazooka_rockets > 0) ||
-                 (firing && p->bazooka_firing);
-  bool walking = moving && p->on_ground && !climbing;
-  /* Across the rungs rather than up them. Vertical travel wins when both are
-     held: that is the part of the move the player is watching, and a pose
-     trying to say both at once says neither. */
-  bool shuffling = climbing && moving && fabsf(p->vy) <= 1.0f;
-  float shuffle_side = shuffling ? (p->vx > 0.0f ? 1.0f : -1.0f) : 0.0f;
-  float cycle = phase * (1.0f / 6.28318531f);
-  float step = walking ? sinf(phase) : 0.0f;
-  float bob = walking ? fabsf(step) * 0.55f
-                      : sinf(p->anim_time * 2.0f) * 0.35f;
-  /*
-   * Squash and stretch. Two or three pixels is all a thirty-two pixel figure
-   * can take before it turns into rubber, and it is the difference between a
-   * jump with weight and one that teleports: the body draws out while it is in
-   * the air and compresses into the frames just after the boots land.
-   */
-  float air_stretch = airborne ? fminf(1.0f, fabsf(p->vy) / 340.0f) : 0.0f;
-  float crouch = land_squash * 2.8f - air_stretch * 1.3f;
-  /* Walking is a body carried forward by its legs, so the torso leads them. */
-  float lean = walking ? 1.0f : 0.0f;
-  float arm_swing = -step;
-  float climb = 0.0f;
-  /* How far each side has travelled across the ladder this beat, signed in
-     screen space. Shared with the arms below, which grip on the same beat as
-     the boot on their own side steps. */
-  float left_step = 0.0f;
-  float right_step = 0.0f;
-  float left_grip = 6.5f;
-  float right_grip = 19.5f;
-
-  bob += crouch;
-
   float shadow_y;
   float shadow_lift;
   if (level != NULL &&
@@ -611,534 +1440,10 @@ void draw_player(SDL_Renderer *r, const Player *p, const Level *level,
                       11.0f, shadow_lift, 205);
   }
 
-  /* The weight goes across as well as the limbs: the body hangs back off the
-     hand that is reaching and rides forward over the pair that gather. A pixel
-     and a half of it is the difference between someone shifting across a ladder
-     and two limbs waving on a figure travelling on rails. The shadow is already
-     down, so it stays with the floor. */
-  if (shuffling)
-    x -= shuffle_side * sinf(phase) * 0.7f;
-
   if (climbing)
-  {
-    float beat = sinf(phase);
-    /*
-     * A traverse is not a climb, and one beat is all that separates the two.
-     * Climbing spends it vertically: one hand and the opposite boot rise while
-     * the other pair hold. Going sideways spends the same beat across the
-     * rungs — the leading hand and boot reach out on the first half, the
-     * trailing pair gather across on the second — so the alternation stops and
-     * nothing is pumping up and down while the figure travels level.
-     */
-    float reach = shuffle_side * fmaxf(0.0f, beat) * 3.0f;
-    float gather = shuffle_side * fmaxf(0.0f, -beat) * 3.0f;
-    left_step = shuffle_side > 0.0f ? gather : reach;
-    right_step = shuffle_side > 0.0f ? reach : gather;
-    climb = shuffling ? 0.0f : beat * 4.0f;
-    /* A boot that slides along a rung is a boot with no weight on it, so the
-       one that is moving clears it first. */
-    float left_lift = fabsf(left_step) * 0.5f;
-    float right_lift = fabsf(right_step) * 0.5f;
-    /* Each hand travels with the boot below it, but stays on its own side of
-       the shoulders: a grip that crossed the body would swap the elbow flare
-       mid-beat and pop. Reaching outward is free, gathering inward is damped. */
-    left_grip += left_step > 0.0f ? left_step * 0.4f : left_step;
-    right_grip += right_step < 0.0f ? right_step * 0.4f : right_step;
-
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + left_step, 13.0f - climb, 5.0f, 10.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 13.0f + right_step, 13.0f + climb, 5.0f, 10.0f, COL_OUTLINE);
-    /* Seen from behind the legs are still trousers, and still darker than the
-       jacket above them — drawn at the torso's own value they turned the whole
-       climb into one blue column. */
-    sprite_form(r, x, y, PLAYER_W, dir, 9.0f + left_step, 14.0f - climb, 3.0f, 8.0f, (SDL_Color){30, 58, 84, 255});
-    sprite_form(r, x, y, PLAYER_W, dir, 14.0f + right_step, 14.0f + climb, 3.0f, 8.0f, (SDL_Color){30, 58, 84, 255});
-    /* Boots seen from behind, one per leg, so the climb has feet on the rungs
-       rather than two blank shanks ending in the dark. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + left_step, 23.0f + climb - left_lift, 5.0f, 8.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 13.0f + right_step, 23.0f - climb - right_lift, 5.0f, 8.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f + left_step, 24.0f + climb - left_lift, 3.0f, 5.0f,
-                (SDL_Color){44, 51, 63, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 14.0f + right_step, 24.0f - climb - right_lift, 3.0f, 5.0f,
-                (SDL_Color){44, 51, 63, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 9.0f + left_step, 24.0f + climb - left_lift, 3.0f, 1.0f,
-                (SDL_Color){63, 72, 86, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 14.0f + right_step, 24.0f - climb - right_lift, 3.0f, 1.0f,
-                (SDL_Color){63, 72, 86, 255});
-    bob = fabsf(beat) * 0.7f;
-  }
+    draw_player_climbing(r, p, x, y);
   else
-  {
-    /*
-     * Trousers are a long way below the jacket in value, and that gap is the
-     * figure's whole read at this size. A figure whose legs sit a few steps
-     * under its torso in the same hue is one blue smear with a belt drawn
-     * across it; drop the legs into the dark and the jacket becomes the mass
-     * the eye lands on — which is exactly how Chuck is built in the cutscenes
-     * and in the rear-facing terminal pose.
-     */
-    const SDL_Color trouser_rear = {21, 40, 59, 255};
-    const SDL_Color trouser_front = {29, 55, 80, 255};
-    /* Boots, not holes. A near-black shoe under a near-black outline fuses the
-       two feet and the contact shadow into one slab, and a figure standing on a
-       slab has no feet at all. They stay a step under the trousers so the ankle
-       still breaks; the lit toe cap is what carries them back out of the dark. */
-    const SDL_Color boot_rear = {26, 31, 40, 255};
-    const SDL_Color boot_front = {34, 39, 49, 255};
-
-    if (walking)
-    {
-      draw_walking_leg(r, x, y, PLAYER_W, dir, 12.0f, 21.0f + bob,
-                       cycle + 0.5f, 3.4f, trouser_rear, boot_rear);
-      draw_walking_leg(r, x, y, PLAYER_W, dir, 14.0f, 21.0f + bob,
-                       cycle, 3.4f, trouser_front, boot_front);
-    }
-    else if (airborne)
-    {
-      /* Two short rects of equal length read as a figure standing on nothing.
-         In the air the trailing leg tucks under and the leading one reaches,
-         and the reach opens out as he starts to come down for the landing. */
-      float tuck = p->vy < 0.0f ? 2.0f : 0.0f;
-      float reach = p->vy > 40.0f ? 1.5f : 0.0f;
-
-      sprite_limb_segment(r, x, y, PLAYER_W, dir, 12.0f, 21.0f + bob,
-                          9.0f, 25.0f - tuck, trouser_rear);
-      sprite_limb_segment(r, x, y, PLAYER_W, dir, 9.0f, 25.0f - tuck,
-                          12.5f, 28.0f - tuck * 1.5f, trouser_rear);
-      sprite_shoe(r, x, y, PLAYER_W, dir, 12.5f, 28.0f - tuck * 1.5f,
-                  boot_rear);
-      sprite_limb_segment(r, x, y, PLAYER_W, dir, 14.0f, 21.0f + bob,
-                          17.0f, 25.5f, trouser_front);
-      sprite_limb_segment(r, x, y, PLAYER_W, dir, 17.0f, 25.5f,
-                          17.5f + reach, 30.0f - tuck * 0.5f, trouser_front);
-      sprite_shoe(r, x, y, PLAYER_W, dir, 17.5f + reach,
-                  30.0f - tuck * 0.5f, boot_front);
-    }
-    else
-    {
-      /* Standing. The legs carry the squash: their tops travel down with the
-         body while the soles stay on the floor. */
-      draw_standing_legs(r, x, y, PLAYER_W, dir, 9.0f, 14.0f,
-                         22.0f + fmaxf(0.0f, crouch),
-                         trouser_rear, trouser_front, boot_front);
-    }
-  }
-
-  /* Rear arm passes behind the torso and counter-swings against the legs. */
-  if (!climbing && !firing && !knife)
-  {
-    draw_walking_arm(r, x, y, PLAYER_W, dir, 14.0f, 13.0f + bob,
-                     -arm_swing, FX_HERO,
-                     (SDL_Color){189, 132, 91, 255});
-  }
-
-  /* Torso, webbing and shoulder. The jacket is shaded as a solid first; only
-     then does the tailoring go on it. Two lines are the whole of it — the
-     lapel down the leading edge and the hem where the jacket ends — because a
-     thirteen-pixel chest that already carries a crown, a shoulder plate, the
-     webbing and a belt has no room left for a third. */
-  sprite_body(r, x, y, PLAYER_W, dir, 7.0f + lean, 11.0f + bob, 13.0f, 12.0f,
-              FX_HERO, COL_OUTLINE, 2, 1);
-  if (climbing)
-  {
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 13.0f + bob, 4.0f, 8.0f, (SDL_Color){48, 125, 157, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 16.0f, 13.0f + bob, 4.0f, 8.0f, (SDL_Color){48, 125, 157, 255});
-    sprite_rect(r, x, y, PLAYER_W, dir, 12.0f, 13.0f + bob, 3.0f, 10.0f, (SDL_Color){21, 54, 76, 255});
-  }
-  else
-  {
-    /* A shoulder is the top of a torso, not a stripe down the length of it. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 13.0f + bob, 10.0f, 2.0f,
-                FX_HERO_LT);
-    /* The webbing runs across the chest from the near shoulder to the far hip.
-       Two pixels of it standing vertically is a stripe; on the diagonal it is
-       a strap, and it is the one line that says this jacket is rigged for a
-       job rather than worn to one. */
-    sprite_segment(r, x, y, PLAYER_W, dir, 18.0f + lean, 13.0f + bob,
-                   9.0f + lean, 21.0f + bob, 3, (SDL_Color){21, 54, 76, 255});
-    sprite_segment_shifted(r, x, y, PLAYER_W, dir, 18.0f + lean, 13.0f + bob,
-                           9.0f + lean, 21.0f + bob, 1, 1.0f,
-                           (SDL_Color){46, 96, 126, 255});
-    /* Lapel notch, so the jacket has a front to it. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 17.0f + lean, 14.0f + bob, 2.0f, 4.0f,
-                (SDL_Color){30, 76, 106, 255});
-  }
-  sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 20.0f + bob, 11.0f, 2.0f,
-              FX_AMBER);
-  sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 20.0f + bob, 11.0f, 1.0f,
-              (SDL_Color){255, 214, 128, 255});
-  /* The hem of the jacket, one dark line so the two garments part company. It
-     follows the taper of the last row rather than running the full width. */
-  sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 22.0f + bob, 11.0f, 1.0f,
-              (SDL_Color){18, 46, 66, 255});
-
-  if (climbing)
-  {
-    if (knife)
-    {
-      /* One hand stays on the ladder while the other follows the selected
-         attack direction. */
-      if (p->shot_vertical != 0)
-      {
-        float hand_y = p->shot_vertical < 0 ? 6.0f : 22.0f;
-        float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
-                           ? 2.0f
-                           : 0.0f;
-        draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                          8.0f, 14.0f + bob, left_grip, 5.0f - climb,
-                          (SDL_Color){42, 118, 153, 255},
-                          (SDL_Color){209, 154, 105, 255});
-        sprite_limb_segment(r, x, y, PLAYER_W, dir,
-                            18.0f, 14.0f + bob, 21.0f, hand_y,
-                            (SDL_Color){42, 118, 153, 255});
-        sprite_rect(r, x, y, PLAYER_W, dir,
-                    19.0f, hand_y - 2.0f, 5.0f, 5.0f, COL_OUTLINE);
-        sprite_rect(r, x, y, PLAYER_W, dir,
-                    20.0f, hand_y - 1.0f, 3.0f, 3.0f,
-                    (SDL_Color){209, 154, 105, 255});
-        float handle_y = p->shot_vertical < 0
-                             ? hand_y - 6.0f - thrust
-                             : hand_y + 2.0f + thrust;
-        float blade_y = p->shot_vertical < 0
-                            ? handle_y - 8.0f
-                            : handle_y + 5.0f;
-        sprite_rect(r, x, y, PLAYER_W, dir,
-                    19.0f, handle_y, 5.0f, 6.0f,
-                    (SDL_Color){55, 43, 31, 255});
-        sprite_rect(r, x, y, PLAYER_W, dir,
-                    20.0f, blade_y, 3.0f, 8.0f,
-                    (SDL_Color){205, 221, 225, 255});
-      }
-      else
-      {
-        /* The rear-facing ladder pose is fixed, so only the attacking arm is
-           mirrored for a sideways stab. */
-        if (p->facing > 0)
-        {
-          draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                            8.0f, 14.0f + bob, left_grip, 5.0f - climb,
-                            (SDL_Color){42, 118, 153, 255},
-                            (SDL_Color){209, 154, 105, 255});
-        }
-        else
-        {
-          draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                            18.0f, 14.0f + bob, right_grip, 5.0f + climb,
-                            (SDL_Color){42, 118, 153, 255},
-                            (SDL_Color){209, 154, 105, 255});
-        }
-
-        int knife_dir = p->facing;
-        float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
-                           ? 2.0f
-                           : 0.0f;
-        sprite_limb_segment(r, x, y, PLAYER_W, knife_dir,
-                            17.0f, 14.0f + bob,
-                            21.0f + thrust, 15.0f + bob,
-                            (SDL_Color){42, 118, 153, 255});
-        sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                    20.0f + thrust, 13.0f + bob,
-                    6.0f, 5.0f, COL_OUTLINE);
-        sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                    21.0f + thrust, 14.0f + bob, 5.0f, 3.0f,
-                    (SDL_Color){209, 154, 105, 255});
-        sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                    25.0f + thrust, 13.0f + bob, 3.0f, 5.0f,
-                    (SDL_Color){55, 43, 31, 255});
-        sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                    28.0f + thrust, 14.0f + bob, 6.0f, 2.0f,
-                    (SDL_Color){205, 221, 225, 255});
-        sprite_rect(r, x, y, PLAYER_W, knife_dir,
-                    34.0f + thrust, 14.5f + bob, 1.0f, 1.0f,
-                    (SDL_Color){241, 247, 239, 255});
-      }
-    }
-    else if (grenade)
-    {
-      draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                        8.0f, 14.0f + bob, left_grip, 5.0f - climb,
-                        (SDL_Color){42, 118, 153, 255},
-                        (SDL_Color){209, 154, 105, 255});
-      if (p->shot_vertical != 0)
-      {
-        float hand_y = p->shot_vertical < 0 ? 5.0f : 22.0f;
-        sprite_limb_segment(r, x, y, PLAYER_W, dir,
-                            18.0f, 14.0f + bob, 21.0f, hand_y,
-                            (SDL_Color){42, 118, 153, 255});
-        draw_thrown_in_hand(r, p, x + 17.0f,
-                            p->shot_vertical < 0 ? y - 5.0f : y + 23.0f);
-      }
-      else
-      {
-        int throw_dir = p->facing;
-        sprite_limb_segment(r, x, y, PLAYER_W, throw_dir,
-                            17.0f, 14.0f + bob, 23.0f, 10.0f + bob,
-                            (SDL_Color){42, 118, 153, 255});
-        draw_thrown_in_hand(r, p,
-                            throw_dir > 0 ? x + PLAYER_W + 2.0f
-                                          : x - GRENADE_W - 2.0f,
-                            y + 5.0f + bob);
-      }
-    }
-    else if (firing && p->shot_vertical == 0)
-    {
-      /* Horizontal ladder fire uses the stored facing direction while the
-         body remains turned toward the ladder. */
-      if (p->facing > 0)
-      {
-        draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                          8.0f, 14.0f + bob, left_grip, 5.0f - climb,
-                          (SDL_Color){42, 118, 153, 255},
-                          (SDL_Color){209, 154, 105, 255});
-      }
-      else
-      {
-        draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                          18.0f, 14.0f + bob, right_grip, 5.0f + climb,
-                          (SDL_Color){42, 118, 153, 255},
-                          (SDL_Color){209, 154, 105, 255});
-      }
-
-      int gun_dir = p->facing;
-      float recoil = p->action_timer > 0.075f ? -1.0f : 0.0f;
-      sprite_limb_segment(r, x, y, PLAYER_W, gun_dir,
-                          17.0f, 14.0f + bob,
-                          22.0f + recoil, 15.0f + bob,
-                          (SDL_Color){42, 118, 153, 255});
-      if (bazooka)
-      {
-        draw_bazooka_weapon(r, x, y, PLAYER_W, gun_dir,
-                            14.0f, 8.0f + bob, true);
-      }
-      else
-      {
-        sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                    21.0f + recoil, 13.0f + bob, 7.0f, 5.0f, COL_OUTLINE);
-        sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                    22.0f + recoil, 14.0f + bob, 6.0f, 3.0f,
-                    (SDL_Color){209, 154, 105, 255});
-        sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                    26.0f + recoil, 12.0f + bob, 8.0f, 4.0f,
-                    (SDL_Color){31, 38, 43, 255});
-        sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                    28.0f + recoil, 16.0f + bob, 3.0f, 5.0f,
-                    (SDL_Color){44, 49, 49, 255});
-        if (p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
-        {
-          draw_muzzle_flash(r, x, y, PLAYER_W, gun_dir,
-                            36.0f + recoil, 14.0f + bob, FX_AMBER);
-          sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                      34.0f + recoil, 11.0f + bob, 4.0f, 6.0f, FX_AMBER);
-          sprite_rect(r, x, y, PLAYER_W, gun_dir,
-                      38.0f + recoil, 13.0f + bob, 3.0f, 3.0f,
-                      (SDL_Color){255, 242, 184, 255});
-        }
-      }
-    }
-    else
-    {
-      /* Keep one hand on the ladder while the other operates the sidearm. */
-      draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                        8.0f, 14.0f + bob, left_grip, 5.0f - climb,
-                        (SDL_Color){42, 118, 153, 255},
-                        (SDL_Color){209, 154, 105, 255});
-      if (firing && p->shot_vertical != 0)
-      {
-        float hand_y = p->shot_vertical < 0 ? 8.0f : 20.0f;
-        sprite_limb_segment(r, x, y, PLAYER_W, dir,
-                            18.0f, 14.0f + bob, 21.0f, hand_y,
-                            (SDL_Color){42, 118, 153, 255});
-        sprite_rect(r, x, y, PLAYER_W, dir,
-                    19.0f, hand_y - 2.0f, 5.0f, 5.0f, COL_OUTLINE);
-        sprite_rect(r, x, y, PLAYER_W, dir,
-                    20.0f, hand_y - 1.0f, 3.0f, 3.0f,
-                    (SDL_Color){209, 154, 105, 255});
-        if (bazooka)
-        {
-          draw_vertical_bazooka_weapon(r, x, y, p->shot_vertical, true);
-        }
-        else
-        {
-          float gun_y = p->shot_vertical < 0 ? 1.0f : 18.0f;
-          sprite_rect(r, x, y, PLAYER_W, dir,
-                      19.0f, gun_y, 5.0f, 8.0f,
-                      (SDL_Color){31, 38, 43, 255});
-          if (p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
-          {
-            float flash_y = p->shot_vertical < 0 ? -5.0f : 26.0f;
-            draw_muzzle_flash(r, x, y, PLAYER_W, dir,
-                              21.0f, flash_y + 2.0f, FX_AMBER);
-            sprite_rect(r, x, y, PLAYER_W, dir,
-                        18.0f, flash_y, 7.0f, 5.0f, FX_AMBER);
-            sprite_rect(r, x, y, PLAYER_W, dir,
-                        20.0f,
-                        p->shot_vertical < 0
-                            ? flash_y - 3.0f
-                            : flash_y + 5.0f,
-                        3.0f, 3.0f, (SDL_Color){255, 242, 184, 255});
-          }
-        }
-      }
-      else
-      {
-        draw_climbing_arm(r, x, y, PLAYER_W, dir,
-                          18.0f, 14.0f + bob, right_grip, 5.0f + climb,
-                          (SDL_Color){42, 118, 153, 255},
-                          (SDL_Color){209, 154, 105, 255});
-      }
-    }
-  }
-
-  /* Face the ladder while climbing; otherwise keep the normal side profile. */
-  if (climbing)
-  {
-    /* Seen from behind: the nape of the neck below the hair, and no face. */
-    sprite_body(r, x, y, PLAYER_W, dir, 10.0f, 2.0f + bob, 8.0f, 9.0f,
-                FX_SKIN, COL_OUTLINE, 2, 2);
-    sprite_mass(r, x, y, PLAYER_W, dir, 10.0f, 2.0f + bob, 8.0f, 7.0f,
-                FX_HAIR, 2, 0);
-    sprite_rect(r, x, y, PLAYER_W, dir, 12.0f, 2.0f + bob, 4.0f, 1.0f,
-                PLAYER_HAIR_LT);
-    sprite_rect(r, x, y, PLAYER_W, dir, 11.0f, 9.0f + bob, 6.0f, 1.0f,
-                FX_SKIN_DK);
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 4.0f + bob, 12.0f, 2.0f, FX_RED);
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f, 4.0f + bob, 12.0f, 1.0f,
-                (SDL_Color){246, 104, 88, 255});
-  }
-  else
-  {
-    /*
-     * The head, in profile. The headband is the identity and stays exactly
-     * where it always was; the rest is the small amount of modelling a face
-     * needs to stop being a swatch with an eye on it — a lit cheek, the shadow
-     * the fringe throws over the brow, a nose that breaks the leading edge, a
-     * jaw that steps back into shade, and an eye that closes now and then.
-     */
-    /* The face first, coming to a chin, and the hair over the top of it. The
-       hair is its own outlined dome rather than a rectangle laid across the
-       skull — a square block of hair puts the corners of the head straight back
-       however round the head under it is — and it goes on second so its fill
-       covers the face's own top outline row instead of being cut by it. */
-    sprite_body(r, x, y, PLAYER_W, dir, 10.0f + lean, 4.0f + bob, 8.0f, 7.0f,
-                FX_SKIN, COL_OUTLINE, 0, 2);
-    sprite_mass(r, x, y, PLAYER_W, dir, 9.0f + lean, 0.0f + bob, 10.0f, 5.0f,
-                COL_OUTLINE, 3, 0);
-    sprite_mass(r, x, y, PLAYER_W, dir, 10.0f + lean, 1.0f + bob, 8.0f, 4.0f,
-                FX_HAIR, 2, 0);
-    sprite_rect(r, x, y, PLAYER_W, dir, 12.0f + lean, 1.0f + bob, 4.0f, 1.0f,
-                PLAYER_HAIR_LT);
-    /* The back of the skull stays hair the whole way down to the nape. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 10.0f + lean, 6.0f + bob, 2.0f, 3.0f,
-                FX_HAIR);
-    /* The brow the fringe shades, and the jaw stepping back under the cheek —
-       drawn with the face's own taper so the shading cannot square it off. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 12.0f + lean, 6.0f + bob, 6.0f, 1.0f,
-                (SDL_Color){181, 127, 87, 255});
-    sprite_mass(r, x, y, PLAYER_W, dir, 10.0f + lean, 9.0f + bob, 8.0f, 2.0f,
-                FX_SKIN_DK, 1, 2);
-    /* The nose. A profile without one is a rectangle with an eye in it, and to
-       be a profile it has to break the head's outline rather than sit inside
-       it — so the skin steps one pixel out and the outline moves out in front
-       of it, leaving a bridge above and the shadow of the tip below. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 18.0f + lean, 6.0f + bob, 2.0f, 4.0f,
-                COL_OUTLINE);
-    sprite_rect(r, x, y, PLAYER_W, dir, 17.0f + lean, 7.0f + bob, 2.0f, 2.0f,
-                FX_SKIN);
-    if (fx_blinking(p->anim_time, 0x1u))
-    {
-      sprite_rect(r, x, y, PLAYER_W, dir, 14.0f + lean, 8.0f + bob, 3.0f, 1.0f,
-                  (SDL_Color){110, 58, 40, 255});
-    }
-    else
-    {
-      /* Mostly pupil, with the white behind it: the dark is what the eye is,
-         and the pupil sits at the front of it rather than in the middle, since
-         a profile with the dark centred reads as two eyes seen head-on. The
-         white is kept under the value of the lit cheek beside it — three pixels
-         of near-cream on an eight pixel face is the brightest thing on the
-         figure, and the eye ends up reading as the whole head. */
-      sprite_rect(r, x, y, PLAYER_W, dir, 14.0f + lean, 7.0f + bob, 3.0f, 2.0f,
-                  (SDL_Color){166, 176, 164, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir, 15.0f + lean, 7.0f + bob, 2.0f, 2.0f,
-                  (SDL_Color){38, 50, 60, 255});
-    }
-    /* A closed mouth, one pixel deep and inside the jaw rather than on the
-       outline below it. Any more of it reads as a grimace. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 13.0f + lean, 10.0f + bob, 3.0f, 1.0f,
-                (SDL_Color){126, 66, 50, 255});
-    /* The headband crosses both the hairline and the brow, so it goes on last
-       over the two of them. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 4.0f + bob, 12.0f, 2.0f,
-                FX_RED);
-    sprite_rect(r, x, y, PLAYER_W, dir, 8.0f + lean, 4.0f + bob, 12.0f, 1.0f,
-                (SDL_Color){246, 104, 88, 255});
-    /* The loose tail of it, trailing behind the run. */
-    sprite_rect(r, x, y, PLAYER_W, dir, 5.0f + lean - fabsf(step) * 0.8f,
-                5.0f + bob, 4.0f, 2.0f, (SDL_Color){166, 38, 42, 255});
-  }
-
-  if (!climbing)
-  {
-    if (knife)
-    {
-      float thrust = p->action_timer > PLAYER_KNIFE_ACTION_TIME * 0.5f
-                         ? 2.0f
-                         : 0.0f;
-      sprite_limb_segment(r, x, y, PLAYER_W, dir,
-                          17.0f, 14.0f + bob,
-                          21.0f + thrust, 15.0f + bob,
-                          (SDL_Color){42, 118, 153, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir,
-                  20.0f + thrust, 13.0f + bob, 6.0f, 5.0f, COL_OUTLINE);
-      sprite_rect(r, x, y, PLAYER_W, dir,
-                  21.0f + thrust, 14.0f + bob, 5.0f, 3.0f,
-                  (SDL_Color){209, 154, 105, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir,
-                  25.0f + thrust, 13.0f + bob, 3.0f, 5.0f,
-                  (SDL_Color){55, 43, 31, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir,
-                  28.0f + thrust, 14.0f + bob, 6.0f, 2.0f,
-                  (SDL_Color){205, 221, 225, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir,
-                  34.0f + thrust, 14.5f + bob, 1.0f, 1.0f,
-                  (SDL_Color){241, 247, 239, 255});
-    }
-    else if (bazooka)
-    {
-      sprite_limb_segment(r, x, y, PLAYER_W, dir,
-                          17.0f, 14.0f + bob,
-                          22.0f, 15.0f + bob,
-                          (SDL_Color){42, 118, 153, 255});
-      draw_bazooka_weapon(r, x, y, PLAYER_W, dir,
-                          13.0f, 8.0f + bob, p->bazooka_firing);
-    }
-    else if (firing)
-    {
-      float recoil = p->action_timer > 0.075f ? -1.0f : 0.0f;
-      sprite_rect(r, x, y, PLAYER_W, dir, 17.0f + recoil, 13.0f + bob, 8.0f, 5.0f, COL_OUTLINE);
-      sprite_rect(r, x, y, PLAYER_W, dir, 18.0f + recoil, 14.0f + bob, 7.0f, 3.0f, (SDL_Color){209, 154, 105, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir, 23.0f + recoil, 12.0f + bob, 8.0f, 4.0f, (SDL_Color){31, 38, 43, 255});
-      sprite_rect(r, x, y, PLAYER_W, dir, 25.0f + recoil, 16.0f + bob, 3.0f, 5.0f, (SDL_Color){44, 49, 49, 255});
-      if (p->action_timer > PLAYER_MUZZLE_FLASH_TIME)
-      {
-        draw_muzzle_flash(r, x, y, PLAYER_W, dir, 33.0f + recoil, 14.0f + bob,
-                          FX_AMBER);
-        sprite_rect(r, x, y, PLAYER_W, dir, 31.0f + recoil, 11.0f + bob, 4.0f, 6.0f, FX_AMBER);
-        sprite_rect(r, x, y, PLAYER_W, dir, 35.0f + recoil, 13.0f + bob, 3.0f, 3.0f, (SDL_Color){255, 242, 184, 255});
-      }
-    }
-    else
-    {
-      draw_walking_arm(r, x, y, PLAYER_W, dir, 14.0f, 13.0f + bob,
-                       arm_swing, (SDL_Color){42, 118, 153, 255},
-                       (SDL_Color){209, 154, 105, 255});
-      if (p->active_weapon == PLAYER_WEAPON_PISTOL && p->bullets > 0)
-      {
-        float hand_x = 14.0f + arm_swing * 3.0f;
-        sprite_rect(r, x, y, PLAYER_W, dir, hand_x, 20.0f + bob,
-                    6.0f, 3.0f, (SDL_Color){31, 38, 43, 255});
-      }
-    }
-  }
+    draw_player_side(r, p, x, y, land_squash);
 }
 
 void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
@@ -1154,7 +1459,8 @@ void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
   bool mopping = janitor->activity == JANITOR_MOP;
   float phase = janitor->anim_time * 2.2f;
   float cycle = phase * (1.0f / 6.28318531f);
-  float step = walking ? sinf(phase) : 0.0f;
+  /* The near foot's reach, on the legs' own clock — see `draw_walking_leg`. */
+  float step = walking ? cosf(phase) : 0.0f;
   float bob = walking ? fabsf(step) * 0.45f
                       : sinf(janitor->anim_time * 1.6f) * 0.25f;
   float sweep = mopping ? sinf(janitor->anim_time * 4.5f) * 8.0f : 0.0f;
@@ -1185,59 +1491,103 @@ void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
    * to place it behind the janitor again. */
   float cart_x = cart_dir > 0 ? x - 25.0f : x + JANITOR_W + 3.0f;
   float cart_y = y + 7.0f;
+  int cd = cart_dir > 0 ? 1 : -1;
   /* Short contact shadows keep the two silhouettes grounded without joining
    * them into one long, high-contrast stripe. */
   npc_contact_shadow(r, level, janitor->x + JANITOR_W * 0.5f,
                      janitor->y + 31.0f, 9.0f, 200, cam_x, oy);
   npc_contact_shadow(r, level, cart_x + cam_x + 11.0f,
                      janitor->y + 31.0f, 11.0f, 200, cam_x, oy);
-  color_rect(r, COL_OUTLINE, cart_x, cart_y + 4.0f, 23.0f, 18.0f);
-  color_rect(r, (SDL_Color){52, 59, 62, 255},
-             cart_x + 2.0f, cart_y + 6.0f, 19.0f, 14.0f);
-  color_rect(r, (SDL_Color){142, 112, 54, 255},
-             cart_x + 3.0f, cart_y + 7.0f, 17.0f, 4.0f);
-  color_rect(r, (SDL_Color){43, 79, 91, 255},
-             cart_x + 4.0f, cart_y + 12.0f, 15.0f, 7.0f);
-  color_rect(r, (SDL_Color){60, 108, 116, 255},
-             cart_x + 6.0f, cart_y + 12.0f, 11.0f, 2.0f);
-  color_rect(r, (SDL_Color){23, 29, 33, 255},
-             cart_x + 2.0f, cart_y + 21.0f, 6.0f, 4.0f);
-  color_rect(r, (SDL_Color){23, 29, 33, 255},
-             cart_x + 16.0f, cart_y + 21.0f, 6.0f, 4.0f);
-  color_rect(r, (SDL_Color){88, 96, 96, 255},
-             cart_x + 4.0f, cart_y + 22.0f, 2.0f, 2.0f);
-  color_rect(r, (SDL_Color){88, 96, 96, 255},
-             cart_x + 18.0f, cart_y + 22.0f, 2.0f, 2.0f);
-  set_color(r, (SDL_Color){82, 91, 92, 255});
-  SDL_RenderLine(r, cart_x + (cart_dir > 0 ? 20.0f : 3.0f), cart_y + 5.0f,
-                 cart_x + (cart_dir > 0 ? 24.0f : -1.0f), cart_y - 1.0f);
 
-  /* The mop is clipped to the cart during a patrol and swept in a broad arc
-   * while the janitor is working. */
-  if (mopping)
+  /*
+   * The cart. It was one dark box with a stripe across it, which at this
+   * size is a crate on castors, and the one prop that says what this man is
+   * for. So it is the three things a janitor's cart is: a mop bucket with the
+   * wringer clamped on it, a bin with the bag's lip folded over its rim, and a
+   * steel deck on four wheels with a push bar at his end. Each is its own lit
+   * form, and all of it is laid out along the cart's own facing so the push
+   * bar is always the end nearest the man.
+   */
   {
-    sprite_segment(r, x, y, JANITOR_W, dir,
-                   16.0f, 15.0f + bob, 28.0f + sweep, 30.0f,
-                   4, COL_OUTLINE);
-    sprite_segment(r, x, y, JANITOR_W, dir,
-                   16.0f, 15.0f + bob, 28.0f + sweep, 30.0f,
-                   2, (SDL_Color){130, 112, 82, 255});
-    sprite_rect(r, x, y, JANITOR_W, dir,
-                22.0f + sweep, 29.0f, 13.0f, 3.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, JANITOR_W, dir,
-                23.0f + sweep, 30.0f, 11.0f, 2.0f,
-                (SDL_Color){97, 132, 130, 255});
+    SDL_Color bucket = {142, 112, 54, 255};
+    SDL_Color steel = {88, 96, 96, 255};
+    SDL_Color bin = {43, 79, 91, 255};
+    SDL_Color bag = {27, 31, 34, 255};
+    SDL_Color rubber = {23, 29, 33, 255};
+    FxRamp bucket_ramp = fx_ramp(bucket);
+    FxRamp steel_ramp = fx_ramp(steel);
+
+    /* Push bar, behind everything, rising from the deck at his end. */
+    sprite_segment(r, cart_x, cart_y, 23.0f, cd, 21.0f, 17.0f, 23.5f, -1.0f,
+                   3, COL_OUTLINE);
+    sprite_segment(r, cart_x, cart_y, 23.0f, cd, 21.0f, 17.0f, 23.5f, -1.0f,
+                   1, steel);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 21.5f, -2.0f, 4.0f, 3.0f,
+                COL_OUTLINE);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 22.5f, -1.0f, 2.0f, 1.0f,
+                FX_INK);
+
+    /* The bin and its bag, the tall half of the silhouette. */
+    sprite_body(r, cart_x, cart_y, 23.0f, cd, 12.0f, 5.0f, 9.0f, 13.0f, bin,
+                COL_OUTLINE, 0, 0);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 14.0f, 8.0f, 1.0f, 9.0f,
+                fx_ramp(bin).dark);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 18.0f, 8.0f, 1.0f, 9.0f,
+                fx_ramp(bin).dark);
+    sprite_mass(r, cart_x, cart_y, 23.0f, cd, 11.0f, 2.0f, 11.0f, 5.0f,
+                COL_OUTLINE, 2, 0);
+    sprite_mass(r, cart_x, cart_y, 23.0f, cd, 12.0f, 3.0f, 9.0f, 3.0f, bag,
+                1, 0);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 14.0f, 3.0f, 3.0f, 1.0f,
+                fx_ramp(bag).lit);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 11.5f, 5.0f, 10.0f, 1.0f,
+                fx_mix(bag, bin, 0.5f));
+
+    /* The bucket, its water, and the wringer on top of it. */
+    sprite_body(r, cart_x, cart_y, 23.0f, cd, 1.0f, 10.0f, 10.0f, 8.0f,
+                bucket, COL_OUTLINE, 0, 1);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 1.0f, 10.0f, 10.0f, 1.0f,
+                bucket_ramp.lit);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 2.0f, 15.0f, 8.0f, 1.0f,
+                bucket_ramp.dark);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 2.0f, 11.0f, 3.0f, 1.0f,
+                (SDL_Color){63, 118, 124, 255});
+    sprite_body(r, cart_x, cart_y, 23.0f, cd, 5.0f, 6.0f, 5.0f, 4.0f, steel,
+                COL_OUTLINE, 1, 0);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 6.0f, 8.0f, 3.0f, 1.0f,
+                steel_ramp.dark);
+
+    /* The deck, and the castors under it. */
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 0.0f, 17.0f, 23.0f, 4.0f,
+                COL_OUTLINE);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 1.0f, 18.0f, 21.0f, 2.0f,
+                steel_ramp.dark);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 1.0f, 18.0f, 21.0f, 1.0f,
+                steel);
+    for (int wheel = 0; wheel < 2; ++wheel)
+    {
+      float wx = wheel == 0 ? 2.0f : 16.0f;
+      sprite_mass(r, cart_x, cart_y, 23.0f, cd, wx, 20.0f, 6.0f, 5.0f,
+                  COL_OUTLINE, 1, 1);
+      sprite_mass(r, cart_x, cart_y, 23.0f, cd, wx + 1.0f, 21.0f, 4.0f, 3.0f,
+                  rubber, 1, 1);
+      sprite_rect(r, cart_x, cart_y, 23.0f, cd, wx + 2.0f, 22.0f, 2.0f, 1.0f,
+                  steel_ramp.lit);
+    }
   }
-  else
+
+  /* The mop is clipped to the cart during a patrol, standing in the bucket
+   * behind the wringer; while he works it is in his hands (below). */
+  if (!mopping)
   {
-    set_color(r, COL_OUTLINE);
-    SDL_RenderLine(r, cart_x + 5.0f, cart_y + 5.0f,
-                   cart_x + 9.0f, cart_y - 13.0f);
-    set_color(r, (SDL_Color){130, 112, 82, 255});
-    SDL_RenderLine(r, cart_x + 6.0f, cart_y + 5.0f,
-                   cart_x + 10.0f, cart_y - 13.0f);
-    color_rect(r, (SDL_Color){97, 132, 130, 255},
-               cart_x + 5.0f, cart_y + 3.0f, 9.0f, 3.0f);
+    sprite_segment(r, cart_x, cart_y, 23.0f, cd, 6.0f, 9.0f, 10.0f, -13.0f,
+                   3, COL_OUTLINE);
+    sprite_segment(r, cart_x, cart_y, 23.0f, cd, 6.0f, 9.0f, 10.0f, -13.0f,
+                   1, (SDL_Color){130, 112, 82, 255});
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 3.0f, 8.0f, 7.0f, 3.0f,
+                COL_OUTLINE);
+    sprite_rect(r, cart_x, cart_y, 23.0f, cd, 4.0f, 8.0f, 5.0f, 2.0f,
+                (SDL_Color){97, 132, 130, 255});
   }
 
   /* Work trousers, a clear step under the tunic. His teal is the darkest
@@ -1306,22 +1656,65 @@ void draw_janitor(SDL_Renderer *r, const Janitor *janitor,
   }
   else
   {
+    /* Mostly iris, at the front of a dimmed white — see the receptionist's
+       note: the old bright white with a single dark pixel read as a monocle
+       under the cap's peak. */
     sprite_rect(r, x, y, JANITOR_W, dir,
                 14.0f, 7.0f + bob, 3.0f, 2.0f,
-                (SDL_Color){186, 196, 190, 255});
+                (SDL_Color){150, 158, 152, 255});
     sprite_rect(r, x, y, JANITOR_W, dir,
-                16.0f, 7.0f + bob, 1.0f, 2.0f,
+                15.0f, 7.0f + bob, 2.0f, 2.0f,
                 (SDL_Color){17, 28, 29, 255});
   }
 
   if (mopping)
   {
-    sprite_limb_segment(r, x, y, JANITOR_W, dir,
-                        8.0f, 14.0f + bob, 16.0f, 17.0f + bob, uniform_hi);
-    sprite_limb_segment(r, x, y, JANITOR_W, dir,
-                        18.0f, 14.0f + bob, 18.0f, 20.0f + bob, uniform);
-    sprite_rect(r, x, y, JANITOR_W, dir,
-                14.0f, 16.0f + bob, 4.0f, 4.0f, skin);
+    /*
+     * The mop in his hands and in front of him. It used to be drawn before the
+     * legs, so the one thing he was doing was hidden behind the man doing it:
+     * the handle vanished into the trousers and what was left was a flat bar
+     * sliding about beside his boots. Now the pole runs from over his shoulder
+     * to the floor ahead, both hands on it, and it pivots between them as the
+     * head swings — the top of the pole goes back as the head goes out.
+     */
+    float top_x = 10.0f - sweep * 0.30f;
+    float top_y = 11.0f + bob;
+    float foot_x = 26.0f + sweep;
+    float foot_y = 29.0f;
+    float grip_hi_t = 0.22f;
+    float grip_lo_t = 0.46f;
+    float hi_x = top_x + (foot_x - top_x) * grip_hi_t;
+    float hi_y = top_y + (foot_y - top_y) * grip_hi_t;
+    float lo_x = top_x + (foot_x - top_x) * grip_lo_t;
+    float lo_y = top_y + (foot_y - top_y) * grip_lo_t;
+
+    sprite_segment(r, x, y, JANITOR_W, dir, top_x, top_y, foot_x, foot_y, 3,
+                   COL_OUTLINE);
+    sprite_segment(r, x, y, JANITOR_W, dir, top_x, top_y, foot_x, foot_y, 1,
+                   (SDL_Color){130, 112, 82, 255});
+    /* A string mop: a socket on the pole and a skirt of strands splayed on
+       the floor, not a flat board. */
+    sprite_rect(r, x, y, JANITOR_W, dir, foot_x - 2.0f, 27.0f, 4.0f, 3.0f,
+                COL_OUTLINE);
+    sprite_rect(r, x, y, JANITOR_W, dir, foot_x - 6.0f, 29.0f, 12.0f, 3.0f,
+                COL_OUTLINE);
+    for (int strand = 0; strand < 5; ++strand)
+    {
+      float sx = foot_x - 5.0f + (float)strand * 2.0f;
+      sprite_rect(r, x, y, JANITOR_W, dir, sx, 29.0f, 1.0f, 3.0f,
+                  (SDL_Color){97, 132, 130, 255});
+    }
+    sprite_rect(r, x, y, JANITOR_W, dir, foot_x - 4.0f, 29.0f, 8.0f, 1.0f,
+                (SDL_Color){132, 166, 162, 255});
+
+    sprite_limb_segment(r, x, y, JANITOR_W, dir, 16.0f, 13.0f + bob,
+                        hi_x, hi_y, uniform_hi);
+    sprite_limb_segment(r, x, y, JANITOR_W, dir, 14.0f, 14.0f + bob,
+                        lo_x - 1.0f, lo_y + 1.5f, uniform);
+    sprite_limb_segment(r, x, y, JANITOR_W, dir, lo_x - 1.0f, lo_y + 1.5f,
+                        lo_x, lo_y, uniform);
+    draw_closed_hand(r, x, y, JANITOR_W, dir, hi_x, hi_y, skin);
+    draw_closed_hand(r, x, y, JANITOR_W, dir, lo_x, lo_y, skin);
   }
   else
   {
@@ -1408,14 +1801,18 @@ void draw_civilian(SDL_Renderer *r, const Civilian *civilian,
   bool startled = civilian->activity == CIVILIAN_STARTLED;
   float phase = civilian->anim_time * 2.6f;
   float cycle = phase * (1.0f / 6.28318531f);
-  float step = running ? sinf(phase) : 0.0f;
+  /* The near foot's reach, on the legs' own clock — see `draw_walking_leg` — which
+     is what the arms swing against. The bob stays on the sine: this is a run
+     rather than a walk, and a runner is lowest at mid-stance, where the knee
+     takes the landing, and highest in the air between strides. */
+  float step = running ? cosf(phase) : 0.0f;
   /* How far into the sprawl this frame is: 1 while down, easing to 0 as the
      last of the beat is spent scrambling up. */
   float down = fallen ? fminf(1.0f, civilian->activity_timer /
                                         (CIVILIAN_STUMBLE_TIME * 0.35f))
                       : 0.0f;
   float drop = down * 9.0f;
-  float bob = running ? fabsf(step) * 1.2f - 0.6f
+  float bob = running ? fabsf(sinf(phase)) * 1.2f - 0.6f
                       : sinf(civilian->anim_time * 2.2f) * 0.3f;
   float lean = running ? 2.5f : (startled ? -1.5f : 3.0f * down);
   float body = bob + drop;
@@ -1487,11 +1884,19 @@ void draw_civilian(SDL_Renderer *r, const Civilian *civilian,
               3.0f, 2.0f, civilian_fade((SDL_Color){228, 236, 226, 255}, fade));
   sprite_rect(r, x, y, CIVILIAN_W, dir, 13.0f + lean, 6.0f + body,
               2.0f, 2.0f, civilian_fade(FX_INK, fade));
-  /* The open mouth is the one cue that reads as fear at this scale. */
-  sprite_rect(r, x, y, CIVILIAN_W, dir, 11.0f + lean, 8.0f + body,
-              4.0f, 1.0f, civilian_fade((SDL_Color){28, 12, 14, 255}, fade));
-  sprite_rect(r, x, y, CIVILIAN_W, dir, 12.0f + lean, 9.0f + body,
-              2.0f, 1.0f, civilian_fade((SDL_Color){48, 22, 24, 255}, fade));
+  /* The open mouth is the one cue that reads as fear at this scale — as a
+     small O under the eye. It was a four-pixel bar across the lower face with
+     a wedge under it, and on a seven-pixel face that is a black beard: from
+     across the lobby the people running *from* the gunmen read as masked. */
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 13.0f + lean, 8.0f + body,
+              2.0f, 2.0f, civilian_fade((SDL_Color){48, 22, 24, 255}, fade));
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 13.0f + lean, 8.0f + body,
+              2.0f, 1.0f, civilian_fade((SDL_Color){28, 12, 14, 255}, fade));
+  /* And the brow lifted over the wide eye, a pixel of shade on the skin
+     rather than on the hairline. */
+  sprite_rect(r, x, y, CIVILIAN_W, dir, 12.0f + lean, 5.0f + body,
+              3.0f, 1.0f, civilian_fade(fx_mix(look->skin, look->hair, 0.5f),
+                                        fade));
 
   if (fallen)
   {
@@ -1564,7 +1969,8 @@ void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
   bool reading = rec->activity == RECEPTIONIST_ERRAND || rec->glancing;
   float phase = rec->anim_time * 2.4f;
   float cycle = phase * (1.0f / 6.28318531f);
-  float step = walking ? sinf(phase) : 0.0f;
+  /* The near foot's reach, on the legs' own clock — see `draw_walking_leg`. */
+  float step = walking ? cosf(phase) : 0.0f;
   float bob = walking ? fabsf(step) * 0.5f
                       : sinf(rec->anim_time * 1.7f) * 0.3f;
   /* One pixel of shift in the clasped hands is all the movement a 32-pixel
@@ -1630,6 +2036,10 @@ void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
               fx_ramp(skin).dark);
   sprite_mass(r, x, y, RECEPTIONIST_W, dir, 9.0f, 9.0f + bob, 8.0f, 2.0f,
               fx_ramp(skin).dark, 1, 2);
+  /* The eye as the rest of the cast draws it: mostly iris at the front of a
+     dimmed white. A bright three-pixel white with a one-pixel pupil at its
+     tip is the brightest thing on an eight-pixel face, and reads as a monocle
+     rather than as an eye. */
   if (fx_blinking(rec->anim_time, 0x5bu))
   {
     sprite_rect(r, x, y, RECEPTIONIST_W, dir, 13.0f, 7.0f + bob, 3.0f, 1.0f,
@@ -1638,20 +2048,31 @@ void draw_receptionist(SDL_Renderer *r, const Receptionist *rec,
   else
   {
     sprite_rect(r, x, y, RECEPTIONIST_W, dir, 13.0f, 6.0f + bob, 3.0f, 2.0f,
-                (SDL_Color){214, 220, 218, 255});
-    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 15.0f, 6.0f + bob, 1.0f, 2.0f,
-                (SDL_Color){20, 24, 30, 255});
+                (SDL_Color){172, 178, 176, 255});
+    sprite_rect(r, x, y, RECEPTIONIST_W, dir, 14.0f, 6.0f + bob, 2.0f, 2.0f,
+                (SDL_Color){34, 30, 30, 255});
   }
   sprite_rect(r, x, y, RECEPTIONIST_W, dir, 13.0f, 9.0f + bob, 2.0f, 1.0f,
               (SDL_Color){146, 76, 76, 255});
   /* Headset: band, earpiece and a boom down to the mouth. It is what makes a
-     figure standing still at a counter read as answering the switchboard. */
-  sprite_mass(r, x, y, RECEPTIONIST_W, dir, 9.0f, 0.0f + bob, 8.0f, 2.0f,
-              (SDL_Color){28, 32, 38, 255}, 2, 0);
-  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 8.0f, 5.0f + bob, 3.0f, 3.0f,
-              (SDL_Color){28, 32, 38, 255});
+     figure standing still at a counter read as answering the switchboard.
+     In moulded grey rather than in black: a black earpiece against dark hair,
+     joined to a black boom across the cheek, was one dark patch over half the
+     face, and at this size a patch there is a mask. The earpiece sits on the
+     ear, and the boom is one pixel ending in a mic at the mouth. */
+  SDL_Color headset = fx_mix(FX_STEEL_DK, FX_STEEL, 0.5f);
+  sprite_mass(r, x, y, RECEPTIONIST_W, dir, 9.0f, 0.0f + bob, 8.0f, 1.0f,
+              headset, 1, 0);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 9.0f, 1.0f + bob, 1.0f, 4.0f,
+              headset);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 9.0f, 5.0f + bob, 2.0f, 2.0f,
+              COL_OUTLINE);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 9.0f, 5.0f + bob, 2.0f, 1.0f,
+              fx_ramp(headset).lit);
   sprite_segment(r, x, y, RECEPTIONIST_W, dir, 11.0f, 7.0f + bob,
-                 15.0f, 9.0f + bob, 1, (SDL_Color){28, 32, 38, 255});
+                 13.0f, 8.0f + bob, 1, headset);
+  sprite_rect(r, x, y, RECEPTIONIST_W, dir, 13.0f, 8.0f + bob, 1.0f, 1.0f,
+              COL_OUTLINE);
 
   if (on_post)
   {
@@ -1745,7 +2166,8 @@ void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
   bool moving = fabsf(e->vx) > 2.0f && !aiming && !e->talking;
   float phase = e->anim_time * 3.0f;
   float cycle = phase * (1.0f / 6.28318531f);
-  float step = moving ? sinf(phase) : 0.0f;
+  /* The near foot's reach, on the legs' own clock — see `draw_walking_leg`. */
+  float step = moving ? cosf(phase) : 0.0f;
   float bob = moving ? fabsf(step) * 0.5f : sinf(e->anim_time * 1.8f) * 0.3f;
   float climb = e->climbing ? sinf(phase) * 4.0f : 0.0f;
   /* Wounded reads off how much of *his own* health is left rather than off a
@@ -1822,6 +2244,15 @@ void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
     }
   }
 
+  /* The rifle goes on his back whenever his hands are busy with something
+     else — a chat, the handset, a wall switch — and that is a read the player
+     can use: a slung rifle is a man who is not watching the corridor. Drawn
+     before the body, so all that shows is the stock under his back and the
+     muzzle past his shoulder. */
+  bool slung = e->talking || on_radio || using_alarm;
+  if (slung && !aiming && !e->climbing)
+    draw_carbine(r, x, y + bob, ENEMY_W, dir, 3.0f, 24.0f, 7.5f, 3.0f);
+
   /* Arm behind torso while patrolling / gesturing. A man on a handset does
      not gesture with it, so the chat's arm swing is the chat's alone. */
   float gesture_swing =
@@ -1864,16 +2295,25 @@ void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
        a heart to it. */
     if (heavy)
     {
-      sprite_rect(r, x, y, ENEMY_W, dir, 9.0f, 13.0f + bob, 12.0f, 2.0f,
-                  FX_STEEL_LT);
-      sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 15.0f + bob, 10.0f, 6.0f,
-                  FX_STEEL_DK);
-      sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 15.0f + bob, 10.0f, 1.0f,
-                  FX_STEEL);
-      sprite_rect(r, x, y, ENEMY_W, dir, 7.0f, 12.0f + bob, 3.0f, 3.0f,
-                  FX_STEEL);
-      sprite_rect(r, x, y, ENEMY_W, dir, 19.0f, 12.0f + bob, 3.0f, 3.0f,
-                  FX_STEEL);
+      /* The plate used to be FX_STEEL_DK laid on a uniform that is itself
+         FX_STEEL_DK, so all that survived of it was its top edge, and the
+         shoulder pads were unoutlined squares inside the torso's own outline
+         — which is to say the silhouette the paragraph above asks for was not
+         there. Now each piece is its own outlined mass: a plate a step darker
+         than the jacket with two rows of webbing across it, and pads that
+         stand proud of the shoulder line on both sides, so the outline itself
+         is wider than a guard's before a colour has been read. */
+      SDL_Color plate = fx_mix(FX_STEEL_DK, FX_INK, 0.40f);
+      sprite_body(r, x, y, ENEMY_W, dir, 10.0f, 14.0f + bob, 10.0f, 7.0f,
+                  plate, COL_OUTLINE, 1, 1);
+      sprite_rect(r, x, y, ENEMY_W, dir, 11.0f, 16.0f + bob, 8.0f, 1.0f,
+                  fx_mix(plate, FX_STEEL, 0.55f));
+      sprite_rect(r, x, y, ENEMY_W, dir, 11.0f, 18.0f + bob, 8.0f, 1.0f,
+                  fx_mix(plate, FX_STEEL, 0.55f));
+      sprite_body(r, x, y, ENEMY_W, dir, 5.0f, 11.0f + bob, 5.0f, 4.0f,
+                  FX_STEEL, COL_OUTLINE, 1, 1);
+      sprite_body(r, x, y, ENEMY_W, dir, 18.0f, 11.0f + bob, 5.0f, 4.0f,
+                  FX_STEEL, COL_OUTLINE, 1, 1);
     }
   }
   sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 20.0f + bob, 11.0f, 2.0f, (SDL_Color){31, 37, 31, 255});
@@ -1882,6 +2322,9 @@ void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
 
   if (e->climbing)
   {
+    /* On a ladder the rifle rides on his back, across it from the hip to past
+       the far shoulder, under the arms that are doing the climbing. */
+    draw_carbine(r, x, y + bob, ENEMY_W, dir, 7.0f, 22.0f, 21.5f, 5.0f);
     draw_climbing_arm(r, x, y, ENEMY_W, dir,
                       8.0f, 14.0f + bob, 6.5f, 5.0f - climb,
                       uniform, fx_dim(FX_SKIN, 0.85f));
@@ -1925,25 +2368,121 @@ void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
     /* Jaw shading on the face's own taper, then the visor and the set mouth. */
     sprite_mass(r, x, y, ENEMY_W, dir, 10.0f, 9.0f + bob, 8.0f, 2.0f,
                 (SDL_Color){150, 106, 73, 255}, 1, 2);
-    sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 6.0f + bob, 3.0f, 2.0f, FX_RED);
-    sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 6.0f + bob, 3.0f, 1.0f,
-                (SDL_Color){255, 138, 122, 255});
-    sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 9.0f + bob, 2.0f, 1.0f, (SDL_Color){70, 34, 27, 255});
+    if (heavy)
+    {
+      /* The full helmet the docs give him: the shell carried down over the
+         ear and the nape, and a guard across the jaw. A guard's head is a
+         face under a brim; his is a helmet with a slit in it, which is a
+         difference the silhouette carries from across a room. */
+      SDL_Color shell = fx_mix(FX_STEEL_DK, FX_GUARD_DK, 0.35f);
+      sprite_mass(r, x, y, ENEMY_W, dir, 7.0f, 5.0f + bob, 6.0f, 6.0f,
+                  COL_OUTLINE, 0, 2);
+      sprite_mass(r, x, y, ENEMY_W, dir, 8.0f, 5.0f + bob, 4.0f, 5.0f,
+                  shell, 0, 1);
+      sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 9.0f + bob, 7.0f, 2.0f,
+                  COL_OUTLINE);
+      sprite_rect(r, x, y, ENEMY_W, dir, 13.0f, 9.0f + bob, 6.0f, 1.0f,
+                  fx_mix(shell, FX_STEEL_LT, 0.30f));
+      /* The slit runs the width of the face rather than sitting in front
+         of the eye, and it is still the red pixel that says "enemy". */
+      sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 6.0f + bob, 6.0f, 2.0f,
+                  COL_OUTLINE);
+      sprite_rect(r, x, y, ENEMY_W, dir, 15.0f, 6.0f + bob, 4.0f, 1.0f,
+                  FX_RED);
+    }
+    else
+    {
+      sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 6.0f + bob, 3.0f, 2.0f,
+                  FX_RED);
+      sprite_rect(r, x, y, ENEMY_W, dir, 16.0f, 6.0f + bob, 3.0f, 1.0f,
+                  (SDL_Color){255, 138, 122, 255});
+      sprite_rect(r, x, y, ENEMY_W, dir, 14.0f, 9.0f + bob, 2.0f, 1.0f,
+                  (SDL_Color){70, 34, 27, 255});
+    }
   }
 
   if (aiming && !e->climbing)
   {
-    float recoil = e->recoil_timer > 0.07f ? -2.0f : 0.0f;
-    sprite_rect(r, x, y, ENEMY_W, dir, 17.0f + recoil, 13.0f + bob, 8.0f, 5.0f, COL_OUTLINE);
-    sprite_rect(r, x, y, ENEMY_W, dir, 18.0f + recoil, 14.0f + bob, 7.0f, 3.0f, fx_dim(FX_SKIN, 0.85f));
-    sprite_rect(r, x, y, ENEMY_W, dir, 23.0f + recoil, 12.0f + bob, 8.0f, 4.0f, (SDL_Color){24, 29, 31, 255});
-    sprite_rect(r, x, y, ENEMY_W, dir, 25.0f + recoil, 16.0f + bob, 3.0f, 5.0f, (SDL_Color){40, 44, 42, 255});
-    if (e->recoil_timer > PLAYER_MUZZLE_FLASH_TIME)
+    /*
+     * The aim is the telegraph, so it points where the round is going to go.
+     * The shot has had a vertical lane for as long as a guard could fire up a
+     * ladder at a climber or down at a man dropping in on him — and since the
+     * stomp was wired to it, up at a boot on his helmet — but the drawing only
+     * ever knew one direction, so a man about to fire straight up his own
+     * column was drawn aiming down the corridor at nobody. The rifle comes up
+     * along `aim_vdir` now, and the flash is at the end of it.
+     */
+    float kick = e->recoil_timer > 0.07f ? 2.0f : 0.0f;
+    SDL_Color hand = fx_dim(FX_SKIN, 0.85f);
+    SDL_Color flash_light = (SDL_Color){255, 128, 74, 255};
+    bool flash = e->recoil_timer > PLAYER_MUZZLE_FLASH_TIME;
+    if (e->aim_vdir < 0)
     {
-      draw_muzzle_flash(r, x, y, ENEMY_W, dir, 33.0f + recoil, 14.0f + bob,
-                        (SDL_Color){255, 128, 74, 255});
-      sprite_rect(r, x, y, ENEMY_W, dir, 31.0f + recoil, 11.0f + bob, 4.0f, 6.0f, FX_RED);
-      sprite_rect(r, x, y, ENEMY_W, dir, 35.0f + recoil, 13.0f + bob, 3.0f, 3.0f, FX_AMBER);
+      /* Up the column, held in front of the face with the muzzle clear of
+         the helmet brim, so the red visor stays in sight beside it. */
+      draw_carbine(r, x, y + bob, ENEMY_W, dir, 20.5f, 17.0f + kick,
+                   20.5f, -5.0f + kick);
+      sprite_limb_segment(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob,
+                          17.5f, 16.0f + bob, uniform);
+      sprite_limb_segment(r, x, y, ENEMY_W, dir, 17.5f, 16.0f + bob,
+                          20.0f, 10.5f + bob + kick, uniform);
+      draw_closed_hand(r, x, y, ENEMY_W, dir, 20.0f, 10.0f + bob + kick,
+                       hand);
+      if (flash)
+      {
+        draw_muzzle_flash(r, x, y, ENEMY_W, dir, 21.0f, -8.0f + bob,
+                          flash_light);
+        sprite_rect(r, x, y, ENEMY_W, dir, 18.0f, -10.0f + bob, 6.0f, 4.0f,
+                    FX_RED);
+        sprite_rect(r, x, y, ENEMY_W, dir, 19.5f, -13.0f + bob, 3.0f, 3.0f,
+                    FX_AMBER);
+      }
+    }
+    else if (e->aim_vdir > 0)
+    {
+      /* Down at the floor he is standing on, the muzzle past the boots. */
+      draw_carbine(r, x, y + bob, ENEMY_W, dir, 20.5f, 11.0f - kick,
+                   20.5f, 31.0f - kick);
+      sprite_limb_segment(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob,
+                          16.5f, 17.5f + bob, uniform);
+      sprite_limb_segment(r, x, y, ENEMY_W, dir, 16.5f, 17.5f + bob,
+                          20.0f, 18.0f + bob - kick, uniform);
+      draw_closed_hand(r, x, y, ENEMY_W, dir, 20.0f, 18.0f + bob - kick,
+                       hand);
+      if (flash)
+      {
+        draw_muzzle_flash(r, x, y, ENEMY_W, dir, 21.0f, 34.0f + bob,
+                          flash_light);
+        sprite_rect(r, x, y, ENEMY_W, dir, 18.0f, 32.0f + bob, 6.0f, 4.0f,
+                    FX_RED);
+        sprite_rect(r, x, y, ENEMY_W, dir, 19.5f, 36.0f + bob, 3.0f, 3.0f,
+                    FX_AMBER);
+      }
+    }
+    else
+    {
+      /* Shouldered, along the corridor: the stock in against the chest, the
+         line of the barrel under the chin, the leading hand out on the
+         handguard. Brought up from the low carry to here is the whole of the
+         warning the player gets, so the two poses are as far apart as a
+         twenty-six pixel man allows. */
+      draw_carbine(r, x, y + bob, ENEMY_W, dir, 10.0f - kick, 13.5f,
+                   31.0f - kick, 13.5f);
+      sprite_limb_segment(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob,
+                          17.5f, 16.5f + bob, uniform);
+      sprite_limb_segment(r, x, y, ENEMY_W, dir, 17.5f, 16.5f + bob,
+                          22.0f - kick, 15.0f + bob, uniform);
+      draw_closed_hand(r, x, y, ENEMY_W, dir, 22.5f - kick, 15.0f + bob,
+                       hand);
+      if (flash)
+      {
+        draw_muzzle_flash(r, x, y, ENEMY_W, dir, 34.0f - kick, 13.5f + bob,
+                          flash_light);
+        sprite_rect(r, x, y, ENEMY_W, dir, 32.0f - kick, 10.5f + bob,
+                    4.0f, 6.0f, FX_RED);
+        sprite_rect(r, x, y, ENEMY_W, dir, 36.0f - kick, 12.5f + bob,
+                    3.0f, 3.0f, FX_AMBER);
+      }
     }
   }
   else if (using_alarm && !e->climbing)
@@ -1987,23 +2526,62 @@ void draw_enemy(SDL_Renderer *r, const Enemy *e, const Level *level,
     sprite_rect(r, x, y, ENEMY_W, dir, 20.0f, 8.0f + bob, 1.0f, 1.0f,
                 keyed ? FX_CYAN : FX_CYAN_DK);
   }
+  else if (!e->climbing && slung)
+  {
+    draw_walking_arm(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob,
+                     gesture_swing, uniform, fx_dim(FX_SKIN, 0.85f));
+  }
+  else if (!e->climbing && e->blind_timer > 0.0f)
+  {
+    /* Flashed: the forearm thrown up across the eyes and the rifle let go to
+       hang on its sling, muzzle at his boots. The glare says a charge went
+       off; this says what it did to him, which is the half the player is
+       deciding whether to walk past. */
+    draw_carbine(r, x, y + bob, ENEMY_W, dir, 12.0f, 14.0f, 17.0f, 29.0f);
+    sprite_limb_segment(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob,
+                        18.5f, 11.0f + bob, uniform);
+    sprite_limb_segment(r, x, y, ENEMY_W, dir, 18.5f, 11.0f + bob,
+                        16.5f, 6.5f + bob, uniform);
+    draw_closed_hand(r, x, y, ENEMY_W, dir, 17.0f, 6.0f + bob,
+                     fx_dim(FX_SKIN, 0.85f));
+  }
   else if (!e->climbing)
   {
-    float front_swing = moving ? -step : gesture_swing;
-    draw_walking_arm(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob,
-                     front_swing, uniform,
+    /* The low carry: stock under the arm, muzzle at the floor a stride ahead
+       of him, the near hand out on the handguard. A man walking a rifle does
+       not swing that arm, so only the far one keeps the counter-swing; the
+       muzzle nods on the step instead. */
+    float nod = moving ? step * 0.6f : 0.0f;
+    draw_carbine(r, x, y + bob, ENEMY_W, dir, 9.5f, 14.5f, 27.0f,
+                 21.5f + nod);
+    sprite_limb_segment(r, x, y, ENEMY_W, dir, 14.0f, 13.0f + bob,
+                        14.5f, 17.5f + bob, uniform);
+    sprite_limb_segment(r, x, y, ENEMY_W, dir, 14.5f, 17.5f + bob,
+                        18.5f, 18.0f + bob + nod * 0.4f, uniform);
+    draw_closed_hand(r, x, y, ENEMY_W, dir, 19.0f, 18.0f + bob + nod * 0.4f,
                      fx_dim(FX_SKIN, 0.85f));
   }
 
   /* Compact health pips sit in-world without turning into a large UI bar.
      Granted-green and a red-shadow socket, because the semantic colours are
      rationed: green is the palette's "still standing" everywhere else too. */
-  for (int hp = 0; hp < ENEMY_HP; ++hp)
+  /* One pip for each round *he* can take, which is the same correction the
+     wounded colours above had to have: counted against ENEMY_HP, a heavy
+     showed three full pips and kept showing them through the first three hits,
+     so the only readout over his head said the rounds were doing nothing. His
+     six are narrower so the row still fits over the figure. */
+  float pip_step = full > ENEMY_HP ? 4.0f : 7.0f;
+  float pip_w = full > ENEMY_HP ? 4.0f : 6.0f;
+  float pip_x = x + ((float)ENEMY_W - (pip_step * (float)(full - 1) + pip_w)) *
+                        0.5f;
+  for (int hp = 0; hp < full; ++hp)
   {
     SDL_Color hc = hp < e->hp ? FX_GREEN
                               : fx_mix(FX_SHADOW, FX_RED_DK, 0.35f);
-    color_rect(r, FX_INK, x + 3.0f + hp * 7.0f, y - 6.0f, 6.0f, 4.0f);
-    color_rect(r, hc, x + 4.0f + hp * 7.0f, y - 5.0f, 4.0f, 2.0f);
+    color_rect(r, FX_INK, floorf(pip_x + (float)hp * pip_step), y - 6.0f,
+               pip_w, 4.0f);
+    color_rect(r, hc, floorf(pip_x + (float)hp * pip_step) + 1.0f, y - 5.0f,
+               pip_w - 2.0f, 2.0f);
   }
 
   if (on_radio)
@@ -2058,61 +2636,159 @@ void draw_downed_enemy(SDL_Renderer *r, const Enemy *e,
   float x = e->x - cam_x;
   float y = e->y + oy;
   int dir = e->dir;
-  SDL_Color uniform = fx_dim(FX_GUARD, 0.82f);
-  SDL_Color trouser = (SDL_Color){34, 39, 31, 255};
-  SDL_Color boot = (SDL_Color){28, 32, 26, 255};
+  bool heavy = e->kind == ENEMY_KIND_HEAVY;
+  SDL_Color uniform = fx_dim(heavy ? FX_STEEL_DK : FX_GUARD, 0.82f);
+  /* The trousers are lifted off the near-black a standing guard wears. Up on
+     his feet the legs recede so the tunic carries him; flat on the floor
+     there is nothing to recede *from*, and legs at that value vanished into
+     the floor and left a torso and a helmet — which is to say a lump. */
+  SDL_Color trouser = (SDL_Color){48, 55, 42, 255};
+  SDL_Color boot = (SDL_Color){30, 34, 28, 255};
   SDL_Color skin = fx_dim(FX_SKIN, 0.72f);
+  SDL_Color plate = heavy ? fx_mix(FX_STEEL_DK, FX_INK, 0.45f)
+                          : (SDL_Color){36, 43, 37, 255};
+  SDL_Color helmet = heavy ? fx_mix(FX_STEEL_DK, FX_GUARD_DK, 0.35f)
+                           : (SDL_Color){44, 53, 40, 255};
 
   /* Wider and fainter than the standing pool: the mass is spread along the
      floor rather than balanced on two boots. */
   npc_contact_shadow(r, level, e->x + ENEMY_W * 0.5f, e->y + 31.0f,
-                     14.0f, 165, cam_x, oy);
+                     15.0f, 165, cam_x, oy);
 
   /*
    * The silhouette is the whole job. Lying down he has a tenth of the height
    * he had standing, so the parts have to be spread along the floor and read
    * separately or the figure collapses into one dark lump the eye files as
-   * scenery: boots at one end, helmet at the other, and a knee drawn up
-   * between them so the legs are two things rather than one.
+   * scenery: on his back, boots up at one end, helmet at the other, one knee
+   * drawn up so the legs are two things rather than one, and his rifle gone
+   * from his hands — nothing that says "armed" may stay on a body.
    */
-  sprite_limb_segment(r, x, y, ENEMY_W, dir, 11.0f, 26.0f, 5.0f, 24.0f,
-                      trouser);
-  sprite_shoe(r, x, y, ENEMY_W, dir, 4.0f, 24.0f, boot);
+  /* The far leg, knee up. */
+  sprite_limb_segment(r, x, y, ENEMY_W, dir, 10.0f, 27.0f, 6.0f, 23.5f,
+                      fx_mix(trouser, FX_INK, 0.25f));
+  sprite_limb_segment(r, x, y, ENEMY_W, dir, 6.0f, 23.5f, 2.5f, 27.5f,
+                      fx_mix(trouser, FX_INK, 0.25f));
+  /* Boots on end, soles to the room: the toe up is what says "on his back"
+     from across a floor. */
+  sprite_rect(r, x, y, ENEMY_W, dir, -0.5f, 24.0f, 4.0f, 6.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, ENEMY_W, dir, 0.5f, 25.0f, 2.0f, 4.0f, boot);
+  sprite_rect(r, x, y, ENEMY_W, dir, 0.5f, 25.0f, 2.0f, 1.0f,
+              fx_ramp(boot).lit);
 
-  sprite_body(r, x, y, ENEMY_W, dir, 8.0f, 23.0f, 11.0f, 8.0f, uniform,
+  /* The torso on its back, chest to the ceiling, the plate carrier on top. */
+  sprite_body(r, x, y, ENEMY_W, dir, 8.0f, 25.0f, 11.0f, 6.0f, uniform,
               COL_OUTLINE, 1, 1);
-  /* The plate carrier is what separates a guard from a man in a green shirt,
-     lying down as much as standing up. */
-  sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 25.0f, 7.0f, 4.0f,
-              (SDL_Color){36, 43, 37, 255});
+  sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 25.0f, 7.0f, 3.0f, plate);
   sprite_rect(r, x, y, ENEMY_W, dir, 10.0f, 25.0f, 7.0f, 1.0f,
-              (SDL_Color){58, 68, 52, 255});
+              fx_mix(plate, heavy ? FX_STEEL_LT : FX_GUARD_LT, 0.45f));
   sprite_rect(r, x, y, ENEMY_W, dir, 8.0f, 29.0f, 11.0f, 1.0f,
               (SDL_Color){26, 31, 27, 255});
 
-  /* Near leg along the floor, and the arm thrown out past the head. */
-  sprite_limb_segment(r, x, y, ENEMY_W, dir, 11.0f, 29.0f, 4.0f, 30.0f,
+  /* The near leg flat along the floor, and its boot up on end. */
+  sprite_limb_segment(r, x, y, ENEMY_W, dir, 10.0f, 29.0f, 4.0f, 29.5f,
                       trouser);
-  sprite_shoe(r, x, y, ENEMY_W, dir, 3.0f, 30.0f, boot);
-  sprite_limb_segment(r, x, y, ENEMY_W, dir, 16.0f, 27.0f, 22.0f, 30.0f,
-                      uniform);
-  sprite_rect(r, x, y, ENEMY_W, dir, 21.0f, 29.0f, 3.0f, 2.0f, skin);
+  sprite_rect(r, x, y, ENEMY_W, dir, 1.5f, 25.0f, 4.0f, 7.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, ENEMY_W, dir, 2.5f, 26.0f, 2.0f, 5.0f, boot);
+  sprite_rect(r, x, y, ENEMY_W, dir, 2.5f, 26.0f, 2.0f, 1.0f,
+              fx_ramp(boot).lit);
 
-  /* The head, and the helmet still on it but tipped back off the brow. */
-  sprite_body(r, x, y, ENEMY_W, dir, 17.0f, 24.0f, 7.0f, 6.0f, skin,
+  /* The arm thrown out past the head, under it, so all that shows beyond the
+     helmet is a forearm and an open hand on the floor — a feature at the end
+     of the silhouette that no lump has. */
+  sprite_limb_segment(r, x, y, ENEMY_W, dir, 17.0f, 29.5f, 27.5f, 30.0f,
+                      uniform);
+  sprite_rect(r, x, y, ENEMY_W, dir, 27.0f, 28.5f, 4.0f, 3.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, ENEMY_W, dir, 28.0f, 29.5f, 2.0f, 1.0f, skin);
+
+  /* The head, face to the ceiling, and the helmet still on it but tipped
+     back off the brow onto the floor, so the face is clear of it: the one
+     patch of skin on the body is what says which end is the head. */
+  sprite_body(r, x, y, ENEMY_W, dir, 18.0f, 24.0f, 6.0f, 6.0f, skin,
               COL_OUTLINE, 1, 2);
-  sprite_mass(r, x, y, ENEMY_W, dir, 15.0f, 21.0f, 10.0f, 5.0f, COL_OUTLINE,
-              3, 1);
-  sprite_mass(r, x, y, ENEMY_W, dir, 16.0f, 22.0f, 8.0f, 3.0f,
-              (SDL_Color){44, 53, 40, 255}, 2, 0);
-  sprite_mass(r, x, y, ENEMY_W, dir, 17.0f, 22.0f, 6.0f, 1.0f,
-              (SDL_Color){86, 97, 66, 255}, 1, 0);
+  sprite_rect(r, x, y, ENEMY_W, dir, 18.0f, 24.0f, 5.0f, 1.0f,
+              fx_ramp(skin).lit);
+  /* The nose, breaking the top of the profile the way a standing man's
+     breaks its front. */
+  sprite_rect(r, x, y, ENEMY_W, dir, 19.5f, 22.0f, 3.0f, 2.0f, COL_OUTLINE);
+  sprite_rect(r, x, y, ENEMY_W, dir, 20.5f, 23.0f, 1.0f, 1.0f, skin);
+  sprite_mass(r, x, y, ENEMY_W, dir, 22.0f, 25.0f, 7.0f, 7.0f, COL_OUTLINE,
+              2, 1);
+  sprite_mass(r, x, y, ENEMY_W, dir, 23.0f, 26.0f, 5.0f, 5.0f, helmet, 1, 0);
+  sprite_rect(r, x, y, ENEMY_W, dir, 24.0f, 26.0f, 3.0f, 1.0f,
+              fx_ramp(helmet).lit);
   /* The visor is dead. Lit, it is the pixel that says "enemy" across a room,
      and a body must not say it. */
-  sprite_rect(r, x, y, ENEMY_W, dir, 20.0f, 26.0f, 3.0f, 1.0f,
+  sprite_rect(r, x, y, ENEMY_W, dir, 23.0f, 27.0f, 1.0f, 2.0f,
               fx_dim(FX_RED_DK, 0.55f));
+  /* The closed eye and the slack mouth either side of the nose. */
+  sprite_rect(r, x, y, ENEMY_W, dir, 21.0f, 25.0f, 2.0f, 1.0f,
+              fx_mix(skin, FX_INK, 0.55f));
+  sprite_rect(r, x, y, ENEMY_W, dir, 18.0f, 25.0f, 1.0f, 1.0f,
+              fx_mix(skin, FX_INK, 0.45f));
 }
 
+/*
+ * One leg of a dog, standing on the floor line at the bottom of its box.
+ *
+ * Two pixels of leg inside the outline, a paw that turns forward, and the
+ * front pixel of the leg lit — the same cylinder the cast's limbs are, at the
+ * width a dog's leg is. A hind leg carries the hock: the thigh runs forward of
+ * the paw and the shank steps back under it, which is the one kink in the
+ * outline that says hind leg rather than fore, and that a dog standing on four
+ * straight posts does not have.
+ */
+static void draw_dog_leg(SDL_Renderer *r, float x, float y, int dir,
+                         float lx, float top, float lift, bool hind,
+                         SDL_Color fill)
+{
+  float foot = 15.0f - lift;
+  float h = foot - top;
+  SDL_Color lit = fx_ramp(fill).lit;
+
+  if (h < 2.0f)
+    h = 2.0f;
+  if (hind)
+  {
+    float knee = top + floorf(h * 0.45f);
+    sprite_rect(r, x, y, DOG_W, dir, lx, top, 4.0f, knee - top + 1.0f,
+                COL_OUTLINE);
+    sprite_rect(r, x, y, DOG_W, dir, lx - 1.0f, knee, 4.0f, foot - knee + 1.0f,
+                COL_OUTLINE);
+    sprite_rect(r, x, y, DOG_W, dir, lx + 1.0f, top, 2.0f, knee - top, fill);
+    sprite_rect(r, x, y, DOG_W, dir, lx, knee, 2.0f, foot - knee, fill);
+  }
+  else
+  {
+    sprite_rect(r, x, y, DOG_W, dir, lx - 1.0f, top, 4.0f, h + 1.0f,
+                COL_OUTLINE);
+    sprite_rect(r, x, y, DOG_W, dir, lx, top, 2.0f, h, fill);
+    sprite_rect(r, x, y, DOG_W, dir, lx + 1.0f, top + 1.0f, 1.0f, h - 2.0f,
+                lit);
+  }
+  /* The paw, a pixel longer than the leg and pointing the way he faces. */
+  float paw_x = hind ? lx - 1.0f : lx;
+  sprite_rect(r, x, y, DOG_W, dir, paw_x - 1.0f, foot - 1.0f, 5.0f, 2.0f,
+              COL_OUTLINE);
+  sprite_rect(r, x, y, DOG_W, dir, paw_x, foot - 1.0f, 3.0f, 1.0f, lit);
+}
+
+/*
+ * A working dog, and it has to read as one at twenty-four pixels.
+ *
+ * It was a brown box on two posts: a rectangle of body, a rectangle of head, a
+ * stub of tail held up like a handle, and one leg for each end — with the
+ * collar painted at a fixed screen offset, so a dog facing left wore it half
+ * way down its back. What says "dog" at this size is the line of the back and
+ * the belly: a deep chest, a waist tucked up under the loin, a haunch, and a
+ * tail that hangs off the end of it. So the body is three masses under one
+ * outline (see `sprite_mass_outline`), the head is a skull with a muzzle
+ * narrowing out of it and a pricked ear, and there are four legs rather than
+ * two — the far pair a value under the near, which is what puts the body
+ * between them. The coat is the black-and-tan every handler's dog in a
+ * building like this is: a dark saddle over the back and the tan on the legs,
+ * the chest and the face, so the pattern alone separates the animal from the
+ * brown of a floor or a crate.
+ */
 void draw_dog(SDL_Renderer *r, const Dog *dog, const Level *level,
                      float cam_x, float oy)
 {
@@ -2121,14 +2797,22 @@ void draw_dog(SDL_Renderer *r, const Dog *dog, const Level *level,
   int dir = dog->dir;
   bool moving = fabsf(dog->vx) > 4.0f;
   bool chase = dog->state == DOG_CHASE;
+  bool biting = dog->attack_timer > 0.0f;
   float phase = dog->anim_time * (chase ? 3.5f : 2.7f);
   float gait = moving ? sinf(phase) * 3.0f : 0.0f;
   float bob = moving ? fabsf(sinf(phase)) : sinf(dog->anim_time * 1.7f) * 0.35f;
-  float lunge = dog->attack_timer > 0.0f ? 3.0f : 0.0f;
-  SDL_Color fur = chase ? (SDL_Color){91, 59, 39, 255}
-                        : (SDL_Color){70, 54, 42, 255};
-  SDL_Color fur_hi = chase ? (SDL_Color){143, 82, 44, 255}
-                           : (SDL_Color){109, 76, 51, 255};
+  float lunge = biting ? 3.0f : 0.0f;
+  /* Tan warms and brightens on the chase, which is the colour cue the
+     animal has always given; the saddle stays black. */
+  SDL_Color tan = chase ? (SDL_Color){143, 82, 44, 255}
+                        : (SDL_Color){109, 76, 51, 255};
+  SDL_Color coat = chase ? (SDL_Color){91, 59, 39, 255}
+                         : (SDL_Color){70, 54, 42, 255};
+  SDL_Color saddle = fx_mix(coat, FX_INK, 0.35f);
+  SDL_Color far_leg = fx_mix(tan, FX_INK, 0.38f);
+  SDL_Color mask = fx_mix(coat, FX_INK, 0.65f);
+  float bx = lunge;
+  float by = bob;
 
   npc_contact_shadow(r, level, dog->x + DOG_W * 0.5f, dog->y + 15.0f,
                      11.0f, 185, cam_x, oy);
@@ -2144,101 +2828,248 @@ void draw_dog(SDL_Renderer *r, const Dog *dog, const Level *level,
   figure_flash_dazzle(r, x + DOG_W * 0.68f, y + 6.0f, 11.0f, 6.0f,
                       dog->blind_timer);
 
-  sprite_body(r, x, y, DOG_W, dir, 4.0f + lunge, 6.0f + bob, 14.0f, 7.0f, fur,
-              COL_OUTLINE, 1, 1);
-  sprite_rect(r, x, y, DOG_W, dir, 7.0f + lunge, 6.0f + bob, 8.0f, 2.0f, fur_hi);
-
-  /* Hindquarters and animated tail. */
-  sprite_form(r, x, y, DOG_W, dir, 1.0f + lunge, 6.0f + bob, 6.0f, 7.0f, fur);
-  sprite_rect(r, x, y, DOG_W, dir, 0.0f + lunge, 3.0f + bob - gait * 0.35f, 4.0f, 3.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, DOG_W, dir, 0.0f + lunge, 4.0f + bob - gait * 0.35f, 3.0f, 1.0f, fur_hi);
-
-  /* Long working-dog muzzle, ears and alert eye. */
-  sprite_body(r, x, y, DOG_W, dir, 17.0f + lunge, 3.0f + bob, 6.0f, 7.0f,
-              fur_hi, COL_OUTLINE, 1, 1);
-  sprite_rect(r, x, y, DOG_W, dir, 17.0f + lunge, 0.0f + bob, 4.0f, 5.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, DOG_W, dir, 18.0f + lunge, 1.0f + bob, 2.0f, 3.0f, fur);
-  sprite_rect(r, x, y, DOG_W, dir, 21.0f + lunge, 6.0f + bob, 4.0f, 4.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, DOG_W, dir, 23.0f + lunge, 7.0f + bob, 2.0f, 2.0f, FX_INK);
-  /* The alert eye blinks like every other eye in the cast — a dog whose eye
-     never closes is a glass one — but never mid-charge. */
-  if (chase || !fx_blinking(dog->anim_time, 0x0d06u))
-    sprite_rect(r, x, y, DOG_W, dir, 21.0f + lunge, 4.0f + bob, 2.0f, 2.0f,
-                chase ? FX_RED : fx_mix(FX_AMBER, FX_CREAM, 0.45f));
-  color_rect(r, chase ? FX_RED : FX_AMBER, x + 13.0f, y + 7.0f + bob, 5.0f, 2.0f);
-
-  if (dog->attack_timer > 0.0f)
-  {
-    sprite_rect(r, x, y, DOG_W, dir, 21.0f + lunge, 10.0f + bob, 5.0f, 3.0f,
-                fx_dim(FX_RED_DK, 0.70f));
-    sprite_rect(r, x, y, DOG_W, dir, 23.0f + lunge, 10.0f + bob, 2.0f, 1.0f,
-                FX_CREAM);
-  }
-
-  /* Four-beat run condensed into two readable leg pairs, each on the same
-     stance-and-swing cycle the rest of the cast walks: through stance the paw
-     holds its ground and tracks back under the body, through swing it lifts
-     and reaches, half a turn apart. The old sine bobbed both pairs in place —
-     paws that pump vertically while the body slides is the quadruped version
-     of skating. Legs are fur over an outline rather than bare outline; a dog
-     standing on two strokes of ink has no legs, only supports. */
+  /* Each leg on the same stance-and-swing cycle the rest of the cast walks,
+     in a trot: the near fore moves with the far hind, the far fore with the
+     near hind. Through stance the paw holds its ground and tracks back under
+     the body, through swing it lifts and reaches. A parked dog stands square
+     on all four instead of freezing a pair mid-stride. */
   float run = phase * 0.5f;
-  for (int pair = 0; pair < 2; ++pair)
+  float leg_x[4] = {15.0f, 5.0f, 16.0f, 6.0f}; /* near fore, near hind, far */
+  float leg_lift[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+  for (int leg = 0; leg < 4; ++leg)
   {
-    /* A parked dog holds mid-stance on all fours instead of freezing one
-       pair mid-swing. */
-    float cycle = moving ? run + (float)pair * 0.5f : 0.25f;
+    if (!moving)
+    {
+      if (leg >= 2)
+        leg_x[leg] -= 2.0f;
+      continue;
+    }
+    float cycle = run + ((leg == 0 || leg == 3) ? 0.0f : 0.5f);
     cycle -= floorf(cycle);
-    float reach = moving ? 2.5f : 0.0f;
-    float leg_x = pair == 0 ? 15.0f : 5.0f;
-    float leg_lift = 0.0f;
+    float reach = chase ? 3.0f : 2.5f;
     if (cycle < 0.5f)
-      leg_x += reach * (1.0f - 4.0f * cycle);
+      leg_x[leg] += reach * (1.0f - 4.0f * cycle);
     else
     {
       float t = (cycle - 0.5f) * 2.0f;
       float ease = t * t * (3.0f - 2.0f * t);
-      leg_x += reach * (-1.0f + 2.0f * ease);
-      leg_lift = sinf(t * 3.14159265f) * 1.5f;
+      leg_x[leg] += reach * (-1.0f + 2.0f * ease);
+      leg_lift[leg] = sinf(t * 3.14159265f) * 1.5f;
     }
-    sprite_rect(r, x, y, DOG_W, dir, leg_x + lunge, 12.0f - leg_lift,
-                4.0f, 4.0f + leg_lift * 0.5f, COL_OUTLINE);
-    sprite_rect(r, x, y, DOG_W, dir, leg_x + 1.0f + lunge, 12.0f - leg_lift,
-                2.0f, 3.0f + leg_lift * 0.5f, fur);
   }
+  draw_dog_leg(r, x, y, dir, leg_x[2] + bx, 10.0f + by, leg_lift[2], false,
+               far_leg);
+  draw_dog_leg(r, x, y, dir, leg_x[3] + bx, 9.0f + by, leg_lift[3], true,
+               far_leg);
+
+  /* The tail comes off the top of the rump and hangs in a curve, carried out
+     straight behind on the chase and swinging while he trots. */
+  float wag = moving ? gait * 0.35f : sinf(dog->anim_time * 4.0f) * 0.8f;
+  float tail_mid_x = chase ? -1.0f : 0.0f;
+  float tail_mid_y = chase ? 4.5f : 7.0f;
+  float tail_tip_x = chase ? -4.0f : -2.0f + wag * 0.5f;
+  float tail_tip_y = chase ? 4.0f + wag * 0.4f : 11.0f;
+  sprite_segment(r, x, y, DOG_W, dir, 3.0f + bx, 5.0f + by,
+                 tail_mid_x + bx, tail_mid_y + by, 4, COL_OUTLINE);
+  sprite_segment(r, x, y, DOG_W, dir, tail_mid_x + bx, tail_mid_y + by,
+                 tail_tip_x + bx, tail_tip_y + by, 3, COL_OUTLINE);
+  sprite_segment(r, x, y, DOG_W, dir, 3.0f + bx, 5.0f + by,
+                 tail_mid_x + bx, tail_mid_y + by, 2, saddle);
+  sprite_segment(r, x, y, DOG_W, dir, tail_mid_x + bx, tail_mid_y + by,
+                 tail_tip_x + bx, tail_tip_y + by, 1, coat);
+
+  /* The hide, outlined as one piece: haunch, loin tucked up under the back,
+     a chest a row deeper than either, the neck rising out of it, then the
+     skull, the muzzle and the ear. */
+  float ear_top = chase ? -3.0f : -2.0f;
+  sprite_mass_outline(r, x, y, DOG_W, dir, 2.0f + bx, 4.0f + by, 7.0f, 7.0f,
+                      2, 2);
+  sprite_mass_outline(r, x, y, DOG_W, dir, 7.0f + bx, 4.0f + by, 8.0f, 5.0f,
+                      0, 1);
+  sprite_mass_outline(r, x, y, DOG_W, dir, 13.0f + bx, 4.0f + by, 6.0f, 8.0f,
+                      1, 2);
+  sprite_mass_outline(r, x, y, DOG_W, dir, 16.0f + bx, 1.0f + by, 4.0f, 6.0f,
+                      0, 0);
+  sprite_mass_outline(r, x, y, DOG_W, dir, 17.0f + bx, 0.0f + by, 5.0f, 5.0f,
+                      2, 1);
+  sprite_mass_outline(r, x, y, DOG_W, dir, 21.0f + bx, 2.0f + by, 4.0f, 3.0f,
+                      0, 1);
+  sprite_mass_outline(r, x, y, DOG_W, dir, 17.0f + bx, ear_top + by, 3.0f,
+                      4.0f - ear_top - 1.0f, 1, 0);
+
+  sprite_mass_form(r, x, y, DOG_W, dir, 2.0f + bx, 4.0f + by, 7.0f, 7.0f,
+                   tan, 2, 2);
+  sprite_mass_form(r, x, y, DOG_W, dir, 7.0f + bx, 4.0f + by, 8.0f, 5.0f,
+                   tan, 0, 1);
+  sprite_mass_form(r, x, y, DOG_W, dir, 13.0f + bx, 4.0f + by, 6.0f, 8.0f,
+                   tan, 1, 2);
+  sprite_mass_form(r, x, y, DOG_W, dir, 16.0f + bx, 1.0f + by, 4.0f, 6.0f,
+                   tan, 0, 0);
+  sprite_mass_form(r, x, y, DOG_W, dir, 17.0f + bx, 0.0f + by, 5.0f, 5.0f,
+                   tan, 2, 1);
+  sprite_mass_form(r, x, y, DOG_W, dir, 21.0f + bx, 2.0f + by, 4.0f, 3.0f,
+                   tan, 0, 1);
+  sprite_mass(r, x, y, DOG_W, dir, 17.0f + bx, ear_top + by, 3.0f,
+              4.0f - ear_top - 1.0f, tan, 1, 0);
+  sprite_rect(r, x, y, DOG_W, dir, 18.0f + bx, ear_top + 1.0f + by, 1.0f,
+              1.0f - ear_top, mask);
+
+  /* The saddle: black across the back from the haunch to the withers, lit
+     along its crown like everything else under the ceiling. */
+  sprite_mass(r, x, y, DOG_W, dir, 3.0f + bx, 4.0f + by, 13.0f, 3.0f, saddle,
+              1, 0);
+  sprite_mass(r, x, y, DOG_W, dir, 5.0f + bx, 7.0f + by, 9.0f, 1.0f, saddle,
+              0, 0);
+  sprite_rect(r, x, y, DOG_W, dir, 4.0f + bx, 4.0f + by, 11.0f, 1.0f,
+              fx_ramp(saddle).lit);
+  /* The black mask down the muzzle and the nose at the end of it. */
+  sprite_rect(r, x, y, DOG_W, dir, 21.0f + bx, 3.0f + by, 4.0f, 2.0f, mask);
+  sprite_rect(r, x, y, DOG_W, dir, 24.0f + bx, 2.0f + by, 1.0f, 2.0f,
+              FX_INK);
+  /* Collar on the neck, in the colour that has always said which state the
+     animal is in — and on the neck whichever way he faces. */
+  sprite_rect(r, x, y, DOG_W, dir, 16.0f + bx, 3.0f + by, 2.0f, 4.0f,
+              chase ? FX_RED : FX_AMBER);
+
+  /* The alert eye blinks like every other eye in the cast — a dog whose eye
+     never closes is a glass one — but never mid-charge. */
+  if (chase || !fx_blinking(dog->anim_time, 0x0d06u))
+    sprite_rect(r, x, y, DOG_W, dir, 20.0f + bx, 1.0f + by, 2.0f, 1.0f,
+                chase ? FX_RED : fx_mix(FX_AMBER, FX_CREAM, 0.45f));
+  else
+    sprite_rect(r, x, y, DOG_W, dir, 20.0f + bx, 1.0f + by, 2.0f, 1.0f, mask);
+
+  if (biting)
+  {
+    /* The jaw drops open under the muzzle: dark mouth, a row of teeth. */
+    sprite_rect(r, x, y, DOG_W, dir, 20.0f + bx, 5.0f + by, 6.0f, 3.0f,
+                COL_OUTLINE);
+    sprite_rect(r, x, y, DOG_W, dir, 21.0f + bx, 5.0f + by, 4.0f, 2.0f,
+                fx_dim(FX_RED_DK, 0.70f));
+    sprite_rect(r, x, y, DOG_W, dir, 22.0f + bx, 5.0f + by, 3.0f, 1.0f,
+                FX_CREAM);
+  }
+  else if (chase)
+  {
+    /* Mouth line, pulled back: the animal is working. */
+    sprite_rect(r, x, y, DOG_W, dir, 21.0f + bx, 5.0f + by, 3.0f, 1.0f,
+                fx_mix(mask, FX_INK, 0.5f));
+  }
+
+  /* The near pair last, in tan, in front of the body. */
+  draw_dog_leg(r, x, y, dir, leg_x[0] + bx, 10.0f + by, leg_lift[0], false,
+               tan);
+  draw_dog_leg(r, x, y, dir, leg_x[1] + bx, 9.0f + by, leg_lift[1], true,
+               tan);
 }
 
-/* The dog, down, on its side. Same reason as the guard: a handler who finds it
-   investigates and may raise the alarm, and the animal has to be on the floor
-   for that to be a thing the player saw happen. */
+/* One leg of a dog lying down, stiff from the joint to the paw, with the paw
+   lit on top. The outline and the fill are separate calls so every leg can be
+   inked before any fill goes down: where a leg crosses the hide, the hide (or
+   the near leg's own fill) covers the ink, and what is left is a leg lying
+   against a flank rather than a dark stroke cut across it. */
+static void lying_dog_leg_outline(SDL_Renderer *r, float x, float y, int dir,
+                                  float jx, float jy, float px, float py)
+{
+  sprite_segment(r, x, y, DOG_W, dir, jx, jy, px, py, 4, COL_OUTLINE);
+  sprite_rect(r, x, y, DOG_W, dir, px - 1.0f, py - 1.5f, 4.0f, 3.0f,
+              COL_OUTLINE);
+}
+
+static void lying_dog_leg_fill(SDL_Renderer *r, float x, float y, int dir,
+                               float jx, float jy, float px, float py,
+                               SDL_Color fill)
+{
+  sprite_segment(r, x, y, DOG_W, dir, jx, jy, px, py, 2, fill);
+  sprite_rect(r, x, y, DOG_W, dir, px, py - 0.5f, 2.0f, 1.0f,
+              fx_ramp(fill).lit);
+}
+
+/*
+ * The dog, down. Same reason as the guard: a handler who finds it investigates
+ * and may raise the alarm, and the animal has to be on the floor for that to
+ * be a thing the player saw happen.
+ *
+ * It was a brown bar with two one-pixel stubs on top, which read as a log, and
+ * then a dog on its back with four legs in the air, which read at 1x as a pile
+ * of roots — four thin uprights is a silhouette the eye files as debris long
+ * before it finds the head. So it lies on its side, the way an animal that has
+ * gone down actually lies: one low black-and-tan hide along the floor with the
+ * saddle on the spine, the neck dropping to a head that rests flat with the
+ * ear fallen back and the eye shut, the tail limp behind, and the legs
+ * stretched stiff and forward along the floor from hip and chest — the far
+ * pair a value darker and partly behind the body, the near pair a step lighter
+ * and in front, the near foreleg lying across under the jaw. The head sits
+ * lower than the back and keeps its stop and its muzzle, because a hide with
+ * no head is a sack; the legs reach out past the outline, because legs tucked
+ * under it are a tray. Every piece is horizontal, which is the whole of "not
+ * standing" at this size.
+ */
 void draw_downed_dog(SDL_Renderer *r, const Dog *dog, const Level *level,
                             float cam_x, float oy)
 {
   float x = dog->x - cam_x;
   float y = dog->y + oy;
   int dir = dog->dir;
-  SDL_Color fur = (SDL_Color){56, 43, 34, 255};
-  SDL_Color fur_hi = (SDL_Color){84, 60, 41, 255};
+  /* The live dog's coat a step down, for the same reason the downed guard's
+     uniform is: nothing is holding it up into the light any more. Only a
+     step, though — dimmed further the tan sank into every brown floor in the
+     building and the pattern that says "dog" went with it. */
+  SDL_Color tan = fx_dim((SDL_Color){109, 76, 51, 255}, 0.94f);
+  SDL_Color saddle = fx_mix((SDL_Color){70, 54, 42, 255}, FX_INK, 0.45f);
+  SDL_Color far_leg = fx_mix(tan, FX_INK, 0.40f);
+  SDL_Color near_leg = fx_mix(tan, fx_ramp(tan).lit, 0.60f);
+  SDL_Color mask = fx_mix(tan, FX_INK, 0.62f);
 
   npc_contact_shadow(r, level, dog->x + DOG_W * 0.5f, dog->y + 15.0f,
-                     12.0f, 150, cam_x, oy);
+                     14.0f, 150, cam_x, oy);
 
-  /* Legs out sideways off the lying body: the one line that says this animal
-     is not standing. */
-  sprite_rect(r, x, y, DOG_W, dir, 6.0f, 7.0f, 2.0f, 4.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, DOG_W, dir, 11.0f, 7.0f, 2.0f, 4.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, DOG_W, dir, 6.0f, 8.0f, 1.0f, 3.0f, fur);
-  sprite_rect(r, x, y, DOG_W, dir, 11.0f, 8.0f, 1.0f, 3.0f, fur);
+  /* The tail, limp: off the rump and down onto the floor behind. */
+  sprite_segment(r, x, y, DOG_W, dir, 3.0f, 9.0f, 0.0f, 12.5f, 4,
+                 COL_OUTLINE);
+  sprite_segment(r, x, y, DOG_W, dir, 0.0f, 12.5f, -4.0f, 14.5f, 3,
+                 COL_OUTLINE);
+  sprite_segment(r, x, y, DOG_W, dir, 3.0f, 9.0f, 0.0f, 12.5f, 2, saddle);
+  sprite_segment(r, x, y, DOG_W, dir, 0.0f, 12.5f, -4.0f, 14.5f, 1, saddle);
 
-  sprite_rect(r, x, y, DOG_W, dir, 0.0f, 11.0f, 4.0f, 2.0f, COL_OUTLINE);
-  sprite_rect(r, x, y, DOG_W, dir, 0.0f, 11.0f, 3.0f, 1.0f, fur);
-  sprite_body(r, x, y, DOG_W, dir, 3.0f, 10.0f, 13.0f, 5.0f, fur,
-              COL_OUTLINE, 1, 1);
-  sprite_body(r, x, y, DOG_W, dir, 15.0f, 11.0f, 7.0f, 4.0f, fur_hi,
-              COL_OUTLINE, 1, 1);
-  sprite_rect(r, x, y, DOG_W, dir, 15.0f, 9.0f, 3.0f, 2.0f, COL_OUTLINE);
+  /* Every outline first — the hide, the neck, the skull, the muzzle and the
+     four legs — so that the only ink left once the fills are down is the
+     silhouette. */
+  sprite_mass_outline(r, x, y, DOG_W, dir, 2.0f, 7.0f, 14.0f, 6.0f, 2, 1);
+  sprite_mass_outline(r, x, y, DOG_W, dir, 14.0f, 8.0f, 4.0f, 4.0f, 1, 0);
+  sprite_mass_outline(r, x, y, DOG_W, dir, 16.0f, 9.0f, 5.0f, 5.0f, 2, 1);
+  sprite_mass_outline(r, x, y, DOG_W, dir, 20.0f, 11.0f, 5.0f, 3.0f, 0, 1);
+  lying_dog_leg_outline(r, x, y, dir, 8.0f, 11.5f, 14.5f, 13.0f);
+  lying_dog_leg_outline(r, x, y, dir, 16.0f, 11.5f, 26.5f, 13.0f);
+  lying_dog_leg_outline(r, x, y, dir, 5.0f, 12.0f, 12.0f, 14.5f);
+  lying_dog_leg_outline(r, x, y, dir, 13.0f, 12.5f, 24.5f, 14.5f);
+
+  /* The far pair, a value down; the hide and the head cover their roots. */
+  lying_dog_leg_fill(r, x, y, dir, 8.0f, 11.5f, 14.5f, 13.0f, far_leg);
+  lying_dog_leg_fill(r, x, y, dir, 16.0f, 11.5f, 26.5f, 13.0f, far_leg);
+
+  sprite_mass_form(r, x, y, DOG_W, dir, 2.0f, 7.0f, 14.0f, 6.0f, tan, 2, 1);
+  sprite_mass_form(r, x, y, DOG_W, dir, 14.0f, 8.0f, 4.0f, 4.0f, tan, 1, 0);
+  sprite_mass_form(r, x, y, DOG_W, dir, 16.0f, 9.0f, 5.0f, 5.0f, tan, 2, 1);
+  sprite_mass_form(r, x, y, DOG_W, dir, 20.0f, 11.0f, 5.0f, 3.0f, tan, 0, 1);
+
+  /* The saddle along the spine, from the rump to the withers, with the
+     ceiling's one lit row on it as on the live dog. */
+  sprite_mass(r, x, y, DOG_W, dir, 3.0f, 7.0f, 13.0f, 3.0f, saddle, 2, 0);
+  sprite_rect(r, x, y, DOG_W, dir, 5.0f, 7.0f, 9.0f, 1.0f,
+              fx_ramp(saddle).lit);
+  /* The ear, fallen back from the skull onto the neck. */
+  sprite_rect(r, x, y, DOG_W, dir, 15.0f, 9.0f, 4.0f, 1.0f, saddle);
+  sprite_rect(r, x, y, DOG_W, dir, 15.0f, 10.0f, 2.0f, 1.0f, saddle);
+  /* The black mask down the muzzle and the nose at the end of it. */
+  sprite_rect(r, x, y, DOG_W, dir, 21.0f, 11.0f, 3.0f, 2.0f, mask);
+  sprite_rect(r, x, y, DOG_W, dir, 24.0f, 11.0f, 1.0f, 2.0f, FX_INK);
   /* The eye is shut. An open one on a body is the animal watching the room. */
-  sprite_rect(r, x, y, DOG_W, dir, 18.0f, 12.0f, 2.0f, 1.0f, FX_INK);
+  sprite_rect(r, x, y, DOG_W, dir, 18.0f, 11.0f, 2.0f, 1.0f, FX_INK);
+
+  /* The near pair last, in front of everything and a step lighter. */
+  lying_dog_leg_fill(r, x, y, dir, 5.0f, 12.0f, 12.0f, 14.5f, near_leg);
+  lying_dog_leg_fill(r, x, y, dir, 13.0f, 12.5f, 24.5f, 14.5f, near_leg);
 }
 
 void draw_thrown_object(SDL_Renderer *r, const ThrownObject *object,
@@ -2284,6 +3115,22 @@ void draw_thrown_object(SDL_Renderer *r, const ThrownObject *object,
   }
 }
 
+/* One wing as a blade from the shoulder to the tip: thick at the root, thin at
+   the end, and lit along its leading edge. */
+static void draw_bird_wing(SDL_Renderer *r, float x, float y, int dir,
+                           float sx, float sy, float tx, float ty,
+                           SDL_Color fill)
+{
+  float mx = (sx + tx) * 0.5f;
+  float my = (sy + ty) * 0.5f;
+  sprite_segment(r, x, y, BIRD_W, dir, sx, sy, mx, my, 5, COL_OUTLINE);
+  sprite_segment(r, x, y, BIRD_W, dir, mx, my, tx, ty, 4, COL_OUTLINE);
+  sprite_segment(r, x, y, BIRD_W, dir, sx, sy, mx, my, 3, fill);
+  sprite_segment(r, x, y, BIRD_W, dir, mx, my, tx, ty, 2, fill);
+  sprite_segment_shifted(r, x, y, BIRD_W, dir, sx, sy, tx, ty, 1, 1.0f,
+                         fx_ramp(fill).lit);
+}
+
 void draw_bird(SDL_Renderer *r, const Bird *bird,
                       float cam_x, float oy)
 {
@@ -2291,34 +3138,48 @@ void draw_bird(SDL_Renderer *r, const Bird *bird,
   float y = bird->y + oy;
   float flap = sinf(bird->anim_time * 15.0f);
   int dir = bird->vx >= 0.0f ? 1 : -1;
-  float head_x = dir > 0 ? x + 19.0f : x + 2.0f;
-  /* City-pigeon slate out of the room's own darks, not a fourth grey. */
+  bool up = flap > 0.0f;
+  /* City-pigeon slate out of the room's own darks, not a fourth grey: a body,
+     a darker hood, and wings a step lighter than either. */
   SDL_Color body = fx_mix(FX_INK, FX_STEEL_DK, 0.60f);
-  SDL_Color wing = fx_mix(FX_INK, FX_STEEL_DK, 0.95f);
+  SDL_Color hood = fx_mix(FX_INK, FX_STEEL_DK, 0.35f);
+  SDL_Color wing = fx_mix(FX_STEEL_DK, FX_STEEL, 0.55f);
   FxRamp body_ramp = fx_ramp(body);
-  FxRamp wing_ramp = fx_ramp(wing);
 
-  /* The one animate thing that was still a stack of flat swatches: the body
-     and head are masses with the ceiling light on their crowns, and the wing
-     is a form so the downbeat reads as a surface turning, not a bar moving. */
-  fx_mass(r, COL_OUTLINE, x + 6.0f, y + 4.0f, 15.0f, 8.0f, 1, 1);
-  fx_form_mass(r, x + 7.0f, y + 5.0f, 13.0f, 6.0f, body_ramp, dir, 1, 1);
-  fx_mass(r, COL_OUTLINE, head_x - 1.0f, y + 2.0f, 8.0f, 8.0f, 1, 1);
-  fx_form_mass(r, head_x, y + 3.0f, 6.0f, 6.0f, body_ramp, dir, 1, 1);
-  color_rect(r, fx_mix(FX_AMBER_DK, FX_AMBER, 0.30f),
-             dir > 0 ? head_x + 5.0f : head_x - 3.0f, y + 5.0f, 4.0f, 2.0f);
-  color_rect(r, FX_INK, dir > 0 ? head_x + 3.0f : head_x + 1.0f,
-             y + 4.0f, 1.0f, 1.0f);
-  if (flap > 0.0f)
-  {
-    fx_form_block(r, x + 8.0f, y, 10.0f, 5.0f, wing_ramp, dir);
-    fx_form_block(r, x + 10.0f, y + 9.0f, 8.0f, 3.0f, wing_ramp, dir);
-  }
+  /*
+   * Both wings beat together. The old pose drew one wing above the body and
+   * the other below it, which is no bird's stroke — it read as a cross, or as
+   * a box with a tab on each side. On the upstroke the pair rise off the back,
+   * on the downstroke they sweep down and back under the body, and each is a
+   * blade rather than a block. The far wing is a value down and a pixel
+   * behind, which is what puts the body between them.
+   */
+  if (up)
+    draw_bird_wing(r, x, y, dir, 12.0f, 6.0f, 7.0f, -2.0f,
+                   fx_ramp(wing).dark);
   else
-  {
-    fx_form_block(r, x + 8.0f, y + 7.0f, 10.0f, 5.0f, wing_ramp, dir);
-    fx_form_block(r, x + 10.0f, y + 2.0f, 8.0f, 3.0f, wing_ramp, dir);
-  }
-  color_rect(r, body_ramp.dark, dir > 0 ? x + 3.0f : x + 19.0f,
-             y + 6.0f, 5.0f, 3.0f);
+    draw_bird_wing(r, x, y, dir, 12.0f, 8.0f, 6.0f, 13.0f,
+                   fx_ramp(wing).dark);
+
+  /* Tail fan at the back, then the body and the head as masses with the
+     light on their crowns. */
+  sprite_mass(r, x, y, BIRD_W, dir, 1.0f, 5.0f, 8.0f, 5.0f, COL_OUTLINE, 1, 1);
+  sprite_mass(r, x, y, BIRD_W, dir, 2.0f, 6.0f, 6.0f, 3.0f, body_ramp.dark,
+              1, 1);
+  sprite_mass(r, x, y, BIRD_W, dir, 6.0f, 4.0f, 15.0f, 8.0f, COL_OUTLINE, 1, 1);
+  sprite_mass_form(r, x, y, BIRD_W, dir, 7.0f, 5.0f, 13.0f, 6.0f, body, 1, 1);
+  sprite_mass(r, x, y, BIRD_W, dir, 18.0f, 2.0f, 8.0f, 8.0f, COL_OUTLINE, 1, 1);
+  sprite_mass_form(r, x, y, BIRD_W, dir, 19.0f, 3.0f, 6.0f, 6.0f, hood, 1, 1);
+  /* The sheen on the neck, one pixel of the city's teal. */
+  sprite_rect(r, x, y, BIRD_W, dir, 19.0f, 7.0f, 2.0f, 1.0f,
+              fx_mix(hood, FX_CYAN_DK, 0.55f));
+  sprite_rect(r, x, y, BIRD_W, dir, 24.0f, 5.0f, 3.0f, 1.0f,
+              fx_mix(FX_AMBER_DK, FX_AMBER, 0.30f));
+  sprite_rect(r, x, y, BIRD_W, dir, 22.0f, 4.0f, 1.0f, 1.0f, FX_INK);
+
+  /* The near wing over the body. */
+  if (up)
+    draw_bird_wing(r, x, y, dir, 14.0f, 6.0f, 9.0f, -3.0f, wing);
+  else
+    draw_bird_wing(r, x, y, dir, 14.0f, 7.0f, 8.0f, 14.0f, wing);
 }

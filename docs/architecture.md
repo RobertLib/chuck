@@ -144,6 +144,18 @@ The sector is drawn by three files, and the split is by what each one knows.
   props, the HUD, the overlays, and `game_render` itself, which is still the
   one place a frame is finished.
 
+Chuck is the one figure with a file of his own on top of those, and the reason
+is that he is the one figure two renderers draw. His skeleton —
+[chuck_pose.c](../src/chuck_pose.c), SDL-free and in `TEST_SOURCES` — says where
+his joints are in a frame of a move, and
+[render_chuck.c](../src/render_chuck.c) draws it at any scale: at one pixel to
+the unit from `draw_player` in render_figures.c, and at the film's 1.4 from
+cutscene.c, which fits him with shorter legs so that he stands at the crew's
+height among the crew. Before that the two had a drawing each, which agreed about the
+colours and about nothing else. His views that are not side on — the ladder and
+the console from behind, and the crawl — stay in render_figures.c with the rest
+of the cast, drawn to the same proportions.
+
 It was one 6,200-line file, which is 13% of the tree in the least-tested corner
 of it: `make test` links no SDL and so could never reach a line of it. The
 vocabulary being `static` is what had kept it that way — nothing could move out

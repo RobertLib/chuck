@@ -288,11 +288,13 @@ static const ManualLine PAGE_COMBAT[] = {
      * the moment a floor gets busy, and until it was wired up it cost nothing
      * at all: a provoked guard aimed flat, and a flat round leaves the muzzle
      * at chest height while the boot that started it is two tiles over his
-     * helmet. It costs a heart now, and a rule learned only by losing one is a
-     * rule the game never taught. */
-    {LINE_BULLET, "Land on a guard's head to knock him"},
-    {LINE_BODY, "down and bounce clear - then he fires"},
-    {LINE_BODY, "straight up. Other contact costs a heart."},
+     * helmet. The odds are here for the same reason — one landing in four
+     * wounds (`ENEMY_STOMP_WOUND_CHANCE`) and the rest cost a heart — and a
+     * rule learned only by losing hearts to it is a rule the game never
+     * taught. Both had to fit the three rows the old sentence had. */
+    {LINE_BULLET, "Land on a guard's head: one time in four he"},
+    {LINE_BODY, "is knocked down, and fires straight up. The"},
+    {LINE_BODY, "rest cost a heart, as any other contact does."},
     /*
      * One row for the two kinds a boot bounces off, and one for what the vest
      * is actually worth.

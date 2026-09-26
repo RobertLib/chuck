@@ -71,6 +71,33 @@
   frame puts every overlay drawn after it (the pause sheet, the assist
   sheet, the debug picker) on top of the finish instead of under it, which
   is exactly the bug this rule replaced.
+- **An alpha is only an alpha with blending on.** `color_rect` and `fx_rect`
+  draw with the renderer's blend mode off, so an `SDL_Color` whose fourth
+  number is under 255 is not a translucent rectangle — it is an opaque one that
+  also writes a hole into the frame's alpha. That was the "shadow" under every
+  piece of furniture (a pale grey plinth), the lobby turnstile's glass (a lit
+  slab), the restroom's rim and a see-through strip down the side of every
+  `--shot` of the arrival. `fx_rect_a` is the translucent rectangle; reach for
+  it, or for `fx_contact_shadow`, whenever the colour you mean has air in it.
+- **The finish opens with the glow.** Every light in the game used to stop at
+  its own last pixel, so a lamp strip and the brick beside it were the same kind
+  of object with different numbers in them. The frame is now drawn into a
+  texture (`PlatformState.frame`), and before the vignette `glow_apply` in
+  [game_render.c](../src/game_render.c) copies it down to half size, subtracts
+  `GLOW_THRESHOLD` from every channel so only the top of the range survives —
+  in its own colour, so a red lamp leaves red and cream type a pale haze — blurs
+  that through a quarter, an eighth and a sixteenth, and adds the three back at
+  `GLOW_MIX`. So a light no longer needs its own `fx_glow` to read as emitting;
+  it only needs to be bright, and the ones that get a halo are the ones that
+  are. The threshold sits above every *material* in the palette on purpose —
+  pale paint, lit ledges and the cream type were measured glowing at a lower
+  one and it read as fog — which is why brightness is now a statement a
+  renderer makes on purpose. It is behind the CRT filter switch with the rest
+  of the finish. The subtraction is built from additive blending alone —
+  invert, add the threshold, invert again, and let the eight-bit target's clamp
+  do the `max` — because desktop OpenGL has no subtracting blend and the first
+  version switched itself off there; on a renderer with no custom blend at all
+  (the software one) the game draws straight into the window as it always did.
 - [level_art.c](../src/level_art.c) holds the per-level wall materials and
   backdrops. It is the only place a level's look is decided; the themes shift
   hue and value inside the fx.h system rather than inventing one per sector.
@@ -97,6 +124,36 @@
   — and lands each ceiling fixture's cone in a pool on the first floor beneath
   it, because a beam that fades out in mid-air is a beam with nothing at the
   end of it.
+- **A beam is volume, not a wedge.** A cone is a gradient and a gradient is a
+  shape: nothing in it says it is light passing through air rather than a
+  translucent triangle painted on the wall. `draw_beam_dust` in
+  [game_render.c](../src/game_render.c) turns a handful of motes over inside each
+  fixture's cone — brightest near the lamp and in the middle of the beam, gone at
+  its edges, faded in and out at the ends of their fall so the wrap never pops —
+  and stops them where the beam meets the floor, so no mote is ever drawn over
+  the slab. They are keyed to the fixture's own tile hash, sink on the render
+  clock (a pause sheet leaves the air behind it alive), and hold still under
+  reduced motion: the beam keeps its volume and loses only the drift.
+- **An interior's back wall belongs to a room, not to the screen.** Every
+  interior backdrop used to be one picture the size of the frame, pinned to the
+  frame: it slid sideways with the camera and not at all up or down, so climbing
+  a ladder moved the building past a wall that stood still, and every storey
+  showed whatever slice of that one picture was behind it — a rack, a stack of
+  shelving or a window bay cut in half by the slab above it and carrying on in
+  the storey above. `level_backdrop_plan` in [level.c](../src/level.c) reads the
+  map into rooms (a ladder hole or a pair of falling panels belongs to the slab,
+  a door does not cut a strip out of the wall it is in, and a platform standing
+  in a hall is in front of the hall's wall), and `level_art_backdrop` draws each
+  room's wall clipped to it and anchored to the building, so it moves with the
+  slabs on both axes. A theme lays its wall out against `ArtRoom` — things stand
+  on its floor, hang from its ceiling and are sized to its height, which runs
+  from two tiles to a dozen — while what is far away, a city through glazing or
+  the sky over the roof, stays near the screen inside its window and so moves
+  much less than the frame it is seen through. The dust, the room's own air
+  gradient and the haze on its floor are drawn per room around the theme, which
+  is why every storey now has haze on its floor rather than only the bottom of
+  the frame. `test_the_back_wall_is_laid_out_per_room` and
+  `test_every_shipped_interior_reads_into_rooms` hold the reading.
 - **One tile in the game has a front and a back, and it is the one something is
   inside.** Every other tile is drawn once, in the structural pass at the top of
   the frame, and that is right because nothing is ever inside masonry — the
@@ -152,8 +209,11 @@
   executes exactly as much code as one standing still, and a photograph of it
   is a photograph of a skyline. This has now been the same bug three times, in
   three different backdrops, in the same file.
-- **A backdrop layer sinks as the climb rises, and never wraps.** The climbs
-  are the only place the camera travels on the vertical — a facade map is
+- **A backdrop layer sinks as the climb rises, and never wraps.** This bullet
+  used to open by calling the climbs the only place the camera travels on the
+  vertical, which was never true — most interiors are taller than the frame —
+  and is the sentence the screen-pinned interior backdrops were resting on. On
+  a climb the camera travels *only* on the vertical — a facade map is
   exactly one viewport wide, so `cam_x` is nought out there — and a distant
   tower sits at eye level whatever storey Chuck is on, so what height does to
   the city is put it further down the frame. Two things follow. The offset
@@ -237,6 +297,87 @@
   arc, and the other leg gets the same number half a turn along. A sine is
   slowest exactly where the foot should be carrying the figure fastest, which is
   what makes a sine-driven walk look like skating.
+- **And a cycle driven by a clock skates anyway.** That bullet was true and was
+  not enough, which is what Chuck's run showed for as long as he had one: the
+  cycle tracked the ankle back under him at a constant rate, and the rate was
+  three and a half pixels either side of the hip while the man travelled
+  twenty-two between footfalls. A foot moving back a sixth as fast as the body
+  moves forward over it is a foot sliding, and the corridor between sectors —
+  where the film eases him across the screen on a smoothstep at every speed from
+  nought to two hundred and sixty pixels a second — was that slide at one and a
+  half times the size. So his gait lives in [chuck_pose.c](../src/chuck_pose.c)
+  and is driven by **distance**: `chuck_gait_cycle` turns how far he has
+  travelled into a place in the stride, and `chuck_gait_stride` is not a tuning
+  number but the length the planted foot sweeps divided by the share of the
+  cycle it is planted for, which is the one stride at which the foot stays where
+  it was put. The suite holds that as a property
+  (`test_a_planted_foot_stays_where_it_was_put`), along with the bones keeping
+  their length in every pose, no joint jumping anywhere in a cycle, the arms
+  swinging against the legs, and the difference between a walk and a run: a walk
+  vaults over a stiff leg and is highest above it, a run lands on a bending one,
+  is lowest there, and has a flight between footfalls.
+- **The film runs him plainly.** The sector's run is a run a player steers, and
+  it acts: the heel kicks up behind him, he leans into it, the elbows drive and
+  the headband streams. In the film that was the one figure on the pavement
+  doing any of it — the captors walk on a flat two-beat step with their bodies
+  still, Ellen barely lifts her feet — and he read as drawn for another film.
+  `CHUCK_GAIT_PLAIN_RUN` is the run with the acting taken out: the run's flight
+  and a stride at least as long, so the planted foot still stays put at every
+  speed the film eases him through, and everything a viewer sees — how high a
+  foot comes up, the lean, how far the hands travel and the elbows fold, the
+  bounce, the headband — held under his own walk, on soles that never tip
+  because the cast's shoe is a block that does not.
+  `test_the_films_run_is_the_run_with_the_acting_taken_out` holds both halves
+  against the other two gaits rather than against numbers. The film's standing
+  and armed poses were already still, and are unchanged.
+  **The kerb is the exception, and it is one on purpose.** Plain is right for
+  a man walking into a building; it was wrong for a man watching his wife
+  taken, where it read as not caring. There the same legs are pitched forward
+  with the fists carried and driving (`agent_hurry` in
+  [cutscene.c](../src/cutscene.c)) — the spine and the arms only, so the
+  planted foot is still the plain run's — and the face shows what he saw. See
+  [The prologue](screens.md#the-prologue-three-beats-one-shot) for the beat.
+- **Chuck is a skeleton, and one drawing of it.** The sector and the film used
+  to draw him twice, by hand, with every knee placed rather than solved, so a
+  shin could be any length a pose wanted. He is
+  joints now ([chuck_pose.h](../src/chuck_pose.h)) — knees and elbows solved by
+  a two-bone reach, so no pose lengthens a limb, and a hand sent further than the
+  arm goes stops at the end of it — and one renderer
+  ([render_chuck.c](../src/render_chuck.c)) draws them at one pixel to the unit
+  for the sector and 1.4 for the film.
+  **The film's man has shorter legs, on purpose.** Drawn at 1.48 on the
+  sector's legs he stood half a head over the crew he was chasing, on legs a
+  fifth longer than theirs under a jacket two rows shorter, and read as a
+  different build. `chuck_pose_fit_legs` scales every leg of a pose about its
+  hip and brings the pelvis down so a planted foot stays planted; the film fits
+  him at 0.82 and draws him at 1.4, a hair over the crew's 1.32 to 1.35. The
+  sector keeps its legs, because a jump and a stride are measured on them.
+  **What the skeleton wears is the cast's, and that was learned the hard way.**
+  The first drawing of him from it shaped the parts as profiles — a smaller head
+  with a chin, a jacket with a chest and a waist, a lot more leg — and it was a
+  better drawing of a man and the wrong drawing of this one: every guard,
+  civilian and captor in the game is chamfered blocks, and next to them he read
+  as a figure pasted in from another game. So the head is the eight-by-seven
+  block every head in the building is and the limbs are three pixels of garment
+  as theirs are. What he keeps from the first drawing is a little more leg —
+  the hip joint at 20.7 rather than 21.5 — so the stride has room to be a
+  stride. **The proportions a player reads first are the cast's, not the
+  figure's**: change one figure's and it is the one they notice.
+  **And a chamfered block is not automatically a torso.** Going back to the
+  cast's thirteen-by-twelve with two rows off the top corners put him straight
+  back into the shape he was rebuilt to leave: shoulders sloping away from the
+  neck, straight sides, and the widest, brightest row — the belt — at the foot,
+  over legs narrower than it. That is a bell, and with hands that hung exactly
+  at the hem the silhouette flared at the bottom. The jacket is its own row
+  table now (`JACKET_BACK_IN` / `JACKET_FRONT_IN` in
+  [render_chuck.c](../src/render_chuck.c)): eleven wide, square at the shoulders
+  with only the corners off, straight down, and a unit in at the belt and the
+  hem; and the arms are long enough that the hands hang beside the thigh rather
+  than at the hem. The three views that are not side on — the ladder
+  and the console from behind, and the crawl — are drawn by hand in
+  [render_figures.c](../src/render_figures.c) to the same proportions, and the
+  crawl borrows the skeleton's head, so his face does not change when he gets
+  down.
 - **A traverse is not a climb, and one beat is all that separates them.** The
   rear-facing climbing pose in [render_figures.c](../src/render_figures.c) spends its
   beat vertically — a hand and the opposite boot rise while the other pair hold
@@ -275,6 +416,30 @@
   dimmed to night, and stands in the lamp's pool), and every window that is lit
   on the tower is asked for twice, once by the facade and once by the pavement
   reflecting it, so the two can never disagree.
+- **The roof the night ends on is built the way the title screen is.** The outro
+  was the last screen in the game still drawn as flat rectangles: one row of
+  towers two or three units off the sky, so its lit windows floated like dirt,
+  and a helipad drawn as a face-on circle whose top arc hung in the air above the
+  parapet. `render_outro_skyline` in [cutscene.c](../src/cutscene.c) is the title
+  screen's recipe — the city's teal haze behind a far row, a near row a value
+  darker with the moon on one flank and the roofline, floors laid in as faint
+  spandrels so a window sits in a building, setback crowns, water tanks and
+  aviation lights — and the deck under the figures is a wet membrane in
+  perspective: lapped seams closing up with distance, the moon broken into
+  ripples down it, puddles that reflect the haze on their far edge, and the
+  helipad painted flat and foreshortened with everything else.
+- **Every roof in the drive is lit by one moon.** The blocks either side of the
+  road are the only surfaces in the game seen from straight above, and they
+  were flat slabs. `draw_rooftop_block` in
+  [chase_render.c](../src/chase_render.c) gives each a parapet lit along its lip
+  and shading the membrane inside it, the membrane rolled in strips with ballast
+  and drains, and hardware in a grid of bays — condensers, vent stacks, a wooden
+  tank, skylights, a stair head with a lamp on its lee side, a dish — every piece
+  throwing its shadow down and to the right, the side away from the moon the
+  title screen and the outro hang up and to the left. The only other light is
+  the street's: the lip over the road takes the sodium, and a sign board stands
+  on it facing the traffic. All of it comes off the block's world seed, never off
+  where the block is on screen.
 - **The wordmark is a thing in the shot, not type over it.** It used to be a
   seven-by-nine bitmap font drawn at eight pixels a cell and filled with a
   cream-to-red gradient, which made it the one surface in the frame lit from

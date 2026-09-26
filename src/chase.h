@@ -57,6 +57,16 @@ typedef struct
 {
     float x, y; /* centre of the car in road space */
     float vx, vy;
+    /* The speed it holds along its own axis while nothing is in front of it. */
+    float cruise;
+    /* +1 or -1: which way along that axis it drives — y for a car in a lane,
+     * x for one crossing a junction. Kept apart from the velocity because a
+     * car waiting behind another one has none, and still faces the way it was
+     * going. */
+    float heading;
+    /* The lane centre a car in a lane is steering for; it only differs from
+     * `x` while the car is pulling round something that has stopped. */
+    float lane_x;
     ChaseCarKind kind;
     int variant;      /* seeded colour/shape choice, for the renderer */
     float wreck_time; /* seconds since it was hit; 0 while intact */

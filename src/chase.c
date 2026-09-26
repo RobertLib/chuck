@@ -165,22 +165,249 @@ static float car_half_y(const ChaseCar *car)
                                             : CHASE_CAR_LENGTH) * 0.5f;
 }
 
+static bool runs_across(const ChaseCar *car)
+{
+    return car->kind == CHASE_CAR_CROSSING;
+}
+
+/* How fast a car is going the way it faces. */
+static float car_speed(const ChaseCar *car)
+{
+    return (runs_across(car) ? car->vx : car->vy) * car->heading;
+}
+
+/* ---- Keeping out of each other --------------------------------------- */
+
+/*
+ * Everything on the road a car in traffic has to keep out of, addressed by one
+ * index: the traffic slots, then the SUV, then Chuck's car.
+ *
+ * Chuck's car is only solid to traffic while nobody is driving it. During the
+ * pursuit a car running into him is a crash and costs him integrity — that is
+ * the drive — so traffic neither brakes for him nor stops short of him there.
+ * Parked at the kerb before the departure, rolling to a halt after a failure
+ * and braking onto its mark at the building it is scenery, and a car driving
+ * through it is exactly what this whole section exists to stop.
+ */
+enum
+{
+    ROAD_SUV = CHASE_MAX_CARS,
+    ROAD_PLAYER,
+    ROAD_BOX_COUNT
+};
+
+typedef struct
+{
+    float x, y;   /* centre */
+    float hw, hh; /* half extents */
+    float vx, vy;
+    bool present;
+} RoadBox;
+
+static bool player_car_is_scenery(const Chase *chase)
+{
+    return chase->phase != CHASE_PHASE_PURSUIT;
+}
+
+static RoadBox road_box(const Chase *chase, int index, bool with_player)
+{
+    RoadBox box = {0};
+    if (index < CHASE_MAX_CARS)
+    {
+        const ChaseCar *car = &chase->cars[index];
+        box.present = car->active;
+        box.x = car->x;
+        box.y = car->y;
+        box.hw = car_half_x(car);
+        box.hh = car_half_y(car);
+        box.vx = car->vx;
+        box.vy = car->vy;
+    }
+    else if (index == ROAD_SUV)
+    {
+        box.present = true;
+        box.x = chase->target.x;
+        box.y = chase->target.y;
+        box.hw = CHASE_SUV_WIDTH * 0.5f;
+        box.hh = CHASE_SUV_LENGTH * 0.5f;
+        box.vy = chase->target.speed;
+    }
+    else
+    {
+        box.present = with_player;
+        box.x = chase->player.x;
+        box.y = chase->player.y;
+        box.hw = CHASE_CAR_WIDTH * 0.5f;
+        box.hh = CHASE_CAR_LENGTH * 0.5f;
+        box.vy = chase->player.speed;
+    }
+    return box;
+}
+
+/*
+ * Whether road box `index` is something the box at `self` has to keep out of.
+ * Everything is, bar itself — except that Chuck's car shoves a wreck aside
+ * rather than stopping for it (see `shove_wrecks_aside`). Stopping for one
+ * could leave his car boxed in on the way onto its mark at the building, with
+ * a wreck beside it and a car in front waiting for it to move: measured, one
+ * drive in 384 parked him thirteen hundred pixels short, on the oncoming side
+ * of a junction, for the whole of the beat.
+ */
+static bool road_box_blocks(const Chase *chase, int self, int index)
+{
+    if (index == self)
+        return false;
+    return !(self == ROAD_PLAYER && index < CHASE_MAX_CARS &&
+             chase->cars[index].wreck_time > 0.0f);
+}
+
+/*
+ * How deep two boxes have to be in each other before they count as already
+ * overlapping rather than touching. A car stopped against another one is left
+ * exactly touching, and a float's worth of error on that edge must still read
+ * as touching — read as an overlap, the pair would be let through each other.
+ */
+static const float TOUCH_TOLERANCE = 0.05f;
+
+/* The nearest thing in front of a box driving one way along one axis. */
+typedef struct
+{
+    bool found;
+    float gap;   /* bumper to bumper */
+    float speed; /* how fast it is going the same way */
+} Obstacle;
+
+/*
+ * `side_lo`..`side_hi` is the strip across the axis the mover sweeps: its own
+ * width, widened toward the lane it is pulling into when it is changing lanes,
+ * so a car mid-change is looking up both of them.
+ *
+ * Something the mover already overlaps is not in front of it, and neither this
+ * nor `clear_step` has an opinion about it. Traffic never gets into that state
+ * with itself; it is what a crash leaves, or the SUV or Chuck arriving in a car
+ * sideways — and a pair that is already buried in each other and forbidden to
+ * move toward each other's centres is a pair frozen that way. Letting them come
+ * apart however they are moving is the only answer that ends the overlap.
+ */
+static Obstacle obstacle_ahead(const Chase *chase, int self, float x, float y,
+                               float hw, float hh, bool across, float heading,
+                               float side_lo, float side_hi)
+{
+    Obstacle best = {false, 0.0f, 0.0f};
+    bool with_player = player_car_is_scenery(chase);
+    float along = across ? x : y;
+    float half_along = across ? hw : hh;
+    for (int i = 0; i < ROAD_BOX_COUNT; ++i)
+    {
+        if (!road_box_blocks(chase, self, i))
+            continue;
+        RoadBox box = road_box(chase, i, with_player);
+        if (!box.present)
+            continue;
+        float side = across ? box.y : box.x;
+        float half_side = across ? box.hh : box.hw;
+        if (side + half_side <= side_lo || side - half_side >= side_hi)
+            continue;
+        float ahead = ((across ? box.x : box.y) - along) * heading;
+        if (ahead <= 0.0f)
+            continue;
+        float gap = ahead - half_along - (across ? box.hw : box.hh);
+        if (gap < -TOUCH_TOLERANCE || gap > CHASE_TRAFFIC_LOOKAHEAD)
+            continue;
+        if (gap < 0.0f)
+            gap = 0.0f;
+        if (!best.found || gap < best.gap)
+        {
+            best.found = true;
+            best.gap = gap;
+            best.speed = (across ? box.vx : box.vy) * heading;
+        }
+    }
+    return best;
+}
+
+/*
+ * The speed that settles a car in at CHASE_TRAFFIC_GAP behind whatever is in
+ * front of it: the leader's own speed plus whatever can still be shed at
+ * CHASE_TRAFFIC_EASE in the room left over. Something coming the other way
+ * counts as standing still — a car does not reverse out of the way.
+ */
+static float speed_behind(Obstacle obstacle, float cruise)
+{
+    if (!obstacle.found)
+        return cruise;
+    float leader = fmaxf(obstacle.speed, 0.0f);
+    float room = obstacle.gap - CHASE_TRAFFIC_GAP;
+    float speed = room > 0.0f
+                      ? leader + sqrtf(2.0f * CHASE_TRAFFIC_EASE * room)
+                      : leader * obstacle.gap / CHASE_TRAFFIC_GAP;
+    return fminf(cruise, speed);
+}
+
+/*
+ * How far a box may move along one axis: `step`, cut back to the point where
+ * it would touch something. It is only ever cut toward nought, and it ignores
+ * anything the box already overlaps, for the reason given above.
+ */
+static float clear_step(const Chase *chase, int self, float x, float y,
+                        float hw, float hh, bool along_x, float step)
+{
+    if (step == 0.0f)
+        return 0.0f;
+    bool with_player = player_car_is_scenery(chase);
+    for (int i = 0; i < ROAD_BOX_COUNT; ++i)
+    {
+        if (!road_box_blocks(chase, self, i))
+            continue;
+        RoadBox box = road_box(chase, i, with_player);
+        if (!box.present)
+            continue;
+        float side_gap = along_x ? fabsf(box.y - y) - (hh + box.hh)
+                                 : fabsf(box.x - x) - (hw + box.hw);
+        if (side_gap >= 0.0f)
+            continue;
+        float centre = along_x ? box.x - x : box.y - y;
+        if (centre * step <= 0.0f)
+            continue;
+        float room = fabsf(centre) - (along_x ? hw + box.hw : hh + box.hh);
+        if (room < -TOUCH_TOLERANCE)
+            continue;
+        if (room < 0.0f)
+            room = 0.0f;
+        if (fabsf(step) > room)
+            step = step > 0.0f ? room : -room;
+    }
+    return step;
+}
+
 /*
  * Traffic is only fair if the player always has somewhere to go, so a lane slot
  * is refused when it would put more than CHASE_MAX_CARS_ABREAST cars across the
- * same stretch of road, or drop a car on top of another one.
+ * same stretch of road, or drop a car on top of anything already on it.
+ *
+ * Anything means anything. A wreck can be anywhere by the time the next block
+ * is laid down — the SUV carries what it rams up the road at its own speed, a
+ * cross-street car included, well clear of the junction it was on — and so can
+ * the SUV itself or Chuck's car, both parked across the kerb lane while the
+ * first block is being laid down. Only cars in lanes count toward abreast.
  */
 static bool lane_slot_is_free(const Chase *chase, float x, float y)
 {
     int abreast = 0;
-    for (int i = 0; i < CHASE_MAX_CARS; ++i)
+    for (int i = 0; i < ROAD_BOX_COUNT; ++i)
     {
-        const ChaseCar *other = &chase->cars[i];
-        if (!other->active || other->kind == CHASE_CAR_CROSSING)
+        RoadBox box = road_box(chase, i, true);
+        if (!box.present)
             continue;
-        if (fabsf(other->y - y) > CHASE_CAR_LENGTH * 1.7f)
+        if (fabsf(box.y - y) < box.hh + CHASE_CAR_LENGTH * 0.5f +
+                                   CHASE_TRAFFIC_GAP &&
+            fabsf(box.x - x) < box.hw + CHASE_CAR_WIDTH * 0.5f)
+            return false;
+        if (i >= CHASE_MAX_CARS || runs_across(&chase->cars[i]))
             continue;
-        if (fabsf(other->x - x) < CHASE_LANE_WIDTH * 0.9f)
+        if (fabsf(box.y - y) > CHASE_CAR_LENGTH * 1.7f)
+            continue;
+        if (fabsf(box.x - x) < CHASE_LANE_WIDTH * 0.9f)
             return false;
         abreast++;
     }
@@ -247,12 +474,15 @@ static void generate_block(Chase *chase)
         car->kind = oncoming ? CHASE_CAR_ONCOMING : CHASE_CAR_TRAFFIC;
         car->x = x;
         car->y = y;
+        car->lane_x = x;
+        car->heading = oncoming ? -1.0f : 1.0f;
+        car->cruise = oncoming
+                          ? rng_between(&chase->rng, CHASE_ONCOMING_SPEED_MIN,
+                                        CHASE_ONCOMING_SPEED_MAX)
+                          : rng_between(&chase->rng, CHASE_TRAFFIC_SPEED_MIN,
+                                        CHASE_TRAFFIC_SPEED_MAX);
         car->vx = 0.0f;
-        car->vy = oncoming
-                      ? -rng_between(&chase->rng, CHASE_ONCOMING_SPEED_MIN,
-                                     CHASE_ONCOMING_SPEED_MAX)
-                      : rng_between(&chase->rng, CHASE_TRAFFIC_SPEED_MIN,
-                                    CHASE_TRAFFIC_SPEED_MAX);
+        car->vy = car->heading * car->cruise;
         car->variant = rng_range(&chase->rng, 4);
     }
 
@@ -268,26 +498,145 @@ static void generate_road_ahead(Chase *chase)
         generate_block(chase);
 }
 
-static void spawn_crossing_car(Chase *chase, ChaseIntersection *junction)
+/*
+ * Narrows [t0, t1] to the times at which two intervals `offset` apart and
+ * closing at `rate` lie within `reach` of each other, and says whether any are
+ * left. One axis of a swept-box test.
+ */
+static bool sweep_axis(float offset, float rate, float reach, float *t0,
+                       float *t1)
 {
-    ChaseCar *car = free_car_slot(chase);
-    if (car == NULL)
-        return;
+    if (fabsf(rate) < 1e-4f)
+        return fabsf(offset) < reach;
+    float enter = (-reach - offset) / rate;
+    float leave = (reach - offset) / rate;
+    if (enter > leave)
+    {
+        float swap = enter;
+        enter = leave;
+        leave = swap;
+    }
+    if (enter > *t0)
+        *t0 = enter;
+    if (leave < *t1)
+        *t1 = leave;
+    return *t0 < *t1;
+}
+
+/* Whether two boxes held at their velocities come within `margin` of each
+ * other at any time from now until `horizon`. */
+static bool boxes_meet(RoadBox a, RoadBox b, float margin, float horizon)
+{
+    float t0 = 0.0f;
+    float t1 = horizon;
+    return sweep_axis(b.x - a.x, b.vx - a.vx, a.hw + b.hw + margin, &t0, &t1) &&
+           sweep_axis(b.y - a.y, b.vy - a.vy, a.hh + b.hh + margin, &t0, &t1);
+}
+
+/*
+ * Whether a car pulling into the junction now would get all the way across
+ * without meeting anything on the road.
+ *
+ * It is asked once, at the kerb, and then never again, and that is the whole
+ * design. A car that could stop halfway over for a car in a lane would be
+ * standing across the lane behind it, and four of them waiting on each other
+ * is a junction locked solid for the rest of the drive. So cross traffic
+ * decides before it pulls out, and once it is out the traffic in the lanes is
+ * the side that gives way — for a car it can see sweeping across in front of
+ * it, which is always about to be gone.
+ *
+ * The answer can only be as good as the guess about everybody else, so each
+ * car in a lane is taken at its word and then twice more: as though it put its
+ * foot down to its cruising speed, and as though it slowed to half of what it
+ * is doing. A wreck is taken as sliding and as stopped. Without the two extra
+ * guesses a car pulling out had to brake for a car in a lane halfway over
+ * twelve times as often, because traffic in a lane speeds up and slows down.
+ *
+ * Neither the SUV nor Chuck is asked about. The crew run the red at twice the
+ * pace of anything else on the road and drive through whatever is in their
+ * way — that is the ram in `update_target` — and cross traffic cutting across
+ * Chuck's path is the hazard the junction is there to be.
+ */
+static bool crossing_path_is_clear(const Chase *chase, const ChaseCar *car)
+{
+    RoadBox mover = {car->x, car->y, car_half_x(car), car_half_y(car),
+                     car->vx, car->vy, true};
+    float horizon = (CHASE_ROAD_WIDTH + CHASE_CAR_LENGTH * 2.0f) / fabsf(car->vx);
+    for (int i = 0; i < CHASE_MAX_CARS; ++i)
+    {
+        RoadBox box = road_box(chase, i, false);
+        if (!box.present)
+            continue;
+        if (boxes_meet(mover, box, CHASE_CROSS_CLEARANCE, horizon))
+            return false;
+        const ChaseCar *other = &chase->cars[i];
+        RoadBox guess = box;
+        if (other->wreck_time > 0.0f)
+        {
+            guess.vx = 0.0f;
+            guess.vy = 0.0f;
+            if (boxes_meet(mover, guess, CHASE_CROSS_CLEARANCE, horizon))
+                return false;
+        }
+        else if (!runs_across(other))
+        {
+            guess.vy = other->heading * other->cruise;
+            if (boxes_meet(mover, guess, CHASE_CROSS_CLEARANCE, horizon))
+                return false;
+            guess.vy = box.vy * 0.5f;
+            if (boxes_meet(mover, guess, CHASE_CROSS_CLEARANCE, horizon))
+                return false;
+        }
+    }
+    return true;
+}
+
+/* Returns false when nobody pulled out, which is the junction's cue to ask
+ * again shortly instead of waiting out a whole gap in the flow. */
+static bool spawn_crossing_car(Chase *chase, ChaseIntersection *junction)
+{
+    ChaseCar *slot = free_car_slot(chase);
+    if (slot == NULL)
+        return false;
 
     bool eastbound = rng_range(&chase->rng, 2) == 0;
     float speed = rng_between(&chase->rng, CHASE_CROSS_SPEED_MIN,
                               CHASE_CROSS_SPEED_MAX);
-    memset(car, 0, sizeof(*car));
-    car->active = true;
-    car->kind = CHASE_CAR_CROSSING;
+    ChaseCar car;
+    memset(&car, 0, sizeof(car));
+    car.active = true;
+    car.kind = CHASE_CAR_CROSSING;
+    car.heading = eastbound ? 1.0f : -1.0f;
     /* Cross traffic keeps right as well, so the two directions never share a
      * line and the player can read which way a car is travelling. */
-    car->y = junction->y + (eastbound ? -CHASE_CROSS_LANE_OFFSET
-                                      : CHASE_CROSS_LANE_OFFSET);
-    car->x = eastbound ? -CHASE_CAR_LENGTH : CHASE_ROAD_WIDTH + CHASE_CAR_LENGTH;
-    car->vx = eastbound ? speed : -speed;
-    car->vy = 0.0f;
-    car->variant = rng_range(&chase->rng, 4);
+    car.y = junction->y + (eastbound ? -CHASE_CROSS_LANE_OFFSET
+                                     : CHASE_CROSS_LANE_OFFSET);
+    car.x = eastbound ? -CHASE_CAR_LENGTH : CHASE_ROAD_WIDTH + CHASE_CAR_LENGTH;
+    car.lane_x = car.x;
+    car.variant = rng_range(&chase->rng, 4);
+
+    /* Never quicker than the car it is following out, or it would have to
+     * stop behind it halfway over — the one thing the check below rules out
+     * for everybody else. A leader already slowing is left to that check. */
+    for (int i = 0; i < CHASE_MAX_CARS; ++i)
+    {
+        const ChaseCar *other = &chase->cars[i];
+        if (!other->active || other->wreck_time > 0.0f || !runs_across(other) ||
+            other->heading * car.heading < 0.0f ||
+            fabsf(other->y - car.y) > 1.0f)
+            continue;
+        float leader = car_speed(other);
+        if (leader >= CHASE_CROSS_SPEED_MIN && leader < speed)
+            speed = leader;
+    }
+    car.cruise = speed;
+    car.vx = car.heading * speed;
+    car.vy = 0.0f;
+
+    if (!crossing_path_is_clear(chase, &car))
+        return false;
+    *slot = car;
+    return true;
 }
 
 static void update_junctions(Chase *chase, float dt)
@@ -321,12 +670,151 @@ static void update_junctions(Chase *chase, float dt)
         junction->cross_spawn_timer -= dt;
         if (junction->cross_spawn_timer <= 0.0f)
         {
-            spawn_crossing_car(chase, junction);
-            junction->cross_spawn_timer = rng_between(&chase->rng,
-                                                      CHASE_CROSS_GAP_MIN,
-                                                      CHASE_CROSS_GAP_MAX);
+            if (spawn_crossing_car(chase, junction))
+                junction->cross_spawn_timer = rng_between(&chase->rng,
+                                                          CHASE_CROSS_GAP_MIN,
+                                                          CHASE_CROSS_GAP_MAX);
+            else
+                junction->cross_spawn_timer = CHASE_CROSS_RETRY;
         }
     }
+}
+
+/*
+ * Whether a car in a lane can pull into the lane at `lane_x` from where it is:
+ * nothing alongside or just in front of it there, and nothing coming up that
+ * lane from behind that would be on it within CHASE_TRAFFIC_MERGE_LOOK. This
+ * is the one question traffic asks about Chuck's car even in the middle of the
+ * pursuit — a car that pulls out into his path is a crash the player could not
+ * have seen coming, which is a different thing from one he drove into.
+ */
+static bool lane_has_room(const Chase *chase, int self, float lane_x)
+{
+    const ChaseCar *car = &chase->cars[self];
+    float half_w = CHASE_CAR_WIDTH * 0.5f;
+    float half_h = car_half_y(car);
+    float own_speed = car_speed(car);
+    for (int i = 0; i < ROAD_BOX_COUNT; ++i)
+    {
+        if (i == self)
+            continue;
+        RoadBox box = road_box(chase, i, true);
+        if (!box.present || fabsf(box.x - lane_x) >= box.hw + half_w)
+            continue;
+        float ahead = (box.y - car->y) * car->heading;
+        float bumper = fabsf(ahead) - box.hh - half_h;
+        if (ahead >= 0.0f)
+        {
+            if (bumper < CHASE_TRAFFIC_GAP * 2.0f)
+                return false;
+            continue;
+        }
+        float closing = box.vy * car->heading - own_speed;
+        if (bumper < CHASE_TRAFFIC_GAP +
+                         fmaxf(closing, 0.0f) * CHASE_TRAFFIC_MERGE_LOOK)
+            return false;
+    }
+    return true;
+}
+
+/*
+ * A car held up by something that has stopped pulls into the other lane on its
+ * own side of the road, if there is room. It never crosses the centre line:
+ * the two lanes each way are the only lanes each way, and a car on the wrong
+ * side is a head-on the player did not cause.
+ */
+static void consider_changing_lane(Chase *chase, int index, Obstacle ahead)
+{
+    ChaseCar *car = &chase->cars[index];
+    if (fabsf(car->x - car->lane_x) > 0.0f)
+        return;
+    int lane = (int)(car->lane_x / CHASE_LANE_WIDTH);
+    /* Pulling out of the kerb lane for the two cars pulling into it: once the
+     * drive is arriving, both of them are braking onto marks in that lane, and
+     * a car still in it ahead of Chuck is a car he parks behind instead. */
+    bool clearing_the_kerb = chase->phase == CHASE_PHASE_ARRIVAL &&
+                             lane == CHASE_LANE_COUNT - 1 &&
+                             car->y > chase->player.y;
+    if (!clearing_the_kerb &&
+        (!ahead.found || ahead.gap > CHASE_TRAFFIC_MERGE_RANGE ||
+         ahead.speed > CHASE_TRAFFIC_MERGE_BELOW))
+        return;
+
+    bool forward = lane >= CHASE_FIRST_FORWARD_LANE;
+    int first = forward ? CHASE_FIRST_FORWARD_LANE : 0;
+    int last = forward ? CHASE_LANE_COUNT - 1 : CHASE_FIRST_FORWARD_LANE - 1;
+    for (int other = first; other <= last; ++other)
+    {
+        float x = chase_lane_center(other);
+        if (other != lane && lane_has_room(chase, index, x))
+        {
+            car->lane_x = x;
+            return;
+        }
+    }
+}
+
+static void drive_car(Chase *chase, int index, float dt)
+{
+    ChaseCar *car = &chase->cars[index];
+    bool across = runs_across(car);
+    float hw = car_half_x(car);
+    float hh = car_half_y(car);
+    float side = across ? car->y : car->x;
+    float half_side = across ? hh : hw;
+    float bound = across ? car->y : car->lane_x;
+    Obstacle ahead = obstacle_ahead(chase, index, car->x, car->y, hw, hh,
+                                    across, car->heading,
+                                    fminf(side, bound) - half_side,
+                                    fmaxf(side, bound) + half_side);
+    if (!across)
+        consider_changing_lane(chase, index, ahead);
+
+    float speed = car_speed(car);
+    float wanted = speed_behind(ahead, car->cruise);
+    speed = approach(speed, wanted,
+                     wanted < speed ? CHASE_TRAFFIC_BRAKE : CHASE_TRAFFIC_ACCEL,
+                     dt);
+    float step = clear_step(chase, index, car->x, car->y, hw, hh, across,
+                            speed * car->heading * dt);
+    if (dt > 0.0f && fabsf(step) < speed * dt)
+        speed = fabsf(step) / dt;
+
+    if (across)
+    {
+        car->x += step;
+        car->vx = speed * car->heading;
+        return;
+    }
+    car->y += step;
+    car->vy = speed * car->heading;
+    float drift = approach(car->x, car->lane_x, CHASE_TRAFFIC_MERGE_SPEED, dt) -
+                  car->x;
+    drift = clear_step(chase, index, car->x, car->y, hw, hh, true, drift);
+    car->x += drift;
+    car->vx = dt > 0.0f ? drift / dt : 0.0f;
+}
+
+/* A wrecked car slews to a halt and stops being a threat — but it is still a
+ * car, and it stops against anything it slides into. */
+static void slide_wreck(Chase *chase, int index, float dt)
+{
+    ChaseCar *car = &chase->cars[index];
+    car->wreck_time += dt;
+    car->vy = approach(car->vy, 0.0f, 260.0f, dt);
+    car->vx = approach(car->vx, 0.0f, 190.0f, dt);
+    float hw = car_half_x(car);
+    float hh = car_half_y(car);
+    float dx = clear_step(chase, index, car->x, car->y, hw, hh, true,
+                          car->vx * dt);
+    if (dt > 0.0f && fabsf(dx) < fabsf(car->vx * dt))
+        car->vx = dx / dt;
+    car->x += dx;
+    float dy = clear_step(chase, index, car->x, car->y, hw, hh, false,
+                          car->vy * dt);
+    if (dt > 0.0f && fabsf(dy) < fabsf(car->vy * dt))
+        car->vy = dy / dt;
+    car->y += dy;
 }
 
 static void update_cars(Chase *chase, float dt)
@@ -338,15 +826,9 @@ static void update_cars(Chase *chase, float dt)
             continue;
 
         if (car->wreck_time > 0.0f)
-        {
-            car->wreck_time += dt;
-            /* A wrecked car slews to a halt and stops being a threat. */
-            car->vy = approach(car->vy, 0.0f, 260.0f, dt);
-            car->vx = approach(car->vx, 0.0f, 190.0f, dt);
-        }
-
-        car->x += car->vx * dt;
-        car->y += car->vy * dt;
+            slide_wreck(chase, i, dt);
+        else
+            drive_car(chase, i, dt);
 
         /* Past the destination the road is closed: traffic has turned off. */
         if ((chase->building_y > 0.0f && car->y > chase->building_y - 40.0f) ||
@@ -380,6 +862,58 @@ static void wreck_car(ChaseCar *car, float push_dir)
     car->vx = push_dir * CHASE_WRECK_DRIFT;
     if (car->kind == CHASE_CAR_ONCOMING)
         car->vy *= 0.35f;
+}
+
+/*
+ * Shoves a car that something has driven into out of that thing's road: pushed
+ * clear along whichever way it is buried least — ahead of the bumper if it was
+ * in front, aside toward whichever side it was already on otherwise — and
+ * carried along at the pusher's speed. It is only ever shoved as far as the
+ * room around it allows, so a wreck can be bulldozed out of one car's way but
+ * never buried in the next one.
+ */
+static void shove_car(Chase *chase, int index, float x, float y, float hw,
+                      float hh, float speed)
+{
+    ChaseCar *car = &chase->cars[index];
+    float dx = car->x - x;
+    float dy = car->y - y;
+    float into_x = hw + car_half_x(car) - fabsf(dx);
+    float into_y = hh + car_half_y(car) - fabsf(dy);
+    if (into_x <= 0.0f || into_y <= 0.0f)
+        return;
+    float side = dx < 0.0f ? -1.0f : 1.0f;
+    car->vx = side * CHASE_WRECK_DRIFT;
+    if (dy > 0.0f && into_y <= into_x)
+    {
+        car->vy = fmaxf(car->vy, speed);
+        car->y += clear_step(chase, index, car->x, car->y, car_half_x(car),
+                             car_half_y(car), false, into_y);
+    }
+    else
+    {
+        car->x += clear_step(chase, index, car->x, car->y, car_half_x(car),
+                             car_half_y(car), true, side * into_x);
+    }
+}
+
+/*
+ * A wreck is no threat to Chuck — the collision above skips it on purpose, so
+ * that one crash cannot chain into the next — but it is still a car, and his
+ * own is shoved through it rather than drawn over it. The crash that made it
+ * is the usual case: he is slowed to CHASE_CRASH_SPEED and comes straight back
+ * up to pace, and the car he hit is braking to a halt in front of him, so he
+ * used to drive the whole length of it a second later.
+ */
+static void shove_wrecks_aside(Chase *chase)
+{
+    for (int i = 0; i < CHASE_MAX_CARS; ++i)
+    {
+        if (chase->cars[i].active && chase->cars[i].wreck_time > 0.0f)
+            shove_car(chase, i, chase->player.x, chase->player.y,
+                      CHASE_CAR_WIDTH * 0.5f, CHASE_CAR_LENGTH * 0.5f,
+                      chase->player.speed);
+    }
 }
 
 static void fail_pursuit(Chase *chase, ChaseFailure failure)
@@ -601,22 +1135,96 @@ static void update_target(Chase *chase, float dt)
                     sinf(chase->time * 0.7f) * CHASE_TARGET_SPEED_SWING;
     target->y += target->speed * dt;
 
-    /* The crew drive through anything they cannot get around, which
-     * leaves the wreck spinning in the road for Chuck to deal with. */
+    /*
+     * The crew drive through anything they cannot get around, which leaves
+     * the wreck spinning in the road for Chuck to deal with.
+     *
+     * Through, not over: a car they hit is shoved out of their road, and a
+     * wreck they run into again is shoved again. Left where the crash found
+     * it, a car rear-ended at a hundred pixels a second more than its own pace
+     * was passed through end to end — a second and more of SUV drawn on top of
+     * a car it had supposedly just destroyed.
+     */
+    const float hw = CHASE_SUV_WIDTH * 0.5f;
+    const float hh = CHASE_SUV_LENGTH * 0.5f;
     for (int i = 0; i < CHASE_MAX_CARS; ++i)
     {
         ChaseCar *car = &chase->cars[i];
-        if (!car->active || car->wreck_time > 0.0f)
+        if (!car->active)
             continue;
-        if (boxes_overlap(target->x, target->y, CHASE_SUV_WIDTH * 0.5f,
-                          CHASE_SUV_LENGTH * 0.5f, car->x, car->y,
-                          car_half_x(car), car_half_y(car)))
+        if (car->wreck_time <= 0.0f)
         {
+            if (!boxes_overlap(target->x, target->y, hw, hh, car->x, car->y,
+                               car_half_x(car), car_half_y(car)))
+                continue;
             wreck_car(car, car->x < target->x ? -1.0f : 1.0f);
             game_events_sound(&chase->events, SFX_CHASE_CRASH);
             game_events_camera_shake(&chase->events, 5.0f, 0.30f);
         }
+        shove_car(chase, i, target->x, target->y, hw, hh, target->speed);
     }
+}
+
+/*
+ * The SUV whenever it is not being chased — pulling away from the kerb, or
+ * driving off after Chuck has lost it — drives like everybody else: it eases in
+ * behind whatever is in front of it and steers only into room, rather than
+ * through a car it has no reason yet to ram.
+ */
+static void target_drive_in_traffic(Chase *chase, float cruise, float accel,
+                                    float steer, float dt)
+{
+    ChaseTargetCar *target = &chase->target;
+    const float hw = CHASE_SUV_WIDTH * 0.5f;
+    const float hh = CHASE_SUV_LENGTH * 0.5f;
+    Obstacle ahead = obstacle_ahead(chase, ROAD_SUV, target->x, target->y, hw,
+                                    hh, false, 1.0f,
+                                    fminf(target->x, target->lane_target_x) - hw,
+                                    fmaxf(target->x, target->lane_target_x) + hw);
+    /* Braking is for something in the way; easing back to its own pace after
+     * the pursuit is only ever the ordinary rate. */
+    float wanted = speed_behind(ahead, cruise);
+    bool braking = ahead.found && wanted < target->speed;
+    target->speed = approach(target->speed, wanted,
+                             braking ? CHASE_TRAFFIC_BRAKE : accel, dt);
+    float step = clear_step(chase, ROAD_SUV, target->x, target->y, hw, hh,
+                            false, target->speed * dt);
+    if (dt > 0.0f && step < target->speed * dt)
+        target->speed = step / dt;
+    target->y += step;
+    float drift = approach(target->x, target->lane_target_x, steer, dt) -
+                  target->x;
+    target->x += clear_step(chase, ROAD_SUV, target->x, target->y, hw, hh, true,
+                            drift);
+}
+
+/*
+ * Chuck's car whenever the player is not the one driving it: pulling out from
+ * the kerb, rolling to a halt after a failed attempt, and braking onto its
+ * mark at the building. Each of those is scripted, and a script knows nothing
+ * about the car that happens to be in front of it — so it is driven the way
+ * the SUV is off the chase, easing in behind whatever is there and steering
+ * only into room. `speed` is what the script asks for; what the car actually
+ * did is written back, so the HUD and the engine note follow it.
+ */
+static void player_drive_in_traffic(Chase *chase, float speed, float lane_x,
+                                    float steer, float dt)
+{
+    ChasePlayerCar *player = &chase->player;
+    const float hw = CHASE_CAR_WIDTH * 0.5f;
+    const float hh = CHASE_CAR_LENGTH * 0.5f;
+    Obstacle ahead = obstacle_ahead(chase, ROAD_PLAYER, player->x, player->y,
+                                    hw, hh, false, 1.0f,
+                                    fminf(player->x, lane_x) - hw,
+                                    fmaxf(player->x, lane_x) + hw);
+    float step = clear_step(chase, ROAD_PLAYER, player->x, player->y, hw, hh,
+                            false, speed_behind(ahead, speed) * dt);
+    player->y += step;
+    player->speed = dt > 0.0f ? step / dt : 0.0f;
+    float drift = approach(player->x, lane_x, steer, dt) - player->x;
+    player->x += clear_step(chase, ROAD_PLAYER, player->x, player->y, hw, hh,
+                            true, drift);
+    shove_wrecks_aside(chase);
 }
 
 /* ---- Phases ---------------------------------------------------------- */
@@ -685,24 +1293,16 @@ static void update_departure(Chase *chase, const Input *input, float dt)
         game_events_sound(&chase->events, SFX_CHASE_TIRES);
 
     if (now >= CHASE_DEPARTURE_SUV_START)
-    {
-        chase->target.speed = approach(chase->target.speed,
-                                       CHASE_DEPARTURE_TARGET_SPEED,
-                                       CHASE_DEPARTURE_TARGET_ACCEL, dt);
-        chase->target.y += chase->target.speed * dt;
-        chase->target.x = approach(chase->target.x, chase->target.lane_target_x,
-                                   CHASE_TARGET_STEER_SPEED * 0.5f, dt);
-    }
+        target_drive_in_traffic(chase, CHASE_DEPARTURE_TARGET_SPEED,
+                                CHASE_DEPARTURE_TARGET_ACCEL,
+                                CHASE_TARGET_STEER_SPEED * 0.5f, dt);
 
     if (now >= CHASE_DEPARTURE_PULL_OUT)
-    {
-        chase->player.speed = approach(chase->player.speed, CHASE_CRUISE_SPEED,
-                                       CHASE_ACCEL, dt);
-        chase->player.y += chase->player.speed * dt;
-        chase->player.x = approach(chase->player.x,
-                                   chase_lane_center(CHASE_LANE_COUNT - 1),
-                                   CHASE_STEER_SPEED * 0.45f, dt);
-    }
+        player_drive_in_traffic(chase,
+                                approach(chase->player.speed,
+                                         CHASE_CRUISE_SPEED, CHASE_ACCEL, dt),
+                                chase_lane_center(CHASE_LANE_COUNT - 1),
+                                CHASE_STEER_SPEED * 0.45f, dt);
 
     if (now >= CHASE_DEPARTURE_DURATION || skip_pressed(input))
     {
@@ -767,6 +1367,7 @@ static void update_pursuit(Chase *chase, const Input *input, float dt)
 
     if (chase->phase != CHASE_PHASE_PURSUIT)
         return; /* the collision above ended the attempt */
+    shove_wrecks_aside(chase);
 
     if (chase_gap(chase) > CHASE_LOSE_GAP)
     {
@@ -781,9 +1382,12 @@ static void update_pursuit(Chase *chase, const Input *input, float dt)
 static void update_failed(Chase *chase, float dt)
 {
     chase->phase_time += dt;
-    chase->player.speed = approach(chase->player.speed, 0.0f, 420.0f, dt);
-    chase->player.y += chase->player.speed * dt;
-    chase->target.y += chase->target.speed * dt;
+    player_drive_in_traffic(chase,
+                            approach(chase->player.speed, 0.0f, 420.0f, dt),
+                            chase->player.x, 0.0f, dt);
+    target_drive_in_traffic(chase, CHASE_TARGET_SPEED,
+                            CHASE_DEPARTURE_TARGET_ACCEL,
+                            CHASE_TARGET_STEER_SPEED, dt);
 
     if (chase->phase_time >= CHASE_FAILED_DURATION)
     {
@@ -830,9 +1434,10 @@ static void update_failed(Chase *chase, float dt)
 
 /*
  * Both cars roll to a halt on a fixed profile rather than on a physical brake,
- * so the arrival always lands on its marks (and at a dead stop) no matter what
- * speed the pursuit ended at. Speed is read back from the movement so the HUD
- * and the engine sound still follow the deceleration.
+ * so the arrival lands on its marks (and at a dead stop) no matter what speed
+ * the pursuit ended at — the SUV always, Chuck unless traffic holds him up,
+ * which `update_arrival` explains. Speed is read back from the movement so the
+ * HUD and the engine sound still follow the deceleration.
  */
 static void brake_to_marker(float *y, float *speed, float from_y, float stop_y,
                             float ease, float dt)
@@ -856,15 +1461,36 @@ static void update_arrival(Chase *chase, float dt)
     brake_to_marker(&chase->target.y, &chase->target.speed,
                     chase->arrival_target_from_y,
                     chase->building_y - CHASE_ARRIVAL_TARGET_STOP, ease, dt);
-    chase->target.x = approach(chase->target.x, CHASE_KERB_X,
-                               CHASE_TARGET_STEER_SPEED * 0.5f, dt);
+    float pull_in = approach(chase->target.x, CHASE_KERB_X,
+                             CHASE_TARGET_STEER_SPEED * 0.5f, dt) -
+                    chase->target.x;
+    chase->target.x += clear_step(chase, ROAD_SUV, chase->target.x,
+                                  chase->target.y, CHASE_SUV_WIDTH * 0.5f,
+                                  CHASE_SUV_LENGTH * 0.5f, true, pull_in);
 
-    brake_to_marker(&chase->player.y, &chase->player.speed,
-                    chase->arrival_player_from_y,
-                    chase->building_y - CHASE_ARRIVAL_PLAYER_STOP, ease, dt);
-    chase->player.x = approach(chase->player.x,
-                               chase_lane_center(CHASE_LANE_COUNT - 1),
-                               CHASE_STEER_SPEED * 0.45f, dt);
+    /*
+     * Chuck's car follows the same profile, but it is the one of the two with
+     * traffic in front of it — the road beyond the SUV was cleared as the beat
+     * began, the road between them was on screen and could not be. So the
+     * profile is what it asks for, not where it is put: held up behind a car it
+     * makes the ground back afterwards no quicker than the profile's own pace
+     * or his top speed, whichever is greater, and traffic pulls out of the
+     * kerb lane ahead of him (`consider_changing_lane`) to let him in. It used
+     * to be put there, through whatever was in the way. Measured over 384
+     * drives, 381 now land on the mark; the other three stop behind a car
+     * with a car alongside it and nowhere to pull out to.
+     */
+    float stop_y = chase->building_y - CHASE_ARRIVAL_PLAYER_STOP;
+    float on_profile = chase->arrival_player_from_y +
+                       (stop_y - chase->arrival_player_from_y) * ease;
+    float profile_speed = (stop_y - chase->arrival_player_from_y) * 3.0f *
+                          remaining * remaining / CHASE_ARRIVAL_BRAKE_TIME;
+    float asked = dt > 0.0f ? (on_profile - chase->player.y) / dt : 0.0f;
+    player_drive_in_traffic(chase,
+                            clampf(asked, 0.0f,
+                                   fmaxf(profile_speed, CHASE_MAX_SPEED)),
+                            chase_lane_center(CHASE_LANE_COUNT - 1),
+                            CHASE_STEER_SPEED * 0.45f, dt);
 
     if (chase->phase_time >= CHASE_ARRIVAL_DURATION)
         begin_phase(chase, CHASE_PHASE_DONE);

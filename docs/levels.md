@@ -302,7 +302,19 @@ widths come from the model rather than from the test, so widening either hop is 
 change the simulation has to be able to deliver rather than a literal somebody
 edited. Measured today the margin is a tile each way: the physics clears a
 three-tile hole and pays a heart for a two-tile bed, which is the model being
-conservative, which is the direction to be wrong in.
+conservative, which is the direction to be wrong in. The two-tile half is
+measured too now, under open sky and by both ways a hand makes a hop, since the
+test once skipped every bed the model refused and so never asked it.
+
+**Arriving is not the same as arriving fairly, and the spike hop is where that
+showed.** One press in the sweep cleared the bed, and it was the only one: the
+bed was the whole tile while the blades are drawn in its lower half, so under
+the model's two open rows the take-off window was half a pixel.
+`test_every_spike_hop_the_model_promises_forgives_a_human_press` asks every hop
+the model certifies on every interior and washroom how far a press may be out,
+and requires at least `PLAYER_COYOTE_TIME` — the game's own figure for how late
+a jump off a ledge is still honoured. With the bed at half a tile it is 0.117s
+at that clearance, which is also the tightest of the campaign's 56 hops.
 
 **A docket sheet also has to cost something to reach**, which is the one
 authoring rule about a map that is neither geometry nor a hazard count; it is in

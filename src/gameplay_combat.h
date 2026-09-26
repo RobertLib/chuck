@@ -23,5 +23,10 @@ void gameplay_combat_update_enemy_bullets(GameplayState *state,
                                           CampaignState *campaign, float dt);
 void gameplay_combat_check_contacts(GameplayState *state,
                                     CampaignState *campaign);
+/* Whether one boot landing on a guard's helmet wounds him: a single roll
+ * against `ENEMY_STOMP_WOUND_CHANCE`, and the only place that chance is spent.
+ * Public so the suite can choose which outcome a test is about through the
+ * game's own rule rather than through a second copy of it. */
+bool gameplay_stomp_wounds(Rng *rng);
 
 #endif /* CHUCK_GAMEPLAY_COMBAT_H */

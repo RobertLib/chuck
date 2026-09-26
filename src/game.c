@@ -108,6 +108,10 @@ static void dispatch_events(Game *game, GameEventBuffer *events,
                                       event->data.explosion.y,
                                       event->data.explosion.count);
             break;
+        case GAME_EVENT_FLASH:
+            particle_system_flash(&game->presentation.particles,
+                                  event->data.flash.x, event->data.flash.y);
+            break;
         case GAME_EVENT_DUST:
             particle_system_dust(&game->presentation.particles,
                                  event->data.dust.x, event->data.dust.y,
