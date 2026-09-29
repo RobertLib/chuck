@@ -274,27 +274,43 @@ floor — a band of corridor with no logotype in it would take the title off the
 page and put nothing back.
 
 It is 960x360 where that field is usually advised at 960x300, and the reason is a
-measurement. The logotype ends at y110 of the frame and the man in the
-searchlights sits at y265, so at 3.2:1 the two do not both fit and a 300-tall
-banner is a wordmark over an empty tower. At 2.67:1 they do, and 360 is still
-inside the 400 the field takes. The vertical offset is 12 for the same kind of
-reason: at nought the logo touches the top edge, and by 24 the bottom cut lands
-in a lit window band, which reads as a mistake rather than as an edge.
+measurement. The wordmark and its tagline end at y134 of the frame, and the
+thing the picture is about — Chuck's face at the lip of the roof with Voss's
+muzzle on it — is at y216 to y300, so at 3.2:1 the bottom cut goes through his
+face and a 300-tall banner is a wordmark over a man with no head. At 2.67:1 they
+fit, and 360 is still inside the 400 the field takes. The vertical offset is 12
+for the same kind of reason: at nought the cut takes the coping off and leaves
+his hands holding air, and by 24 the wordmark touches the top edge.
 
 **The cover is a screen of its own, `--screen cover`.** It was a crop of the
 title screen for as long as the kit existed, and at the 315x250 itch.io lists a
 game at, that crop was three quarters empty night sky — a black rectangle with a
 small logotype in it, in a gallery of covers built to be read at exactly that
-size. `render_cover` in [intro.c](../src/intro.c) recomposes the same night as
-key art: the tower closer and wider with half again as many windows burning, the
-cordon the fiction parks at its base actually on the street — two cruisers, the
-blue-and-red wash the climbs are played over — and Chuck where the tagline says
-he is, on the wall, pinned by the cordon's searchlights under the one lit window
-that matters. No interface, because a START prompt on a store page is a button
-nobody can press; and deliberately not a police helicopter with a nightsun,
-because the fiction's sky must stay clear for the ride out (see the note on
-`facade_news_helicopter` in [level_art.c](../src/level_art.c) — the news ship is
-in the cover's sky for the same reason it is in the climbs').
+size. The first answer recomposed the same night as a poster: the tower closer,
+the cordon on the street, and Chuck on the wall in the searchlights, a dozen
+pixels tall. Every element of it was true and none of it asked anything of
+anybody. At thumbnail size it was a quiet building with a dot on it, and what the
+night is *about* was nowhere in the frame.
+
+So the cover is the roof now. `key_art_render` in
+[cutscene.c](../src/cutscene.c) draws it and `render_cover` in
+[intro.c](../src/intro.c) lays the wordmark over the storm at the top left, where
+the action leaves the sky empty. The picture is forty floors over a city that has
+gone small, the crew's helicopter holding a hover with its light on the parapet,
+Voss at the edge with his pistol on the man hanging from it, and Ellen in his
+other hand, shouting. The game never plays that scene. It shows the stakes of
+every scene the game does play, and it stops short of how the night ends, so it
+does not spoil the ending the way `19-roof` does. Every figure is the film's own
+drawing, and Chuck is the sector's skeleton, posed. The near planes are drawn at
+twice the pixel, so the cast reads at a third of the size, while the city under
+them is drawn at one and reads as far away by being finer. Twice and not the two
+and a half that framed it best, because this script captures through SDL's
+software renderer and a render scale that is not a whole number leaves seams
+between the one-unit runs every figure is built from; the GPU drew the limbs
+clean at 2.5 and the kit's own capture drew them striped. No
+interface, because a START prompt on a store page is a button nobody can press.
+The helicopter is the crew's and not a police ship, for the fiction's own reason:
+the sky over this roof belongs to the ride out.
 
 **It exists because this repository holds no art.** Every pixel is drawn
 procedurally at runtime, which is the whole thesis of the thing — and it means

@@ -1806,9 +1806,10 @@ GameScreenResult game_soak_screen(Game *game, const char *name, int page,
     else if (SDL_strcmp(name, "cover") == 0)
     {
         /*
-         * The press kit's key art: the title screen's night recomposed as a
-         * poster — tower closer, the cordon on the street, Chuck on the wall
-         * in the searchlights, no interface. It is a screen no run reaches,
+         * The press kit's key art: the roof at the end of the climb as a
+         * poster — Chuck on the lip under Voss's pistol, Ellen in Voss's other
+         * hand, the crew's helicopter over them — with the wordmark and no
+         * interface (`key_art_render`). It is a screen no run reaches,
          * on purpose: its one caller is tools/press_kit.sh, and the sweep
          * walks it so its drawing code is not the one renderer the
          * sanitizers never execute. The flag is set after the state, because

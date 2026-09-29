@@ -16,6 +16,7 @@
 
 #include <math.h>
 
+#include "cutscene.h"
 #include "fx.h"
 
 /*
@@ -121,10 +122,9 @@ typedef struct
     float roof_y;
     float base_left, base_right;
     float top_left, top_right;
-    /* The tower's own grid.  These were compile-time constants until the
-     * press cover needed the same building framed closer — same drawing,
-     * different lens.  The title screen's values are in `scene_layout` and
-     * the cover's in `cover_layout`; everything below reads the scene. */
+    /* The tower's own grid, set in `scene_layout`; everything below reads
+     * the scene rather than a constant of its own, so the building can be
+     * reframed in one place. */
     int floors;       /* office floors over the lobby      */
     int panes;        /* window bays per floor             */
     float floor_h;    /* one floor band, spandrel included */
@@ -537,8 +537,8 @@ bool intro_hit_quit_button(const Intro *intro, float x, float y)
 
 static void draw_moon(SDL_Renderer *r, float cx, float cy, float radius)
 {
-    /* The title's moon is 14px; the cover asks for a larger one, so the
-     * maria scale off the radius rather than being redrawn per size. */
+    /* The maria scale off the radius the scene asks for rather than being
+     * drawn for one size of moon. */
     float k = radius / 14.0f;
     int span = (int)radius;
     fx_glow(r, cx, cy, 78.0f * k, COL_MOON_DK, 30);
@@ -1272,9 +1272,9 @@ static void draw_suv(SDL_Renderer *r, float x, float base_y, float time)
 }
 
 /*
- * The street's four shared layers, split out so the title screen and the
- * press cover can lay the same pavement and dress it differently — the
- * title parks the crew's SUV on it, the cover parks the cordon.
+ * The street's four layers — the ground, the wet reflections, the lobby's
+ * spill and the fog — each its own pass, so what stands on it (the SUV, the
+ * lamp, the man) goes down between the spill and the fog.
  */
 static void draw_street_ground(SDL_Renderer *r, const IntroScene *s)
 {
@@ -1889,20 +1889,21 @@ static void draw_mark_letter(SDL_Renderer *r, char letter, unsigned salt,
     }
 }
 
-static void render_logo(SDL_Renderer *r, const Intro *intro,
-                        const IntroScene *s)
+/* The wordmark centred on `cx` with its plates' tops at `y`: the title
+ * screen's middle of the sky, or wherever the key art leaves room. */
+static void render_logo_at(SDL_Renderer *r, const Intro *intro, float cx,
+                           float y)
 {
     static const char *word = "CHUCK";
     const float advance = (float)(MARK_W + MARK_GAP);
     const float mark_w = advance * 4.0f + (float)MARK_W;
-    const float x = (s->w - mark_w) * 0.5f;
-    const float y = 30.0f;
+    const float x = cx - mark_w * 0.5f;
 
     /* Haze rather than bloom.  A steel sign does not glow; what it needs is
      * the city's light lifting the sky just behind it, so the plates have
      * something to be dark against at the top of the frame. */
-    fx_glow(r, s->w * 0.5f, y + 40.0f, 330.0f, (SDL_Color){52, 76, 96, 255}, 30);
-    fx_glow(r, s->w * 0.5f, y + 62.0f, 170.0f, (SDL_Color){70, 92, 108, 255}, 22);
+    fx_glow(r, cx, y + 40.0f, 330.0f, (SDL_Color){52, 76, 96, 255}, 30);
+    fx_glow(r, cx, y + 62.0f, 170.0f, (SDL_Color){70, 92, 108, 255}, 22);
 
     float sweep = fmodf(intro->time, 9.0f);
     float glint_x = sweep < 1.8f
@@ -1933,14 +1934,20 @@ static void render_logo(SDL_Renderer *r, const Intro *intro,
     const float track = 3.0f;
     float width = tracked_width(line, 1.0f, track);
     float ty = y + (float)MARK_H + 24.0f;
-    draw_tracked_centered(r, s->w * 0.5f, ty, 1.0f, track,
+    draw_tracked_centered(r, cx, ty, 1.0f, track,
                           fx_dim((SDL_Color){196, 202, 196, 255}, tag), line);
 
     float rule = 40.0f * tag;
     color_rect(r, fx_dim(FX_RUST, 0.55f + tag * 0.45f),
-               s->w * 0.5f - width * 0.5f - 16.0f - rule, ty + 3.0f, rule, 2.0f);
+               cx - width * 0.5f - 16.0f - rule, ty + 3.0f, rule, 2.0f);
     color_rect(r, fx_dim(FX_RUST, 0.55f + tag * 0.45f),
-               s->w * 0.5f + width * 0.5f + 16.0f, ty + 3.0f, rule, 2.0f);
+               cx + width * 0.5f + 16.0f, ty + 3.0f, rule, 2.0f);
+}
+
+static void render_logo(SDL_Renderer *r, const Intro *intro,
+                        const IntroScene *s)
+{
+    render_logo_at(r, intro, s->w * 0.5f, 30.0f);
 }
 
 /* ---- Interface ------------------------------------------------------- */
@@ -2116,351 +2123,28 @@ static void render_manual_prompt(SDL_Renderer *r, const Intro *intro,
 
 /* ---- The cover --------------------------------------------------------
  *
- * `--screen cover` is the press kit's key art: the night drawn as a poster
- * rather than as a menu.  It exists because the store cover used to be a
- * crop of the title screen, and at the 315x250 itch.io actually lists a
- * game at, that crop was three quarters empty night sky — a black rectangle
- * with a small logotype in it.  A cover has one job the title screen does
- * not: it is read at a third of its size, in a gallery of a hundred other
- * covers, by somebody who has never heard of the game.
- *
- * So it is the same shot with everything turned toward that reader.  The
- * same tower, framed closer and wider with half again as many windows
- * burning; the cordon the fiction parks at its base actually on the street —
- * two cruisers, their bars going, the blue-and-red wash the climbs are
- * played over; and Chuck where the tagline says he is, on the wall, pinned
- * by the cordon's own searchlights three floors under the one lit window
- * that matters.  Every element is something the game itself draws — nothing
- * here is an illustration about the game — and none of it is interface,
- * because a START prompt on a store page is a button nobody can press.
+ * `--screen cover` is the press kit's key art. It used to be this screen's
+ * own night recomposed — the tower closer, the cordon on the street and Chuck
+ * a dozen pixels tall on the wall — and at the 315x250 a store lists a game
+ * at, it was a quiet building with a dot on it. The picture is the roof at
+ * the end of the climb now, drawn by the film that owns every figure in it
+ * (`key_art_render` in cutscene.c, which says why); what this file adds is
+ * the wordmark, top left over the storm, where the action leaves the sky
+ * empty. No interface: a START prompt on a store page is a button nobody can
+ * press.
  */
-
-/* The floor the climber has reached: high enough that the wall reads as a
- * climb, low enough that the beams pinning him cross most of the frame. */
-#define COVER_CLIMBER_FLOOR 4
-
-/* Where the two cruisers park.  The beams rise from their light bars, so the
- * beam feet below are derived from these rather than picked twice. */
-#define COVER_CAR_W 76.0f
-#define COVER_CAR_LEFT_X 116.0f
-#define COVER_CAR_RIGHT_X 612.0f
-#define COVER_CAR_BAR_X 37.0f /* bar centre, from the car's left edge */
-
-static IntroScene cover_layout(int win_w, int win_h)
+static void render_cover(SDL_Renderer *r, const Intro *intro, int win_w,
+                         int win_h)
 {
-    IntroScene s = scene_layout(win_w, win_h);
-    float cx = s.w * 0.5f;
-
-    /*
-     * The same building through a longer lens.  The roof stays under the
-     * tagline (its mast tops out at roof_y - 26, and the tagline's glyphs
-     * end at 138), the street drops so the tower gains what the pavement
-     * loses, and the wall gains a floor and eighty pixels of width — at
-     * cover size the windows are what read, so they are the thing enlarged.
-     * Half again as many of them are lit: this is the poster of the night,
-     * not the building asleep, and the cordon below says the night has
-     * already started.
-     */
-    s.street_y = s.h - 72.0f;
-    s.roof_y = 168.0f;
-    s.base_left = cx - 140.0f;
-    s.base_right = cx + 140.0f;
-    s.top_left = cx - 124.0f;
-    s.top_right = cx + 124.0f;
-    s.floors = 9;
-    s.floor_h = 28.0f;
-    s.pane_h = 19.0f;
-    s.light_odds = 0.40f;
-    /* A step nearer than the title's 14: the cover's sky is a third of the
-     * crop and the moon is the only thing in its left half. */
-    s.moon_radius = 19.0f;
-    return s;
-}
-
-/* The climber's anchor, derived from the wall's own grid: feet on the ledge
- * that tops his floor's spandrel, on the pier between the third and fourth
- * bays, so a retuned tower moves the man with the wall. */
-static void cover_climber_anchor(const IntroScene *s, float *cx, float *feet_y)
-{
-    SDL_FRect p = pane_rect(s, COVER_CLIMBER_FLOOR, 3);
-    *cx = p.x - 2.5f;
-    *feet_y = floor_top(s, COVER_CLIMBER_FLOOR) + 1.0f;
-}
-
-/*
- * A searchlight from the cordon, raking up the wall.  Drawn as one-pixel
- * rows between the light bar and the spot, because the only cone helper the
- * game owns is vertical and a beam that leans is the whole composition: two
- * of them crossing is what points every line in the frame at the climber.
- */
-static void draw_search_beam(SDL_Renderer *r, float base_x, float base_y,
-                             float spot_x, float spot_y,
-                             float base_half, float spot_half, Uint8 alpha)
-{
-    const SDL_Color pale = fx_mix(FX_LAMP, FX_CREAM, 0.4f);
-
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    for (float yy = spot_y; yy <= base_y; yy += 1.0f)
-    {
-        float tt = (yy - spot_y) / (base_y - spot_y);
-        float cx = spot_x + (base_x - spot_x) * tt;
-        float half = spot_half + (base_half - spot_half) * tt;
-        /* Brighter toward the spot: the cone converges on the man, and the
-         * doubled alpha where the two beams cross is what makes the crossing
-         * the brightest patch of wall in the shot. */
-        set_rgba(r, pale.r, pale.g, pale.b,
-                 (Uint8)((float)alpha * (1.0f - tt * 0.35f)));
-        fill_rect(r, cx - half, yy, half * 2.0f, 1.0f);
-    }
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-}
-
-/*
- * Chuck on the wall: both hands on the ledge above, boots braced against the
- * pier, caught mid-move.  Both arms up is what makes the pose read as a climb
- * at any size — a reaching figure with one arm reads as a man waving from a
- * window at 315 wide.  He keeps the game's own colours lifted by the beams,
- * the same rule the title's street figure follows with the lamp, and he is
- * edged in ink rather than backed by a cast shadow: two lights from below
- * would throw the shadow up the wall, and a slab of it swallowed the figure.
- */
-static void draw_cover_climber(SDL_Renderer *r, const IntroScene *s)
-{
-    float cx, feet;
-    cover_climber_anchor(s, &cx, &feet);
-
-    const SDL_Color coat = fx_mix(FX_HERO, FX_CREAM, 0.16f);
-    const SDL_Color coat_dk = fx_dim(FX_HERO, 0.7f);
-    const SDL_Color trouser = fx_mix(FX_SHADOW, FX_BASE, 0.95f);
-    const SDL_Color boot = fx_dim(FX_SHADOW, 0.95f);
-    const SDL_Color skin = fx_dim(FX_SKIN, 0.95f);
-    const SDL_Color cap = FX_RUST;
-    float ledge = feet - s->floor_h; /* the arris both hands are over */
-
-    /* Ink under the figure, one pixel proud of it, so the man separates from
-     * the wall the way the wordmark's plates separate from the sky. */
-    color_rect(r, FX_INK, cx - 7.0f, ledge, 15.0f, 10.0f);   /* arms + head */
-    color_rect(r, FX_INK, cx - 5.5f, ledge + 8.0f, 12.0f, 12.0f); /* torso  */
-    color_rect(r, FX_INK, cx - 6.0f, ledge + 19.0f, 13.0f, 9.5f); /* legs   */
-
-    /* Hands over the arris, knuckles catching its lit edge. */
-    color_rect(r, skin, cx - 6.0f, ledge + 1.0f, 3.0f, 2.5f);
-    color_rect(r, skin, cx + 3.5f, ledge + 1.0f, 3.0f, 2.5f);
-    color_rect(r, fx_mix(skin, FX_CREAM, 0.35f), cx - 6.0f, ledge + 1.0f,
-               3.0f, 1.0f);
-    color_rect(r, fx_mix(skin, FX_CREAM, 0.35f), cx + 3.5f, ledge + 1.0f,
-               3.0f, 1.0f);
-
-    /* Arms, converging from the ledge down onto the shoulders. */
-    color_rect(r, coat_dk, cx - 5.5f, ledge + 3.5f, 3.0f, 6.0f);
-    color_rect(r, coat, cx - 5.5f, ledge + 3.5f, 1.5f, 6.0f);
-    color_rect(r, coat_dk, cx + 3.5f, ledge + 3.5f, 3.0f, 6.0f);
-
-    /* Head between the arms, tipped back at the window above. */
-    color_rect(r, fx_dim(FX_HAIR, 0.85f), cx - 2.0f, ledge + 4.5f, 5.0f, 4.0f);
-    color_rect(r, skin, cx - 2.0f, ledge + 5.0f, 1.5f, 2.5f); /* cheek */
-    color_rect(r, cap, cx - 3.0f, ledge + 3.0f, 7.0f, 2.5f);
-    color_rect(r, fx_mix(cap, FX_CREAM, 0.45f), cx - 3.0f, ledge + 3.0f,
-               7.0f, 1.0f);
-
-    /* Torso: the jacket's back panel, lit up its left flank by the near
-     * beam, with the hem breaking over the hips. */
-    color_rect(r, coat_dk, cx - 4.5f, ledge + 9.0f, 10.0f, 10.0f);
-    color_rect(r, coat, cx - 4.5f, ledge + 9.0f, 4.0f, 10.0f);
-    color_rect(r, fx_mix(coat, FX_CREAM, 0.2f), cx - 4.5f, ledge + 9.0f,
-               10.0f, 1.5f); /* shoulders */
-    color_rect(r, fx_dim(coat_dk, 0.85f), cx - 4.0f, ledge + 17.5f,
-               9.5f, 2.0f); /* hem */
-
-    /* Legs bent up under him, boot toes against the pier. */
-    color_rect(r, trouser, cx - 4.5f, ledge + 20.0f, 3.5f, 5.5f);
-    color_rect(r, boot, cx - 5.5f, ledge + 25.0f, 5.5f, 2.5f);
-    color_rect(r, fx_dim(trouser, 0.85f), cx + 1.5f, ledge + 19.5f,
-               3.5f, 5.0f);
-    color_rect(r, boot, cx + 1.0f, ledge + 24.0f, 5.5f, 2.5f);
-
-    /* Rim light on both flanks — lit from two sides at once is exactly what
-     * being caught means. */
-    color_rect(r, fx_mix(coat, FX_CREAM, 0.55f), cx - 5.0f, ledge + 9.0f,
-               1.0f, 8.5f);
-    color_rect(r, fx_dim(fx_mix(coat, FX_CREAM, 0.4f), 0.9f), cx + 5.0f,
-               ledge + 9.5f, 1.0f, 7.5f);
-    color_rect(r, fx_mix(trouser, FX_CREAM, 0.4f), cx - 5.0f, ledge + 20.0f,
-               1.0f, 5.0f);
-}
-
-/*
- * A cruiser at the kerb, bar going.  The red half is FX_RED and the blue
- * half FX_CORDON_BLUE — the same two lights facade_cordon washes a climb's
- * lower face with, because this is that cordon, photographed from across
- * the street.  The two bars pulse in opposite phase so a still catches one
- * of each and a burst reads as strobing rather than as one lamp.
- */
-static void draw_police_car(SDL_Renderer *r, float x, float base_y, float time,
-                            bool lead_red)
-{
-    const SDL_Color body = fx_mix(FX_NIGHT, FX_SHADOW, 0.55f);
-    const SDL_Color trim = FX_MID;
-    const SDL_Color glass = FX_BASE;
-    float pulse = 0.5f + 0.5f * sinf(time * 6.0f + (lead_red ? 0.0f : 3.1416f));
-
-    fx_contact_shadow(r, x + 38.0f, base_y - 2.0f, 46.0f, 0.0f, 200);
-    color_rect(r, body, x, base_y - 20.0f, COVER_CAR_W, 18.0f);
-    color_rect(r, body, x + 18.0f, base_y - 31.0f, 40.0f, 12.0f);
-    color_rect(r, trim, x + 18.0f, base_y - 31.0f, 40.0f, 1.0f);
-    color_rect(r, glass, x + 21.0f, base_y - 28.0f, 15.0f, 8.0f);
-    color_rect(r, fx_dim(glass, 0.8f), x + 40.0f, base_y - 28.0f, 15.0f, 8.0f);
-    /* The pale door panel is the one thing that says police at this size. */
-    color_rect(r, fx_dim(FX_PALE, 0.5f), x + 29.0f, base_y - 18.0f,
-               19.0f, 10.0f);
-    color_rect(r, fx_dim(FX_PALE, 0.34f), x + 3.0f, base_y - 12.0f,
-               22.0f, 3.0f);
-    color_rect(r, trim, x, base_y - 20.0f, COVER_CAR_W, 1.0f);
-    color_rect(r, COL_VOID, x, base_y - 6.0f, COVER_CAR_W, 4.0f);
-    color_rect(r, FX_INK, x + 8.0f, base_y - 8.0f, 15.0f, 8.0f);
-    color_rect(r, FX_INK, x + 52.0f, base_y - 8.0f, 15.0f, 8.0f);
-
-    /* The bar, and the light it is putting on the street around itself. */
-    SDL_Color red = fx_dim(FX_RED, 0.4f + 0.6f * pulse);
-    SDL_Color blue = fx_dim(FX_CORDON_BLUE, 0.4f + 0.6f * (1.0f - pulse));
-    color_rect(r, fx_mix(FX_INK, FX_MID, 0.5f), x + 24.0f, base_y - 34.0f,
-               28.0f, 3.0f);
-    color_rect(r, red, x + 26.0f, base_y - 36.0f, 10.0f, 3.0f);
-    color_rect(r, blue, x + 40.0f, base_y - 36.0f, 10.0f, 3.0f);
-    fx_glow(r, x + 31.0f, base_y - 34.0f, 44.0f, FX_RED,
-            (Uint8)(34.0f + 62.0f * pulse));
-    fx_glow(r, x + 45.0f, base_y - 34.0f, 44.0f, FX_CORDON_BLUE,
-            (Uint8)(34.0f + 62.0f * (1.0f - pulse)));
-}
-
-/* A uniform at the tape, head back, doing what everybody at a cordon does. */
-static void draw_cover_cop(SDL_Renderer *r, float x, float feet_y,
-                           SDL_Color rim)
-{
-    color_rect(r, COL_NIGHT_MASS, x, feet_y - 13.0f, 5.5f, 13.0f);
-    color_rect(r, COL_NIGHT_MASS, x + 0.5f, feet_y - 17.5f, 4.5f, 5.0f);
-    color_rect(r, fx_dim(FX_SKIN, 0.5f), x + 3.0f, feet_y - 16.5f,
-               2.0f, 2.0f); /* face, tipped up the wall */
-    color_rect(r, fx_dim(COL_NIGHT_MASS, 1.4f), x, feet_y - 18.5f, 5.5f, 1.5f);
-    color_rect(r, rim, x, feet_y - 13.0f, 1.0f, 10.0f);
-}
-
-static void render_cover_street(SDL_Renderer *r, const Intro *intro,
-                                const IntroScene *s)
-{
-    float time = intro->time;
-    float y = s->street_y;
-
-    draw_street_ground(r, s);
-    draw_wet_reflections(r, s, time);
-    draw_lobby_spill(r, s, 1.0f);
-
-    /* The bars again, off the wet road: the same smear every lit pane gets. */
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    set_rgba(r, FX_RED.r, FX_RED.g, FX_RED.b, 30);
-    fill_rect(r, COVER_CAR_LEFT_X + 14.0f, y + 28.0f, 52.0f, 4.0f);
-    set_rgba(r, FX_CORDON_BLUE.r, FX_CORDON_BLUE.g, FX_CORDON_BLUE.b, 30);
-    fill_rect(r, COVER_CAR_LEFT_X + 34.0f, y + 36.0f, 44.0f, 3.0f);
-    fill_rect(r, COVER_CAR_RIGHT_X + 22.0f, y + 30.0f, 48.0f, 4.0f);
-    set_rgba(r, FX_RED.r, FX_RED.g, FX_RED.b, 24);
-    fill_rect(r, COVER_CAR_RIGHT_X - 6.0f, y + 38.0f, 44.0f, 3.0f);
-    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
-
-    /* The tape line: two trestles and a plank between the cruisers. */
-    float bar_y = y + 34.0f;
-    color_rect(r, COL_NIGHT_MASS, 316.0f, bar_y - 12.0f, 3.0f, 12.0f);
-    color_rect(r, COL_NIGHT_MASS, 452.0f, bar_y - 12.0f, 3.0f, 12.0f);
-    color_rect(r, fx_dim(FX_PALE, 0.4f), 314.0f, bar_y - 15.0f, 143.0f, 4.0f);
-    for (float sx = 314.0f; sx < 450.0f; sx += 18.0f)
-        color_rect(r, fx_dim(FX_RUST, 0.75f), sx, bar_y - 15.0f, 9.0f, 4.0f);
-
-    draw_police_car(r, COVER_CAR_LEFT_X, y + 24.0f, time, true);
-    draw_police_car(r, COVER_CAR_RIGHT_X, y + 24.0f, time, false);
-    draw_cover_cop(r, COVER_CAR_LEFT_X + COVER_CAR_W + 14.0f, y + 22.0f,
-                   fx_dim(FX_RED, 0.5f));
-    draw_cover_cop(r, COVER_CAR_RIGHT_X - 16.0f, y + 26.0f,
-                   fx_dim(FX_CORDON_BLUE, 0.55f));
-
-    /* And what all of it lands on: the cordon's wash up the lowest floors,
-     * the same cold rise facade_cordon lays over a climb. */
-    fx_vgrad(r, s->base_left - 34.0f, y - 88.0f,
-             s->base_right - s->base_left + 68.0f, 88.0f,
-             FX_CORDON_BLUE, 0, FX_CORDON_BLUE, 30);
-    fx_glow(r, COVER_CAR_LEFT_X + 60.0f, y + 6.0f, 130.0f, FX_RED, 26);
-    fx_glow(r, COVER_CAR_RIGHT_X + 10.0f, y + 6.0f, 130.0f, FX_CORDON_BLUE,
-            28);
-
-    draw_ground_fog(r, s, time);
-}
-
-/* The news ship holding station off the tower — the same aircraft the climbs
- * draw behind the wall (facade_news_helicopter in level_art.c), near enough
- * here to read at cover size.  Nose toward the building: it is holding a
- * shot, and the cabin light is somebody leaning out of the door with a
- * camera.  Deliberately not a police ship, for the fiction's own reason —
- * the helicopter on this roof at the end of the night is the crew's ride
- * out, and nothing in the sky can be allowed to contradict that. */
-static void draw_cover_helicopter(SDL_Renderer *r, float x, float y,
-                                  float time)
-{
-    SDL_Color hull = fx_mix(FX_SHADOW, FX_STEEL_DK, 0.5f);
-    y += sinf(time * 0.5f) * 3.0f;
-
-    fx_rect(r, hull, x - 13.0f, y - 5.0f, 24.0f, 10.0f);
-    fx_rect(r, hull, x - 32.0f, y - 2.0f, 20.0f, 3.0f);
-    fx_rect(r, fx_mix(hull, FX_STEEL_LT, 0.3f), x - 33.0f, y - 9.0f,
-            3.0f, 10.0f);
-    fx_rect(r, hull, x - 2.0f, y - 8.0f, 3.0f, 3.0f);
-    fx_rect(r, hull, x - 10.0f, y + 5.0f, 19.0f, 2.0f);
-    fx_rect_a(r, fx_mix(hull, FX_PALE, 0.4f), 90, x - 26.0f, y - 10.0f,
-              52.0f, 2.0f);
-
-    float beacon = fmodf(time * 1.35f, 1.0f);
-    if (beacon < 0.16f)
-    {
-        Uint8 a = (Uint8)((1.0f - beacon / 0.16f) * 190.0f);
-        fx_rect_a(r, FX_RED, a, x - 2.0f, y + 7.0f, 3.0f, 3.0f);
-        fx_glow(r, x, y + 8.0f, 18.0f, FX_RED, (Uint8)(a / 2u));
-    }
-    fx_rect_a(r, FX_WARM, 150, x + 4.0f, y - 3.0f, 4.0f, 5.0f);
-    fx_glow(r, x + 6.0f, y - 1.0f, 20.0f, FX_WARM, 40);
-}
-
-static void render_cover(SDL_Renderer *r, const Intro *intro,
-                         const IntroScene *s)
-{
-    float time = intro->time;
-    float climber_x, climber_feet;
-
-    render_sky(r, intro, s);
-    render_skyline(r, intro, s);
-    draw_cover_helicopter(r, s->w * 0.825f, 118.0f, time);
-    render_flanking_blocks(r, s);
-    render_tower(r, intro, s);
-
-    /* The two beams, their spot, and the man in it — over the wall, under
-     * the street, so the cruisers they rise from occlude their feet. */
-    cover_climber_anchor(s, &climber_x, &climber_feet);
-    float spot_x = climber_x + 0.5f;
-    float spot_y = climber_feet - 14.0f;
-    draw_search_beam(r, COVER_CAR_LEFT_X + COVER_CAR_BAR_X, s->street_y - 6.0f,
-                     spot_x - 4.0f, spot_y, 10.0f, 38.0f, 38);
-    draw_search_beam(r, COVER_CAR_RIGHT_X + COVER_CAR_BAR_X,
-                     s->street_y - 6.0f, spot_x + 5.0f, spot_y, 10.0f, 32.0f,
-                     34);
-    fx_glow(r, spot_x, spot_y, 66.0f, fx_mix(FX_LAMP, FX_CREAM, 0.5f), 92);
-    fx_glow(r, spot_x, spot_y, 34.0f, fx_mix(FX_LAMP, FX_CREAM, 0.7f), 96);
-    draw_cover_climber(r, s);
-
-    render_cover_street(r, intro, s);
-    render_logo(r, intro, s);
+    key_art_render(r, intro->time, win_w, win_h);
+    render_logo_at(r, intro, 272.0f, 26.0f);
 
     /* The same fade-up as the title, so a capture led in early is black
      * rather than half a poster. */
     float fade = 1.0f - smoothstep01(intro->time / 0.65f);
     if (fade > 0.0f)
         fx_rect_a(r, FX_INK, (Uint8)(255.0f * fade), 0.0f, 0.0f,
-                  s->w, s->h);
+                  (float)win_w, (float)win_h);
 }
 
 void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,
@@ -2468,8 +2152,7 @@ void intro_render(SDL_Renderer *r, const Intro *intro, int win_w, int win_h,
 {
     if (intro->key_art)
     {
-        IntroScene cover = cover_layout(win_w, win_h);
-        render_cover(r, intro, &cover);
+        render_cover(r, intro, win_w, win_h);
         return;
     }
 

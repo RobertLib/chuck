@@ -198,4 +198,12 @@ void outro_cutscene_render(SDL_Renderer *renderer,
                            const OutroCutscene *cutscene,
                            int win_w, int win_h, const PadHints *pad);
 
+/*
+ * The store's key art: the roof at the end of the climb, drawn as a poster
+ * rather than played. It draws the whole world of the frame and nothing of
+ * the interface; the title screen's wordmark goes over it (intro.c), and the
+ * press kit photographs it through `--screen cover`.
+ */
+void key_art_render(SDL_Renderer *renderer, float time, int win_w, int win_h);
+
 #endif /* CHUCK_CUTSCENE_H */

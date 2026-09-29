@@ -298,11 +298,13 @@ animation 34-loop-roof   18.0 "SPOILER: the roof" --screen outro
 # itch.io asks for one image at a fixed shape — 630x500, shown as small as
 # 315x250 — and it is the only picture most people will ever see of this game.
 # It was cut out of the title screen for as long as this script existed, and at
-# 315x250 that crop was three quarters empty night sky: a black rectangle with
-# a small logotype in it, in a gallery of covers built to be read at exactly
-# that size. `--screen cover` is the answer — the same night recomposed as key
-# art (`render_cover` in src/intro.c): the tower closer with more of it lit,
-# the cordon on the street, Chuck on the wall in the searchlights, and no
+# 315x250 that crop was three quarters empty night sky. Its first replacement was
+# the same night recomposed, with Chuck a dozen pixels tall on the wall, and it
+# was true and asked nothing of anybody. `--screen cover` is the roof now
+# (`key_art_render` in src/cutscene.c, the wordmark over it from src/intro.c):
+# Chuck hanging from the lip with Voss's pistol on him, Ellen in Voss's other
+# hand, the crew's helicopter holding its light on them, forty floors over the
+# city. It shows the stakes of the campaign and stops short of how it ends. No
 # interface, because a START prompt on a store page is a button nobody can
 # press. The crop is the middle 696x552 of the frame, which is the cover's own
 # 1.26:1 with nothing of the composition outside it.
@@ -332,13 +334,12 @@ if [ -n "$im" ]; then
         # That is why this is cut from the cover rather than from a floor.
         #
         # 360 tall rather than the ~300 the field is usually advised at, and the
-        # reason is a measurement rather than a taste: the logotype ends at y110
-        # of the frame and the man in the searchlights sits at y265, so at 3.2:1
-        # the two do not both fit and a 300px banner is a wordmark over an empty
-        # tower. At 2.67:1 they do, and it is still inside the 400 the field
-        # takes. The offset is 12 because at nought the logo touches the top
-        # edge and by 24 the bottom cut lands in a lit window band, which reads
-        # as a mistake rather than as an edge.
+        # reason is a measurement rather than a taste: the tagline ends at y134
+        # of the frame and Chuck's face at the lip, with the muzzle on it, is at
+        # y216-300, so at 3.2:1 the cut goes through his face. At 2.67:1 it does
+        # not, and it is still inside the 400 the field takes. The offset is 12
+        # because at nought the cut takes the coping off and leaves his hands
+        # holding air, and by 24 the wordmark touches the top edge.
         "$im" "$work/cover.bmp" -crop 800x300+0+12 +repage \
             -filter point -resize 300% -filter Lanczos -resize 960x360\! \
             -strip "$out/banner-960x360.png"

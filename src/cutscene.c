@@ -1546,6 +1546,50 @@ static const SDL_Color CREW_BOOT = {18, 21, 22, 255};
 static const SDL_Color VOSS_COAT = {102, 106, 108, 255};
 static const SDL_Color VOSS_SKIN = {202, 166, 132, 255};
 
+/* Voss above the legs and behind the arms: the long pale coat and the bare
+ * grey head. Split out of `draw_terrorist` because the store's key art
+ * poses him differently from the outro and he has to be the same man. */
+static void draw_voss_coat_and_head(const CastFrame *f, float bob)
+{
+    /* The coat runs six rows further down than the crew's webbing rig, so
+       the legs barely show: that alone reads as "not dressed for this".
+       It is a man's width and not the rig's. The crew's seventeen units
+       are a plate carrier, dark on the night and broken up by the rifle;
+       the same block in a pale coat with nothing across it showed every
+       unit and stood half again as wide as Chuck and Ellen beside him. */
+    cast_body(f, 7.0f, 11.0f + bob, 13.0f, 15.0f, VOSS_COAT, 1, 0);
+    cast_rect(f, 8.0f, 12.0f + bob, 3.0f, 13.0f,
+              fx_mix(VOSS_COAT, FX_CREAM, 0.22f));
+    cast_rect(f, 15.0f, 12.0f + bob, 1.0f, 13.0f,
+              fx_mix(VOSS_COAT, FX_INK, 0.45f));
+    cast_rect(f, 16.0f, 12.0f + bob, 3.0f, 3.0f,
+              fx_mix(VOSS_COAT, FX_INK, 0.25f));
+    cast_rect(f, 17.0f, 17.0f + bob, 1.0f, 1.0f, FX_INK);
+    cast_rect(f, 17.0f, 21.0f + bob, 1.0f, 1.0f, FX_INK);
+    /* A shirt collar under the coat: a client, not a soldier. */
+    cast_rect(f, 13.0f, 11.0f + bob, 5.0f, 2.0f,
+              (SDL_Color){206, 204, 188, 255});
+
+    cast_body(f, 10.0f, 4.0f + bob, 8.0f, 7.0f, VOSS_SKIN, 0, 2);
+    cast_mass(f, 9.0f, 1.0f + bob, 10.0f, 4.0f, FX_INK, 2, 0);
+    cast_mass(f, 10.0f, 2.0f + bob, 8.0f, 3.0f,
+              (SDL_Color){148, 150, 146, 255}, 1, 0);
+    cast_rect(f, 10.0f, 5.0f + bob, 2.0f, 3.0f,
+              (SDL_Color){148, 150, 146, 255});
+    cast_mass(f, 10.0f, 9.0f + bob, 8.0f, 2.0f,
+              fx_dim(VOSS_SKIN, 0.80f), 1, 2);
+    cast_rect(f, 18.0f, 6.0f + bob, 1.5f, 4.0f, FX_INK);
+    cast_rect(f, 17.0f, 7.0f + bob, 2.0f, 2.0f, VOSS_SKIN);
+    cast_rect(f, 13.5f, 6.0f + bob, 4.0f, 0.8f,
+              fx_dim(VOSS_SKIN, 0.62f));
+    cast_rect(f, 14.4f, 7.2f + bob, 2.6f, 1.3f,
+              (SDL_Color){176, 180, 168, 255});
+    cast_rect(f, 15.7f, 7.2f + bob, 1.3f, 1.3f,
+              (SDL_Color){38, 50, 60, 255});
+    cast_rect(f, 13.0f, 10.0f + bob, 3.0f, 1.0f,
+              fx_dim(VOSS_SKIN, 0.55f));
+}
+
 static void draw_terrorist(SDL_Renderer *r, float x, float ground_y,
                            float scale, float time, float phase, int dir,
                            bool leader)
@@ -1573,43 +1617,7 @@ static void draw_terrorist(SDL_Renderer *r, float x, float ground_y,
                  fx_dim(VOSS_COAT, 0.72f), fx_dim(VOSS_COAT, 0.72f),
                  fx_dim(VOSS_SKIN, 0.75f), true);
 
-        /* The coat runs six rows further down than the crew's webbing rig, so
-           the legs barely show: that alone reads as "not dressed for this".
-           It is a man's width and not the rig's. The crew's seventeen units
-           are a plate carrier, dark on the night and broken up by the rifle;
-           the same block in a pale coat with nothing across it showed every
-           unit and stood half again as wide as Chuck and Ellen beside him. */
-        cast_body(&f, 7.0f, 11.0f + bob, 13.0f, 15.0f, VOSS_COAT, 1, 0);
-        cast_rect(&f, 8.0f, 12.0f + bob, 3.0f, 13.0f,
-                  fx_mix(VOSS_COAT, FX_CREAM, 0.22f));
-        cast_rect(&f, 15.0f, 12.0f + bob, 1.0f, 13.0f,
-                  fx_mix(VOSS_COAT, FX_INK, 0.45f));
-        cast_rect(&f, 16.0f, 12.0f + bob, 3.0f, 3.0f,
-                  fx_mix(VOSS_COAT, FX_INK, 0.25f));
-        cast_rect(&f, 17.0f, 17.0f + bob, 1.0f, 1.0f, FX_INK);
-        cast_rect(&f, 17.0f, 21.0f + bob, 1.0f, 1.0f, FX_INK);
-        /* A shirt collar under the coat: a client, not a soldier. */
-        cast_rect(&f, 13.0f, 11.0f + bob, 5.0f, 2.0f,
-                  (SDL_Color){206, 204, 188, 255});
-
-        cast_body(&f, 10.0f, 4.0f + bob, 8.0f, 7.0f, VOSS_SKIN, 0, 2);
-        cast_mass(&f, 9.0f, 1.0f + bob, 10.0f, 4.0f, FX_INK, 2, 0);
-        cast_mass(&f, 10.0f, 2.0f + bob, 8.0f, 3.0f,
-                  (SDL_Color){148, 150, 146, 255}, 1, 0);
-        cast_rect(&f, 10.0f, 5.0f + bob, 2.0f, 3.0f,
-                  (SDL_Color){148, 150, 146, 255});
-        cast_mass(&f, 10.0f, 9.0f + bob, 8.0f, 2.0f,
-                  fx_dim(VOSS_SKIN, 0.80f), 1, 2);
-        cast_rect(&f, 18.0f, 6.0f + bob, 1.5f, 4.0f, FX_INK);
-        cast_rect(&f, 17.0f, 7.0f + bob, 2.0f, 2.0f, VOSS_SKIN);
-        cast_rect(&f, 13.5f, 6.0f + bob, 4.0f, 0.8f,
-                  fx_dim(VOSS_SKIN, 0.62f));
-        cast_rect(&f, 14.4f, 7.2f + bob, 2.6f, 1.3f,
-                  (SDL_Color){176, 180, 168, 255});
-        cast_rect(&f, 15.7f, 7.2f + bob, 1.3f, 1.3f,
-                  (SDL_Color){38, 50, 60, 255});
-        cast_rect(&f, 13.0f, 10.0f + bob, 3.0f, 1.0f,
-                  fx_dim(VOSS_SKIN, 0.55f));
+        draw_voss_coat_and_head(&f, bob);
 
         /* Sidearm, held down at the thigh rather than shouldered. */
         float near_hx = 16.5f + swing * 0.4f;
@@ -4464,9 +4472,14 @@ static void draw_rotated_box(SDL_Renderer *r, float cx, float cy,
     SDL_RenderGeometry(r, NULL, vertices, 4, indices, 6);
 }
 
-static void draw_helicopter(SDL_Renderer *r, float x, float y,
-                            float angle, float rotor_angle, float damage)
+/* The airframe without its rotors, `scale` times the outro's size: the key
+ * art draws the same ship holding a hover, where a spinning rotor is a blur
+ * rather than a blade. `damage` above a quarter is the scorched paint of the
+ * outro's last seconds. */
+static void draw_helicopter_hull(SDL_Renderer *r, float x, float y,
+                                 float angle, float damage, float scale)
 {
+    const float k = scale;
     SDL_Color body_dark = {10, 17, 20, 255};
     SDL_Color body = damage > 0.25f
                          ? (SDL_Color){50, 52, 47, 255}
@@ -4477,30 +4490,47 @@ static void draw_helicopter(SDL_Renderer *r, float x, float y,
 
     /* Shadow makes the craft readable against both sky and buildings. */
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
-    draw_rotated_box(r, x + 4.0f, y + 5.0f, -48.0f, -17.0f,
-                     82.0f, 37.0f, angle, (SDL_Color){2, 4, 7, 120});
+    draw_rotated_box(r, x + 4.0f * k, y + 5.0f * k, -48.0f * k,
+                     -17.0f * k, 82.0f * k, 37.0f * k, angle,
+                     (SDL_Color){2, 4, 7, 120});
     SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
 
-    draw_rotated_box(r, x, y, -48.0f, -16.0f, 82.0f, 34.0f,
+    draw_rotated_box(r, x, y, -48.0f * k, -16.0f * k, 82.0f * k, 34.0f * k,
                      angle, body_dark);
-    draw_rotated_box(r, x, y, -43.0f, -13.0f, 72.0f, 27.0f,
+    draw_rotated_box(r, x, y, -43.0f * k, -13.0f * k, 72.0f * k, 27.0f * k,
                      angle, body);
-    draw_rotated_box(r, x, y, -38.0f, -10.0f, 25.0f, 19.0f,
+    draw_rotated_box(r, x, y, -38.0f * k, -10.0f * k, 25.0f * k, 19.0f * k,
                      angle, (SDL_Color){15, 35, 43, 255});
-    draw_rotated_box(r, x, y, -35.0f, -8.0f, 18.0f, 14.0f,
+    draw_rotated_box(r, x, y, -35.0f * k, -8.0f * k, 18.0f * k, 14.0f * k,
                      angle, (SDL_Color){50, 108, 119, 255});
-    draw_rotated_box(r, x, y, -9.0f, -10.0f, 32.0f, 4.0f,
+    draw_rotated_box(r, x, y, -9.0f * k, -10.0f * k, 32.0f * k, 4.0f * k,
                      angle, body_light);
 
-    /* Tail boom, stabilizer, and rear rotor. */
-    draw_rotated_box(r, x, y, 28.0f, -6.0f, 77.0f, 12.0f,
+    /* Tail boom and stabilizer. */
+    draw_rotated_box(r, x, y, 28.0f * k, -6.0f * k, 77.0f * k, 12.0f * k,
                      angle, body_dark);
-    draw_rotated_box(r, x, y, 31.0f, -3.0f, 67.0f, 7.0f,
+    draw_rotated_box(r, x, y, 31.0f * k, -3.0f * k, 67.0f * k, 7.0f * k,
                      angle, body);
-    draw_rotated_box(r, x, y, 91.0f, -24.0f, 12.0f, 28.0f,
+    draw_rotated_box(r, x, y, 91.0f * k, -24.0f * k, 12.0f * k, 28.0f * k,
                      angle, body_dark);
-    draw_rotated_box(r, x, y, 94.0f, -21.0f, 7.0f, 22.0f,
+    draw_rotated_box(r, x, y, 94.0f * k, -21.0f * k, 7.0f * k, 22.0f * k,
                      angle, body_light);
+
+    /* Landing skids and the rotor mast. */
+    draw_rotated_box(r, x, y, -31.0f * k, 24.0f * k, 62.0f * k, 3.0f * k,
+                     angle, body_dark);
+    draw_rotated_box(r, x, y, -24.0f * k, 15.0f * k, 3.0f * k, 11.0f * k,
+                     angle, body_dark);
+    draw_rotated_box(r, x, y, 19.0f * k, 14.0f * k, 3.0f * k, 12.0f * k,
+                     angle, body_dark);
+    draw_rotated_box(r, x, y, -2.0f * k, -31.0f * k, 4.0f * k, 17.0f * k,
+                     angle, body_dark);
+}
+
+static void draw_helicopter(SDL_Renderer *r, float x, float y,
+                            float angle, float rotor_angle, float damage)
+{
+    draw_helicopter_hull(r, x, y, angle, damage, 1.0f);
 
     float tail_x = 0.0f, tail_y = 0.0f;
     rotate_local(x, y, 100.0f, -8.0f, angle, &tail_x, &tail_y);
@@ -4508,16 +4538,6 @@ static void draw_helicopter(SDL_Renderer *r, float x, float y,
                      angle + rotor_angle * 1.7f, FX_INK);
     draw_rotated_box(r, tail_x, tail_y, -14.0f, -1.5f, 28.0f, 3.0f,
                      angle + rotor_angle * 1.7f + 1.5708f, FX_INK);
-
-    /* Landing skids and main rotor. */
-    draw_rotated_box(r, x, y, -31.0f, 24.0f, 62.0f, 3.0f,
-                     angle, body_dark);
-    draw_rotated_box(r, x, y, -24.0f, 15.0f, 3.0f, 11.0f,
-                     angle, body_dark);
-    draw_rotated_box(r, x, y, 19.0f, 14.0f, 3.0f, 12.0f,
-                     angle, body_dark);
-    draw_rotated_box(r, x, y, -2.0f, -31.0f, 4.0f, 17.0f,
-                     angle, body_dark);
 
     float rotor_x = 0.0f, rotor_y = 0.0f;
     rotate_local(x, y, 0.0f, -31.0f, angle, &rotor_x, &rotor_y);
@@ -5116,4 +5136,541 @@ void outro_cutscene_render(SDL_Renderer *r,
         fill_rect(r, 0.0f, 0.0f, (float)win_w, (float)win_h);
         SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
     }
+}
+
+/* ---- The store's key art ---------------------------------------------- */
+
+/*
+ * The one picture most people will ever see of this game, and the only one
+ * whose job is to make somebody want to play it.
+ *
+ * It used to be the title screen's night recomposed — the tower from across
+ * the street, the cordon at its foot, and Chuck a dozen pixels tall in the
+ * searchlights three floors up. Every element was true and the picture asked
+ * nothing of anybody: at the 315x250 a store lists a game at, it was a quiet
+ * building with a dot on it. What the night is *about* was nowhere in it.
+ *
+ * So this is the moment the whole climb is for, drawn as close as the film
+ * ever gets: the roof, forty floors over a city that has gone small, a
+ * helicopter holding a hover with its light on the parapet, Voss at the edge
+ * with his pistol down on the man hanging from it, and Ellen — the red coat,
+ * the one warm colour on the roof — a stride behind him in his other hand. It
+ * is not a scene the game plays; it is the stakes of every scene it does, in
+ * one frame. Every figure in it is the film's own drawing, at the film's own
+ * proportions, and the near planes are drawn at twice the pixel, so the cast
+ * reads at a third of the size and the city they are standing over reads as
+ * far away by being finer.
+ *
+ * **Twice, and not the two and a half that framed it best**, because the
+ * press kit photographs through SDL's software renderer (`SDL_VIDEODRIVER`
+ * is `dummy` there) and a render scale that is not a whole number leaves
+ * seams between the one-unit runs every figure is built from: at 2.5 the
+ * GPU drew clean limbs and the kit's own capture drew them striped. The cast
+ * is scaled up inside the zoom instead, which costs nothing.
+ */
+#define KEY_ART_ZOOM 2.0f
+/* The roof's edge, in the zoomed units the near planes are drawn in. */
+#define KEY_ART_ROOF_Y 150.0f
+#define KEY_ART_CORNER_X 215.0f
+#define KEY_ART_CHUCK_SCALE 3.0f
+#define KEY_ART_VOSS_SCALE 2.5f
+#define KEY_ART_ELLEN_SCALE 2.3f
+/* The ship, in the frame's own pixels and at a size of its own rather than
+ * through the render scale, for the same reason. */
+#define KEY_ART_HELI_SCALE 1.3f
+#define KEY_ART_HELI_X 590.0f
+#define KEY_ART_HELI_Y 96.0f
+
+/*
+ * One deck of storm cloud, seen from inside the weather: filled from `top`
+ * down to a lumpy underside around `base`, the underside lit by the city
+ * under it and every part of it lit by the strike when the strike is near.
+ * The decks are darker than the sky between them, which is the one way a
+ * cloud at night has of being seen.
+ */
+static void key_art_cloud_deck(SDL_Renderer *r, int win_w, float top,
+                               float base, unsigned seed, SDL_Color body,
+                               SDL_Color under, SDL_Color flash,
+                               float flash_x, float strike)
+{
+    for (int x = 0; x < win_w; x += 2)
+    {
+        float fx = (float)x;
+        float edge = base + sinf(fx * 0.009f + (float)(seed & 63u)) * 12.0f +
+                     sinf(fx * 0.027f + (float)(seed >> 6 & 63u)) * 4.0f;
+        /* Domes hanging off the underside, a few to a hundred pixels, and
+         * not every cell has one: a deck is ragged, not scalloped. */
+        for (int dome = -1; dome <= 1; ++dome)
+        {
+            int cell = (int)floorf(fx / 52.0f) + dome;
+            unsigned h = scene_hash((unsigned)(cell + 1000) * 2654435761u + seed);
+            if (h % 3u == 0u)
+                continue;
+            float cx = (float)cell * 52.0f + (float)(h % 40u);
+            float rad = 12.0f + (float)((h >> 8) % 34u);
+            float dx = fx - cx;
+            if (fabsf(dx) < rad)
+                edge = fmaxf(edge, base - 8.0f +
+                                       sqrtf(rad * rad - dx * dx) * 0.6f);
+        }
+        edge = floorf(edge);
+        float near = clamp01(1.0f - fabsf(fx - flash_x) / 220.0f);
+        float lit = near * near * strike;
+        SDL_Color c = fx_mix(body, flash, lit * 0.55f);
+        SDL_Color u = fx_mix(fx_mix(body, under, 0.6f), flash, lit * 0.8f);
+        color_rect(r, c, fx, top, 2.0f, edge - top - 6.0f);
+        color_rect(r, fx_mix(c, u, 0.35f), fx, edge - 6.0f, 2.0f, 3.0f);
+        color_rect(r, fx_mix(c, u, 0.75f), fx, edge - 3.0f, 2.0f, 3.0f);
+    }
+}
+
+static void key_art_sky(SDL_Renderer *r, float time, int win_w, int win_h)
+{
+    const SDL_Color top = fx_mix(FX_INK, FX_NIGHT, 0.5f);
+    const SDL_Color low = fx_mix(FX_MID, FX_CYAN_DK, 0.30f);
+    color_rect(r, top, 0.0f, 0.0f, (float)win_w, (float)win_h);
+    fx_vgrad(r, 0.0f, 0.0f, (float)win_w, 300.0f, top, 255, low, 255);
+
+    /* The strike, and the cloud it is inside: the ship holds its hover in
+     * front of the brightest patch of sky in the frame, so it is a shape
+     * against the light rather than a dark thing on a dark one. */
+    float strike = 0.86f + 0.14f * sinf(time * 23.0f) * sinf(time * 7.0f);
+    const float bolt_x = 694.0f;
+    const SDL_Color flash = fx_mix(FX_LAMP, FX_CREAM, 0.45f);
+
+    SDL_Color deck_far = fx_mix(low, FX_SHADOW, 0.45f);
+    SDL_Color deck_mid = fx_mix(FX_SHADOW, FX_BASE, 0.35f);
+    SDL_Color deck_near = fx_mix(FX_NIGHT, FX_SHADOW, 0.40f);
+    SDL_Color under = fx_mix(low, FX_SODIUM, 0.18f);
+    key_art_cloud_deck(r, win_w, 150.0f, 244.0f, 0x46415252u, deck_far,
+                       fx_mix(under, FX_PALE, 0.10f), flash, bolt_x, strike);
+    key_art_cloud_deck(r, win_w, 70.0f, 186.0f, 0x4d494444u, deck_mid,
+                       fx_mix(deck_mid, under, 0.55f), flash, bolt_x - 60.0f,
+                       strike);
+    key_art_cloud_deck(r, win_w, 0.0f, 92.0f, 0x544f5020u, deck_near,
+                       fx_mix(deck_near, under, 0.45f), flash, bolt_x - 90.0f,
+                       strike * 0.8f);
+    fx_glow(r, bolt_x - 60.0f, 150.0f, 230.0f, flash, (Uint8)(60.0f * strike));
+    fx_glow(r, bolt_x - 40.0f, 170.0f, 110.0f, flash, (Uint8)(70.0f * strike));
+
+    /* The bolt: a random walk down from the cloud base to the city, in a
+     * wide dim stroke under a hot core, with one fork. Hashed rather than
+     * drawn from the RNG, so the same night strikes in the same place. */
+    float x = bolt_x;
+    float y = 200.0f;
+    float fork_x = 0.0f, fork_y = 0.0f;
+    SDL_Color hot = fx_mix(FX_CREAM, FX_LAMP, 0.25f);
+    /* It comes down behind the roof, and the roof is where it stops. */
+    for (unsigned step = 0; y < KEY_ART_ROOF_Y * KEY_ART_ZOOM; ++step)
+    {
+        unsigned h = scene_hash(step * 40503u + 0x424f4c54u);
+        float nx = x + (float)((int)(h % 19u) - 9) * 1.3f;
+        float ny = y + 7.0f + (float)((h >> 8) % 7u);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+        set_rgba(r, hot.r, hot.g, hot.b, (Uint8)(60.0f * strike));
+        for (int w = -2; w <= 3; ++w)
+            SDL_RenderLine(r, x + (float)w, y, nx + (float)w, ny);
+        SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+        set_color(r, fx_mix(fx_mix(FX_NIGHT, hot, 0.35f), hot, strike));
+        SDL_RenderLine(r, x, y, nx, ny);
+        SDL_RenderLine(r, x + 1.0f, y, nx + 1.0f, ny);
+        if (step == 4u)
+        {
+            fork_x = nx;
+            fork_y = ny;
+        }
+        x = nx;
+        y = ny;
+    }
+    x = fork_x;
+    y = fork_y;
+    for (unsigned step = 0; step < 6u; ++step)
+    {
+        unsigned h = scene_hash(step * 69069u + 0x464f524bu);
+        float nx = x + 6.0f + (float)(h % 7u);
+        float ny = y + 5.0f + (float)((h >> 8) % 6u);
+        set_color(r, fx_mix(fx_mix(FX_NIGHT, hot, 0.3f), hot, strike * 0.7f));
+        SDL_RenderLine(r, x, y, nx, ny);
+        x = nx;
+        y = ny;
+    }
+}
+
+/*
+ * The city, forty floors down.
+ *
+ * The camera is level with the roof, so the horizon is too, and every other
+ * building in the city is under it: rows of roofs and lit windows running away
+ * to the haze, each row smaller and paler than the one in front, with the
+ * streets between them showing as sodium glow in the gaps. It is the title
+ * screen's skyline looked down on instead of up at, and looking down on it is
+ * the whole point — nothing a flat picture can do says "a long way down" as
+ * plainly as a city with its roofs below you. The tower's own foot is under
+ * the bottom of the frame, and the cordon at it is a red and blue light coming
+ * up out of the dark.
+ */
+#define KEY_ART_HORIZON_Y 306.0f
+#define KEY_ART_VANISH_X 250.0f
+/* How far under the camera the street is, in the units a building's height
+ * is measured in: every building in the city is shorter than this one. */
+#define KEY_ART_EYE_HEIGHT 260.0f
+
+static void key_art_city(SDL_Renderer *r, float time, int win_w, int win_h)
+{
+    static const float rows[] = {16.0f, 12.5f, 10.0f, 8.2f, 6.8f, 5.7f,
+                                 4.8f,  4.05f, 3.4f,  2.9f, 2.45f, 2.08f,
+                                 1.78f, 1.52f, 1.3f,  1.12f};
+    const float hy = KEY_ART_HORIZON_Y;
+    const float eye = KEY_ART_EYE_HEIGHT;
+    SDL_Color haze = fx_mix(FX_BASE, FX_CYAN_DK, 0.34f);
+
+    color_rect(r, fx_mix(haze, FX_NIGHT, 0.3f), 0.0f, hy, (float)win_w,
+               (float)win_h - hy);
+
+    for (int k = 0; k < (int)SDL_arraysize(rows); ++k)
+    {
+        float d = rows[k];
+        float street_y = hy + eye / d;
+        float mist = clamp01((d - 1.0f) / 13.0f);
+        SDL_Color wall = fx_mix(fx_mix(FX_NIGHT, FX_SHADOW, 0.6f), haze,
+                                0.25f + mist * 0.7f);
+        SDL_Color roof = fx_mix(wall, FX_PALE, 0.16f + (1.0f - mist) * 0.12f);
+
+        /* The street this row stands on, glowing in whatever gaps the row in
+         * front of it leaves. */
+        fx_rect_a(r, FX_SODIUM, (Uint8)(50.0f + 90.0f * (1.0f - mist)), 0.0f,
+                  floorf(street_y) - 2.0f, (float)win_w, 2.0f);
+        fx_vgrad(r, 0.0f, street_y - 14.0f / d - 4.0f, (float)win_w,
+                 14.0f / d + 2.0f, FX_SODIUM, 0, FX_SODIUM,
+                 (Uint8)(24.0f + 40.0f * (1.0f - mist)));
+
+        float u = -1400.0f - (float)(k % 3) * 37.0f;
+        for (unsigned i = 0; u < 1400.0f; ++i)
+        {
+            unsigned h = scene_hash((unsigned)k * 7919u + i * 104729u +
+                                    0x43495459u);
+            float w = 36.0f + (float)(h % 70u);
+            float tall = 24.0f + (float)((h >> 8) % 150u);
+            float x = KEY_ART_VANISH_X + u / d;
+            float sw = w / d;
+            u += w + 10.0f + (float)((h >> 16) % 22u);
+            if (x + sw < 0.0f || x > (float)win_w)
+                continue;
+            float top = hy + (eye - tall) / d;
+            float bottom = street_y;
+            color_rect(r, wall, floorf(x), floorf(top), ceilf(sw),
+                       ceilf(bottom - top) + 1.0f);
+            /* Looked down on, a roof is a lit slab and its parapet. */
+            float slab = fmaxf(1.0f, floorf(8.0f / d));
+            color_rect(r, roof, floorf(x), floorf(top), ceilf(sw), slab);
+            if ((h >> 24) % 4u == 0u && sw > 6.0f)
+                color_rect(r, fx_dim(FX_RED, 0.55f + 0.45f * (1.0f - mist)),
+                           floorf(x + sw * 0.5f), floorf(top) - 1.0f, 1.0f,
+                           1.0f);
+
+            /* Windows, a floor at a time, as many as the row's distance
+             * leaves room for. */
+            float pitch_y = 8.0f / d;
+            float pitch_x = 7.0f / d;
+            if (pitch_y < 1.6f)
+            {
+                pitch_y = 2.0f;
+                pitch_x = 2.0f;
+            }
+            for (float wy = top + slab + pitch_y * 0.5f; wy < bottom - 1.0f;
+                 wy += pitch_y)
+            {
+                for (float wx = x + pitch_x * 0.5f; wx < x + sw - 1.0f;
+                     wx += pitch_x)
+                {
+                    unsigned wh = scene_hash(h + fx_salt(wx) * 31u +
+                                             fx_salt(wy) * 977u);
+                    if (wh % 4u != 0u)
+                        continue;
+                    SDL_Color c = (wh & 0x100u) ? FX_WARM : FX_LAMP;
+                    float lit = 0.30f + 0.55f * (1.0f - mist);
+                    float pw = fmaxf(1.0f, floorf(3.0f / d));
+                    color_rect(r, fx_mix(wall, c, lit), floorf(wx), floorf(wy),
+                               pw, fmaxf(1.0f, floorf(3.0f / d)));
+                }
+            }
+        }
+        /* Each row is one step further into the haze than the row in front
+         * of it: the far city is mostly light and very little building. */
+        if (k + 1 < (int)SDL_arraysize(rows))
+        {
+            float next = hy + eye / rows[k + 1];
+            fx_vgrad(r, 0.0f, hy, (float)win_w, next - hy, haze,
+                     (Uint8)(30.0f * mist), haze, 0);
+        }
+    }
+
+    /* Haze at the horizon, where the city dissolves into its own glow. */
+    fx_vgrad(r, 0.0f, hy - 34.0f, (float)win_w, 34.0f, haze, 0, haze, 190);
+    fx_vgrad(r, 0.0f, hy, (float)win_w, 26.0f, haze, 190, haze, 0);
+
+    /* The cordon at the foot of the tower, far under the frame. */
+    float pulse = 0.5f + 0.5f * sinf(time * 6.0f);
+    fx_glow(r, 470.0f, (float)win_h + 30.0f, 170.0f, FX_RED,
+            (Uint8)(30.0f + 40.0f * pulse));
+    fx_glow(r, 390.0f, (float)win_h + 34.0f, 180.0f, FX_CORDON_BLUE,
+            (Uint8)(30.0f + 40.0f * (1.0f - pulse)));
+}
+
+/*
+ * The top of the tower, in zoomed units: the coping every figure in the shot
+ * is on or hanging from, the curtain wall dropping away under it with the
+ * night's lit offices, and the corner the searchlight is on.
+ */
+static void key_art_tower(SDL_Renderer *r, float right, float bottom)
+{
+    const float x0 = KEY_ART_CORNER_X;
+    const float roof = KEY_ART_ROOF_Y;
+    const SDL_Color concrete = fx_mix(FX_STEEL_DK, FX_STEEL, 0.35f);
+    const SDL_Color wall = fx_mix(FX_SHADOW, FX_BASE, 0.55f);
+
+    /* The wall, and the offices behind it: warm and cool tubes, one blind
+     * half down, and a man at one of them looking at the same thing. */
+    color_rect(r, wall, x0, roof, right - x0, bottom - roof);
+    const float floor_h = 31.0f;
+    const float bay = 28.0f;
+    const float pane_w = 19.0f;
+    const float pane_h = 20.0f;
+    for (int fl = 0; roof + 21.0f + (float)fl * floor_h < bottom; ++fl)
+    {
+        float wy = roof + 21.0f + (float)fl * floor_h;
+        color_rect(r, fx_mix(wall, FX_STEEL_DK, 0.35f), x0, wy - 6.0f,
+                   right - x0, 2.0f);
+        for (int b = 0; x0 + 9.0f + (float)b * bay < right; ++b)
+        {
+            float wx = x0 + 9.0f + (float)b * bay;
+            unsigned h = scene_hash((unsigned)(fl * 31 + b * 7) + 0x4b455941u);
+            color_rect(r, FX_INK, wx - 1.0f, wy - 1.0f, pane_w + 2.0f,
+                       pane_h + 2.0f);
+            bool lit = h % 5u < 2u;
+            SDL_Color glass = lit ? ((h & 8u) ? fx_dim(FX_WARM, 0.72f)
+                                              : fx_dim(FX_LAMP, 0.58f))
+                                  : fx_mix(FX_NIGHT, FX_SHADOW, 0.6f);
+            float fade = clamp01((wy - roof) / (bottom - roof));
+            glass = fx_mix(glass, wall, 0.25f + fade * 0.6f);
+            color_rect(r, glass, wx, wy, pane_w, pane_h);
+            color_rect(r, fx_mix(glass, FX_INK, 0.35f), wx + 9.0f, wy, 1.0f,
+                       pane_h);
+            if (lit && (h & 0x30u) == 0x30u)
+                color_rect(r, fx_dim(glass, 0.6f), wx, wy, pane_w, 8.0f);
+            if (lit && (h & 0x1c0u) == 0x40u)
+            {
+                /* Somebody at the glass. */
+                color_rect(r, FX_INK, wx + 4.0f, wy + 6.0f, 5.0f, 14.0f);
+                color_rect(r, FX_INK, wx + 5.0f, wy + 3.0f, 3.0f, 4.0f);
+            }
+            if (lit)
+                fx_rect_a(r, FX_CREAM, 34, wx, wy, pane_w, 1.0f);
+        }
+    }
+    /* The wet face darkens as it drops away, and forty floors down the
+     * cordon's lights are coming up it. */
+    fx_vgrad(r, x0, roof + 12.0f, right - x0, bottom - roof, FX_NIGHT, 30,
+             FX_NIGHT, 200);
+    fx_vgrad(r, x0, bottom - 75.0f, right - x0, 75.0f, FX_CORDON_BLUE, 0,
+             FX_CORDON_BLUE, 44);
+    fx_glow(r, x0 + (right - x0) * 0.7f, bottom + 12.0f, 88.0f, FX_RED, 46);
+
+    /* The coping and the parapet under it. */
+    color_rect(r, FX_INK, x0 - 1.0f, roof - 1.0f, right - x0 + 1.0f, 15.0f);
+    color_rect(r, fx_dim(concrete, 0.7f), x0, roof + 3.0f, right - x0, 10.0f);
+    color_rect(r, concrete, x0, roof, right - x0, 4.0f);
+    color_rect(r, fx_mix(concrete, FX_PALE, 0.55f), x0, roof, right - x0, 1.0f);
+    for (float jx = x0 + 32.0f; jx < right; jx += 50.0f)
+        color_rect(r, fx_dim(concrete, 0.45f), jx, roof + 4.0f, 1.0f, 9.0f);
+    fx_vgrad(r, x0, roof + 14.0f, right - x0, 12.0f, FX_INK, 150, FX_INK, 0);
+
+    /* The corner: the arris the searchlight grazes, bright at the top. */
+    fx_vgrad(r, x0, roof, 2.0f, bottom - roof, FX_PALE, 120, FX_PALE, 0);
+}
+
+/* The ship holding its hover, `k` times the outro's size and drawn at the
+ * frame's own pixel: the airframe the outro flies, with the rotor as what a
+ * spinning rotor is seen as edge-on — a thin blur of disc. */
+static void key_art_helicopter(SDL_Renderer *r, float x, float y, float k,
+                               float time)
+{
+    const float angle = -0.06f;
+    const SDL_Color blur = {30, 38, 40, 255};
+    draw_helicopter_hull(r, x, y, angle, 0.0f, k);
+
+    float rotor_x = 0.0f, rotor_y = 0.0f;
+    rotate_local(x, y, 0.0f, -31.0f * k, angle, &rotor_x, &rotor_y);
+    const float span = floorf(96.0f * k);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    for (float d = -span; d <= span; d += 1.0f)
+    {
+        float t = fabsf(d) / span;
+        set_rgba(r, blur.r, blur.g, blur.b, (Uint8)(150.0f * (1.0f - t * t)));
+        fill_rect(r, floorf(rotor_x + d), floorf(rotor_y - 1.0f - d * 0.06f),
+                  1.0f, 2.0f);
+    }
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+    color_rect(r, FX_INK, floorf(rotor_x - 5.0f), floorf(rotor_y - 2.0f),
+               10.0f, 4.0f);
+
+    float tail_x = 0.0f, tail_y = 0.0f;
+    rotate_local(x, y, 100.0f * k, -8.0f * k, angle, &tail_x, &tail_y);
+    fx_glow(r, tail_x, tail_y, 14.0f * k, blur, 150);
+
+    /* Nav light on the belly, and the searchlight under the nose: the
+     * brightest point in the sky, because everything lit on the roof is lit
+     * from here. */
+    float beacon = fmodf(time * 1.35f, 1.0f) < 0.5f ? 1.0f : 0.35f;
+    float nav_x = floorf(x - 2.0f * k);
+    float nav_y = floorf(y + 12.0f * k);
+    color_rect(r, fx_dim(FX_RED, beacon), nav_x, nav_y, 4.0f, 3.0f);
+    fx_glow(r, nav_x + 2.0f, nav_y + 1.0f, 12.0f * k, FX_RED,
+            (Uint8)(90.0f * beacon));
+    float lamp_x = floorf(x - 36.0f * k);
+    float lamp_y = floorf(y + 12.0f * k);
+    color_rect(r, FX_INK, lamp_x - 5.0f, lamp_y - 4.0f, 10.0f, 8.0f);
+    color_rect(r, FX_CREAM, lamp_x - 4.0f, lamp_y - 3.0f, 8.0f, 6.0f);
+    fx_glow(r, lamp_x, lamp_y, 26.0f * k, FX_CREAM, 150);
+    fx_glow(r, lamp_x, lamp_y, 10.0f * k, FX_CREAM, 220);
+}
+
+/* Voss at the edge: his pistol down along `aim` at the man under it, his
+ * other hand closed on `grab`, both given in his own sprite units. */
+static void key_art_voss(SDL_Renderer *r, float x, float ground_y,
+                         float scale, int dir, float aim_dx, float aim_dy,
+                         float grab_x, float grab_y)
+{
+    CastFrame f = {r, x, ground_y - 32.0f * scale, 28.0f, dir, scale};
+    SDL_Color trouser = {46, 48, 52, 255};
+    SDL_Color shoe = {28, 22, 20, 255};
+
+    fx_contact_shadow(r, x + 14.0f * scale, ground_y - 2.0f, 12.0f * scale,
+                      0.0f, 190);
+    /* Braced wide at the lip: the front foot forward, the back one set. */
+    cast_leg(&f, 11.5f, 21.5f, 8.2f, CAST_ANKLE_Y, fx_dim(trouser, 0.8f),
+             shoe);
+    cast_leg(&f, 15.0f, 21.5f, 18.4f, CAST_ANKLE_Y, trouser, shoe);
+
+    float rear_hx = grab_x;
+    float rear_hy = grab_y;
+    cast_arm(&f, 13.0f, 13.5f, &rear_hx, &rear_hy, fx_dim(VOSS_COAT, 0.72f),
+             fx_dim(VOSS_COAT, 0.72f), fx_dim(VOSS_SKIN, 0.75f), true);
+
+    draw_voss_coat_and_head(&f, 0.0f);
+
+    float len = sqrtf(aim_dx * aim_dx + aim_dy * aim_dy);
+    float ux = aim_dx / len;
+    float uy = aim_dy / len;
+    float near_hx = 14.5f + ux * 8.6f;
+    float near_hy = 13.5f + uy * 8.6f;
+    cast_arm(&f, 14.5f, 13.5f, &near_hx, &near_hy, VOSS_COAT, VOSS_COAT,
+             VOSS_SKIN, false);
+    cast_pistol_angled(&f, near_hx, near_hy, ux, uy, 5.0f);
+    cast_hand(&f, near_hx, near_hy, VOSS_SKIN);
+}
+
+/*
+ * Chuck coming over the lip: forearms flat on the coping, head and shoulders
+ * up over the roof, the rest of him hanging out over forty floors of air with
+ * a knee against the wall for purchase — and his face level with the muzzle.
+ * It is the sector's skeleton, posed, not a second drawing of him, so the man
+ * on the store page is the man in the game. `lip_x`/`lip_y` is the corner of
+ * the coping he is holding.
+ */
+static void key_art_chuck(SDL_Renderer *r, float lip_x, float lip_y,
+                          float scale, float time)
+{
+    /* The corner of the coping, in his own sprite units: level with his
+     * armpits, a unit ahead of his chest. */
+    const ChuckPoint lip = {19.5f, 14.0f};
+    ChuckPose pose;
+
+    chuck_pose_stand(&pose, 0.0f);
+    pose.lean = 0.5f;
+    pose.ankle[CHUCK_FAR] = (ChuckPoint){CHUCK_ROOT_X - 1.2f, 30.9f};
+    pose.pitch[CHUCK_FAR] = 0.8f;
+    pose.ankle[CHUCK_NEAR] = (ChuckPoint){CHUCK_ROOT_X + 5.8f, 27.2f};
+    pose.pitch[CHUCK_NEAR] = 0.2f;
+    pose.tail = 1.0f;
+    chuck_pose_solve(&pose);
+    chuck_pose_reach(&pose, CHUCK_NEAR, (ChuckPoint){lip.x + 4.8f, lip.y - 0.6f});
+    chuck_pose_reach(&pose, CHUCK_FAR, (ChuckPoint){lip.x + 3.0f, lip.y - 0.5f});
+
+    ChuckView view = {r, lip_x - lip.x * scale, lip_y - lip.y * scale, 1,
+                      scale, FX_INK};
+    chuck_draw_arm(&view, &pose, CHUCK_FAR, CHUCK_HAND_GRIP);
+    chuck_draw_legs(&view, &pose);
+    chuck_draw_torso(&view, &pose);
+    chuck_draw_head_as(&view, &pose, fx_blinking(time, 0x1u),
+                       CHUCK_FACE_FURY);
+    chuck_draw_arm(&view, &pose, CHUCK_NEAR, CHUCK_HAND_GRIP);
+}
+
+/* A searchlight from the ship: brightest where it leaves the lamp, spread
+ * and paler by the time it lands, and laid over the wall it lands on. */
+static void key_art_beam(SDL_Renderer *r, float ax, float ay, float tx,
+                         float ty, float half, SDL_Color c)
+{
+    float dx = tx - ax;
+    float dy = ty - ay;
+    float len = sqrtf(dx * dx + dy * dy);
+    float nx = -dy / len;
+    float ny = dx / len;
+    SDL_Vertex v[4] = {
+        {{ax - nx * 3.0f, ay - ny * 3.0f}, fx_fcolor(c, 0.46f), {0.0f, 0.0f}},
+        {{ax + nx * 3.0f, ay + ny * 3.0f}, fx_fcolor(c, 0.46f), {0.0f, 0.0f}},
+        {{tx + nx * half, ty + ny * half}, fx_fcolor(c, 0.16f), {0.0f, 0.0f}},
+        {{tx - nx * half, ty - ny * half}, fx_fcolor(c, 0.16f), {0.0f, 0.0f}}};
+    int idx[6] = {0, 1, 2, 0, 2, 3};
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+    SDL_RenderGeometry(r, NULL, v, 4, idx, 6);
+    SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_NONE);
+}
+
+void key_art_render(SDL_Renderer *r, float time, int win_w, int win_h)
+{
+    const float z = KEY_ART_ZOOM;
+    const float roof = KEY_ART_ROOF_Y;
+    const float corner = KEY_ART_CORNER_X;
+    const SDL_Color beam = {236, 244, 248, 255};
+
+    key_art_sky(r, time, win_w, win_h);
+    key_art_city(r, time, win_w, win_h);
+
+    /* The ship is further off than the roof, so it keeps a finer pixel. */
+    const float hz = KEY_ART_HELI_SCALE;
+    key_art_helicopter(r, KEY_ART_HELI_X, KEY_ART_HELI_Y, hz, time);
+
+    /* Its light, laid on the roof before the roof is drawn, so the parapet
+     * is what stops it. */
+    float spot_x = (corner + 22.5f) * z;
+    float spot_y = (roof - 7.5f) * z;
+    key_art_beam(r, KEY_ART_HELI_X - 36.0f * hz, KEY_ART_HELI_Y + 12.0f * hz,
+                 spot_x, spot_y + 40.0f, 130.0f, beam);
+
+    /* The near planes, at the coarser pixel. */
+    SDL_SetRenderScale(r, z, z);
+    key_art_tower(r, (float)win_w / z, (float)win_h / z);
+    SDL_SetRenderScale(r, 1.0f, 1.0f);
+    fx_glow(r, spot_x, spot_y - 20.0f, 160.0f, beam, 34);
+    fx_glow(r, spot_x + 10.0f, roof * z, 90.0f, beam, 60);
+
+    SDL_SetRenderScale(r, z, z);
+    const float voss_x = corner + 3.0f;
+    const float ellen_x = corner + 47.0f;
+    draw_hostage(r, ellen_x, roof, KEY_ART_ELLEN_SCALE, 0.0f, -1, true);
+    /* Her mouth open on his name: the drawing's set mouth is the film's, for
+     * a woman being walked, and this one is watching him hang. */
+    sprite_rect(r, ellen_x, roof - 34.0f * KEY_ART_ELLEN_SCALE, 26.0f, -1,
+                KEY_ART_ELLEN_SCALE, 16.6f, 8.6f, 2.0f, 1.6f,
+                (SDL_Color){58, 24, 22, 255});
+    /* Chuck before Voss: the muzzle is over his face, not behind it. */
+    key_art_chuck(r, corner, roof, KEY_ART_CHUCK_SCALE, time);
+    key_art_voss(r, voss_x, roof, KEY_ART_VOSS_SCALE, -1, 0.88f, 0.48f, 2.5f,
+                 16.5f);
+    SDL_SetRenderScale(r, 1.0f, 1.0f);
+
+    const WetLight lights[] = {{spot_x, 160.0f, beam, 1.0f, 170.0f, 0.0f}};
+    render_rain(r, time, win_w, win_h, lights, (int)SDL_arraysize(lights));
 }
